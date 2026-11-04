@@ -1,0 +1,17 @@
+[package]
+name = "an-runtime"
+version.workspace = true
+edition.workspace = true
+
+# 编排运行时：Conversation、Router、Policy、Orchestrator、存储与事件总线
+[dependencies]
+an-core.workspace = true
+an-llm.workspace = true
+an-agents.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+rusqlite.workspace = true

@@ -1,0 +1,178 @@
+//! HTTP API 定义（main.rs 和集成测试共用）。
+//!
+//! | 方法 | 路径 | 说明 |
+//! |------|------|------|
+//! | GET  | /api/health | LLM 连通性、模型列表、Agent 状态 |
+//! | GET  | /api/agents | Agent 能力卡片 |
+//! | GET/POST | /api/conversations | 会话列表 / 新建会话 |
+//! | GET/POST | /api/conversations/{id}/messages | 消息列表 / 发送消息 |
+//! | GET  | /api/tasks?conversation_id= | 任务列表 |
+//! | GET  | /api/tasks/{id} | 任务详情 + 事件 |
+//! | POST | /api/tasks/{id}/cancel、/approve | 取消 / 人工批准 |
+//! | GET  | /api/route-logs?limit= | 路由日志 |
+//! | GET  | /api/events?conversation_id= | SSE 事件流 |
+
+use std::convert::Infallible;
+use std::sync::Arc;
+use std::time::Duration;
+
+use an_core::{Conversation, TaskEvent, TaskRecord};
+use an_runtime::Runtime;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use futures::Stream;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::StreamExt;
+
+type AppState = Arc<Runtime>;
+
+/// 统一错误响应：`{"error": "..."}`
+pub struct AppError(StatusCode, String);
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (self.0, Json(json!({ "error": self.1 }))).into_response()
+    }
+}
+
+impl From<anyhow::Error> for AppError {
+    fn from(e: anyhow::Error) -> Self {
+        AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}"))
+    }
+}
+
+fn not_found(what: &str) -> AppError {
+    AppError(StatusCode::NOT_FOUND, format!("{what}不存在"))
+}
+
+type ApiResult<T> = Result<Json<T>, AppError>;
+
+/// 构建 API 路由
+pub fn api(rt: AppState) -> Router {
+    Router::new()
+        .route("/api/health", get(health))
+        .route("/api/agents", get(agents))
+        .route("/api/conversations", get(list_conversations).post(create_conversation))
+        .route("/api/conversations/{id}/messages", get(list_messages).post(send_message))
+        .route("/api/tasks", get(list_tasks))
+        .route("/api/tasks/{id}", get(get_task))
+        .route("/api/tasks/{id}/cancel", post(cancel_task))
+        .route("/api/tasks/{id}/approve", post(approve_task))
+        .route("/api/route-logs", get(route_logs))
+        .route("/api/events", get(events))
+        .with_state(rt)
+}
+
+async fn health(State(rt): State<AppState>) -> Json<serde_json::Value> {
+    let cfg = rt.llm.config();
+    let (llm_ok, models, error) = match rt.llm.list_models().await {
+        Ok(m) => (true, m, None),
+        Err(e) => (false, vec![], Some(format!("{e:#}"))),
+    };
+    Json(json!({
+        "llm": { "ok": llm_ok, "base_url": cfg.base_url, "model": cfg.model, "server_models": models, "error": error,
+                 "structured_mode": cfg.structured_mode },
+        "agents": rt.registry.cards(),
+    }))
+}
+
+async fn agents(State(rt): State<AppState>) -> Json<Vec<an_core::AgentCard>> {
+    Json(rt.registry.cards())
+}
+
+#[derive(Deserialize)]
+struct NewConversation {
+    title: Option<String>,
+}
+
+async fn create_conversation(State(rt): State<AppState>, body: Option<Json<NewConversation>>) -> ApiResult<Conversation> {
+    let title = body.and_then(|b| b.0.title).unwrap_or_else(|| "新会话".into());
+    Ok(Json(rt.store.create_conversation(&title)?))
+}
+
+async fn list_conversations(State(rt): State<AppState>) -> ApiResult<Vec<Conversation>> {
+    Ok(Json(rt.store.list_conversations()?))
+}
+
+async fn list_messages(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<Vec<an_core::Message>> {
+    rt.store.get_conversation(&id)?.ok_or_else(|| not_found("会话"))?;
+    Ok(Json(rt.store.list_messages(&id, None)?))
+}
+
+#[derive(Deserialize)]
+struct SendMessage {
+    text: String,
+}
+
+async fn send_message(State(rt): State<AppState>, Path(id): Path<String>, Json(body): Json<SendMessage>) -> ApiResult<an_runtime::conversation::TurnOutcome> {
+    if body.text.trim().is_empty() {
+        return Err(AppError(StatusCode::BAD_REQUEST, "消息不能为空".into()));
+    }
+    rt.store.get_conversation(&id)?.ok_or_else(|| not_found("会话"))?;
+    Ok(Json(rt.conversation.handle_message(&id, body.text.trim()).await?))
+}
+
+#[derive(Deserialize)]
+struct TaskQuery {
+    conversation_id: Option<String>,
+}
+
+async fn list_tasks(State(rt): State<AppState>, Query(q): Query<TaskQuery>) -> ApiResult<Vec<TaskRecord>> {
+    Ok(Json(rt.store.list_tasks(q.conversation_id.as_deref())?))
+}
+
+#[derive(Serialize)]
+struct TaskDetail {
+    task: TaskRecord,
+    events: Vec<TaskEvent>,
+}
+
+async fn get_task(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<TaskDetail> {
+    let task = rt.store.get_task(&id)?.ok_or_else(|| not_found("任务"))?;
+    Ok(Json(TaskDetail { events: rt.store.list_events(&id)?, task }))
+}
+
+async fn cancel_task(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<serde_json::Value> {
+    rt.store.get_task(&id)?.ok_or_else(|| not_found("任务"))?;
+    let cancelled = rt.orchestrator.cancel(&id)?;
+    Ok(Json(json!({ "cancelled": cancelled })))
+}
+
+async fn approve_task(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<serde_json::Value> {
+    rt.store.get_task(&id)?.ok_or_else(|| not_found("任务"))?;
+    rt.orchestrator.approve(&id).map_err(|e| AppError(StatusCode::CONFLICT, format!("{e:#}")))?;
+    Ok(Json(json!({ "approved": true })))
+}
+
+#[derive(Deserialize)]
+struct LimitQuery {
+    limit: Option<usize>,
+}
+
+async fn route_logs(State(rt): State<AppState>, Query(q): Query<LimitQuery>) -> ApiResult<Vec<an_core::RouteLog>> {
+    Ok(Json(rt.store.list_route_logs(q.limit.unwrap_or(50).min(500))?))
+}
+
+#[derive(Deserialize)]
+struct EventQuery {
+    conversation_id: Option<String>,
+}
+
+/// SSE：推送任务事件；可按会话过滤
+async fn events(State(rt): State<AppState>, Query(q): Query<EventQuery>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let stream = BroadcastStream::new(rt.bus.subscribe()).filter_map(move |item| {
+        // 订阅者落后太多时 broadcast 会返回 Lagged 错误，这里直接跳过
+        let ev = item.ok()?;
+        if q.conversation_id.as_ref().is_some_and(|c| *c != ev.conversation_id) {
+            return None;
+        }
+        Some(Ok(Event::default().event("task_event").json_data(&ev).unwrap_or_default()))
+    });
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}

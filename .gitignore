@@ -1,0 +1,7 @@
+/target
+/data
+/workspace
+/config.toml
+/evals/results
+web/node_modules
+web/dist

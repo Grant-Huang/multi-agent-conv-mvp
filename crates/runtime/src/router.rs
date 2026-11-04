@@ -1,0 +1,151 @@
+//! Router：给定任务目标，选择执行角色、判断任务类别、所需工具和风险。
+//!
+//! 流程：Intent Classifier（LLM 结构化输出） → Policy（确定性规则） → 返回给编排层派发。
+//! Router 自己不执行任何工具，只产出"经过校验的路由决策"。
+
+use std::sync::Arc;
+
+use an_core::{PolicyVerdict, Role, RouteDecision};
+use an_llm::{ChatMessage, LlmClient, StructuredError};
+use serde_json::{json, Value};
+
+use crate::policy::Policy;
+use crate::registry::AgentRegistry;
+
+pub struct Router {
+    llm: LlmClient,
+    registry: Arc<AgentRegistry>,
+    /// General Agent 可用的工具名（用于约束 required_tools）
+    tool_names: Vec<String>,
+    policy: Policy,
+}
+
+/// 路由成功的结果
+pub struct RouteOutcome {
+    pub decision: RouteDecision,
+    pub policy: PolicyVerdict,
+    pub raw_outputs: Vec<String>,
+    pub attempts: u32,
+    pub latency_ms: u64,
+}
+
+/// 路由失败：模型输出不合格，或 Policy 拒绝
+pub struct RouteFailure {
+    pub message: String,
+    pub decision: Option<RouteDecision>,
+    pub raw_outputs: Vec<String>,
+    pub attempts: u32,
+    pub latency_ms: u64,
+}
+
+impl Router {
+    pub fn new(llm: LlmClient, registry: Arc<AgentRegistry>, tool_names: Vec<String>, policy: Policy) -> Self {
+        Self { llm, registry, tool_names, policy }
+    }
+
+    /// 路由用的 JSON Schema：角色和工具都用 enum 限定在注册表范围内
+    fn schema(&self, roles: &[Role]) -> Value {
+        let role_enum: Vec<&str> = roles.iter().map(|r| r.as_str()).collect();
+        json!({
+            "type": "object",
+            "properties": {
+                "task_class": { "type": "string", "enum": ["L1", "L2", "L3", "L4"] },
+                "execution_role": { "type": "string", "enum": role_enum },
+                "required_tools": { "type": "array", "items": { "type": "string", "enum": self.tool_names } },
+                "risk_level": { "type": "string", "enum": ["low", "medium", "high"] },
+                "reason": { "type": "string" }
+            },
+            "required": ["task_class", "execution_role", "required_tools", "risk_level", "reason"]
+        })
+    }
+
+    fn system_prompt(&self, roles: &[Role]) -> String {
+        let agents = self
+            .registry
+            .cards()
+            .into_iter()
+            .filter(|c| roles.contains(&c.role))
+            .map(|c| format!("- {}：{}", c.role.as_str(), c.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "你是 AgentNexus 的任务路由器（Router）。你只负责分类和选择执行者，不负责完成任务。\n\n\
+             ## 可选执行角色\n{agents}\n\n\
+             ## General 可用工具\n{tools}\n\n\
+             ## 任务类别（task_class）\n\
+             - L1：不需要工具，也不需要生成文档\n\
+             - L2：需要工具（查询、计算、读文件等），不需要生成文档\n\
+             - L3：不需要工具，但需要生成文档/报告\n\
+             - L4：既需要工具，也需要生成文档/报告\n\n\
+             ## 选择规则\n\
+             1. 需要修改代码仓库、写程序、修 bug、跑测试 → coding；\n\
+             2. 用户要求审查/评估/挑错已有内容 → reviewer；\n\
+             3. 其他（问答、分析、计算、读写普通文件、写文档）→ general；\n\
+             4. required_tools 只列 general 真正需要的工具，其他角色留空数组；\n\
+             5. risk_level：只读操作为 low；会写文件或改代码为 medium；删除数据、对外发送、涉及生产环境为 high；\n\
+             6. reason 用一句中文说明理由。",
+            tools = if self.tool_names.is_empty() { "无".into() } else { self.tool_names.join(", ") },
+        )
+    }
+
+    /// 执行路由：分类 + 规则校验
+    pub async fn route(&self, task_goal: &str, context: &str) -> Result<RouteOutcome, RouteFailure> {
+        let roles = self.registry.enabled_roles();
+        if roles.is_empty() {
+            return Err(RouteFailure {
+                message: "没有可用的执行 Agent".into(),
+                decision: None,
+                raw_outputs: vec![],
+                attempts: 0,
+                latency_ms: 0,
+            });
+        }
+
+        let user = if context.is_empty() {
+            format!("任务目标：{task_goal}")
+        } else {
+            format!("任务目标：{task_goal}\n\n对话背景：\n{context}")
+        };
+        let messages = [ChatMessage::system(self.system_prompt(&roles)), ChatMessage::user(user)];
+        let tool_names = self.tool_names.clone();
+
+        // 业务校验：工具名必须存在（即使有语法约束，prompt_only 模式下也需要）
+        let structured = self
+            .llm
+            .chat_json::<RouteDecision, _>(&messages, "route_decision", &self.schema(&roles), |d| {
+                if let Some(bad) = d.required_tools.iter().find(|t| !tool_names.contains(t)) {
+                    return Err(format!("工具 {bad} 不存在，可用工具：{}", tool_names.join(", ")));
+                }
+                if !roles.contains(&d.execution_role) {
+                    return Err(format!("角色 {} 不可用", d.execution_role.as_str()));
+                }
+                Ok(())
+            })
+            .await
+            .map_err(|e: StructuredError| RouteFailure {
+                message: e.message,
+                decision: None,
+                raw_outputs: e.raw_outputs,
+                attempts: e.attempts,
+                latency_ms: e.latency_ms,
+            })?;
+
+        let mut decision = structured.value;
+        match self.policy.evaluate(&mut decision, &self.registry) {
+            Ok(policy) => Ok(RouteOutcome {
+                decision,
+                policy,
+                raw_outputs: structured.raw_outputs,
+                attempts: structured.attempts,
+                latency_ms: structured.latency_ms,
+            }),
+            Err(message) => Err(RouteFailure {
+                message,
+                decision: Some(decision),
+                raw_outputs: structured.raw_outputs,
+                attempts: structured.attempts,
+                latency_ms: structured.latency_ms,
+            }),
+        }
+    }
+}

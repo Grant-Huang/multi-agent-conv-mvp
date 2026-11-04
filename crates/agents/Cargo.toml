@@ -1,0 +1,19 @@
+[package]
+name = "an-agents"
+version.workspace = true
+edition.workspace = true
+
+# 三个 Agent 的实现：General（内置 LLM + 工具）、Reviewer（内置只读评估）、Coding（外部 Codex CLI）
+[dependencies]
+an-core.workspace = true
+an-llm.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

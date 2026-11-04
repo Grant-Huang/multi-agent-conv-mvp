@@ -1,0 +1,14 @@
+[package]
+name = "an-core"
+version.workspace = true
+edition.workspace = true
+
+# 核心数据结构与 trait，不依赖任何 LLM / Web 库
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+ts-rs.workspace = true

@@ -1,0 +1,257 @@
+//! 端到端测试：用一个"假的 OpenAI 兼容服务"代替 llama.cpp，跑通完整流程。
+//!
+//! 覆盖：直接回答、格式错误重试、委派 General（工具调用 + 写文件 + 审查）、
+//! Coding Agent 子进程（用 sh 脚本冒充 codex）+ git diff 证据、高风险审批、
+//! 中途取消（follow_up）、SSE 事件流、路由日志。
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+use an_runtime::config::AppConfig;
+use an_runtime::store::Store;
+use an_runtime::Runtime;
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use serde_json::{json, Value};
+
+// ───────────────────────── 假 LLM 服务 ─────────────────────────
+
+/// 根据请求里的 schema 名称和消息内容，返回预设的回复
+fn mock_reply(req: &Value, format_calls: &AtomicUsize) -> String {
+    let schema = req["response_format"]["json_schema"]["name"].as_str().unwrap_or("");
+    let msgs = req["messages"].as_array().unwrap();
+    let all_text: String = msgs.iter().map(|m| m["content"].as_str().unwrap_or("")).collect::<Vec<_>>().join("\n");
+    // 最后一条"真正的"用户消息（跳过重试时追加的格式错误反馈）
+    let last_user = msgs
+        .iter()
+        .rev()
+        .filter(|m| m["role"] == "user")
+        .filter_map(|m| m["content"].as_str())
+        .find(|c| !c.starts_with("上面的输出不合格"))
+        .unwrap_or("");
+    let system = msgs[0]["content"].as_str().unwrap_or("");
+
+    match schema {
+        "turn_decision" => {
+            let empty = json!({"action":"","reply":"","question":"","task_goal":"","task_id":"","follow_up_kind":"","change":""});
+            let mut d = empty;
+            if last_user.contains("格式测试") {
+                // 第一次故意输出非法内容，测试重试
+                if format_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    return "我觉得应该直接回答".into();
+                }
+                d["action"] = "respond".into();
+                d["reply"] = "格式修正后的回答".into();
+            } else if last_user.contains("取消") {
+                // 从 system prompt 的"进行中的任务"里找 task_id
+                let id = system.split("task_id=").nth(1).and_then(|s| s.split('，').next()).unwrap_or("");
+                d["action"] = "follow_up".into();
+                d["task_id"] = id.into();
+                d["follow_up_kind"] = "cancel".into();
+            } else if last_user.contains("你好") {
+                d["action"] = "respond".into();
+                d["reply"] = "你好！有什么可以帮你？".into();
+            } else {
+                d["action"] = "delegate".into();
+                d["task_goal"] = last_user.into();
+            }
+            d.to_string()
+        }
+        "route_decision" => {
+            // 只看"任务目标："这一行，忽略对话背景
+            let goal = last_user.lines().next().unwrap_or("");
+            let (role, class, tools, risk) = if goal.contains("代码") {
+                ("coding", "L2", json!([]), "medium")
+            } else if goal.contains("删除") {
+                ("general", "L2", json!(["list_files"]), "high")
+            } else {
+                ("general", "L4", json!(["write_file"]), "low")
+            };
+            json!({"task_class": class, "execution_role": role, "required_tools": tools, "risk_level": risk, "reason": "测试路由"}).to_string()
+        }
+        "general_step" => {
+            if all_text.contains("工具 write_file 的返回结果") || all_text.contains("工具 list_files 的返回结果") {
+                json!({"thought":"完成","action":"final","tool":"","args":{},"answer":"报告已写入 reports/r.md"}).to_string()
+            } else if all_text.contains("删除") {
+                json!({"thought":"先看看","action":"tool_call","tool":"list_files","args":{"path":""},"answer":""}).to_string()
+            } else {
+                json!({"thought":"写报告","action":"tool_call","tool":"write_file","args":{"path":"reports/r.md","content":"# 报告\n内容"},"answer":""}).to_string()
+            }
+        }
+        "review_verdict" => json!({"verdict":"pass","issues":[],"comment":"符合要求"}).to_string(),
+        // 没有 response_format：Composer 生成交付消息
+        _ => "【交付】任务已完成，详见产物。".into(),
+    }
+}
+
+async fn start_mock_llm() -> String {
+    let format_calls = Arc::new(AtomicUsize::new(0));
+    let app = Router::new()
+        .route(
+            "/v1/chat/completions",
+            post(move |Json(req): Json<Value>| {
+                let fc = format_calls.clone();
+                async move {
+                    let content = mock_reply(&req, &fc);
+                    Json(json!({"choices": [{"message": {"role": "assistant", "content": content}}]}))
+                }
+            }),
+        )
+        .route("/v1/models", get(|| async { Json(json!({"data": [{"id": "mock-model"}]})) }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}/v1")
+}
+
+// ───────────────────────── 测试辅助 ─────────────────────────
+
+struct Env {
+    base: String,
+    http: reqwest::Client,
+    code_dir: std::path::PathBuf,
+}
+
+async fn setup() -> Env {
+    let llm_url = start_mock_llm().await;
+    let tmp = std::env::temp_dir().join(an_core::new_id("an-e2e"));
+    let code_dir = tmp.join("code");
+    std::fs::create_dir_all(&code_dir).unwrap();
+    // 代码目录初始化为 git 仓库，用于验证 diff 证据
+    let git = |args: &[&str]| std::process::Command::new("git").arg("-C").arg(&code_dir).args(args).output().unwrap();
+    git(&["init", "-q"]);
+    git(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]);
+
+    // 用 sh 脚本冒充 codex：$0=最后回复文件，$1=任务描述；描述里含"慢"时睡 30 秒（用于测试取消）
+    let config_toml = format!(
+        r#"
+[llm]
+base_url = "{llm_url}"
+model = "mock"
+max_retries = 2
+
+[agents.general]
+workspace_dir = "{ws}"
+
+[agents.coding]
+command = "sh"
+args = ["-c", "case \"$1\" in *慢*) sleep 30;; esac; echo 正在修改代码; echo hello > main.txt; echo '已添加 main.txt' > \"$0\"", "{{last_message_file}}", "{{prompt}}"]
+workdir = "{code}"
+timeout_secs = 60
+"#,
+        ws = tmp.join("files").display(),
+        code = code_dir.display(),
+    );
+    let config: AppConfig = toml::from_str(&config_toml).unwrap();
+    let rt = Arc::new(Runtime::new(config, Store::open(std::path::Path::new(":memory:")).unwrap()).unwrap());
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, an_server::api(rt)).await.unwrap() });
+    Env { base: format!("http://{addr}"), http: reqwest::Client::new(), code_dir }
+}
+
+impl Env {
+    async fn post(&self, path: &str, body: Value) -> Value {
+        let r = self.http.post(format!("{}{path}", self.base)).json(&body).send().await.unwrap();
+        let status = r.status();
+        let v: Value = r.json().await.unwrap();
+        assert!(status.is_success(), "POST {path} 失败：{status} {v}");
+        v
+    }
+    async fn get(&self, path: &str) -> Value {
+        self.http.get(format!("{}{path}", self.base)).send().await.unwrap().json().await.unwrap()
+    }
+    /// 轮询直到任务状态满足条件（测试里用轮询即可）
+    async fn wait_status(&self, task_id: &str, want: &[&str]) -> Value {
+        for _ in 0..100 {
+            let d = self.get(&format!("/api/tasks/{task_id}")).await;
+            if want.contains(&d["task"]["status"].as_str().unwrap_or("")) {
+                return d;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("任务 {task_id} 未达到状态 {want:?}：{}", self.get(&format!("/api/tasks/{task_id}")).await);
+    }
+}
+
+// ───────────────────────── 测试 ─────────────────────────
+
+#[tokio::test]
+async fn full_flow() {
+    let env = setup().await;
+
+    // 健康检查
+    let h = env.get("/api/health").await;
+    assert_eq!(h["llm"]["ok"], true);
+    assert_eq!(h["agents"].as_array().unwrap().len(), 3);
+
+    let conv = env.post("/api/conversations", json!({})).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+
+    // SSE：先订阅
+    let mut sse = env.http.get(format!("{}/api/events?conversation_id={cid}", env.base)).send().await.unwrap();
+
+    // 1. 直接回答
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "你好"})).await;
+    assert_eq!(out["decision"]["action"], "respond");
+    assert_eq!(out["reply"]["content"], "你好！有什么可以帮你？");
+
+    // 2. 格式错误 → 重试成功
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "格式测试"})).await;
+    assert_eq!(out["reply"]["content"], "格式修正后的回答");
+    let logs = env.get("/api/route-logs").await;
+    assert_eq!(logs[0]["attempts"], 2, "应该重试过一次：{}", logs[0]);
+
+    // 3. 委派 General：工具调用写文件 → Reviewer 审查 → 完成 → 交付消息
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "帮我写一份周报"})).await;
+    assert_eq!(out["decision"]["action"], "delegate");
+    let tid = out["task"]["id"].as_str().unwrap().to_string();
+    let d = env.wait_status(&tid, &["COMPLETED", "FAILED"]).await;
+    assert_eq!(d["task"]["status"], "COMPLETED", "{d}");
+    assert_eq!(d["task"]["result"]["artifacts"][0]["name"], "reports/r.md");
+    assert_eq!(d["task"]["review"]["verdict"], "pass"); // L4 任务需要审查
+    let statuses: Vec<_> = d["events"].as_array().unwrap().iter().filter_map(|e| e["status"].as_str()).collect();
+    assert_eq!(statuses, ["CREATED", "QUEUED", "RUNNING", "VERIFYING", "COMPLETED"]);
+    tokio::time::sleep(Duration::from_millis(200)).await; // 等 Composer 写入交付消息
+    let msgs = env.get(&format!("/api/conversations/{cid}/messages")).await;
+    let last = msgs.as_array().unwrap().last().unwrap();
+    assert_eq!(last["content"], "【交付】任务已完成，详见产物。");
+    assert_eq!(last["task_id"], tid.as_str());
+
+    // SSE 应该收到事件
+    let chunk = tokio::time::timeout(Duration::from_secs(2), sse.chunk()).await.unwrap().unwrap().unwrap();
+    assert!(String::from_utf8_lossy(&chunk).contains("task_event"));
+
+    // 4. Coding Agent：子进程 + git diff 证据 + 审查
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "帮我改代码，加一个文件"})).await;
+    assert_eq!(out["task"]["role"], "coding");
+    let tid = out["task"]["id"].as_str().unwrap().to_string();
+    let d = env.wait_status(&tid, &["COMPLETED", "FAILED"]).await;
+    assert_eq!(d["task"]["status"], "COMPLETED", "{d}");
+    assert_eq!(d["task"]["result"]["summary"], "已添加 main.txt");
+    assert!(d["task"]["result"]["artifacts"][0]["content"].as_str().unwrap().contains("main.txt"));
+    assert!(env.code_dir.join("main.txt").exists());
+
+    // 5. 高风险 → 等待审批 → 批准后执行
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "删除旧数据"})).await;
+    let tid = out["task"]["id"].as_str().unwrap().to_string();
+    assert_eq!(out["task"]["status"], "NEEDS_HUMAN");
+    env.post(&format!("/api/tasks/{tid}/approve"), json!({})).await;
+    let d = env.wait_status(&tid, &["COMPLETED", "FAILED"]).await;
+    assert_eq!(d["task"]["status"], "COMPLETED", "{d}");
+
+    // 6. 中途取消：慢任务执行中，用户说"取消"
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "改代码，这个会很慢"})).await;
+    let tid = out["task"]["id"].as_str().unwrap().to_string();
+    env.wait_status(&tid, &["RUNNING"]).await;
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "算了，取消吧"})).await;
+    assert_eq!(out["decision"]["action"], "follow_up", "{out}");
+    let d = env.wait_status(&tid, &["CANCELLED"]).await;
+    assert_eq!(d["task"]["status"], "CANCELLED");
+
+    // 7. 路由日志：每轮对话一条
+    let logs = env.get("/api/route-logs").await;
+    assert_eq!(logs.as_array().unwrap().len(), 7);
+}

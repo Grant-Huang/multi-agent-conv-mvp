@@ -1,0 +1,32 @@
+[package]
+name = "an-server"
+version.workspace = true
+edition.workspace = true
+
+# HTTP API + SSE 事件流 + 静态前端；另含路由评测工具 an-eval
+[[bin]]
+name = "agentnexus"
+path = "src/main.rs"
+
+[[bin]]
+name = "an-eval"
+path = "src/bin/eval.rs"
+
+[dependencies]
+an-core.workspace = true
+an-llm.workspace = true
+an-runtime.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+reqwest.workspace = true
+toml.workspace = true

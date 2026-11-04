@@ -1,0 +1,37 @@
+# AgentNexus MVP —— Rust 工作区
+# crates 之间的依赖方向（只能从上往下依赖）：
+#   server  ->  runtime  ->  agents  ->  llm  ->  core
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/llm", "crates/agents", "crates/runtime", "crates/server"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+
+# 统一管理第三方依赖版本，各 crate 用 `xxx.workspace = true` 引用
+[workspace.dependencies]
+an-core = { path = "crates/core" }
+an-llm = { path = "crates/llm" }
+an-agents = { path = "crates/agents" }
+an-runtime = { path = "crates/runtime" }
+
+anyhow = "1"
+thiserror = "2"
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["fs", "trace"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ts-rs = { version = "12", features = ["serde-json-impl"] }

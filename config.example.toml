@@ -1,0 +1,55 @@
+# AgentNexus MVP 配置模板。复制为 config.toml 后按需修改：
+#   cp config.example.toml config.toml
+
+[server]
+bind = "127.0.0.1:8787"            # 后端监听地址；前端构建后也从这里访问
+db_path = "data/agentnexus.db"     # SQLite 数据库
+static_dir = "web/dist"            # 前端构建产物（npm run build 之后才有）
+
+# ───── 本地模型（llama.cpp 的 OpenAI 兼容接口）─────
+[llm]
+base_url = "http://127.0.0.1:8098/v1"
+api_key = ""                       # llama.cpp 默认不需要
+model = "local"                    # llama.cpp 单模型时模型名基本被忽略
+temperature = 0.2
+max_tokens = 2048
+timeout_secs = 180
+# 结构化输出方式：
+#   json_schema  —— OpenAI 标准写法，较新的 llama.cpp 会把 schema 转成语法约束（推荐）
+#   json_object  —— llama.cpp 旧的扩展写法 {"type":"json_object","schema":...}
+#   prompt_only  —— 不做语法约束，只靠提示词（任何服务都能用，小模型格式错误会多）
+structured_mode = "json_schema"
+max_retries = 2                    # 输出不合格时把错误反馈给模型重试的次数
+
+# ───── 按角色指定不同模型（可选）─────
+# 只有一个 llama.cpp 实例时不用管。多个模型（例如用 llama-swap 按模型名切换）时，
+# 可以让 Router 用更小更快的模型，General 用更大的模型。
+[models]
+# conversation = "qwen3-4b"
+# router = "qwen3-1.7b"
+# general = "qwen3-8b"
+# reviewer = "qwen3-8b"
+
+# ───── Agents ─────
+[agents.general]
+enabled = true
+max_steps = 6                      # 工具循环最大步数
+workspace_dir = "workspace/files"  # 文件工具只能读写这个目录
+
+[agents.reviewer]
+enabled = true
+
+[agents.coding]
+enabled = true
+command = "~/.npm-global/bin/codex"   # 支持 ~ 开头
+# 参数模板，占位符：{prompt} 任务描述、{workdir} 工作目录、{last_message_file} Codex 最后回复的输出文件
+# 不同版本的 codex 参数可能不同，请先运行 `codex exec --help` 核对
+args = ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "--cd", "{workdir}", "--output-last-message", "{last_message_file}", "{prompt}"]
+workdir = "workspace/code"         # 建议指向一个独立的 git 仓库（会收集 git diff 作为审查证据）
+timeout_secs = 900
+
+[orchestrator]
+max_review_rounds = 1              # Reviewer 判 fail 后最多返工几轮
+history_messages = 12              # 每轮带上最近多少条消息
+task_timeout_secs = 1800           # 单个任务总超时
+approval_risk = "high"             # 风险达到该等级需人工审批：low / medium / high
