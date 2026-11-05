@@ -217,7 +217,12 @@ reviewer = "local"
   - 9B 下线，空闲内存约 28.5GB → 35B 加载后约 24GB；`config.toml` 撤销 conversation 指向 9B
   - 代码里"按角色配置 `base_urls`"保留（以后接别的服务仍可用），目前不使用
   - 探测脚本：`scripts/probe_llama_slots.py`、`scripts/probe_llama_cancel.py`（升级 llama.cpp 后要重跑）
-- [ ] **pre-M3.1 后端与路由配置化（先做，后面的步骤都读这份配置）**
+- [x] **pre-M3.1 后端与路由配置化（先做，后面的步骤都读这份配置）**（2026-11-05 完成）
+  - 实现：`crates/llm/src/backend.rs`（`BackendConfig` / `validate` / `effective_slots` / `accepts_background`）、`crates/runtime/src/backends.rs`（`Backends::build`、`LlmRole`、`RoleBinding`、`log_bindings`）；`Runtime` 用 `backends.client(role)` 取客户端；`LlmClient` 增加 `backend / role / priority`（调度和埋点要用）
+  - 默认值：`slots` 已填、两个槽位列表都不写时，`slots=1` 前后台共用槽位 0，否则前台 `[0]`、后台其余；`reply` 路由不写则跟 `conversation`
+  - 限制：写了 `[backends]` 就不能再写 `[models.base_urls]`（报错，说明改用哪种写法）；`/props` 校验槽位数需要异步请求，**挪到 pre-M3.6**
+  - 本机 `config.toml` 已迁移为方案 A；`config.example.toml` 含方案 A / B 示例（注释）
+  - 测试：`an-llm` 6 个、`an-runtime::backends` 14 个（旧配置兼容、A / B / C、非法组合、环境变量缺失、未知字段）
   - 在 `AppConfig` 增加 `[backends.<名字>]` 与 `[routing]`（schema 见上文"后端与调度配置化"）；`runtime` 装配时按角色查路由、取后端配置，构建 `LlmClient`
   - **兼容旧配置**：没有 `[backends]` 时用 `[llm]` 合成 `default` 后端，`[models]`、`[models.base_urls]` 继续生效；现有 `config.toml` 不改也能跑，行为不变
   - `api_key_env` 只读环境变量，配置文件和日志都不出现密钥

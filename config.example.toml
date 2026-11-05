@@ -39,6 +39,50 @@ max_retries = 2                    # 输出不合格时把错误反馈给模型�
 # general = "http://127.0.0.1:8200/v1"
 # reviewer = "http://127.0.0.1:8200/v1"
 
+# ───── 后端与路由（可选，推荐）─────
+# 后端 = 一个推理服务 + 它的限流方式。不写 [backends] 时，用上面的 [llm] 合成一个不限并发的 default 后端，行为和以前一样。
+# 写了 [backends] 就不能再用 [models.base_urls]（旧写法）；[models] 里的模型名仍然可以覆盖。
+# 密钥只能从环境变量读取（api_key_env 写变量名，不要把密钥写进这个文件）。
+#
+# 方案 A：全本地。35B 开 5 个槽位（llama-server -np 5），槽位 0 专给前台对话，1-4 给后台任务
+# [backends.local]
+# kind = "llama_cpp"
+# base_url = "http://127.0.0.1:8200/v1"
+# slots = 5                          # 必须和 llama-server 的 -np 一致
+# interactive_slots = [0]            # 前台优先用这些槽位；不写则 slots=1 时共用 0，否则前台 [0]、后台其余
+# background_slots = [1, 2, 3, 4]    # 后台任务只能用这些槽位；写 [] 表示这个后端不接后台角色
+# borrow_idle = true                 # 前台槽位忙时，可以借用空闲的后台槽位（后台不会借前台槽位）
+# [routing]
+# conversation = "local"
+# router = "local"
+# general = "local"
+# reviewer = "local"
+#
+# 方案 B：本地模型只做前台（2-4 个槽位全给对话），后台任务用云端模型
+# [backends.local]
+# kind = "llama_cpp"
+# base_url = "http://127.0.0.1:8200/v1"
+# slots = 3
+# interactive_slots = [0, 1, 2]
+# background_slots = []
+# [backends.cloud]
+# kind = "openai"
+# base_url = "https://api.example.com/v1"
+# model = "cloud-model"
+# api_key_env = "CLOUD_API_KEY"      # 启动前 export CLOUD_API_KEY=...
+# max_inflight = 8                   # 同时最多 8 个请求，0 = 不限
+# reserved_interactive = 1           # 其中 1 个预留给前台
+# rpm = 60                           # 每分钟请求数上限，0 = 不限
+# tpm = 200000                       # 每分钟 token 上限，0 = 不限
+# [routing]
+# conversation = "local"
+# router = "local"
+# general = "cloud"
+# reviewer = "cloud"
+#
+# 其他可选项：model、structured_mode、context_tokens（0 = 从服务读取）、total_secs（单次请求总超时）、
+# extra_body = { chat_template_kwargs = { enable_thinking = false } }（附加到每个请求体）
+
 # ───── 前台行为 ─────
 [conversation]
 # 用户发起的"审查 / 评估 / 检查"类请求怎么处理：

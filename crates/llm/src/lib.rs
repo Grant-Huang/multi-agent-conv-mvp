@@ -7,6 +7,11 @@
 //! 3. 校验 + 重试：解析失败或业务校验不通过时，把错误信息反馈给模型再试一次
 //!    （借鉴 Pydantic AI 的"结构化输出 + 闭环重试"）。
 
+mod backend;
+
+pub use backend::{Backend, BackendConfig, BackendKind, Priority};
+
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -49,6 +54,21 @@ pub struct LlmConfig {
     /// 结构化输出失败后最多重试几次
     #[serde(default = "default_retries")]
     pub max_retries: u32,
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            base_url: String::new(),
+            api_key: String::new(),
+            model: String::new(),
+            temperature: default_temperature(),
+            max_tokens: None,
+            timeout_secs: default_timeout(),
+            structured_mode: StructuredMode::default(),
+            max_retries: default_retries(),
+        }
+    }
 }
 
 fn default_temperature() -> f32 {
@@ -110,6 +130,11 @@ impl std::error::Error for StructuredError {}
 pub struct LlmClient {
     http: reqwest::Client,
     cfg: LlmConfig,
+    /// 所属后端（按配置路由时才有；测试里直接 `new` 的客户端没有）
+    backend: Option<Arc<Backend>>,
+    /// 角色名（conversation / reply / router / general / reviewer），埋点用
+    role: String,
+    priority: Priority,
 }
 
 impl LlmClient {
@@ -118,7 +143,28 @@ impl LlmClient {
             .timeout(Duration::from_secs(cfg.timeout_secs))
             .build()
             .context("创建 HTTP 客户端失败")?;
-        Ok(Self { http, cfg })
+        Ok(Self { http, cfg, backend: None, role: String::new(), priority: Priority::Interactive })
+    }
+
+    /// 复制一个绑定到某个后端、角色和优先级的客户端
+    pub fn with_backend(&self, backend: Arc<Backend>, role: &str, priority: Priority) -> Self {
+        let mut c = self.clone();
+        c.backend = Some(backend);
+        c.role = role.to_string();
+        c.priority = priority;
+        c
+    }
+
+    pub fn backend(&self) -> Option<&Arc<Backend>> {
+        self.backend.as_ref()
+    }
+
+    pub fn role(&self) -> &str {
+        &self.role
+    }
+
+    pub fn priority(&self) -> Priority {
+        self.priority
     }
 
     /// 复制一个使用其他模型名的客户端（按角色配置不同模型时使用）

@@ -10,6 +10,7 @@
 //!                          Store(SQLite) + Bus(事件)
 //! ```
 
+pub mod backends;
 pub mod bus;
 pub mod composer;
 pub mod config;
@@ -30,6 +31,7 @@ use an_core::Role;
 use an_llm::LlmClient;
 use anyhow::Result;
 
+use crate::backends::{Backends, LlmRole};
 use crate::bus::Bus;
 use crate::composer::Composer;
 use crate::config::AppConfig;
@@ -54,8 +56,10 @@ pub struct Runtime {
     pub nodes: Arc<NodeManager>,
     /// 最近的 WARN / ERROR（诊断接口用）
     pub diagnostics: Arc<an_observe::Diagnostics>,
-    /// 默认 LLM 客户端（健康检查用）
+    /// 前台（conversation 角色）的 LLM 客户端（健康检查用）
     pub llm: LlmClient,
+    /// 后端与路由（角色 → 后端 → 地址 / 模型 / 限流方式）
+    pub backends: Arc<Backends>,
 }
 
 impl Runtime {
@@ -73,14 +77,10 @@ impl Runtime {
         }
         let bus = Arc::new(Bus::new(store.clone()));
 
-        // 按角色创建 LLM 客户端（未单独配置的角色使用默认模型）
-        let base = LlmClient::new(config.llm.clone())?;
-        let llm_for = |model: Option<&str>, url: Option<&str>| {
-            let c = url.map(|u| base.with_base_url(u)).unwrap_or_else(|| base.clone());
-            model.map(|m| c.with_model(m)).unwrap_or(c)
-        };
-        let m = &config.models;
-        let u = &m.base_urls;
+        // 按角色创建 LLM 客户端：角色 → 后端（[routing]）→ 地址 / 模型 / 限流方式（[backends]、[models]）
+        let backends = Arc::new(Backends::build(&config)?);
+        backends.log_bindings();
+        let llm_for = |role: LlmRole| backends.client(role);
 
         // 注册 Agent（顺序即未配置执行组时的默认选择顺序：内置 → Codex → 本机 ACP → 节点）
         let registry = AgentRegistry::new(config.agents.assign_map()?);
@@ -92,9 +92,9 @@ impl Runtime {
             let tools = ToolRegistry::with_builtin(&a.general.workspace_dir)?;
             tool_names = tools.names();
             tool_listing = tools.infos().iter().map(|t| format!("  - {}：{}", t.name, t.description)).collect::<Vec<_>>().join("\n");
-            registry.register(Arc::new(GeneralAgent::new(llm_for(m.general.as_deref(), u.general.as_deref()), tools, a.general.max_steps, a.general.max_concurrent)));
+            registry.register(Arc::new(GeneralAgent::new(llm_for(LlmRole::General), tools, a.general.max_steps, a.general.max_concurrent)));
         }
-        let reviewer = a.reviewer.enabled.then(|| Arc::new(ReviewerAgent::new(llm_for(m.reviewer.as_deref(), u.reviewer.as_deref()))));
+        let reviewer = a.reviewer.enabled.then(|| Arc::new(ReviewerAgent::new(llm_for(LlmRole::Reviewer))));
         if let Some(r) = &reviewer {
             registry.register(r.clone());
         }
@@ -117,23 +117,20 @@ impl Runtime {
         nodes.load_saved()?;
 
         let o = &config.orchestrator;
-        let router = Arc::new(Router::new(llm_for(m.router.as_deref(), u.router.as_deref()), registry.clone(), tool_names, Policy { approval_risk: o.approval_risk }));
+        let router = Arc::new(Router::new(llm_for(LlmRole::Router), registry.clone(), tool_names, Policy { approval_risk: o.approval_risk }));
         let orchestrator = Arc::new(Orchestrator::new(
             store.clone(),
             bus.clone(),
             registry.clone(),
             reviewer,
-            Composer::new(llm_for(m.conversation.as_deref(), u.conversation.as_deref())),
+            Composer::new(llm_for(LlmRole::Conversation)),
             o.max_review_rounds,
             Duration::from_secs(o.task_timeout_secs),
         ));
         let conversation = Arc::new(ConversationRuntime::new(conversation::ConversationDeps {
-            llm: llm_for(m.conversation.as_deref(), u.conversation.as_deref()),
+            llm: llm_for(LlmRole::Conversation),
             // 回复模型：没单独配置时与前台判断用同一个模型（含服务地址）
-            reply_llm: {
-                let (model, url) = m.reply_target();
-                llm_for(model, url)
-            },
+            reply_llm: llm_for(LlmRole::Reply),
             store: store.clone(),
             bus: bus.clone(),
             router: router.clone(),
@@ -145,7 +142,7 @@ impl Runtime {
         }));
         tracing::info!(event = "conversation.config", review_requests = config.conversation.review_requests.as_str(), stream_replies = config.conversation.stream_replies);
 
-        Ok(Self { config, store, bus, registry, router, orchestrator, conversation, nodes, diagnostics, llm: base })
+        Ok(Self { config, store, bus, registry, router, orchestrator, conversation, nodes, diagnostics, llm: backends.client(LlmRole::Conversation), backends: backends.clone() })
     }
 
     /// 启动后台任务：节点心跳、局域网发现。由 main 在 tokio 运行时中调用

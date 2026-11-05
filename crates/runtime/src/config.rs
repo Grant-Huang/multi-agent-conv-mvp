@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use an_agents::{AcpConfig, CodingConfig};
 use an_core::Risk;
-use an_llm::LlmConfig;
+use an_llm::{BackendConfig, LlmConfig};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +18,12 @@ pub struct AppConfig {
     /// 按角色覆盖模型名（例如 Router 用更小更快的模型）
     #[serde(default)]
     pub models: ModelOverrides,
+    /// 后端（推理服务 + 限流方式），名字自取；不写时用 `[llm]` 合成一个名为 `default` 的后端
+    #[serde(default)]
+    pub backends: BTreeMap<String, BackendConfig>,
+    /// 角色 → 后端名；没写的角色用 `default` 后端（只有一个后端时用它）
+    #[serde(default)]
+    pub routing: RoutingConfig,
     #[serde(default)]
     pub agents: AgentsConfig,
     #[serde(default)]
@@ -109,6 +115,18 @@ pub struct ModelOverrides {
     /// 各角色的服务地址；不填则使用 `[llm].base_url`
     #[serde(default)]
     pub base_urls: ModelBaseUrls,
+}
+
+/// `[routing]`：每个角色用哪个后端（后端名见 `[backends.<名字>]`）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RoutingConfig {
+    /// 前台判断（也用于汇总任务结果）
+    pub conversation: Option<String>,
+    /// 直接回答用户；不写则与 conversation 相同
+    pub reply: Option<String>,
+    pub router: Option<String>,
+    pub general: Option<String>,
+    pub reviewer: Option<String>,
 }
 
 /// 各角色使用的 llama.cpp 服务地址（模型跑在不同实例/端口时用）
