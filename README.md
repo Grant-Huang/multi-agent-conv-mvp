@@ -16,6 +16,8 @@ Conversation Agent + Router + 3 个执行 Agent 的最小可运行骨架。后�
    审查不通过 → 带问题清单返工 → Composer 生成交付消息 → SSE 推送到前端
 ```
 
+完整设计（架构、数据模型、状态机、时序、接口、配置、已知限制、演进路线）见 [docs/DESIGN.md](docs/DESIGN.md)。
+
 设计原则（来自前期讨论）：
 - **Conversation 和 Router 分开**：Conversation 决定"要不要委派"，Router 决定"派给谁"。
 - **Agents as Tools**：用户只面对 Conversation，Worker 只返回结构化结果。
