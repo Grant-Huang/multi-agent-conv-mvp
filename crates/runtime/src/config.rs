@@ -53,14 +53,19 @@ pub struct ConversationSection {
 
 impl Default for ConversationSection {
     fn default() -> Self {
-        Self { review_requests: Default::default(), stream_replies: true }
+        Self {
+            review_requests: Default::default(),
+            stream_replies: true,
+        }
     }
 }
 
 impl AppConfig {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("无法读取配置文件 {}", path.display()))?;
-        let (cfg, unknown) = Self::parse(&text).with_context(|| format!("配置文件格式错误 {}", path.display()))?;
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("无法读取配置文件 {}", path.display()))?;
+        let (cfg, unknown) =
+            Self::parse(&text).with_context(|| format!("配置文件格式错误 {}", path.display()))?;
         for key in unknown {
             tracing::warn!(event = "config.unknown_key", code = an_core::codes::CONFIG_UNKNOWN_KEY, key = %key, "配置中有不认识的字段，已忽略（可能是拼写错误或旧版本的写法）");
         }
@@ -98,7 +103,11 @@ fn d_static() -> PathBuf {
 }
 impl Default for ServerConfig {
     fn default() -> Self {
-        Self { bind: d_bind(), db_path: d_db(), static_dir: d_static() }
+        Self {
+            bind: d_bind(),
+            db_path: d_db(),
+            static_dir: d_static(),
+        }
     }
 }
 
@@ -146,7 +155,13 @@ impl ModelOverrides {
         if self.reply.is_some() {
             (self.reply.as_deref(), self.base_urls.reply.as_deref())
         } else {
-            (self.conversation.as_deref(), self.base_urls.reply.as_deref().or(self.base_urls.conversation.as_deref()))
+            (
+                self.conversation.as_deref(),
+                self.base_urls
+                    .reply
+                    .as_deref()
+                    .or(self.base_urls.conversation.as_deref()),
+            )
         }
     }
 }
@@ -225,7 +240,12 @@ fn d_ws() -> PathBuf {
 }
 impl Default for GeneralConfig {
     fn default() -> Self {
-        Self { enabled: true, max_steps: d_steps(), workspace_dir: d_ws(), max_concurrent: d_general_concurrency() }
+        Self {
+            enabled: true,
+            max_steps: d_steps(),
+            workspace_dir: d_ws(),
+            max_concurrent: d_general_concurrency(),
+        }
     }
 }
 
@@ -249,7 +269,10 @@ pub struct CodingSection {
 }
 impl Default for CodingSection {
     fn default() -> Self {
-        Self { enabled: true, cfg: CodingConfig::default() }
+        Self {
+            enabled: true,
+            cfg: CodingConfig::default(),
+        }
     }
 }
 
@@ -303,7 +326,10 @@ pub struct AcpSection {
 }
 impl Default for AcpSection {
     fn default() -> Self {
-        Self { auto_detect: true, agents: vec![] }
+        Self {
+            auto_detect: true,
+            agents: vec![],
+        }
     }
 }
 
@@ -322,7 +348,10 @@ fn d_refresh() -> u64 {
 }
 impl Default for NodesSection {
     fn default() -> Self {
-        Self { discovery: true, refresh_secs: d_refresh() }
+        Self {
+            discovery: true,
+            refresh_secs: d_refresh(),
+        }
     }
 }
 
@@ -344,7 +373,10 @@ fn d_log_level() -> String {
 }
 impl Default for LoggingSection {
     fn default() -> Self {
-        Self { dir: d_log_dir(), level: d_log_level() }
+        Self {
+            dir: d_log_dir(),
+            level: d_log_level(),
+        }
     }
 }
 
@@ -363,7 +395,10 @@ mod tests {
         assert!(cfg.agents.assign_map().unwrap().is_empty());
         assert!(cfg.nodes.discovery);
         assert_eq!(cfg.logging.dir, "logs");
-        assert_eq!(cfg.conversation.review_requests, crate::prompts::ReviewMode::Reviewer);
+        assert_eq!(
+            cfg.conversation.review_requests,
+            crate::prompts::ReviewMode::Reviewer
+        );
         assert!(cfg.conversation.stream_replies);
         assert_eq!(cfg.llm.base_url, "http://127.0.0.1:8098/v1");
     }
@@ -375,12 +410,19 @@ mod assign_tests {
 
     #[test]
     fn assign_accepts_one_or_many_and_checks_role() {
-        let a: AgentsConfig = toml::from_str("[assign]\ncoding = \"opencode\"\ngeneral = [\"hermes@a\", \"hermes@b\"]").unwrap();
+        let a: AgentsConfig = toml::from_str(
+            "[assign]\ncoding = \"opencode\"\ngeneral = [\"hermes@a\", \"hermes@b\"]",
+        )
+        .unwrap();
         let m = a.assign_map().unwrap();
         assert_eq!(m["coding"], ["opencode"]);
         assert_eq!(m["general"], ["hermes@a", "hermes@b"]);
         let bad: AgentsConfig = toml::from_str("[assign]\ncodeing = \"x\"").unwrap();
-        assert!(bad.assign_map().unwrap_err().to_string().contains("E_POOL_CONFIG"));
+        assert!(bad
+            .assign_map()
+            .unwrap_err()
+            .to_string()
+            .contains("E_POOL_CONFIG"));
     }
 }
 
@@ -396,13 +438,19 @@ mod model_endpoint_tests {
         let (cfg, unknown) = AppConfig::parse(TWO_SERVERS).unwrap();
         assert!(unknown.is_empty(), "{unknown:?}");
         assert_eq!(cfg.models.conversation.as_deref(), Some("small"));
-        assert_eq!(cfg.models.base_urls.conversation.as_deref(), Some("http://small/v1"));
+        assert_eq!(
+            cfg.models.base_urls.conversation.as_deref(),
+            Some("http://small/v1")
+        );
         assert!(cfg.models.base_urls.general.is_none());
     }
 
     #[test]
     fn unknown_role_in_base_urls_is_reported() {
-        let (_, unknown) = AppConfig::parse("[llm]\nbase_url = \"x\"\nmodel = \"m\"\n[models.base_urls]\nconvo = \"y\"").unwrap();
+        let (_, unknown) = AppConfig::parse(
+            "[llm]\nbase_url = \"x\"\nmodel = \"m\"\n[models.base_urls]\nconvo = \"y\"",
+        )
+        .unwrap();
         assert_eq!(unknown, ["models.base_urls.convo"]);
     }
 

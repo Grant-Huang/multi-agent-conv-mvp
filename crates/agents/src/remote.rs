@@ -39,7 +39,10 @@ pub struct NodeClient {
 impl Default for NodeClient {
     fn default() -> Self {
         // 只限制连接超时；/node/run 是长连接，不能设整体超时（任务超时由编排层控制）
-        let http = reqwest::Client::builder().connect_timeout(Duration::from_secs(5)).build().expect("创建 HTTP 客户端失败");
+        let http = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .expect("创建 HTTP 客户端失败");
         Self { http }
     }
 }
@@ -59,7 +62,10 @@ fn known_code(code: &str) -> &'static str {
         codes::NODE_BUSY,
         codes::NODE_AGENT_NOT_FOUND,
     ];
-    ALL.iter().find(|c| **c == code).copied().unwrap_or(codes::NODE_PROTOCOL)
+    ALL.iter()
+        .find(|c| **c == code)
+        .copied()
+        .unwrap_or(codes::NODE_PROTOCOL)
 }
 
 /// 把非 2xx 响应转换成带错误码的错误
@@ -67,10 +73,15 @@ async fn http_error(resp: reqwest::Response, what: &str) -> AgentError {
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
     let parsed: Option<NodeError> = serde_json::from_str(&body).ok();
-    let msg = parsed.as_ref().map(|e| e.message.clone()).unwrap_or_else(|| an_core::truncate_chars(&body, 300));
+    let msg = parsed
+        .as_ref()
+        .map(|e| e.message.clone())
+        .unwrap_or_else(|| an_core::truncate_chars(&body, 300));
     let code = match status {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => codes::NODE_AUTH,
-        _ => parsed.map(|e| known_code(&e.code)).unwrap_or(codes::NODE_PROTOCOL),
+        _ => parsed
+            .map(|e| known_code(&e.code))
+            .unwrap_or(codes::NODE_PROTOCOL),
     };
     AgentError::new(code, format!("{what}：HTTP {status} {msg}"))
 }
@@ -81,21 +92,40 @@ impl NodeClient {
     }
 
     fn unreachable(address: &str, e: reqwest::Error) -> AgentError {
-        AgentError::new(codes::NODE_UNREACHABLE, format!("无法连接节点 {address}：{e}"))
+        AgentError::new(
+            codes::NODE_UNREACHABLE,
+            format!("无法连接节点 {address}：{e}"),
+        )
     }
 
     /// 读取节点身份（无需认证）
     pub async fn info(&self, address: &str) -> Result<NodeInfo, AgentError> {
-        let resp = self.http.get(Self::url(address, "/node/info")).timeout(Duration::from_secs(5)).send().await.map_err(|e| Self::unreachable(address, e))?;
+        let resp = self
+            .http
+            .get(Self::url(address, "/node/info"))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|e| Self::unreachable(address, e))?;
         if !resp.status().is_success() {
             return Err(http_error(resp, "读取节点信息失败").await);
         }
-        resp.json().await.map_err(|e| AgentError::new(codes::NODE_PROTOCOL, format!("节点信息格式错误：{e}")))
+        resp.json()
+            .await
+            .map_err(|e| AgentError::new(codes::NODE_PROTOCOL, format!("节点信息格式错误：{e}")))
     }
 
     /// 用配对码换取令牌
-    pub async fn pair(&self, address: &str, code: &str, client_name: &str) -> Result<PairResponse, AgentError> {
-        let body = PairRequest { code: code.trim().into(), client_name: client_name.into() };
+    pub async fn pair(
+        &self,
+        address: &str,
+        code: &str,
+        client_name: &str,
+    ) -> Result<PairResponse, AgentError> {
+        let body = PairRequest {
+            code: code.trim().into(),
+            client_name: client_name.into(),
+        };
         let resp = self
             .http
             .post(Self::url(address, "/node/pair"))
@@ -111,7 +141,9 @@ impl NodeClient {
             }
             return Err(e);
         }
-        resp.json().await.map_err(|e| AgentError::new(codes::NODE_PROTOCOL, format!("配对响应格式错误：{e}")))
+        resp.json()
+            .await
+            .map_err(|e| AgentError::new(codes::NODE_PROTOCOL, format!("配对响应格式错误：{e}")))
     }
 
     /// 读取节点上的 agent 列表（也用作心跳）
@@ -127,13 +159,24 @@ impl NodeClient {
         if !resp.status().is_success() {
             return Err(http_error(resp, "读取节点 agent 列表失败").await);
         }
-        resp.json().await.map_err(|e| AgentError::new(codes::NODE_PROTOCOL, format!("agent 列表格式错误：{e}")))
+        resp.json()
+            .await
+            .map_err(|e| AgentError::new(codes::NODE_PROTOCOL, format!("agent 列表格式错误：{e}")))
     }
 }
 
 /// 节点名转成适合放进 agent id 的短名：小写、空白和特殊字符换成 `-`
 pub fn node_slug(name: &str) -> String {
-    let s: String = name.chars().map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' }).collect();
+    let s: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
     s.trim_matches('-').to_string()
 }
 
@@ -167,7 +210,12 @@ impl RemoteAgent {
             disabled_reason,
             ..remote.clone()
         };
-        Self { client, conn, remote_id: remote.id, card }
+        Self {
+            client,
+            conn,
+            remote_id: remote.id,
+            card,
+        }
     }
 
     pub fn node_id(&self) -> &str {
@@ -186,7 +234,10 @@ impl AgentAdapter for RemoteAgent {
         tracing::info!(event = "node.run_start", node_id = %self.conn.node_id, agent_id = %self.card.id, task_id = %task.task_id);
         events.progress(format!("发送到节点 {}（{}）", self.conn.name, address));
         let task_id = task.task_id.clone();
-        let body = RunRequest { agent_id: self.remote_id.clone(), task };
+        let body = RunRequest {
+            agent_id: self.remote_id.clone(),
+            task,
+        };
         let resp = self
             .client
             .http
@@ -204,7 +255,9 @@ impl AgentAdapter for RemoteAgent {
         let mut stream = resp.bytes_stream();
         let mut buf = String::new();
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| AgentError::new(codes::NODE_UNREACHABLE, format!("与节点的连接中断：{e}")))?;
+            let chunk = chunk.map_err(|e| {
+                AgentError::new(codes::NODE_UNREACHABLE, format!("与节点的连接中断：{e}"))
+            })?;
             buf.push_str(&String::from_utf8_lossy(&chunk));
             while let Some(end) = buf.find("\n\n") {
                 let frame: String = buf.drain(..end + 2).collect();
@@ -223,20 +276,35 @@ impl AgentAdapter for RemoteAgent {
                         }
                     }
                     "result" => {
-                        let r: TaskResult = serde_json::from_str(&data)
-                            .map_err(|e| AgentError::new(codes::NODE_PROTOCOL, format!("节点返回的结果格式错误：{e}")))?;
+                        let r: TaskResult = serde_json::from_str(&data).map_err(|e| {
+                            AgentError::new(
+                                codes::NODE_PROTOCOL,
+                                format!("节点返回的结果格式错误：{e}"),
+                            )
+                        })?;
                         tracing::info!(event = "node.run_end", node_id = %self.conn.node_id, task_id = %task_id, agent_id = %self.card.id, status = ?r.status);
                         return Ok(r);
                     }
                     "error" => {
-                        let e: NodeError = serde_json::from_str(&data).unwrap_or(NodeError { code: codes::NODE_PROTOCOL.into(), message: data.clone() });
-                        return Err(AgentError::new(known_code(&e.code), format!("节点 {}：{}", self.conn.name, e.message)).into());
+                        let e: NodeError = serde_json::from_str(&data).unwrap_or(NodeError {
+                            code: codes::NODE_PROTOCOL.into(),
+                            message: data.clone(),
+                        });
+                        return Err(AgentError::new(
+                            known_code(&e.code),
+                            format!("节点 {}：{}", self.conn.name, e.message),
+                        )
+                        .into());
                     }
                     _ => {} // 心跳等其他事件
                 }
             }
         }
-        Err(AgentError::new(codes::NODE_UNREACHABLE, format!("节点 {} 在返回结果前断开了连接", self.conn.name)).into())
+        Err(AgentError::new(
+            codes::NODE_UNREACHABLE,
+            format!("节点 {} 在返回结果前断开了连接", self.conn.name),
+        )
+        .into())
     }
 }
 

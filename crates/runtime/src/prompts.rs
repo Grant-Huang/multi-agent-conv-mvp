@@ -60,7 +60,15 @@ pub fn turn_system_prompt(info: &TurnPromptInfo, active: &[TaskRecord]) -> Strin
     } else {
         active
             .iter()
-            .map(|t| format!("- task_id={}，状态={}，角色={}，目标：{}", t.id, t.status.as_str(), t.role.as_str(), truncate_chars(&t.goal, 120)))
+            .map(|t| {
+                format!(
+                    "- task_id={}，状态={}，角色={}，目标：{}",
+                    t.id,
+                    t.status.as_str(),
+                    t.role.as_str(),
+                    truncate_chars(&t.goal, 120)
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     };
@@ -159,7 +167,10 @@ mod tests {
     use super::*;
 
     fn info(mode: ReviewMode) -> TurnPromptInfo {
-        TurnPromptInfo { tools: "- calculator：计算\n- current_time：时间".into(), review_mode: mode }
+        TurnPromptInfo {
+            tools: "- calculator：计算\n- current_time：时间".into(),
+            review_mode: mode,
+        }
     }
 
     #[test]
@@ -180,17 +191,32 @@ mod tests {
     #[test]
     fn turn_prompt_separates_code_artifacts_from_documents() {
         let p = turn_system_prompt(&info(ReviewMode::Reviewer), &[]);
-        assert!(p.contains("网页（HTML/CSS/JS）"), "生成网页等代码产物应归入代码开发：{p}");
-        assert!(p.contains("Markdown 或纯文本"), "文档应限定为 Markdown 或纯文本：{p}");
-        assert!(p.contains("不要自行指定保存位置"), "改写任务描述时不应替执行者决定保存位置：{p}");
+        assert!(
+            p.contains("网页（HTML/CSS/JS）"),
+            "生成网页等代码产物应归入代码开发：{p}"
+        );
+        assert!(
+            p.contains("Markdown 或纯文本"),
+            "文档应限定为 Markdown 或纯文本：{p}"
+        );
+        assert!(
+            p.contains("不要自行指定保存位置"),
+            "改写任务描述时不应替执行者决定保存位置：{p}"
+        );
     }
 
     #[test]
     fn reply_prompt_lists_real_capabilities_only() {
         let p = reply_system_prompt(&info(ReviewMode::Reviewer));
-        assert!(p.contains("calculator") && p.contains("current_time"), "应列出实际可用的工具：{p}");
+        assert!(
+            p.contains("calculator") && p.contains("current_time"),
+            "应列出实际可用的工具：{p}"
+        );
         assert!(p.contains("没有列出的能力"), "应禁止声称未列出的能力：{p}");
-        assert!(!p.contains("如果用户要求审查对话中的内容"), "reviewer 模式下前台不自己审查");
+        assert!(
+            !p.contains("如果用户要求审查对话中的内容"),
+            "reviewer 模式下前台不自己审查"
+        );
 
         let p = reply_system_prompt(&info(ReviewMode::Direct));
         assert!(p.contains("如果用户要求审查对话中的内容"));

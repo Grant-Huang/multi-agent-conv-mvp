@@ -13,7 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use an_core::{
-    now, Conversation, Message, PolicyVerdict, ReviewVerdict, RouteLog, TaskEvent, TaskRecord, TaskResult, TaskStatus,
+    now, Conversation, Message, PolicyVerdict, ReviewVerdict, RouteLog, TaskEvent, TaskRecord,
+    TaskResult, TaskStatus,
 };
 use anyhow::{anyhow, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension, Row};
@@ -104,7 +105,9 @@ CREATE TABLE IF NOT EXISTS route_logs (
 "#;
 
 fn tune(conn: &Connection) -> Result<()> {
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;")?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;",
+    )?;
     Ok(())
 }
 
@@ -122,7 +125,13 @@ fn write_events(conn: &mut Connection, batch: &[TaskEvent]) -> Result<()> {
     {
         let mut st = tx.prepare("INSERT INTO events (id, conversation_id, task_id, json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)")?;
         for e in batch {
-            st.execute(params![e.id, e.conversation_id, e.task_id, serde_json::to_string(e)?, e.created_at])?;
+            st.execute(params![
+                e.id,
+                e.conversation_id,
+                e.task_id,
+                serde_json::to_string(e)?,
+                e.created_at
+            ])?;
         }
     }
     trim_events(&tx, EVENT_KEEP)?;
@@ -174,7 +183,11 @@ fn writer_loop(shared: Arc<Shared>, rx: std::sync::mpsc::Receiver<WriteCmd>) {
 }
 
 /// 返回 false 表示写线程该停了（停之前调用方会先把缓冲区提交掉）
-fn take_cmd(batch: &mut Vec<TaskEvent>, acks: &mut Vec<std::sync::mpsc::Sender<()>>, cmd: WriteCmd) -> bool {
+fn take_cmd(
+    batch: &mut Vec<TaskEvent>,
+    acks: &mut Vec<std::sync::mpsc::Sender<()>>,
+    cmd: WriteCmd,
+) -> bool {
     match cmd {
         WriteCmd::Event(event) => batch.push(event),
         WriteCmd::Flush(ack) => acks.push(ack),
@@ -183,7 +196,11 @@ fn take_cmd(batch: &mut Vec<TaskEvent>, acks: &mut Vec<std::sync::mpsc::Sender<(
     true
 }
 
-fn commit(shared: &Shared, batch: &mut Vec<TaskEvent>, acks: &mut Vec<std::sync::mpsc::Sender<()>>) {
+fn commit(
+    shared: &Shared,
+    batch: &mut Vec<TaskEvent>,
+    acks: &mut Vec<std::sync::mpsc::Sender<()>>,
+) {
     if !batch.is_empty() {
         let started = Instant::now();
         let size = batch.len();
@@ -193,8 +210,17 @@ fn commit(shared: &Shared, batch: &mut Vec<TaskEvent>, acks: &mut Vec<std::sync:
         }
         drop(conn);
         let flush_ms = started.elapsed().as_millis() as u64;
-        let left = shared.pending.fetch_sub(size, Ordering::AcqRel).saturating_sub(size);
-        tracing::info!(event = "store.event_batch", size, flush_ms, queue_len = left, "事件批量落库");
+        let left = shared
+            .pending
+            .fetch_sub(size, Ordering::AcqRel)
+            .saturating_sub(size);
+        tracing::info!(
+            event = "store.event_batch",
+            size,
+            flush_ms,
+            queue_len = left,
+            "事件批量落库"
+        );
         batch.clear();
     }
     for ack in acks.drain(..) {
@@ -214,7 +240,10 @@ struct ReadTimer {
 
 impl ReadTimer {
     fn new(op: &'static str) -> Self {
-        Self { op, started: Instant::now() }
+        Self {
+            op,
+            started: Instant::now(),
+        }
     }
 }
 
@@ -222,7 +251,13 @@ impl Drop for ReadTimer {
     fn drop(&mut self) {
         let ms = self.started.elapsed().as_millis();
         if ms > READ_SLOW_MS {
-            tracing::warn!(event = "store.read_slow", op = self.op, ms, code = an_core::codes::STORE_READ_SLOW, "读数据库偏慢");
+            tracing::warn!(
+                event = "store.read_slow",
+                op = self.op,
+                ms,
+                code = an_core::codes::STORE_READ_SLOW,
+                "读数据库偏慢"
+            );
         }
     }
 }
@@ -233,7 +268,8 @@ impl Store {
         if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent)?;
         }
-        let conn = Connection::open(path).with_context(|| format!("无法打开数据库 {}", path.display()))?;
+        let conn =
+            Connection::open(path).with_context(|| format!("无法打开数据库 {}", path.display()))?;
         tune(&conn)?;
         conn.execute_batch(SCHEMA)?;
         // 兼容旧库：tasks 表补 context 列（新库建表时已包含）
@@ -249,19 +285,28 @@ impl Store {
         let read = if path == Path::new(":memory:") {
             None
         } else {
-            let read = Connection::open(path).with_context(|| format!("无法打开数据库只读连接 {}", path.display()))?;
+            let read = Connection::open(path)
+                .with_context(|| format!("无法打开数据库只读连接 {}", path.display()))?;
             tune(&read)?;
             read.execute_batch("PRAGMA query_only=ON;")?;
             Some(Mutex::new(read))
         };
         let (tx, rx) = std::sync::mpsc::sync_channel(EVENT_QUEUE);
-        let shared = Arc::new(Shared { write: Mutex::new(conn), read, cmd: tx, pending: AtomicUsize::new(0) });
+        let shared = Arc::new(Shared {
+            write: Mutex::new(conn),
+            read,
+            cmd: tx,
+            pending: AtomicUsize::new(0),
+        });
         let background = Arc::clone(&shared);
         let writer = std::thread::Builder::new()
             .name("store-writer".into())
             .spawn(move || writer_loop(background, rx))
             .context("无法启动事件写线程")?;
-        Ok(Self { shared, writer: Mutex::new(Some(writer)) })
+        Ok(Self {
+            shared,
+            writer: Mutex::new(Some(writer)),
+        })
     }
 
     fn write(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -280,7 +325,10 @@ impl Store {
         self.shared.pending.fetch_add(1, Ordering::AcqRel);
         if self.shared.cmd.send(WriteCmd::Event(event)).is_err() {
             self.shared.pending.fetch_sub(1, Ordering::AcqRel);
-            tracing::error!(event = "store.event_batch", "事件写线程已退出，这条事件没有落库");
+            tracing::error!(
+                event = "store.event_batch",
+                "事件写线程已退出，这条事件没有落库"
+            );
         }
     }
 
@@ -298,7 +346,11 @@ impl Store {
     // ───────────── 会话 ─────────────
 
     pub fn create_conversation(&self, title: &str) -> Result<Conversation> {
-        let c = Conversation { id: an_core::new_id("conv"), title: title.into(), created_at: now() };
+        let c = Conversation {
+            id: an_core::new_id("conv"),
+            title: title.into(),
+            created_at: now(),
+        };
         self.write().execute(
             "INSERT INTO conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
             params![c.id, c.title, c.created_at],
@@ -310,33 +362,70 @@ impl Store {
         let _timer = ReadTimer::new("get_conversation");
         Ok(self
             .read()
-            .query_row("SELECT id, title, created_at FROM conversations WHERE id = ?1", [id], |r| {
-                Ok(Conversation { id: r.get(0)?, title: r.get(1)?, created_at: r.get(2)? })
-            })
+            .query_row(
+                "SELECT id, title, created_at FROM conversations WHERE id = ?1",
+                [id],
+                |r| {
+                    Ok(Conversation {
+                        id: r.get(0)?,
+                        title: r.get(1)?,
+                        created_at: r.get(2)?,
+                    })
+                },
+            )
             .optional()?)
     }
 
     pub fn list_conversations(&self) -> Result<Vec<Conversation>> {
         let _timer = ReadTimer::new("list_conversations");
         let conn = self.read();
-        let mut st = conn.prepare("SELECT id, title, created_at FROM conversations ORDER BY created_at DESC")?;
-        let rows = st.query_map([], |r| Ok(Conversation { id: r.get(0)?, title: r.get(1)?, created_at: r.get(2)? }))?;
+        let mut st = conn
+            .prepare("SELECT id, title, created_at FROM conversations ORDER BY created_at DESC")?;
+        let rows = st.query_map([], |r| {
+            Ok(Conversation {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                created_at: r.get(2)?,
+            })
+        })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     pub fn rename_conversation(&self, id: &str, title: &str) -> Result<()> {
-        self.write().execute("UPDATE conversations SET title = ?2 WHERE id = ?1", params![id, title])?;
+        self.write().execute(
+            "UPDATE conversations SET title = ?2 WHERE id = ?1",
+            params![id, title],
+        )?;
         Ok(())
     }
 
     // ───────────── 消息 ─────────────
 
-    pub fn add_message(&self, conversation_id: &str, role: &str, content: &str, task_id: Option<&str>) -> Result<Message> {
-        self.add_message_with_id(&an_core::new_id("msg"), conversation_id, role, content, task_id)
+    pub fn add_message(
+        &self,
+        conversation_id: &str,
+        role: &str,
+        content: &str,
+        task_id: Option<&str>,
+    ) -> Result<Message> {
+        self.add_message_with_id(
+            &an_core::new_id("msg"),
+            conversation_id,
+            role,
+            content,
+            task_id,
+        )
     }
 
     /// 同上，但使用指定的 id（流式回复：界面先用这个 id 显示片段，最终消息用同一个 id）
-    pub fn add_message_with_id(&self, id: &str, conversation_id: &str, role: &str, content: &str, task_id: Option<&str>) -> Result<Message> {
+    pub fn add_message_with_id(
+        &self,
+        id: &str,
+        conversation_id: &str,
+        role: &str,
+        content: &str,
+        task_id: Option<&str>,
+    ) -> Result<Message> {
         let m = Message {
             id: id.into(),
             conversation_id: conversation_id.into(),
@@ -353,7 +442,11 @@ impl Store {
     }
 
     /// 按时间顺序返回消息；`last` 为 Some(n) 时只返回最近 n 条
-    pub fn list_messages(&self, conversation_id: &str, last: Option<usize>) -> Result<Vec<Message>> {
+    pub fn list_messages(
+        &self,
+        conversation_id: &str,
+        last: Option<usize>,
+    ) -> Result<Vec<Message>> {
         let _timer = ReadTimer::new("list_messages");
         let conn = self.read();
         let limit = last.map(|n| n as i64).unwrap_or(-1); // SQLite 中 LIMIT -1 表示不限制
@@ -405,7 +498,9 @@ impl Store {
         let _timer = ReadTimer::new("get_task_context");
         Ok(self
             .read()
-            .query_row("SELECT context FROM tasks WHERE id = ?1", [id], |r| r.get(0))
+            .query_row("SELECT context FROM tasks WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
             .optional()?)
     }
 
@@ -455,13 +550,20 @@ impl Store {
         let conn = self.read();
         let rows: Vec<Result<TaskRecord>> = match conversation_id {
             Some(c) => {
-                let mut st = conn.prepare(&format!("{TASK_SELECT} WHERE conversation_id = ?1 ORDER BY created_at DESC"))?;
-                let r = st.query_map([c], task_from_row)?.collect::<rusqlite::Result<_>>()?;
+                let mut st = conn.prepare(&format!(
+                    "{TASK_SELECT} WHERE conversation_id = ?1 ORDER BY created_at DESC"
+                ))?;
+                let r = st
+                    .query_map([c], task_from_row)?
+                    .collect::<rusqlite::Result<_>>()?;
                 r
             }
             None => {
-                let mut st = conn.prepare(&format!("{TASK_SELECT} ORDER BY created_at DESC LIMIT 200"))?;
-                let r = st.query_map([], task_from_row)?.collect::<rusqlite::Result<_>>()?;
+                let mut st =
+                    conn.prepare(&format!("{TASK_SELECT} ORDER BY created_at DESC LIMIT 200"))?;
+                let r = st
+                    .query_map([], task_from_row)?
+                    .collect::<rusqlite::Result<_>>()?;
                 r
             }
         };
@@ -480,7 +582,11 @@ impl Store {
 
     /// 会话中尚未结束的任务（给 Turn Controller 判断 follow_up 用）
     pub fn active_tasks(&self, conversation_id: &str) -> Result<Vec<TaskRecord>> {
-        Ok(self.list_tasks(Some(conversation_id))?.into_iter().filter(|t| !t.status.is_terminal()).collect())
+        Ok(self
+            .list_tasks(Some(conversation_id))?
+            .into_iter()
+            .filter(|t| !t.status.is_terminal())
+            .collect())
     }
 
     /// 服务启动时调用：把上次运行中断的任务标记为失败（MVP 不做断点续跑）
@@ -506,7 +612,11 @@ impl Store {
     }
 
     /// `after_id` 之后的事件（不含这条）。用于任务详情增量拉取。找不到该 id 时返回全部，避免漏事件
-    pub fn list_events_after(&self, task_id: &str, after_id: Option<&str>) -> Result<Vec<TaskEvent>> {
+    pub fn list_events_after(
+        &self,
+        task_id: &str,
+        after_id: Option<&str>,
+    ) -> Result<Vec<TaskEvent>> {
         let _timer = ReadTimer::new("list_events");
         let conn = self.read();
         let mut st = conn.prepare(
@@ -529,7 +639,10 @@ impl Store {
     }
 
     pub fn update_node_cards(&self, node_id: &str, cards: &[an_core::AgentCard]) -> Result<()> {
-        self.write().execute("UPDATE nodes SET cards_json = ?2 WHERE node_id = ?1", params![node_id, serde_json::to_string(cards)?])?;
+        self.write().execute(
+            "UPDATE nodes SET cards_json = ?2 WHERE node_id = ?1",
+            params![node_id, serde_json::to_string(cards)?],
+        )?;
         Ok(())
     }
 
@@ -538,17 +651,34 @@ impl Store {
         let conn = self.read();
         let mut st = conn.prepare("SELECT node_id, name, address, token, cards_json, paired_at FROM nodes ORDER BY paired_at")?;
         let rows = st.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+            ))
         })?;
         rows.map(|row| {
             let (node_id, name, address, token, cards, paired_at) = row?;
-            Ok(StoredNode { node_id, name, address, token, cards: serde_json::from_str(&cards)?, paired_at })
+            Ok(StoredNode {
+                node_id,
+                name,
+                address,
+                token,
+                cards: serde_json::from_str(&cards)?,
+                paired_at,
+            })
         })
         .collect()
     }
 
     pub fn delete_node(&self, node_id: &str) -> Result<bool> {
-        Ok(self.write().execute("DELETE FROM nodes WHERE node_id = ?1", [node_id])? > 0)
+        Ok(self
+            .write()
+            .execute("DELETE FROM nodes WHERE node_id = ?1", [node_id])?
+            > 0)
     }
 
     // ───────────── 路由日志 ─────────────
@@ -565,7 +695,8 @@ impl Store {
         let _timer = ReadTimer::new("list_route_logs");
         let conn = self.read();
         // rowid 决胜：同一毫秒内写入的日志保持"新的在前"（与 messages 的排序约定一致）
-        let mut st = conn.prepare("SELECT json FROM route_logs ORDER BY created_at DESC, rowid DESC LIMIT ?1")?;
+        let mut st = conn
+            .prepare("SELECT json FROM route_logs ORDER BY created_at DESC, rowid DESC LIMIT ?1")?;
         let rows = st.query_map([limit as i64], |r| r.get::<_, String>(0))?;
         rows.map(|j| Ok(serde_json::from_str(&j?)?)).collect()
     }
@@ -581,7 +712,9 @@ impl Drop for Store {
     }
 }
 
-fn lock_writer(mutex: &Mutex<Option<std::thread::JoinHandle<()>>>) -> std::sync::MutexGuard<'_, Option<std::thread::JoinHandle<()>>> {
+fn lock_writer(
+    mutex: &Mutex<Option<std::thread::JoinHandle<()>>>,
+) -> std::sync::MutexGuard<'_, Option<std::thread::JoinHandle<()>>> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -595,8 +728,13 @@ fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Result<TaskRecord>> {
     let policy: String = r.get(6)?;
     let result: Option<String> = r.get(7)?;
     let review: Option<String> = r.get(8)?;
-    let (id, conversation_id, goal, created_at, updated_at): (String, String, String, String, String) =
-        (r.get(0)?, r.get(1)?, r.get(2)?, r.get(9)?, r.get(10)?);
+    let (id, conversation_id, goal, created_at, updated_at): (
+        String,
+        String,
+        String,
+        String,
+        String,
+    ) = (r.get(0)?, r.get(1)?, r.get(2)?, r.get(9)?, r.get(10)?);
     Ok((|| -> Result<TaskRecord> {
         Ok(TaskRecord {
             id,
@@ -656,7 +794,10 @@ mod tests {
         // 旧行补列后 context 为空；get / set 正常
         assert_eq!(store.get_task_context("t1").unwrap(), Some(String::new()));
         store.set_task_context("t1", "背景").unwrap();
-        assert_eq!(store.get_task_context("t1").unwrap().as_deref(), Some("背景"));
+        assert_eq!(
+            store.get_task_context("t1").unwrap().as_deref(),
+            Some("背景")
+        );
         // 重复 open（幂等）
         drop(store);
         Store::open(&db).unwrap();
@@ -682,7 +823,14 @@ mod tests {
         for id in ["e1", "e2", "e3"] {
             store.insert_event(&ev(id)).unwrap();
         }
-        let ids = |after: Option<&str>| store.list_events_after("t", after).unwrap().into_iter().map(|e| e.id).collect::<Vec<_>>();
+        let ids = |after: Option<&str>| {
+            store
+                .list_events_after("t", after)
+                .unwrap()
+                .into_iter()
+                .map(|e| e.id)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(ids(None), vec!["e1", "e2", "e3"]);
         assert_eq!(ids(Some("e1")), vec!["e2", "e3"]);
         assert_eq!(ids(Some("e3")), Vec::<String>::new());
@@ -715,9 +863,18 @@ mod tests {
     fn file_db_uses_normal_sync_and_a_read_only_connection() {
         let (dir, db) = temp_db("an-store-pragma");
         let store = Store::open(&db).unwrap();
-        let sync: i64 = store.write().query_row("PRAGMA synchronous", [], |r| r.get(0)).unwrap();
-        let busy: i64 = store.write().query_row("PRAGMA busy_timeout", [], |r| r.get(0)).unwrap();
-        let query_only: i64 = store.read().query_row("PRAGMA query_only", [], |r| r.get(0)).unwrap();
+        let sync: i64 = store
+            .write()
+            .query_row("PRAGMA synchronous", [], |r| r.get(0))
+            .unwrap();
+        let busy: i64 = store
+            .write()
+            .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+            .unwrap();
+        let query_only: i64 = store
+            .read()
+            .query_row("PRAGMA query_only", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(sync, 1, "synchronous=NORMAL");
         assert_eq!(busy, 5000);
         assert_eq!(query_only, 1, "读连接不应能写入");
@@ -734,12 +891,25 @@ mod tests {
                 store.enqueue_event(progress("t", &format!("e{i:04}")));
             }
             store.flush_events();
-            let ids: Vec<_> = store.list_events("t").unwrap().into_iter().map(|e| e.id).collect();
+            let ids: Vec<_> = store
+                .list_events("t")
+                .unwrap()
+                .into_iter()
+                .map(|e| e.id)
+                .collect();
             assert_eq!(ids.len(), 100);
-            assert!(ids.windows(2).all(|w| w[0] < w[1]), "flush 之后顺序应与入队顺序一致");
+            assert!(
+                ids.windows(2).all(|w| w[0] < w[1]),
+                "flush 之后顺序应与入队顺序一致"
+            );
         }
         let store = Store::open(&db).unwrap();
-        let ids: Vec<_> = store.list_events("t").unwrap().into_iter().map(|e| e.id).collect();
+        let ids: Vec<_> = store
+            .list_events("t")
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
         assert_eq!(ids.len(), 100, "进程退出（Drop）要把缓冲区写完");
         assert_eq!(ids.first().map(String::as_str), Some("e0000"));
         assert_eq!(ids.last().map(String::as_str), Some("e0099"));
@@ -752,10 +922,17 @@ mod tests {
         let (dir, db) = temp_db("an-store-keep");
         let store = Store::open(&db).unwrap();
         for i in 0..5 {
-            store.insert_event(&progress("t", &format!("e{i}"))).unwrap();
+            store
+                .insert_event(&progress("t", &format!("e{i}")))
+                .unwrap();
         }
         trim_events(&store.write(), 3).unwrap();
-        let ids: Vec<_> = store.list_events("t").unwrap().into_iter().map(|e| e.id).collect();
+        let ids: Vec<_> = store
+            .list_events("t")
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
         assert_eq!(ids, vec!["e2", "e3", "e4"]);
         drop(store);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -774,7 +951,9 @@ mod tests {
         let (dir, db) = temp_db("an-store-bench");
         let store = Arc::new(Store::open(&db).unwrap());
         for i in 0..5 {
-            store.insert_event(&progress("probe", &format!("p{i}"))).unwrap();
+            store
+                .insert_event(&progress("probe", &format!("p{i}")))
+                .unwrap();
         }
 
         let bench = |per_task: usize| -> Duration {
@@ -813,21 +992,38 @@ mod tests {
             }
             store.flush_events();
             let task_id = format!("w{per_task}-0");
-            let ids: Vec<_> = store.list_events(&task_id).unwrap().into_iter().map(|e| e.id).collect();
+            let ids: Vec<_> = store
+                .list_events(&task_id)
+                .unwrap()
+                .into_iter()
+                .map(|e| e.id)
+                .collect();
             assert_eq!(ids.len(), per_task, "任务 {task_id} 的事件应全部落库");
             assert!(ids.windows(2).all(|w| w[0] < w[1]), "事件顺序不应打乱");
             let mut got = samples.lock().unwrap();
             let latency = p95(&mut got);
-            eprintln!("store bench events_per_task={per_task} samples={} p95={latency:?}", got.len());
+            eprintln!(
+                "store bench events_per_task={per_task} samples={} p95={latency:?}",
+                got.len()
+            );
             latency
         };
 
         let small = bench(100);
         let big = bench(1000);
-        assert!(small < Duration::from_millis(100), "小写入量读 P95 应低于 100ms，实际 {small:?}");
-        assert!(big < Duration::from_millis(100), "大写入量读 P95 应低于 100ms，实际 {big:?}");
+        assert!(
+            small < Duration::from_millis(100),
+            "小写入量读 P95 应低于 100ms，实际 {small:?}"
+        );
+        assert!(
+            big < Duration::from_millis(100),
+            "大写入量读 P95 应低于 100ms，实际 {big:?}"
+        );
         let limit = small.saturating_mul(4) + Duration::from_millis(30);
-        assert!(big < limit, "写入量 ×10 后读 P95 从 {small:?} 涨到 {big:?}，超过了 {limit:?}");
+        assert!(
+            big < limit,
+            "写入量 ×10 后读 P95 从 {small:?} 涨到 {big:?}，超过了 {limit:?}"
+        );
         drop(store);
         std::fs::remove_dir_all(&dir).unwrap();
     }

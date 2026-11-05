@@ -27,7 +27,9 @@ impl ContextBudget {
     /// 单个请求的提示词 token 上限
     pub fn prompt_tokens(&self) -> u32 {
         let share = self.context_tokens / self.concurrency.max(1);
-        share.saturating_sub(self.max_output.saturating_add(MARGIN_TOKENS)).max(MIN_PROMPT_TOKENS)
+        share
+            .saturating_sub(self.max_output.saturating_add(MARGIN_TOKENS))
+            .max(MIN_PROMPT_TOKENS)
     }
 }
 
@@ -72,7 +74,11 @@ pub fn clip_middle(text: &str, max_tokens: u32) -> (String, usize) {
 /// 把消息裁剪到 `budget` token 以内（估算值）。没超出时原样返回。
 pub fn fit(messages: &[ChatMessage], budget: u32) -> (Vec<ChatMessage>, TrimReport) {
     let before = estimate_messages(messages);
-    let mut report = TrimReport { tokens_before: before, tokens_after: before, ..Default::default() };
+    let mut report = TrimReport {
+        tokens_before: before,
+        tokens_after: before,
+        ..Default::default()
+    };
     if before <= budget || messages.is_empty() {
         return (messages.to_vec(), report);
     }
@@ -84,7 +90,8 @@ pub fn fit(messages: &[ChatMessage], budget: u32) -> (Vec<ChatMessage>, TrimRepo
     let (cap_history, cap_last) = ((budget / 4).max(512), (budget / 2).max(1024));
     let mut last_clipped = false;
     for (i, m) in msgs.iter_mut().enumerate().skip(first_history) {
-        let (clipped, removed) = clip_middle(&m.content, if i == last { cap_last } else { cap_history });
+        let (clipped, removed) =
+            clip_middle(&m.content, if i == last { cap_last } else { cap_history });
         if removed > 0 {
             m.content = clipped;
             report.truncated_messages += 1;
@@ -100,7 +107,11 @@ pub fn fit(messages: &[ChatMessage], budget: u32) -> (Vec<ChatMessage>, TrimRepo
 
     // 3. 只剩系统提示 + 最新消息还超：继续缩短最新消息
     if estimate_messages(&msgs) > budget && msgs.len() > first_history {
-        let system_tokens = if first_history == 1 { estimate_tokens(&msgs[0].content) + 4 } else { 0 };
+        let system_tokens = if first_history == 1 {
+            estimate_tokens(&msgs[0].content) + 4
+        } else {
+            0
+        };
         let allowed = budget.saturating_sub(system_tokens + 8).max(256);
         let m = msgs.last_mut().expect("至少有一条消息");
         let (clipped, removed) = clip_middle(&m.content, allowed);
@@ -127,13 +138,25 @@ mod tests {
     #[test]
     fn prompt_budget_divides_shared_pool_and_reserves_output() {
         // 262144 的池子被 6 个槽位共享，输出预留 2048，余量 1024
-        let b = ContextBudget { context_tokens: 262_144, concurrency: 6, max_output: 2048 };
+        let b = ContextBudget {
+            context_tokens: 262_144,
+            concurrency: 6,
+            max_output: 2048,
+        };
         assert_eq!(b.prompt_tokens(), 262_144 / 6 - 2048 - 1024);
         // 每个请求独占上下文（云端）
-        let c = ContextBudget { context_tokens: 128_000, concurrency: 1, max_output: 4096 };
+        let c = ContextBudget {
+            context_tokens: 128_000,
+            concurrency: 1,
+            max_output: 4096,
+        };
         assert_eq!(c.prompt_tokens(), 128_000 - 4096 - 1024);
         // 预算极小也不会算出 0 或负数
-        let tiny = ContextBudget { context_tokens: 4096, concurrency: 8, max_output: 4096 };
+        let tiny = ContextBudget {
+            context_tokens: 4096,
+            concurrency: 8,
+            max_output: 4096,
+        };
         assert_eq!(tiny.prompt_tokens(), MIN_PROMPT_TOKENS);
     }
 
@@ -170,17 +193,31 @@ mod tests {
         assert_eq!(out.last().unwrap().content, "最新问题");
         assert!(r.dropped_messages > 0 && r.tokens_after <= 1200, "{r:?}");
         // 留下来的是较新的历史，较旧的先被丢
-        let kept: Vec<_> = out.iter().filter_map(|m| m.content.strip_prefix("历史").and_then(|s| s.chars().next())).collect();
+        let kept: Vec<_> = out
+            .iter()
+            .filter_map(|m| {
+                m.content
+                    .strip_prefix("历史")
+                    .and_then(|s| s.chars().next())
+            })
+            .collect();
         assert!(kept.contains(&'9') && !kept.contains(&'0'), "{kept:?}");
     }
 
     #[test]
     fn a_huge_paste_in_the_latest_message_keeps_head_and_tail() {
         let paste = format!("请审阅：{}完毕", long(100_000));
-        let msgs = vec![ChatMessage::system("系统提示"), ChatMessage::user("之前聊的内容"), ChatMessage::user(paste)];
+        let msgs = vec![
+            ChatMessage::system("系统提示"),
+            ChatMessage::user("之前聊的内容"),
+            ChatMessage::user(paste),
+        ];
         let (out, r) = fit(&msgs, 4000);
         let last = &out.last().unwrap().content;
-        assert!(last.starts_with("请审阅：") && last.ends_with("完毕") && last.contains("已截断"), "{last}");
+        assert!(
+            last.starts_with("请审阅：") && last.ends_with("完毕") && last.contains("已截断"),
+            "{last}"
+        );
         assert!(r.tokens_after <= 4000 && r.truncated_messages >= 1, "{r:?}");
         assert_eq!(out[0].content, "系统提示");
     }
@@ -202,7 +239,10 @@ mod tests {
 
     #[test]
     fn system_prompt_is_never_truncated_even_if_huge() {
-        let msgs = vec![ChatMessage::system(long(3000)), ChatMessage::user(long(3000))];
+        let msgs = vec![
+            ChatMessage::system(long(3000)),
+            ChatMessage::user(long(3000)),
+        ];
         let (out, _) = fit(&msgs, 2000);
         assert_eq!(out[0].content.chars().count(), 3000);
         assert!(out[1].content.contains("已截断"));

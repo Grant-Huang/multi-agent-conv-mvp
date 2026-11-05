@@ -13,10 +13,19 @@ fn failure_output(r: &TaskResult) -> Option<String> {
     if r.status != WorkerStatus::Failed {
         return None;
     }
-    let pick = |kind: &str| r.evidence.iter().find(|e| e.kind == kind && !e.content.trim().is_empty()).map(|e| e.content.trim());
+    let pick = |kind: &str| {
+        r.evidence
+            .iter()
+            .find(|e| e.kind == kind && !e.content.trim().is_empty())
+            .map(|e| e.content.trim())
+    };
     let text = pick("stderr_tail").or_else(|| pick("stdout_tail"))?;
     let n = text.chars().count();
-    Some(text.chars().skip(n.saturating_sub(FAILURE_OUTPUT_CHARS)).collect())
+    Some(
+        text.chars()
+            .skip(n.saturating_sub(FAILURE_OUTPUT_CHARS))
+            .collect(),
+    )
 }
 
 pub struct Composer {
@@ -29,7 +38,13 @@ impl Composer {
     }
 
     /// 生成交付消息；LLM 调用失败时退回到模板，保证用户一定能收到结果
-    pub async fn compose(&self, task: &TaskRecord, status: TaskStatus, result: Option<&TaskResult>, review: Option<&ReviewVerdict>) -> String {
+    pub async fn compose(
+        &self,
+        task: &TaskRecord,
+        status: TaskStatus,
+        result: Option<&TaskResult>,
+        review: Option<&ReviewVerdict>,
+    ) -> String {
         let facts = Self::facts(task, status, result, review);
         let messages = [
             ChatMessage::system(
@@ -50,7 +65,12 @@ impl Composer {
     }
 
     /// 交给模型的"事实材料"
-    fn facts(task: &TaskRecord, status: TaskStatus, result: Option<&TaskResult>, review: Option<&ReviewVerdict>) -> String {
+    fn facts(
+        task: &TaskRecord,
+        status: TaskStatus,
+        result: Option<&TaskResult>,
+        review: Option<&ReviewVerdict>,
+    ) -> String {
         let mut s = format!(
             "任务目标：{}\n执行角色：{}\n最终状态：{}\n",
             task.goal,
@@ -62,7 +82,11 @@ impl Composer {
             if !r.artifacts.is_empty() {
                 s += &format!(
                     "产物：{}\n",
-                    r.artifacts.iter().map(|a| format!("[{}] {}", a.kind, a.name)).collect::<Vec<_>>().join("，")
+                    r.artifacts
+                        .iter()
+                        .map(|a| format!("[{}] {}", a.kind, a.name))
+                        .collect::<Vec<_>>()
+                        .join("，")
                 );
             }
             if !r.errors.is_empty() {
@@ -75,14 +99,25 @@ impl Composer {
         if let Some(v) = review {
             s += &format!("审查结论：{:?}\n审查评价：{}\n", v.verdict, v.comment);
             if !v.issues.is_empty() {
-                s += &format!("审查发现的问题：\n{}\n", v.issues.iter().map(|i| format!("- {i}")).collect::<Vec<_>>().join("\n"));
+                s += &format!(
+                    "审查发现的问题：\n{}\n",
+                    v.issues
+                        .iter()
+                        .map(|i| format!("- {i}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                );
             }
         }
         s
     }
 
     /// 不依赖模型的模板回复
-    fn fallback(status: TaskStatus, result: Option<&TaskResult>, review: Option<&ReviewVerdict>) -> String {
+    fn fallback(
+        status: TaskStatus,
+        result: Option<&TaskResult>,
+        review: Option<&ReviewVerdict>,
+    ) -> String {
         let head = match status {
             TaskStatus::Completed => "任务已完成。",
             TaskStatus::NeedsHuman => "任务需要人工确认。",
@@ -102,7 +137,14 @@ impl Composer {
             }
         }
         if let Some(v) = review.filter(|v| !v.issues.is_empty()) {
-            s += &format!("\n\n审查意见：\n{}", v.issues.iter().map(|i| format!("- {i}")).collect::<Vec<_>>().join("\n"));
+            s += &format!(
+                "\n\n审查意见：\n{}",
+                v.issues
+                    .iter()
+                    .map(|i| format!("- {i}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
         }
         s
     }
@@ -127,7 +169,11 @@ mod tests {
                 risk_level: Risk::Medium,
                 reason: "".into(),
             },
-            policy: PolicyVerdict { auto_execute: true, needs_review: true, notes: vec![] },
+            policy: PolicyVerdict {
+                auto_execute: true,
+                needs_review: true,
+                notes: vec![],
+            },
             result: None,
             review: None,
             created_at: "".into(),
@@ -159,8 +205,14 @@ mod tests {
         let r = failed_result();
         let facts = Composer::facts(&task(), TaskStatus::Failed, Some(&r), None);
         assert!(facts.contains("E_AGENT_RUNTIME"), "应包含错误码：{facts}");
-        assert!(facts.contains("HTTP 429"), "应包含进程输出末尾的真实错误：{facts}");
-        assert!(facts.chars().count() < 4000, "只取输出末尾，不能把回显的长提示词整段塞进去");
+        assert!(
+            facts.contains("HTTP 429"),
+            "应包含进程输出末尾的真实错误：{facts}"
+        );
+        assert!(
+            facts.chars().count() < 4000,
+            "只取输出末尾，不能把回显的长提示词整段塞进去"
+        );
     }
 
     #[test]
@@ -177,6 +229,9 @@ mod tests {
         let r = failed_result();
         let text = Composer::fallback(TaskStatus::Failed, Some(&r), None);
         assert!(text.contains("任务未能完成"));
-        assert!(text.contains("E_AGENT_RUNTIME") && text.contains("HTTP 429"), "{text}");
+        assert!(
+            text.contains("E_AGENT_RUNTIME") && text.contains("HTTP 429"),
+            "{text}"
+        );
     }
 }

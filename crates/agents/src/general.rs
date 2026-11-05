@@ -5,7 +5,10 @@
 //! 原因：小模型 + llama.cpp 的原生工具调用依赖 chat template（需要 `--jinja`），
 //! 不同模型差异很大；用 JSON Schema 语法约束的方式更稳定，也更容易调试。
 
-use an_core::{AgentAdapter, AgentCard, Artifact, EventSink, Evidence, Role, TaskResult, TaskSpec, WorkerStatus};
+use an_core::{
+    AgentAdapter, AgentCard, Artifact, EventSink, Evidence, Role, TaskResult, TaskSpec,
+    WorkerStatus,
+};
 use an_llm::{ChatMessage, LlmClient};
 use anyhow::Result;
 use serde::Deserialize;
@@ -54,12 +57,18 @@ impl GeneralAgent {
             enabled: true,
             disabled_reason: None,
         };
-        Self { llm, tools, max_steps: max_steps.max(1), card }
+        Self {
+            llm,
+            tools,
+            max_steps: max_steps.max(1),
+            card,
+        }
     }
 
     fn step_schema(&self) -> Value {
         // 工具名用 enum 约束，模型无法编造不存在的工具；空字符串表示不调用工具
-        let mut tool_names: Vec<Value> = self.tools.names().into_iter().map(Value::String).collect();
+        let mut tool_names: Vec<Value> =
+            self.tools.names().into_iter().map(Value::String).collect();
         tool_names.push(Value::String(String::new()));
         json!({
             "type": "object",
@@ -102,7 +111,10 @@ impl AgentAdapter for GeneralAgent {
 
     async fn run(&self, task: TaskSpec, events: EventSink) -> Result<TaskResult> {
         let schema = self.step_schema();
-        let mut messages = vec![ChatMessage::system(self.system_prompt(&task)), ChatMessage::user(format!("任务：{}", task.goal))];
+        let mut messages = vec![
+            ChatMessage::system(self.system_prompt(&task)),
+            ChatMessage::user(format!("任务：{}", task.goal)),
+        ];
         let mut evidence = Vec::new();
         let mut artifacts: Vec<Artifact> = Vec::new();
 
@@ -122,7 +134,13 @@ impl AgentAdapter for GeneralAgent {
                 .await
             {
                 Ok(s) => s.value,
-                Err(e) => return Ok(TaskResult { evidence, artifacts, ..TaskResult::failed_code(e.code, e) }),
+                Err(e) => {
+                    return Ok(TaskResult {
+                        evidence,
+                        artifacts,
+                        ..TaskResult::failed_code(e.code, e)
+                    })
+                }
             };
 
             // 把模型这一步的输出加回对话历史
@@ -141,7 +159,11 @@ impl AgentAdapter for GeneralAgent {
             }
 
             // 执行工具
-            events.progress(format!("第 {step_no} 步：调用工具 {}，参数 {}", step.tool, an_core::truncate_chars(&step.args.to_string(), 200)));
+            events.progress(format!(
+                "第 {step_no} 步：调用工具 {}，参数 {}",
+                step.tool,
+                an_core::truncate_chars(&step.args.to_string(), 200)
+            ));
             let observation = match self.tools.get(&step.tool) {
                 None => format!("错误：工具 {} 不存在", step.tool),
                 Some(tool) => match tool.call(&step.args).await {
@@ -156,11 +178,19 @@ impl AgentAdapter for GeneralAgent {
             };
             evidence.push(Evidence {
                 kind: "tool_call".into(),
-                content: format!("{}({}) → {}", step.tool, step.args, an_core::truncate_chars(&observation, 500)),
+                content: format!(
+                    "{}({}) → {}",
+                    step.tool,
+                    step.args,
+                    an_core::truncate_chars(&observation, 500)
+                ),
             });
             // 单次工具结果过长会把上下文撑爆：保留头尾，中间截掉（完整内容仍在 artifacts / 工具自己的输出里）
             let (observation, _) = an_llm::clip_middle(&observation, OBSERVATION_MAX_TOKENS);
-            messages.push(ChatMessage::user(format!("工具 {} 的返回结果：\n{}", step.tool, observation)));
+            messages.push(ChatMessage::user(format!(
+                "工具 {} 的返回结果：\n{}",
+                step.tool, observation
+            )));
         }
 
         Ok(TaskResult {

@@ -21,14 +21,15 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use agent_client_protocol as acp;
 use acp::v1::schema::{
-    AgentCapabilities, ContentBlock, ContentChunk, Diff, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
-    PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse, RequestPermissionOutcome, RequestPermissionRequest,
-    SessionId, SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate,
-    ToolCallUpdateFields, ToolKind,
+    AgentCapabilities, ContentBlock, ContentChunk, Diff, InitializeRequest, InitializeResponse,
+    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
+    PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionId,
+    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
+    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
 };
 use acp::{Client, Stdio};
+use agent_client_protocol as acp;
 
 /// 会话 id → 工作目录
 type Sessions = Arc<Mutex<HashMap<String, PathBuf>>>;
@@ -37,14 +38,25 @@ type Sessions = Arc<Mutex<HashMap<String, PathBuf>>>;
 fn prompt_text(req: &PromptRequest) -> String {
     req.prompt
         .iter()
-        .filter_map(|b| if let ContentBlock::Text(t) = b { Some(t.text.clone()) } else { None })
+        .filter_map(|b| {
+            if let ContentBlock::Text(t) = b {
+                Some(t.text.clone())
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 /// 模拟一次任务执行。在独立任务中运行：这里需要等待 client 对权限请求的应答，
 /// 不能在请求回调里直接等（会阻塞消息循环导致死锁）。
-async fn run_prompt(cx: acp::v1::ConnectionTo<Client>, session_id: SessionId, cwd: PathBuf, text: String) -> acp::Result<StopReason> {
+async fn run_prompt(
+    cx: acp::v1::ConnectionTo<Client>,
+    session_id: SessionId,
+    cwd: PathBuf,
+    text: String,
+) -> acp::Result<StopReason> {
     if text.contains("稍慢") {
         // 用于测试并发：执行约 1.5 秒
         tokio::time::sleep(Duration::from_millis(1500)).await;
@@ -55,18 +67,27 @@ async fn run_prompt(cx: acp::v1::ConnectionTo<Client>, session_id: SessionId, cw
     if text.contains("拒绝") {
         return Ok(StopReason::Refusal);
     }
-    let notify = |update: SessionUpdate| cx.send_notification(SessionNotification::new(session_id.clone(), update));
+    let notify = |update: SessionUpdate| {
+        cx.send_notification(SessionNotification::new(session_id.clone(), update))
+    };
 
     // 1. 报告工具调用
     let path = cwd.join("hello.txt");
     notify(SessionUpdate::ToolCall(
-        ToolCall::new("call-1", "写入 hello.txt").kind(ToolKind::Edit).status(ToolCallStatus::Pending),
+        ToolCall::new("call-1", "写入 hello.txt")
+            .kind(ToolKind::Edit)
+            .status(ToolCallStatus::Pending),
     ))?;
 
     // 2. 请求权限
     let request = RequestPermissionRequest::new(
         session_id.clone(),
-        ToolCallUpdate::new("call-1", ToolCallUpdateFields::new().title("写入 hello.txt").kind(ToolKind::Edit)),
+        ToolCallUpdate::new(
+            "call-1",
+            ToolCallUpdateFields::new()
+                .title("写入 hello.txt")
+                .kind(ToolKind::Edit),
+        ),
         vec![
             PermissionOption::new("allow", "允许", PermissionOptionKind::AllowOnce),
             PermissionOption::new("reject", "拒绝", PermissionOptionKind::RejectOnce),
@@ -76,22 +97,38 @@ async fn run_prompt(cx: acp::v1::ConnectionTo<Client>, session_id: SessionId, cw
     let allowed = matches!(&answer.outcome, RequestPermissionOutcome::Selected(s) if s.option_id.to_string() == "allow");
 
     // 3. 执行并报告结果
-    let content = format!("hello from mock ACP agent\n任务：{}\n", text.lines().next().unwrap_or(""));
+    let content = format!(
+        "hello from mock ACP agent\n任务：{}\n",
+        text.lines().next().unwrap_or("")
+    );
     if allowed {
-        std::fs::write(&path, &content).map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
+        std::fs::write(&path, &content)
+            .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
         notify(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
             "call-1",
             ToolCallUpdateFields::new()
                 .status(ToolCallStatus::Completed)
-                .content(vec![ToolCallContent::Diff(Diff::new(path.clone(), content))]),
+                .content(vec![ToolCallContent::Diff(Diff::new(
+                    path.clone(),
+                    content,
+                ))]),
         )))?;
     } else {
-        notify(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new("call-1", ToolCallUpdateFields::new().status(ToolCallStatus::Failed))))?;
+        notify(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+            "call-1",
+            ToolCallUpdateFields::new().status(ToolCallStatus::Failed),
+        )))?;
     }
 
     // 4. 回复文字
-    let reply = if allowed { "已创建 hello.txt（来自模拟 ACP agent）" } else { "没有获得写文件权限，未做任何修改" };
-    notify(SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(reply)))))?;
+    let reply = if allowed {
+        "已创建 hello.txt（来自模拟 ACP agent）"
+    } else {
+        "没有获得写文件权限，未做任何修改"
+    };
+    notify(SessionUpdate::AgentMessageChunk(ContentChunk::new(
+        ContentBlock::Text(TextContent::new(reply)),
+    )))?;
     Ok(StopReason::EndTurn)
 }
 
@@ -105,7 +142,10 @@ async fn main() -> acp::Result<()> {
         .name("an-mock-acp")
         .on_receive_request(
             async move |req: InitializeRequest, responder, _cx| {
-                responder.respond(InitializeResponse::new(req.protocol_version).agent_capabilities(AgentCapabilities::new()))
+                responder.respond(
+                    InitializeResponse::new(req.protocol_version)
+                        .agent_capabilities(AgentCapabilities::new()),
+                )
             },
             acp::on_receive_request!(),
         )
@@ -119,7 +159,12 @@ async fn main() -> acp::Result<()> {
         )
         .on_receive_request(
             async move |req: PromptRequest, responder, cx| {
-                let cwd = s_prompt.lock().unwrap().get(&req.session_id.to_string()).cloned().unwrap_or_else(|| PathBuf::from("."));
+                let cwd = s_prompt
+                    .lock()
+                    .unwrap()
+                    .get(&req.session_id.to_string())
+                    .cloned()
+                    .unwrap_or_else(|| PathBuf::from("."));
                 let text = prompt_text(&req);
                 let session_id = req.session_id.clone();
                 let task_cx = cx.clone();

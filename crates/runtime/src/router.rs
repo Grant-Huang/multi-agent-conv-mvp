@@ -39,8 +39,18 @@ pub struct RouteFailure {
 }
 
 impl Router {
-    pub fn new(llm: LlmClient, registry: Arc<AgentRegistry>, tool_names: Vec<String>, policy: Policy) -> Self {
-        Self { llm, registry, tool_names, policy }
+    pub fn new(
+        llm: LlmClient,
+        registry: Arc<AgentRegistry>,
+        tool_names: Vec<String>,
+        policy: Policy,
+    ) -> Self {
+        Self {
+            llm,
+            registry,
+            tool_names,
+            policy,
+        }
     }
 
     /// 路由用的 JSON Schema：角色和工具都用 enum 限定在注册表范围内
@@ -61,7 +71,11 @@ impl Router {
 
     fn system_prompt(&self, roles: &[Role]) -> String {
         // 角色是"做什么"，同一角色可能有多个 agent，这里按角色描述，避免重复
-        let agents = roles.iter().map(|r| format!("- {}：{}", r.as_str(), r.description())).collect::<Vec<_>>().join("\n");
+        let agents = roles
+            .iter()
+            .map(|r| format!("- {}：{}", r.as_str(), r.description()))
+            .collect::<Vec<_>>()
+            .join("\n");
         format!(
             "你是 AgentNexus 的任务路由器（Router）。你只负责分类和选择执行者，不负责完成任务。\n\n\
              ## 可选执行角色\n{agents}\n\n\
@@ -84,7 +98,11 @@ impl Router {
     }
 
     /// 执行路由：分类 + 规则校验
-    pub async fn route(&self, task_goal: &str, context: &str) -> Result<RouteOutcome, RouteFailure> {
+    pub async fn route(
+        &self,
+        task_goal: &str,
+        context: &str,
+    ) -> Result<RouteOutcome, RouteFailure> {
         // 始终让模型在全部角色中选择："该由谁做"只看任务本身。
         // 某角色当前没有可用的 agent 时由 Policy 明确报错（E_ROUTE_NO_AGENT），
         // 而不是让模型只能在可用角色里挑，把写代码的请求悄悄改派给别的角色。
@@ -95,7 +113,10 @@ impl Router {
         } else {
             format!("任务目标：{task_goal}\n\n对话背景：\n{context}")
         };
-        let messages = [ChatMessage::system(self.system_prompt(&roles)), ChatMessage::user(user)];
+        let messages = [
+            ChatMessage::system(self.system_prompt(&roles)),
+            ChatMessage::user(user),
+        ];
         let tool_names = self.tool_names.clone();
 
         // 业务校验：工具名必须存在（即使有语法约束，prompt_only 模式下也需要）
@@ -103,7 +124,10 @@ impl Router {
             .llm
             .chat_json::<RouteDecision, _>(&messages, "route_decision", &self.schema(&roles), |d| {
                 if let Some(bad) = d.required_tools.iter().find(|t| !tool_names.contains(t)) {
-                    return Err(format!("工具 {bad} 不存在，可用工具：{}", tool_names.join(", ")));
+                    return Err(format!(
+                        "工具 {bad} 不存在，可用工具：{}",
+                        tool_names.join(", ")
+                    ));
                 }
                 Ok(())
             })
@@ -155,14 +179,30 @@ mod tests {
             max_retries: 0,
         })
         .unwrap();
-        Router::new(llm, AgentRegistry::new(BTreeMap::new()), vec!["write_file".into()], Policy { approval_risk: Risk::High })
+        Router::new(
+            llm,
+            AgentRegistry::new(BTreeMap::new()),
+            vec!["write_file".into()],
+            Policy {
+                approval_risk: Risk::High,
+            },
+        )
     }
 
     #[test]
     fn prompt_routes_code_artifacts_to_coding() {
         let p = router().system_prompt(&Role::ALL);
-        let coding_rule = p.lines().find(|l| l.contains("→ coding") && l.contains("HTML")).unwrap_or_default();
-        assert!(coding_rule.contains("网页"), "网页 / HTML 等代码产物应交给 coding：{p}");
-        assert!(p.contains("Markdown 或纯文本"), "general 的文档应限定为 Markdown 或纯文本：{p}");
+        let coding_rule = p
+            .lines()
+            .find(|l| l.contains("→ coding") && l.contains("HTML"))
+            .unwrap_or_default();
+        assert!(
+            coding_rule.contains("网页"),
+            "网页 / HTML 等代码产物应交给 coding：{p}"
+        );
+        assert!(
+            p.contains("Markdown 或纯文本"),
+            "general 的文档应限定为 Markdown 或纯文本：{p}"
+        );
     }
 }

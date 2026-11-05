@@ -24,7 +24,10 @@ pub struct ToolOutput {
 
 impl ToolOutput {
     fn text(t: impl Into<String>) -> Self {
-        Self { text: t.into(), artifact: None }
+        Self {
+            text: t.into(),
+            artifact: None,
+        }
     }
 }
 
@@ -59,7 +62,10 @@ impl ToolRegistry {
     pub fn infos(&self) -> Vec<ToolInfo> {
         self.tools
             .values()
-            .map(|t| ToolInfo { name: t.name().into(), description: t.description().into() })
+            .map(|t| ToolInfo {
+                name: t.name().into(),
+                description: t.description().into(),
+            })
             .collect()
     }
 
@@ -67,7 +73,14 @@ impl ToolRegistry {
     pub fn prompt_listing(&self) -> String {
         self.tools
             .values()
-            .map(|t| format!("- {}：{}。参数示例：{}", t.name(), t.description(), t.args_hint()))
+            .map(|t| {
+                format!(
+                    "- {}：{}。参数示例：{}",
+                    t.name(),
+                    t.description(),
+                    t.args_hint()
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -89,7 +102,9 @@ impl ToolRegistry {
 
 /// 读取字符串参数
 fn arg_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
-    args.get(key).and_then(|v| v.as_str()).ok_or_else(|| anyhow!("缺少字符串参数 `{key}`"))
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("缺少字符串参数 `{key}`"))
 }
 
 /// 把用户给的相对路径解析到工作目录内；越界则报错。
@@ -131,7 +146,11 @@ impl Tool for CurrentTime {
         "{}"
     }
     async fn call(&self, _args: &Value) -> Result<ToolOutput> {
-        Ok(ToolOutput::text(chrono::Local::now().format("%Y-%m-%d %H:%M:%S %:z（%A）").to_string()))
+        Ok(ToolOutput::text(
+            chrono::Local::now()
+                .format("%Y-%m-%d %H:%M:%S %:z（%A）")
+                .to_string(),
+        ))
     }
 }
 
@@ -274,13 +293,23 @@ impl Tool for ListFiles {
         let rel = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
         let dir = resolve_in_root(&self.root, rel)?;
         let mut entries = vec![];
-        let mut rd = tokio::fs::read_dir(&dir).await.with_context(|| format!("无法读取目录 {rel}"))?;
+        let mut rd = tokio::fs::read_dir(&dir)
+            .await
+            .with_context(|| format!("无法读取目录 {rel}"))?;
         while let Some(e) = rd.next_entry().await? {
             let is_dir = e.file_type().await?.is_dir();
-            entries.push(format!("{}{}", e.file_name().to_string_lossy(), if is_dir { "/" } else { "" }));
+            entries.push(format!(
+                "{}{}",
+                e.file_name().to_string_lossy(),
+                if is_dir { "/" } else { "" }
+            ));
         }
         entries.sort();
-        Ok(ToolOutput::text(if entries.is_empty() { "（空目录）".into() } else { entries.join("\n") }))
+        Ok(ToolOutput::text(if entries.is_empty() {
+            "（空目录）".into()
+        } else {
+            entries.join("\n")
+        }))
     }
 }
 
@@ -305,7 +334,9 @@ impl Tool for ReadFile {
     async fn call(&self, args: &Value) -> Result<ToolOutput> {
         let rel = arg_str(args, "path")?;
         let p = resolve_in_root(&self.root, rel)?;
-        let text = tokio::fs::read_to_string(&p).await.with_context(|| format!("无法读取文件 {rel}"))?;
+        let text = tokio::fs::read_to_string(&p)
+            .await
+            .with_context(|| format!("无法读取文件 {rel}"))?;
         Ok(ToolOutput::text(an_core::truncate_chars(&text, READ_LIMIT)))
     }
 }
@@ -332,10 +363,16 @@ impl Tool for WriteFile {
         if let Some(parent) = p.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
-        tokio::fs::write(&p, content).await.with_context(|| format!("无法写入文件 {rel}"))?;
+        tokio::fs::write(&p, content)
+            .await
+            .with_context(|| format!("无法写入文件 {rel}"))?;
         Ok(ToolOutput {
             text: format!("已写入 {rel}（{} 字符）", content.chars().count()),
-            artifact: Some(Artifact { kind: "file".into(), name: rel.into(), content: content.into() }),
+            artifact: Some(Artifact {
+                kind: "file".into(),
+                name: rel.into(),
+                content: content.into(),
+            }),
         })
     }
 }
@@ -361,8 +398,14 @@ mod tests {
     #[test]
     fn path_guard() {
         let root = Path::new("/tmp/ws");
-        assert_eq!(resolve_in_root(root, "a/b.md").unwrap(), Path::new("/tmp/ws/a/b.md"));
-        assert_eq!(resolve_in_root(root, "a/../b.md").unwrap(), Path::new("/tmp/ws/b.md"));
+        assert_eq!(
+            resolve_in_root(root, "a/b.md").unwrap(),
+            Path::new("/tmp/ws/a/b.md")
+        );
+        assert_eq!(
+            resolve_in_root(root, "a/../b.md").unwrap(),
+            Path::new("/tmp/ws/b.md")
+        );
         assert!(resolve_in_root(root, "../etc/passwd").is_err());
         assert!(resolve_in_root(root, "/etc/passwd").is_err());
     }
