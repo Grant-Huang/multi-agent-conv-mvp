@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::policy::{Breaker, Stats};
+use crate::scheduler::Scheduler;
 use crate::StructuredMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -111,6 +112,9 @@ pub struct BackendConfig {
     /// 前台调用（含重试）的期限，0 = 不限；不写：前台 60 秒、后台不限
     #[serde(default)]
     pub deadline_secs: Option<u64>,
+    /// 排队等槽位 / 并发许可的最长时间，超时返回"忙"；不写：前台 30 秒、后台 600 秒
+    #[serde(default)]
+    pub queue_secs: Option<u64>,
 }
 
 impl BackendConfig {
@@ -207,11 +211,15 @@ pub struct Backend {
     pub cfg: BackendConfig,
     pub breaker: Breaker,
     pub stats: Stats,
+    /// 槽位 / 并发许可 / 限速调度
+    pub sched: Scheduler,
 }
 
 impl Backend {
     pub fn new(name: impl Into<String>, cfg: BackendConfig) -> Self {
-        Self { name: name.into(), cfg, breaker: Breaker::default_policy(), stats: Stats::new(500) }
+        let name = name.into();
+        let sched = Scheduler::new(&name, &cfg);
+        Self { name, cfg, breaker: Breaker::default_policy(), stats: Stats::new(500), sched }
     }
 }
 

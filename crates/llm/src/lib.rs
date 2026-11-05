@@ -10,10 +10,14 @@
 mod backend;
 mod error;
 mod policy;
+mod scheduler;
+mod tokens;
 
 pub use backend::{Backend, BackendConfig, BackendKind, Priority};
 pub use error::{is_context_error, parse_retry_after, ErrorKind, LlmError};
 pub use policy::{backoff_delay, jitter01, Breaker, CallRecord, Stats, StatsSummary, Timeouts};
+pub use scheduler::{Lease, SchedSnapshot, Scheduler, SlotInfo, Who};
+pub use tokens::{estimate_messages, estimate_tokens};
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -175,6 +179,9 @@ struct CallInfo<'a> {
     format_attempt: u32,
     /// 第几次网络重试（0 = 首次）
     retry: u32,
+    /// 本次占用的槽位（只有 llama_cpp 后端有）
+    slot: Option<u32>,
+    queue_wait_ms: u64,
 }
 
 /// 一次成功收到完整流的结果
@@ -308,7 +315,7 @@ impl LlmClient {
     }
 
     /// 请求体：所有调用统一走流式（断开即取消生成），并要求服务端在最后附带 token 用量
-    fn request_body(&self, req: &CallReq<'_>) -> Value {
+    fn request_body(&self, req: &CallReq<'_>, slot: Option<u32>) -> Value {
         let mut body = json!({
             "model": self.cfg.model,
             "messages": req.messages,
@@ -322,6 +329,10 @@ impl LlmClient {
         if let Some(rf) = &req.response_format {
             body["response_format"] = rf.clone();
         }
+        // 固定槽位：指定的槽位被占时 llama.cpp 会死等，所以槽位必须是调度器挑好的空闲槽位
+        if let Some(s) = slot {
+            body["id_slot"] = json!(s);
+        }
         if let Some(b) = &self.backend {
             for (k, v) in &b.cfg.extra_body {
                 if !matches!(k.as_str(), "model" | "messages" | "stream") {
@@ -334,7 +345,7 @@ impl LlmClient {
 
     /// 发一次流式请求并累积结果。超时分三段：等响应 / 首 token 之前受 `first_token` 限制，
     /// 开始生成后每个 token 间隔受 `idle` 限制，整次请求受 `total` 限制。
-    async fn stream_once<F: FnMut(&str)>(&self, req: &CallReq<'_>, remaining: Option<Duration>, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
+    async fn stream_once<F: FnMut(&str)>(&self, req: &CallReq<'_>, slot: Option<u32>, remaining: Option<Duration>, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
         use futures::StreamExt;
         let t = &self.timeouts;
         let start = TokioInstant::now();
@@ -357,7 +368,7 @@ impl LlmClient {
             LlmError::new(kind, msg)
         };
 
-        let mut http_req = self.http.post(self.endpoint("chat/completions")).json(&self.request_body(req));
+        let mut http_req = self.http.post(self.endpoint("chat/completions")).json(&self.request_body(req, slot));
         if !self.cfg.api_key.is_empty() {
             http_req = http_req.bearer_auth(&self.cfg.api_key);
         }
@@ -437,20 +448,20 @@ impl LlmClient {
         let (ttft, pt, ct) = a.map(|a| (a.ttft_ms, a.prompt_tokens, a.completion_tokens)).unwrap_or((None, None, None));
         let finish = a.and_then(|a| a.finish_reason.as_deref());
         if let Some(b) = &self.backend {
-            b.stats.record(CallRecord { role: self.role.clone(), priority: self.priority, outcome, attempt: info.format_attempt, queue_wait_ms: 0, ttft_ms: ttft, total_ms, prompt_tokens: pt, completion_tokens: ct });
+            b.stats.record(CallRecord { role: self.role.clone(), priority: self.priority, outcome, attempt: info.format_attempt, slot: info.slot, queue_wait_ms: info.queue_wait_ms, ttft_ms: ttft, total_ms, prompt_tokens: pt, completion_tokens: ct });
         }
         if err.is_some() || outcome == "truncated" {
             let code = err.map(|e| e.kind.code()).unwrap_or(codes::LLM_TRUNCATED);
             let msg = err.map(|e| e.message.clone()).unwrap_or_default();
-            tracing::warn!(event = "llm.call", code, req_id = info.req_id, role = %self.role, priority = self.priority.as_str(), schema = info.schema, backend, model = %self.cfg.model, base_url = %self.cfg.base_url, attempt = info.format_attempt, retry = info.retry, ttft_ms = ttft, total_ms, prompt_tokens = pt, completion_tokens = ct, finish_reason = finish, outcome, error = %msg, "模型调用未成功");
+            tracing::warn!(event = "llm.call", code, req_id = info.req_id, role = %self.role, priority = self.priority.as_str(), schema = info.schema, backend, model = %self.cfg.model, base_url = %self.cfg.base_url, slot_id = info.slot, attempt = info.format_attempt, retry = info.retry, queue_wait_ms = info.queue_wait_ms, ttft_ms = ttft, total_ms, prompt_tokens = pt, completion_tokens = ct, finish_reason = finish, outcome, error = %msg, "模型调用未成功");
         } else {
-            tracing::info!(event = "llm.call", req_id = info.req_id, role = %self.role, priority = self.priority.as_str(), schema = info.schema, backend, model = %self.cfg.model, base_url = %self.cfg.base_url, attempt = info.format_attempt, retry = info.retry, ttft_ms = ttft, total_ms, prompt_tokens = pt, completion_tokens = ct, finish_reason = finish, outcome);
+            tracing::info!(event = "llm.call", req_id = info.req_id, role = %self.role, priority = self.priority.as_str(), schema = info.schema, backend, model = %self.cfg.model, base_url = %self.cfg.base_url, slot_id = info.slot, attempt = info.format_attempt, retry = info.retry, queue_wait_ms = info.queue_wait_ms, ttft_ms = ttft, total_ms, prompt_tokens = pt, completion_tokens = ct, finish_reason = finish, outcome);
         }
     }
 
     /// 一次尝试：熔断检查 → 流式请求 → 统计 / 日志 / 熔断计数。调用方中途丢弃（取消）时记为 `cancelled`
     async fn call_once<F: FnMut(&str)>(&self, req: &CallReq<'_>, retry: u32, deadline: &Deadline, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
-        let info = CallInfo { req_id: req.req_id, schema: req.schema, format_attempt: req.format_attempt, retry };
+        let mut info = CallInfo { req_id: req.req_id, schema: req.schema, format_attempt: req.format_attempt, retry, slot: None, queue_wait_ms: 0 };
         if let Some(b) = &self.backend {
             if let Err(left) = b.breaker.check() {
                 let e = LlmError::new(ErrorKind::BreakerOpen, format!("后端 {} 连续失败，已熔断，约 {} 秒后自动试探恢复", b.name, left.as_secs() + 1));
@@ -458,15 +469,43 @@ impl LlmClient {
                 return Err(e);
             }
         }
+        // 申请槽位 / 并发许可（排队时间也受调用期限约束）；租约在本函数结束或被取消时自动归还
+        let mut lease = None;
+        if let Some(b) = &self.backend {
+            let who = Who { role: &self.role, priority: self.priority, req_id: req.req_id };
+            let default_wait = match self.priority {
+                Priority::Interactive => Duration::from_secs(30),
+                Priority::Background => Duration::from_secs(600),
+            };
+            let base = b.cfg.queue_secs.map_or(default_wait, Duration::from_secs);
+            let max_wait = deadline.remaining().map_or(base, |r| base.min(r));
+            let est = estimate_messages(req.messages).saturating_add(req.max_tokens.unwrap_or(1024));
+            let queued = Instant::now();
+            match b.sched.acquire(&who, est, max_wait).await {
+                Ok(l) => {
+                    info.slot = l.slot();
+                    info.queue_wait_ms = l.queue_wait_ms();
+                    lease = Some(l);
+                }
+                Err(e) => {
+                    info.queue_wait_ms = queued.elapsed().as_millis() as u64;
+                    self.emit(&info, e.kind.outcome(), 0, None, Some(&e));
+                    return Err(e);
+                }
+            }
+        }
         let started = Instant::now();
         let mut guard = CancelGuard { client: self, info: &info, started, done: false };
-        let result = self.stream_once(req, deadline.remaining(), on_delta).await;
+        let result = self.stream_once(req, info.slot, deadline.remaining(), on_delta).await;
         guard.done = true;
         let total_ms = started.elapsed().as_millis() as u64;
         match &result {
             Ok(a) => {
                 let outcome = if a.finish_reason.as_deref() == Some("length") { "truncated" } else { "ok" };
                 self.emit(&info, outcome, total_ms, Some(a), None);
+                if let (Some(l), Some(p), Some(c)) = (&lease, a.prompt_tokens, a.completion_tokens) {
+                    l.report_usage(p + c);
+                }
                 if let Some(b) = &self.backend {
                     if b.breaker.record_success() {
                         tracing::info!(event = "llm.breaker", state = "closed", backend = %b.name, "后端恢复正常");
@@ -475,6 +514,10 @@ impl LlmClient {
             }
             Err(e) => {
                 self.emit(&info, e.kind.outcome(), total_ms, None, Some(e));
+                if let (Some(b), ErrorKind::RateLimited) = (&self.backend, e.kind) {
+                    // 429：整个后端暂停，别的请求也不要再打过去
+                    b.sched.pause_for(e.retry_after.unwrap_or(Duration::from_secs(1)), "429");
+                }
                 if let (Some(b), true) = (&self.backend, e.kind.trips_breaker()) {
                     if b.breaker.record_failure() {
                         tracing::error!(event = "llm.breaker", code = codes::LLM_BREAKER, state = "open", backend = %b.name, last_outcome = e.kind.outcome(), "后端连续失败，熔断 10 秒");

@@ -416,3 +416,101 @@ async fn format_failure_keeps_the_format_code() {
     let e = ask(&c).await.unwrap_err();
     assert_eq!((e.code, e.attempts, m.count()), ("E_LLM_FORMAT", 2, 2));
 }
+
+// ───────────────────────── 槽位调度（经客户端） ─────────────────────────
+
+use an_llm::BackendKind;
+
+fn llama_backend(url: &str, front: &[u32], back: &[u32], queue_secs: Option<u64>) -> Arc<Backend> {
+    let slots = front.iter().chain(back).max().map_or(1, |m| m + 1);
+    Arc::new(Backend::new(
+        "local",
+        BackendConfig { kind: BackendKind::LlamaCpp, base_url: url.into(), slots, interactive_slots: front.to_vec(), background_slots: back.to_vec(), queue_secs, ..Default::default() },
+    ))
+}
+
+fn on(url: &str, backend: &Arc<Backend>, role: &str, p: Priority) -> LlmClient {
+    LlmClient::new(cfg(url, 0)).unwrap().with_backend(backend.clone(), role, p).with_timeouts(timeouts(2000, 2000, 5000))
+}
+
+fn slow_reply(ms_: u64) -> Reply {
+    Reply::Stream { head_delay: ms(ms_), chunks: vec![tok("好"), finish("stop"), done()], hold: None }
+}
+
+#[tokio::test]
+async fn each_call_is_pinned_to_an_idle_slot_of_its_class() {
+    let m = start(|_, _| ok_reply(&["好"])).await;
+    let b = llama_backend(&m.url, &[0, 1], &[2, 3], None);
+    on(&m.url, &b, "conversation", Priority::Interactive).chat(&msgs()).await.unwrap();
+    on(&m.url, &b, "general", Priority::Background).chat(&msgs()).await.unwrap();
+    assert_eq!(m.body(0)["id_slot"], 0);
+    assert_eq!(m.body(1)["id_slot"], 2);
+    let recs = b.stats.recent();
+    assert_eq!((recs[0].slot, recs[1].slot), (Some(0), Some(2)));
+    // 云端（openai）后端不发 id_slot
+    let cloud = Arc::new(Backend::new("cloud", BackendConfig { base_url: m.url.clone(), ..Default::default() }));
+    on(&m.url, &cloud, "general", Priority::Background).chat(&msgs()).await.unwrap();
+    assert!(m.body(2).get("id_slot").is_none());
+}
+
+#[tokio::test]
+async fn concurrent_background_calls_get_distinct_slots_and_the_extra_one_queues() {
+    let m = start(|_, _| slow_reply(250)).await;
+    let b = llama_backend(&m.url, &[0], &[1, 2, 3], None);
+    let handles: Vec<_> = (0..4)
+        .map(|_| {
+            let c = on(&m.url, &b, "general", Priority::Background);
+            tokio::spawn(async move { c.chat(&[ChatMessage::user("x")]).await.unwrap() })
+        })
+        .collect();
+    for h in handles {
+        h.await.unwrap();
+    }
+    // 前 3 个同时发出，用的是 3 个不同的后台槽位；第 4 个等到有槽位归还才发出
+    let mut first_three: Vec<u64> = (0..3).map(|i| m.body(i)["id_slot"].as_u64().unwrap()).collect();
+    first_three.sort();
+    assert_eq!(first_three, [1, 2, 3]);
+    assert!(m.gap(0, 3) >= ms(200), "第 4 个请求没有排队：{:?}", m.gap(0, 3));
+    assert!((1..=3).contains(&m.body(3)["id_slot"].as_u64().unwrap()));
+    let recs = b.stats.recent();
+    assert!(recs.iter().any(|r| r.queue_wait_ms >= 200), "{recs:?}");
+    // 全部归还
+    assert!(b.sched.snapshot().slots.iter().all(|s| s.holder.is_none()));
+}
+
+#[tokio::test]
+async fn busy_backend_fails_with_busy_code_and_sends_nothing() {
+    let m = start(|_, _| slow_reply(600)).await;
+    let b = llama_backend(&m.url, &[0], &[1], Some(0));
+    let holder = on(&m.url, &b, "conversation", Priority::Interactive);
+    let first = tokio::spawn(async move { holder.chat(&[ChatMessage::user("x")]).await });
+    tokio::time::sleep(ms(150)).await;
+    let err = on(&m.url, &b, "router", Priority::Interactive).chat(&msgs()).await.unwrap_err();
+    assert_eq!(kind(&err), ErrorKind::Busy);
+    assert!(err.to_string().contains("E_LLM_BUSY"), "{err}");
+    assert_eq!(m.count(), 1, "拿不到槽位就不应该发请求（更不能落到别的槽位上排队）");
+    first.await.unwrap().unwrap();
+    assert_eq!(b.stats.summary().outcomes["busy"], 1);
+}
+
+#[tokio::test]
+async fn slot_is_released_when_the_call_is_dropped() {
+    let m = start(|_, _| Reply::Stream { head_delay: ms(0), chunks: vec![tok("开头")], hold: Some(Duration::from_secs(5)) }).await;
+    let b = llama_backend(&m.url, &[0], &[1], None);
+    let c = on(&m.url, &b, "conversation", Priority::Interactive);
+    assert!(tokio::time::timeout(ms(300), c.chat_stream(&msgs(), |_| {})).await.is_err());
+    tokio::time::sleep(ms(100)).await;
+    assert!(b.sched.snapshot().slots.iter().all(|s| s.holder.is_none()), "放弃的调用必须归还槽位");
+    assert_eq!(b.sched.snapshot().queue_len, 0);
+}
+
+#[tokio::test]
+async fn a_429_pauses_the_whole_cloud_backend() {
+    let m = start(|i, _| if i == 0 { Reply::Status(429, vec![("retry-after", "1")], "slow".into()) } else { ok_reply(&["好"]) }).await;
+    let cloud = Arc::new(Backend::new("cloud", BackendConfig { base_url: m.url.clone(), max_inflight: 4, ..Default::default() }));
+    let c = on(&m.url, &cloud, "general", Priority::Background);
+    assert_eq!(kind(&c.chat(&msgs()).await.unwrap_err()), ErrorKind::RateLimited);
+    // 另一个角色紧接着调用：必须等 Retry-After 过去才会发出
+    on(&m.url, &cloud, "reviewer", Priority::Background).chat(&msgs()).await.unwrap();
+    assert!(m.gap(0, 1) >= ms(900), "{:?}", m.gap(0, 1));
+}

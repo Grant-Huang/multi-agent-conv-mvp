@@ -118,6 +118,7 @@ pub struct CallRecord {
     pub priority: Priority,
     pub outcome: &'static str,
     pub attempt: u32,
+    pub slot: Option<u32>,
     pub queue_wait_ms: u64,
     pub ttft_ms: Option<u64>,
     pub total_ms: u64,
@@ -251,7 +252,7 @@ mod tests {
     }
 
     fn rec(outcome: &'static str, total_ms: u64, ttft: Option<u64>) -> CallRecord {
-        CallRecord { role: "router".into(), priority: Priority::Interactive, outcome, attempt: 1, queue_wait_ms: 0, ttft_ms: ttft, total_ms, prompt_tokens: None, completion_tokens: None }
+        CallRecord { role: "router".into(), priority: Priority::Interactive, outcome, attempt: 1, slot: None, queue_wait_ms: 0, ttft_ms: ttft, total_ms, prompt_tokens: None, completion_tokens: None }
     }
 
     #[test]

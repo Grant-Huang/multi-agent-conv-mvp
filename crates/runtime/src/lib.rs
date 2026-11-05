@@ -14,6 +14,7 @@ pub mod backends;
 pub mod bus;
 pub mod composer;
 pub mod config;
+pub mod conv_lock;
 pub mod conversation;
 pub mod nodes;
 pub mod orchestrator;

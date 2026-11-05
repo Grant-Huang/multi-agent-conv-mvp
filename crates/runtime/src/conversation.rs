@@ -23,6 +23,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::bus::Bus;
+use crate::conv_lock::ConvLocks;
 use crate::orchestrator::Orchestrator;
 use crate::prompts::{reply_system_prompt, turn_system_prompt, ReviewMode, TurnPromptInfo};
 use crate::router::Router;
@@ -40,6 +41,8 @@ pub struct ConversationRuntime {
     history_messages: usize,
     prompt_info: TurnPromptInfo,
     stream_replies: bool,
+    /// 同一会话同一时刻只处理一条消息
+    locks: ConvLocks,
 }
 
 /// 构造 ConversationRuntime 需要的参数
@@ -140,6 +143,7 @@ impl ConversationRuntime {
             history_messages: d.history_messages,
             prompt_info: TurnPromptInfo { tools: d.tools, review_mode: d.review_mode },
             stream_replies: d.stream_replies,
+            locks: ConvLocks::new(),
         }
     }
 
@@ -182,6 +186,11 @@ impl ConversationRuntime {
 
     /// 处理用户的一条消息
     pub async fn handle_message(&self, conversation_id: &str, text: &str) -> Result<TurnOutcome> {
+        // 同一会话的消息排队处理；排队时间不计入本轮耗时
+        let turn_guard = self.locks.lock(conversation_id).await;
+        if turn_guard.waited_ms >= 200 {
+            tracing::info!(event = "conversation.queued", conv_id = %conversation_id, waited_ms = turn_guard.waited_ms, "同一会话上一条消息还在处理，已排队等待");
+        }
         let started = Instant::now();
         let conv = self.store.get_conversation(conversation_id)?.context("会话不存在")?;
 

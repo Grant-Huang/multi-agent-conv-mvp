@@ -23,7 +23,7 @@
 | M0 | 本地部署 + e2e 发现的 5 个问题 + 派发边界规则 | ✅ 完成 |
 | M1 | 派发"越用越聪明"：纠错反馈、相似经验检索、纠错回归 | 待开始 |
 | M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.7 完成，2.8 待定 |
-| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .2 完成，.3 起待做 |
+| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .3 完成，.4 起待做 |
 | 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
 | M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
 | M4 | 多问题消息逐条对应回答 | 待开始 |
@@ -261,7 +261,14 @@ reviewer = "local"
   - 每轮对话设总期限（交互类默认 60s），重试预算跟着总期限走；熔断：连续失败后快速失败 10s
   - 埋点：`llm.call`、`llm.retry`、`llm.breaker`
   - 测试（mock 服务）：卡死 / 慢首 token / 429 / 400 / 截断输出 / 断开后服务端看到取消；断言"超时后不会立即再发请求"、总耗时 ≤ 期限
-- [ ] **pre-M3.3 H1：后端调度器 `BackendScheduler`（放 `an-llm`，所有调用统一经过它；按后端配置做槽位 / 并发 / 限速）**
+- [x] **pre-M3.3 H1：后端调度器 `BackendScheduler`（放 `an-llm`，所有调用统一经过它；按后端配置做槽位 / 并发 / 限速）**（2026-11-05 完成）
+  - 实现：`crates/llm/src/scheduler.rs`（`Scheduler` / `Lease` / `Who` / `SchedSnapshot`，每个 `Backend` 一个，`call_once` 在发请求前申请、结束或被取消时归还）、`tokens.rs`（粗估 token，限流和 pre-M3.4 共用）、`crates/runtime/src/conv_lock.rs`（会话级串行，先来先得，用完清理；`handle_message` 入口加锁，排队 ≥200ms 记 `conversation.queued`）
+  - 行为：前台只用前台槽位、后台只用后台槽位；`borrow_idle` 默认关；同优先级先来先得，后台在有前台排队时让路；等待有期限（`queue_secs`，默认前台 30s / 后台 600s，并受调用期限约束），超时返回 `E_LLM_BUSY`，**不发请求**（避免落到别的槽位上死等）；排队中被取消会退出队伍；`id_slot` 只发给 `llama_cpp` 后端
+  - 云端：`max_inflight` + `reserved_interactive`（后台最多占 max−reserved）、`rpm` / `tpm` 令牌桶（tpm 用响应里的真实用量修正）、429 后整个后端按 `Retry-After` 暂停（`llm.ratelimit`）
+  - 埋点：`llm.slot_acquire`（等待 ≥100ms 或借用时 info，否则 debug）、`llm.slot_release`、`llm.call` 新增 `slot_id / queue_wait_ms`；`Scheduler::snapshot()` 给诊断页用（pre-M3.6 接入）
+  - 验证：`scheduler` 单元 13 个（前台只拿前台槽位、借用开关、后台不拿前台槽位、先来先得 + 取消退队、10 并发前台峰值 = 2、云端预留 / 前台优先 / 不限 / rpm / 429 暂停 / 桶算术）、客户端集成 5 个（`id_slot` 落点、并发后台各用不同槽位且第 4 个排队、忙时不发请求、取消归还、429 暂停）、会话锁 3 个；**真实 35B（`-np 6`）**：1 前台 + 4 后台并发，`/slots` 观察到忙碌槽位 = {0,2,3,4,5}，槽位 1 未被占用，结束后全部空闲（`cargo test -p an-llm --test live_slots -- --ignored --nocapture`）
+  - 现象记录：5 路并发生成时每路约 20 token/s（单路更快），后台并发会拉低前台的生成速度——这是算力共享，不是调度问题；前台延迟的最终指标在 pre-M3.10 验收
+  - 原计划条目（供对照）：
   - 每个后端一个调度器，策略由后端 `kind` 决定：`llama_cpp` → 槽位调度（请求体带 `id_slot`）；`openai` → `max_inflight` + `reserved_interactive` + `rpm/tpm` 令牌桶，429 按 `Retry-After` 退避，不发 `id_slot`
   - 前台（conversation / reply / router / 汇总）：只用 `interactive_slots`（默认 [0,1]），由客户端选**空闲**槽位（实测指定槽位被占会死等）；全忙则排队，谁先空闲用谁，排队有期限，超时返回明确的"忙"。`borrow_idle` 默认 **false**（用户要求尽量不借用），保留为可选项：设为 true 才会借用空闲的后台槽位
   - 后台（general / reviewer / pi）：只用 `background_slots`，绝不用前台槽位；**不允许不指定槽位**；后端没有后台槽位（部署 B）时，后台角色路由到它会在启动校验时报错

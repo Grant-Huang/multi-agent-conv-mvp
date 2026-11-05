@@ -29,6 +29,8 @@ pub enum ErrorKind {
     Empty,
     /// 后端熔断中，没有发请求
     BreakerOpen,
+    /// 排队等不到空闲槽位 / 并发许可（调度器已经等过了，不再重试）
+    Busy,
 }
 
 impl ErrorKind {
@@ -47,6 +49,7 @@ impl ErrorKind {
             ErrorKind::Truncated => "truncated",
             ErrorKind::Empty => "empty",
             ErrorKind::BreakerOpen => "breaker_open",
+            ErrorKind::Busy => "busy",
         }
     }
 
@@ -61,6 +64,7 @@ impl ErrorKind {
             ErrorKind::Truncated => codes::LLM_TRUNCATED,
             ErrorKind::Empty => codes::LLM_FORMAT,
             ErrorKind::BreakerOpen => codes::LLM_BREAKER,
+            ErrorKind::Busy => codes::LLM_BUSY,
         }
     }
 
@@ -170,7 +174,7 @@ mod tests {
         }
         // 429 要重试，但不是后端故障
         assert!(ErrorKind::RateLimited.retryable() && !ErrorKind::RateLimited.trips_breaker());
-        for k in [ErrorKind::ContextExceeded, ErrorKind::Http4xx, ErrorKind::Truncated, ErrorKind::Empty, ErrorKind::BreakerOpen] {
+        for k in [ErrorKind::ContextExceeded, ErrorKind::Http4xx, ErrorKind::Truncated, ErrorKind::Empty, ErrorKind::BreakerOpen, ErrorKind::Busy] {
             assert!(!k.retryable() && !k.trips_breaker(), "{k:?}");
         }
     }

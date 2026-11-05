@@ -80,7 +80,9 @@ max_retries = 2                    # 输出不合格时把错误反馈给模型�
 # general = "cloud"
 # reviewer = "cloud"
 #
-# 其他可选项：model、structured_mode、context_tokens（0 = 从服务读取）、total_secs（单次请求总超时）、
+# 其他可选项：model、structured_mode、context_tokens（0 = 从服务读取）、queue_secs（排队等槽位 / 并发许可的最长时间，
+# 超时报"忙"；默认前台 30 秒、后台 600 秒）、connect_secs / first_token_secs / idle_secs / total_secs（分段超时）、
+# deadline_secs（前台调用含重试的期限，默认 60，0 = 不限）、
 # extra_body = { chat_template_kwargs = { enable_thinking = false } }（附加到每个请求体）
 
 # ───── 前台行为 ─────
