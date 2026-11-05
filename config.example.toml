@@ -30,6 +30,14 @@ max_retries = 2                    # 输出不合格时把错误反馈给模型�
 # router = "qwen3-1.7b"          # 判断交给哪类执行者
 # general = "qwen3-8b"
 # reviewer = "qwen3-8b"
+# 不同角色的模型跑在不同的 llama.cpp 实例（端口）上时，用 base_urls 分别指定；不写则用 [llm].base_url。
+# reply 没单独配置模型时，模型和地址都跟 conversation 一致。
+# [models.base_urls]
+# conversation = "http://127.0.0.1:8201/v1"
+# reply = "http://127.0.0.1:8201/v1"
+# router = "http://127.0.0.1:8201/v1"
+# general = "http://127.0.0.1:8200/v1"
+# reviewer = "http://127.0.0.1:8200/v1"
 
 # ───── 前台行为 ─────
 [conversation]

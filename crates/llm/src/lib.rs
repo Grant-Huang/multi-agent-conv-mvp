@@ -128,6 +128,13 @@ impl LlmClient {
         c
     }
 
+    /// 复制一个连接到其他服务地址的客户端（不同角色的模型跑在不同 llama.cpp 实例时使用）
+    pub fn with_base_url(&self, base_url: &str) -> Self {
+        let mut c = self.clone();
+        c.cfg.base_url = base_url.to_string();
+        c
+    }
+
     pub fn model(&self) -> &str {
         &self.cfg.model
     }
@@ -437,6 +444,18 @@ mod tests {
         assert_eq!(visible_text("答案是 1 <"), "答案是 1 ");
         assert_eq!(visible_text("a</think>b"), "a</think>b"); // 没有开头标签时原样输出
         assert_eq!(visible_text("前<think>x</think>后<think>未完"), "前后");
+    }
+
+    #[test]
+    fn with_base_url_changes_endpoint_and_keeps_other_settings() {
+        let cfg: LlmConfig = serde_json::from_str(r#"{"base_url":"http://127.0.0.1:8200/v1","model":"big"}"#).unwrap();
+        let big = LlmClient::new(cfg).unwrap();
+        let small = big.with_base_url("http://127.0.0.1:8201/v1/").with_model("small");
+        assert_eq!(small.endpoint("/chat/completions"), "http://127.0.0.1:8201/v1/chat/completions");
+        assert_eq!(small.model(), "small");
+        assert_eq!(small.config().timeout_secs, big.config().timeout_secs);
+        // 原客户端不受影响
+        assert_eq!(big.endpoint("chat/completions"), "http://127.0.0.1:8200/v1/chat/completions");
     }
 
     #[test]

@@ -75,8 +75,12 @@ impl Runtime {
 
         // 按角色创建 LLM 客户端（未单独配置的角色使用默认模型）
         let base = LlmClient::new(config.llm.clone())?;
-        let llm_for = |o: &Option<String>| o.as_deref().map(|m| base.with_model(m)).unwrap_or_else(|| base.clone());
+        let llm_for = |model: Option<&str>, url: Option<&str>| {
+            let c = url.map(|u| base.with_base_url(u)).unwrap_or_else(|| base.clone());
+            model.map(|m| c.with_model(m)).unwrap_or(c)
+        };
         let m = &config.models;
+        let u = &m.base_urls;
 
         // 注册 Agent（顺序即未配置执行组时的默认选择顺序：内置 → Codex → 本机 ACP → 节点）
         let registry = AgentRegistry::new(config.agents.assign_map()?);
@@ -88,9 +92,9 @@ impl Runtime {
             let tools = ToolRegistry::with_builtin(&a.general.workspace_dir)?;
             tool_names = tools.names();
             tool_listing = tools.infos().iter().map(|t| format!("  - {}：{}", t.name, t.description)).collect::<Vec<_>>().join("\n");
-            registry.register(Arc::new(GeneralAgent::new(llm_for(&m.general), tools, a.general.max_steps, a.general.max_concurrent)));
+            registry.register(Arc::new(GeneralAgent::new(llm_for(m.general.as_deref(), u.general.as_deref()), tools, a.general.max_steps, a.general.max_concurrent)));
         }
-        let reviewer = a.reviewer.enabled.then(|| Arc::new(ReviewerAgent::new(llm_for(&m.reviewer))));
+        let reviewer = a.reviewer.enabled.then(|| Arc::new(ReviewerAgent::new(llm_for(m.reviewer.as_deref(), u.reviewer.as_deref()))));
         if let Some(r) = &reviewer {
             registry.register(r.clone());
         }
@@ -113,20 +117,23 @@ impl Runtime {
         nodes.load_saved()?;
 
         let o = &config.orchestrator;
-        let router = Arc::new(Router::new(llm_for(&m.router), registry.clone(), tool_names, Policy { approval_risk: o.approval_risk }));
+        let router = Arc::new(Router::new(llm_for(m.router.as_deref(), u.router.as_deref()), registry.clone(), tool_names, Policy { approval_risk: o.approval_risk }));
         let orchestrator = Arc::new(Orchestrator::new(
             store.clone(),
             bus.clone(),
             registry.clone(),
             reviewer,
-            Composer::new(llm_for(&m.conversation)),
+            Composer::new(llm_for(m.conversation.as_deref(), u.conversation.as_deref())),
             o.max_review_rounds,
             Duration::from_secs(o.task_timeout_secs),
         ));
         let conversation = Arc::new(ConversationRuntime::new(conversation::ConversationDeps {
-            llm: llm_for(&m.conversation),
-            // 回复模型：没单独配置时与前台判断用同一个模型
-            reply_llm: llm_for(if m.reply.is_some() { &m.reply } else { &m.conversation }),
+            llm: llm_for(m.conversation.as_deref(), u.conversation.as_deref()),
+            // 回复模型：没单独配置时与前台判断用同一个模型（含服务地址）
+            reply_llm: {
+                let (model, url) = m.reply_target();
+                llm_for(model, url)
+            },
             store: store.clone(),
             bus: bus.clone(),
             router: router.clone(),

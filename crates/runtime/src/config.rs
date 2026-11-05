@@ -106,6 +106,31 @@ pub struct ModelOverrides {
     pub router: Option<String>,
     pub general: Option<String>,
     pub reviewer: Option<String>,
+    /// 各角色的服务地址；不填则使用 `[llm].base_url`
+    #[serde(default)]
+    pub base_urls: ModelBaseUrls,
+}
+
+/// 各角色使用的 llama.cpp 服务地址（模型跑在不同实例/端口时用）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModelBaseUrls {
+    pub conversation: Option<String>,
+    pub reply: Option<String>,
+    pub router: Option<String>,
+    pub general: Option<String>,
+    pub reviewer: Option<String>,
+}
+
+impl ModelOverrides {
+    /// 回复角色的 (模型名, 服务地址)：没单独配置模型时与 conversation 完全一致；
+    /// 配置了自己的模型则只用自己的地址（不继承 conversation 的，避免模型和服务对不上）
+    pub fn reply_target(&self) -> (Option<&str>, Option<&str>) {
+        if self.reply.is_some() {
+            (self.reply.as_deref(), self.base_urls.reply.as_deref())
+        } else {
+            (self.conversation.as_deref(), self.base_urls.reply.as_deref().or(self.base_urls.conversation.as_deref()))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -338,6 +363,47 @@ mod assign_tests {
         assert_eq!(m["general"], ["hermes@a", "hermes@b"]);
         let bad: AgentsConfig = toml::from_str("[assign]\ncodeing = \"x\"").unwrap();
         assert!(bad.assign_map().unwrap_err().to_string().contains("E_POOL_CONFIG"));
+    }
+}
+
+#[cfg(test)]
+mod model_endpoint_tests {
+    use super::*;
+
+    const TWO_SERVERS: &str = "[llm]\nbase_url = \"http://big/v1\"\nmodel = \"big\"\n\
+        [models]\nconversation = \"small\"\n[models.base_urls]\nconversation = \"http://small/v1\"\n";
+
+    #[test]
+    fn base_urls_parse_per_role() {
+        let (cfg, unknown) = AppConfig::parse(TWO_SERVERS).unwrap();
+        assert!(unknown.is_empty(), "{unknown:?}");
+        assert_eq!(cfg.models.conversation.as_deref(), Some("small"));
+        assert_eq!(cfg.models.base_urls.conversation.as_deref(), Some("http://small/v1"));
+        assert!(cfg.models.base_urls.general.is_none());
+    }
+
+    #[test]
+    fn unknown_role_in_base_urls_is_reported() {
+        let (_, unknown) = AppConfig::parse("[llm]\nbase_url = \"x\"\nmodel = \"m\"\n[models.base_urls]\nconvo = \"y\"").unwrap();
+        assert_eq!(unknown, ["models.base_urls.convo"]);
+    }
+
+    #[test]
+    fn reply_follows_conversation_when_not_configured() {
+        let (cfg, _) = AppConfig::parse(TWO_SERVERS).unwrap();
+        let (model, url) = cfg.models.reply_target();
+        assert_eq!(model, Some("small"));
+        assert_eq!(url, Some("http://small/v1"));
+    }
+
+    #[test]
+    fn reply_with_own_model_does_not_inherit_conversation_url() {
+        let mut m: ModelOverrides = toml::from_str("conversation = \"small\"\nreply = \"other\"\n[base_urls]\nconversation = \"http://small/v1\"").unwrap();
+        let (model, url) = m.reply_target();
+        assert_eq!(model, Some("other"));
+        assert_eq!(url, None);
+        m.base_urls.reply = Some("http://r/v1".into());
+        assert_eq!(m.reply_target().1, Some("http://r/v1"));
     }
 }
 
