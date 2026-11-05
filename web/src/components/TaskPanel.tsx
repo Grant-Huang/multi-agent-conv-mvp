@@ -1,8 +1,10 @@
 // 任务面板：任务列表，点击展开查看事件时间线、结果、产物、证据、审查意见。
-import { useEffect, useState } from "react";
-import { api, type TaskDetail } from "../api";
+import { useState } from "react";
+import { api } from "../api";
+import type { TaskEvent } from "../bindings/TaskEvent";
 import type { TaskRecord } from "../bindings/TaskRecord";
 import type { TaskStatus } from "../bindings/TaskStatus";
+import { useIncomingDetail } from "../refresh";
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
   CREATED: "已创建",
@@ -19,7 +21,7 @@ export function StatusBadge({ status }: { status: TaskStatus }) {
   return <span className={`badge s-${status.toLowerCase()}`}>{STATUS_LABEL[status]}</span>;
 }
 
-export function TaskPanel({ tasks, eventTick, onChanged }: { tasks: TaskRecord[]; eventTick: number; onChanged: () => void }) {
+export function TaskPanel({ tasks, incoming, onChanged }: { tasks: TaskRecord[]; incoming: TaskEvent | null; onChanged: () => void }) {
   const [openId, setOpenId] = useState<string | null>(null);
   if (tasks.length === 0) return <div className="panel-empty">还没有任务。需要后台执行的请求会出现在这里。</div>;
   return (
@@ -30,7 +32,7 @@ export function TaskPanel({ tasks, eventTick, onChanged }: { tasks: TaskRecord[]
           task={t}
           open={openId === t.id}
           onToggle={() => setOpenId(openId === t.id ? null : t.id)}
-          eventTick={eventTick}
+          incoming={incoming}
           onChanged={onChanged}
         />
       ))}
@@ -38,15 +40,10 @@ export function TaskPanel({ tasks, eventTick, onChanged }: { tasks: TaskRecord[]
   );
 }
 
-function TaskCard(props: { task: TaskRecord; open: boolean; onToggle: () => void; eventTick: number; onChanged: () => void }) {
-  const { task, open, onToggle, eventTick, onChanged } = props;
-  const [detail, setDetail] = useState<TaskDetail | null>(null);
+function TaskCard(props: { task: TaskRecord; open: boolean; onToggle: () => void; incoming: TaskEvent | null; onChanged: () => void }) {
+  const { task, open, onToggle, incoming, onChanged } = props;
+  const detail = useIncomingDetail(open, task.id, incoming);
   const [busy, setBusy] = useState(false);
-
-  // 展开时加载详情；有新事件时自动刷新
-  useEffect(() => {
-    if (open) api.task(task.id).then(setDetail).catch(() => {});
-  }, [open, task.id, eventTick]);
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);

@@ -4,17 +4,22 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { RouteLog } from "../bindings/RouteLog";
 
-export function RouteLogPanel({ eventTick }: { eventTick: number }) {
+export function RouteLogPanel({ refreshTick }: { refreshTick: number }) {
   const [logs, setLogs] = useState<RouteLog[]>([]);
 
-  useEffect(() => {
-    api.routeLogs().then(setLogs).catch(() => {});
-  }, [eventTick]);
+  const load = () => api.routeLogs().then(setLogs).catch(() => {});
 
-  if (logs.length === 0) return <div className="panel-empty">暂无路由日志。</div>;
+  // 打开页签时拉一次；之后只在状态变化 / 助手消息时节流刷新
+  useEffect(() => {
+    load();
+  }, [refreshTick]);
 
   return (
     <div className="task-list">
+      <div className="row">
+        <button className="btn small" onClick={load}>刷新</button>
+      </div>
+      {logs.length === 0 && <div className="panel-empty">暂无路由日志。</div>}
       {logs.map((l) => (
         <div key={l.id} className="task-card log">
           <div className="log-text">{l.user_text}</div>

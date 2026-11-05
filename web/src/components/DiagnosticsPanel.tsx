@@ -1,16 +1,21 @@
+/// <reference types="vite/client" />
 // 诊断页：模型连通性、执行组状态、按错误码统计、最近的问题。
 // "复制诊断信息"会复制完整 JSON，可以直接贴给 AI 或开发者排查。
 import { useEffect, useState } from "react";
 import { api, type Diagnostics } from "../api";
+import { refreshStats } from "../refresh";
 
-export function DiagnosticsPanel({ eventTick }: { eventTick: number }) {
+export function DiagnosticsPanel({ refreshTick }: { refreshTick: number }) {
   const [d, setD] = useState<Diagnostics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const load = () => api.diagnostics().then(setD).catch((e) => setError(String(e)));
+
+  // 打开页签时拉一次；之后只在状态变化 / 助手消息时节流刷新
   useEffect(() => {
-    api.diagnostics().then(setD).catch((e) => setError(String(e)));
-  }, [eventTick]);
+    load();
+  }, [refreshTick]);
 
   const copy = async () => {
     if (!d) return;
@@ -31,9 +36,13 @@ export function DiagnosticsPanel({ eventTick }: { eventTick: number }) {
   return (
     <div className="task-list">
       <div className="row">
+        <button className="btn small" onClick={load}>刷新</button>
         <button className="btn small" onClick={copy}>{copied ? "已复制" : "复制诊断信息"}</button>
         <span className="kv muted push-right">v{d.version}</span>
       </div>
+      {import.meta.env.DEV && (
+        <div className="kv muted">刷新触发 {refreshStats.fired} 次，节流丢弃 {refreshStats.dropped} 次</div>
+      )}
 
       <section className="section">
         <h4>后端</h4>

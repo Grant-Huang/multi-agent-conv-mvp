@@ -23,7 +23,7 @@
 | M0 | 本地部署 + e2e 发现的 5 个问题 + 派发边界规则 | ✅ 完成 |
 | M1 | 派发"越用越聪明"：纠错反馈、相似经验检索、纠错回归 | 待开始 |
 | M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.7 完成，2.8 待定 |
-| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .6 完成，.7 起待做 |
+| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .7 完成，.8 起待做 |
 | 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
 | M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
 | M4 | 多问题消息逐条对应回答 | 待开始 |
@@ -320,7 +320,13 @@ reviewer = "local"
   - 云端（openai）后端不请求 `/slots`；读 `/slots` 失败记在 `server_error`，不把模型标成未连接
   - 前端：左下角每个后端一行；诊断页"后端"一节展示槽位、指标和调用统计
   - 验证：解析单测 2 个；缓存集成（两个客户端并发 `list_models` 只打到服务 1 次，`/slots`+`/metrics` 解析，openai 不读 slots）；e2e 健康检查断言 `backends[0].ok`；对真实 35B 起临时服务核对诊断 JSON，并在浏览器打开诊断页看槽位
-- [ ] **pre-M3.7 H5 前端刷新风暴**
+- [x] **pre-M3.7 H5 前端刷新风暴**（2026-11-05 完成）
+  - 实现：`web/src/refresh.ts`（`planFor` / `createEventPump` / `createTrailingThrottle` 尾部节流 1 秒 / `useIncomingDetail` / `createDeltaBuffer` / `createMarkdownGate`）。进度事件不拉 `/api/tasks`；任务列表、消息、诊断和路由日志只在 `status_changed` / `assistant_message` 时刷新，而且只刷新当前页签；切回任务页签时补拉一次
+  - 任务详情：展开时拉一次全量，之后每条事件本地追加，节流后再 `GET /api/tasks/{id}?after=<事件 id>`（`Store::list_events_after`，找不到该 id 时返回全部以免漏事件）
+  - 诊断页、路由日志：打开时拉一次，上述两类事件节流刷新，并有手动「刷新」。开发模式下诊断页显示刷新触发 / 节流丢弃次数
+  - 流式：同一帧的 delta 用 `requestAnimationFrame` 合成一次 `setState`；生成过程中气泡是纯文本，结束后由消息列表做一次 Markdown；历史消息 `React.memo`（id + 内容不变则不重渲染）
+  - 测试：vitest + @testing-library/react + jsdom（`npm test`）。连发 50 个进度事件只打 1 次任务详情增量接口、不打任务列表；100 个流式片段 Markdown 解析次数为 0，结束后 ≤ 4；帧合并与 Markdown 门闩另有断言
+  - 原计划条目（供对照）：
   - 事件刷新统一走一个节流 hook（尾部节流 ~1s）；只刷新当前可见的页签；进度类事件不再触发 `api.tasks`
   - 任务详情用事件本地追加，加载一次后用 `?after=<event_id>` 增量拉取
   - 诊断页 / 路由日志页：打开页签时取一次 + 仅在 `status_changed` / `assistant_message` 时节流刷新 + 手动刷新

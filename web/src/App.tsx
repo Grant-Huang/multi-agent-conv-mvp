@@ -1,6 +1,8 @@
 // AgentNexus MVP 前端：左侧会话列表，中间对话，右侧任务面板 / 路由日志。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, subscribeEvents, type Health } from "./api";
+import type { TaskEvent } from "./bindings/TaskEvent";
+import { createDeltaBuffer, createEventPump, REFRESH_INTERVAL_MS } from "./refresh";
 import type { Conversation } from "./bindings/Conversation";
 import type { Message } from "./bindings/Message";
 import type { TaskRecord } from "./bindings/TaskRecord";
@@ -17,8 +19,10 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [sideTab, setSideTab] = useState<"tasks" | "nodes" | "diag" | "logs">("tasks");
-  // 每次收到事件时递增，用来通知子组件刷新（例如展开中的任务详情）
-  const [eventTick, setEventTick] = useState(0);
+  // 只在状态变化 / 助手消息时递增，而且做了节流；诊断页和路由日志用它刷新
+  const [panelTick, setPanelTick] = useState(0);
+  // 最新一条任务事件，展开的任务卡片会把它追加到时间线上
+  const [incoming, setIncoming] = useState<TaskEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 正在流式生成的回答：id 等于最终消息的 id，最终消息到达后自动隐藏
   const [streaming, setStreaming] = useState<{ id: string; text: string } | null>(null);
@@ -50,6 +54,12 @@ export default function App() {
     setTasks(t);
   }, []);
 
+  const sideRef = useRef(sideTab);
+  sideRef.current = sideTab;
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  const streamRef = useRef("");
+
   // 切换会话：加载数据 + 订阅 SSE 事件
   useEffect(() => {
     if (!current) {
@@ -58,23 +68,44 @@ export default function App() {
       return;
     }
     refreshConversation(current).catch((e) => setError(String(e)));
+    const pushDelta = createDeltaBuffer((chunk) => {
+      const id = streamRef.current;
+      setStreaming((prev) => (prev && prev.id === id ? { id, text: prev.text + chunk } : { id, text: chunk }));
+    }, (cb) => {
+      requestAnimationFrame(cb);
+    });
+    const pump = createEventPump({
+      intervalMs: REFRESH_INTERVAL_MS,
+      onTasks: () => {
+        const cid = currentRef.current;
+        // 只有任务页签可见时才拉列表；进度事件不会走到这里
+        if (cid && sideRef.current === "tasks") api.tasks(cid).then(setTasks).catch(() => {});
+      },
+      onMessages: () => {
+        const cid = currentRef.current;
+        if (cid) api.messages(cid).then(setMessages).catch(() => {});
+      },
+      onPanels: () => {
+        if (sideRef.current === "diag" || sideRef.current === "logs") setPanelTick((n) => n + 1);
+      },
+      onLive: (ev) => setIncoming(ev),
+      // 增量拉取在展开的任务卡片里，按它自己的游标节流；这里不再发第二次请求
+      onDetail: () => {},
+      onDelta: (piece, id) => {
+        streamRef.current = id;
+        pushDelta(piece);
+      },
+    });
     return subscribeEvents(current, (ev) => {
-      if (ev.kind === "assistant_delta") {
-        // 流式片段：拼接到当前回答上，不触发其他刷新
-        const id = ev.stream_id ?? "";
-        setStreaming((prev) => (prev && prev.id === id ? { id, text: prev.text + ev.message } : { id, text: ev.message }));
-        return;
-      }
-      setEventTick((n) => n + 1);
-      if (ev.kind === "assistant_message") {
-        // 任务结果交付：刷新消息
-        api.messages(current).then(setMessages).catch(() => {});
-      }
-      if (ev.kind === "status_changed" || ev.kind === "assistant_message") {
-        api.tasks(current).then(setTasks).catch(() => {});
-      }
+      if (ev.kind === "assistant_message") setStreaming(null);
+      pump(ev);
     });
   }, [current, refreshConversation]);
+
+  // 切回任务页签时拉一次列表（看别的页签时状态变化不会打 /api/tasks）
+  useEffect(() => {
+    if (sideTab === "tasks" && current) api.tasks(current).then(setTasks).catch(() => {});
+  }, [sideTab, current]);
 
   const newConversation = async () => {
     const c = await api.createConversation();
@@ -146,11 +177,11 @@ export default function App() {
           <button className={sideTab === "logs" ? "active" : ""} onClick={() => setSideTab("logs")}>路由日志</button>
         </div>
         {sideTab === "tasks" && (
-          <TaskPanel tasks={tasks} eventTick={eventTick} onChanged={() => current && refreshConversation(current)} />
+          <TaskPanel tasks={tasks} incoming={incoming} onChanged={() => current && refreshConversation(current)} />
         )}
         {sideTab === "nodes" && <NodesPanel />}
-        {sideTab === "diag" && <DiagnosticsPanel eventTick={eventTick} />}
-        {sideTab === "logs" && <RouteLogPanel eventTick={eventTick} />}
+        {sideTab === "diag" && <DiagnosticsPanel refreshTick={panelTick} />}
+        {sideTab === "logs" && <RouteLogPanel refreshTick={panelTick} />}
       </aside>
     </div>
   );

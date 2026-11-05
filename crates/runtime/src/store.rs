@@ -287,9 +287,16 @@ impl Store {
     }
 
     pub fn list_events(&self, task_id: &str) -> Result<Vec<TaskEvent>> {
+        self.list_events_after(task_id, None)
+    }
+
+    /// `after_id` 之后的事件（不含这条）。用于任务详情增量拉取。找不到该 id 时返回全部，避免漏事件
+    pub fn list_events_after(&self, task_id: &str, after_id: Option<&str>) -> Result<Vec<TaskEvent>> {
         let conn = self.conn();
-        let mut st = conn.prepare("SELECT json FROM events WHERE task_id = ?1 ORDER BY created_at, rowid")?;
-        let rows = st.query_map([task_id], |r| r.get::<_, String>(0))?;
+        let mut st = conn.prepare(
+            "SELECT json FROM events WHERE task_id = ?1 AND (?2 IS NULL OR rowid > COALESCE((SELECT rowid FROM events WHERE id = ?2), 0)) ORDER BY created_at, rowid",
+        )?;
+        let rows = st.query_map(params![task_id, after_id], |r| r.get::<_, String>(0))?;
         rows.map(|j| Ok(serde_json::from_str(&j?)?)).collect()
     }
 
@@ -421,6 +428,33 @@ mod tests {
         // 重复 open（幂等）
         drop(store);
         Store::open(&db).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn events_after_returns_only_newer_rows() {
+        use an_core::EventKind;
+        let dir = std::env::temp_dir().join(an_core::new_id("an-store-events"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        let ev = |id: &str| TaskEvent {
+            id: id.into(),
+            conversation_id: "c".into(),
+            task_id: Some("t".into()),
+            kind: EventKind::Progress,
+            status: None,
+            message: id.into(),
+            stream_id: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+        };
+        for id in ["e1", "e2", "e3"] {
+            store.insert_event(&ev(id)).unwrap();
+        }
+        let ids = |after: Option<&str>| store.list_events_after("t", after).unwrap().into_iter().map(|e| e.id).collect::<Vec<_>>();
+        assert_eq!(ids(None), vec!["e1", "e2", "e3"]);
+        assert_eq!(ids(Some("e1")), vec!["e2", "e3"]);
+        assert_eq!(ids(Some("e3")), Vec::<String>::new());
+        assert_eq!(ids(Some("missing")), vec!["e1", "e2", "e3"]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

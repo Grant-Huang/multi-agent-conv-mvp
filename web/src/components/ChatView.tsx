@@ -1,10 +1,21 @@
 // 对话区：消息列表 + 输入框（Enter 发送，Shift+Enter 换行）
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message } from "../bindings/Message";
 
 /** 助手回复按 Markdown 渲染（react-markdown 默认不渲染原始 HTML） */
+const MessageRow = memo(function MessageRow({ m }: { m: Message }) {
+  return (
+    <div className={`msg ${m.role}`}>
+      <div className={m.role === "user" ? "bubble" : "bubble md"}>
+        {m.role === "user" ? m.content : <MarkdownText text={m.content} />}
+        {m.task_id && <div className="msg-task">任务 {m.task_id.slice(0, 13)}</div>}
+      </div>
+    </div>
+  );
+}, (a, b) => a.m.id === b.m.id && a.m.content === b.m.content && a.m.role === b.m.role);
+
 function MarkdownText(props: { text: string }) {
   return (
     <Markdown
@@ -62,17 +73,13 @@ export function ChatView(props: {
           </div>
         )}
         {messages.map((m) => (
-          <div key={m.id} className={`msg ${m.role}`}>
-            <div className={m.role === "user" ? "bubble" : "bubble md"}>
-              {m.role === "user" ? m.content : <MarkdownText text={m.content} />}
-              {m.task_id && <div className="msg-task">任务 {m.task_id.slice(0, 13)}</div>}
-            </div>
-          </div>
+          <MessageRow key={m.id} m={m} />
         ))}
         {streaming && (
           <div className="msg assistant">
             <div className="bubble md">
-              <MarkdownText text={streaming.text} />
+              {/* 流式过程中用纯文本，避免每个片段都重新解析 Markdown；结束后由消息列表完整渲染 */}
+              <span className="stream-plain">{streaming.text}</span>
               <span className="cursor">▍</span>
             </div>
           </div>

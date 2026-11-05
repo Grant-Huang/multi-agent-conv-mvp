@@ -89,7 +89,7 @@ export const api = {
   send: (cid: string, text: string) =>
     request<TurnOutcome>(`/api/conversations/${cid}/messages`, { method: "POST", body: JSON.stringify({ text }) }),
   tasks: (cid: string) => request<TaskRecord[]>(`/api/tasks?conversation_id=${cid}`),
-  task: (id: string) => request<TaskDetail>(`/api/tasks/${id}`),
+  task: (id: string, after?: string) => request<TaskDetail>(`/api/tasks/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   cancel: (id: string) => request<{ cancelled: boolean }>(`/api/tasks/${id}/cancel`, { method: "POST" }),
   approve: (id: string) => request<{ approved: boolean }>(`/api/tasks/${id}/approve`, { method: "POST" }),
   routeLogs: () => request<RouteLog[]>("/api/route-logs?limit=50"),

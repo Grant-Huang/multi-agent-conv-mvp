@@ -7,7 +7,7 @@
 //! | GET/POST | /api/conversations | 会话列表 / 新建会话 |
 //! | GET/POST | /api/conversations/{id}/messages | 消息列表 / 发送消息 |
 //! | GET  | /api/tasks?conversation_id= | 任务列表 |
-//! | GET  | /api/tasks/{id} | 任务详情 + 事件 |
+//! | GET  | /api/tasks/{id}?after= | 任务详情；`after` 为事件 id 时只返回它之后的新事件 |
 //! | POST | /api/tasks/{id}/cancel、/approve | 取消 / 人工批准 |
 //! | GET  | /api/route-logs?limit= | 路由日志 |
 //! | GET  | /api/events?conversation_id= | SSE 事件流 |
@@ -146,9 +146,15 @@ struct TaskDetail {
     events: Vec<TaskEvent>,
 }
 
-async fn get_task(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<TaskDetail> {
+#[derive(Deserialize)]
+struct AfterQuery {
+    /// 只返回这条事件之后的新事件（任务详情增量刷新）
+    after: Option<String>,
+}
+
+async fn get_task(State(rt): State<AppState>, Path(id): Path<String>, Query(q): Query<AfterQuery>) -> ApiResult<TaskDetail> {
     let task = rt.store.get_task(&id)?.ok_or_else(|| not_found("任务"))?;
-    Ok(Json(TaskDetail { events: rt.store.list_events(&id)?, task }))
+    Ok(Json(TaskDetail { events: rt.store.list_events_after(&id, q.after.as_deref())?, task }))
 }
 
 async fn cancel_task(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<serde_json::Value> {
