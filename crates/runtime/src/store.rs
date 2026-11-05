@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     result_json TEXT,
     review_json TEXT,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    context TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_conv ON tasks(conversation_id, created_at);
 CREATE TABLE IF NOT EXISTS events (
@@ -78,6 +79,15 @@ impl Store {
         let conn = Connection::open(path).with_context(|| format!("无法打开数据库 {}", path.display()))?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch(SCHEMA)?;
+        // 兼容旧库：tasks 表补 context 列（新库建表时已包含）
+        let has_context: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'context'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_context == 0 {
+            conn.execute_batch("ALTER TABLE tasks ADD COLUMN context TEXT NOT NULL DEFAULT ''")?;
+        }
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -166,10 +176,10 @@ impl Store {
 
     // ───────────── 任务 ─────────────
 
-    pub fn insert_task(&self, t: &TaskRecord) -> Result<()> {
+    pub fn insert_task(&self, t: &TaskRecord, context: &str) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO tasks (id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO tasks (id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, context)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 t.id,
                 t.conversation_id,
@@ -182,7 +192,24 @@ impl Store {
                 t.review.as_ref().map(serde_json::to_string).transpose()?,
                 t.created_at,
                 t.updated_at,
+                context,
             ],
+        )?;
+        Ok(())
+    }
+
+    /// 执行上下文（近期对话摘录；返工时会追加审查问题）。submit 时写入，执行时读取
+    pub fn get_task_context(&self, id: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT context FROM tasks WHERE id = ?1", [id], |r| r.get(0))
+            .optional()?)
+    }
+
+    pub fn set_task_context(&self, id: &str, context: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE tasks SET context = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, context, now()],
         )?;
         Ok(())
     }
@@ -357,4 +384,43 @@ pub struct StoredNode {
     pub token: String,
     pub cards: Vec<an_core::AgentCard>,
     pub paired_at: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 旧库（tasks 表没有 context 列）在 Store::open 时应自动补列，存量数据不受影响
+    #[test]
+    fn migrate_old_db_adds_context_column() {
+        let dir = std::env::temp_dir().join(an_core::new_id("an-store-test"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("old.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE tasks (
+                    id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, goal TEXT NOT NULL,
+                    role TEXT NOT NULL, status TEXT NOT NULL, route_json TEXT NOT NULL,
+                    policy_json TEXT NOT NULL, result_json TEXT, review_json TEXT,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                );",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO tasks VALUES ('t1','c1','g','general','NEEDS_HUMAN','{}','{}',NULL,NULL,'2026-01-01','2026-01-01')",
+                [],
+            )
+            .unwrap();
+        }
+        let store = Store::open(&db).unwrap();
+        // 旧行补列后 context 为空；get / set 正常
+        assert_eq!(store.get_task_context("t1").unwrap(), Some(String::new()));
+        store.set_task_context("t1", "背景").unwrap();
+        assert_eq!(store.get_task_context("t1").unwrap().as_deref(), Some("背景"));
+        // 重复 open（幂等）
+        drop(store);
+        Store::open(&db).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

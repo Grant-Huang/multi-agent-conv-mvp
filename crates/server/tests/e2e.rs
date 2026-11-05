@@ -72,7 +72,9 @@ fn mock_reply(req: &Value, format_calls: &AtomicUsize) -> String {
         }
         "general_step" => {
             if all_text.contains("工具 write_file 的返回结果") || all_text.contains("工具 list_files 的返回结果") {
-                json!({"thought":"完成","action":"final","tool":"","args":{},"answer":"报告已写入 reports/r.md"}).to_string()
+                // 重启场景测试：执行者是否收到了重启前的对话背景（context）
+                let answer = if all_text.contains("用户：删除旧数据") { "CONTEXT_OK" } else { "报告已写入 reports/r.md" };
+                json!({"thought":"完成","action":"final","tool":"","args":{},"answer":answer}).to_string()
             } else if all_text.contains("删除") {
                 json!({"thought":"先看看","action":"tool_call","tool":"list_files","args":{"path":""},"answer":""}).to_string()
             } else {
@@ -563,4 +565,70 @@ async fn mdns_discovery() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     panic!("10 秒内没有发现节点");
+}
+
+/// 用同一个 SQLite 文件先后启动两个 Runtime（模拟服务重启）
+async fn serve_runtime(db: &std::path::Path, config_toml: &str) -> (String, Arc<Runtime>) {
+    let config: AppConfig = toml::from_str(config_toml).unwrap();
+    let rt = Arc::new(Runtime::new(config, Store::open(db).unwrap()).unwrap());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let for_serve = rt.clone();
+    tokio::spawn(async move { axum::serve(listener, an_server::api(for_serve)).await.unwrap() });
+    (format!("http://{addr}"), rt)
+}
+
+/// 执行上下文持久化：高风险任务等审批时服务重启，批准后执行者仍能拿到重启前的对话背景。
+/// （对应 docs/DESIGN.md 已知限制第 2 条的修复：context 存 tasks 表，不再依赖内存）
+#[tokio::test]
+async fn context_survives_restart() {
+    let llm_url = start_mock_llm().await;
+    let tmp = std::env::temp_dir().join(an_core::new_id("an-ctx"));
+    std::fs::create_dir_all(&tmp).unwrap();
+    let db = tmp.join("state.db");
+    let config_toml = format!(
+        r#"
+[llm]
+base_url = "{llm_url}"
+model = "mock"
+
+[agents.general]
+workspace_dir = "{ws}"
+"#,
+        ws = tmp.join("files").display()
+    );
+    let http = reqwest::Client::new();
+
+    // 第一次启动：高风险任务（"删除旧数据"）→ NEEDS_HUMAN，未执行
+    let (base_a, _) = serve_runtime(&db, &config_toml).await;
+    let conv: Value = http.post(format!("{base_a}/api/conversations")).json(&json!({})).send().await.unwrap().json().await.unwrap();
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let out: Value = http
+        .post(format!("{base_a}/api/conversations/{cid}/messages"))
+        .json(&json!({"text": "删除旧数据"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(out["task"]["status"], "NEEDS_HUMAN", "{out}");
+    let tid = out["task"]["id"].as_str().unwrap().to_string();
+
+    // 第二次启动：内存全部丢失，从数据库恢复。批准后任务执行时应带着原始对话背景
+    let (base_b, rt_b) = serve_runtime(&db, &config_toml).await;
+    let r = http.post(format!("{base_b}/api/tasks/{tid}/approve")).json(&json!({})).send().await.unwrap();
+    assert!(r.status().is_success());
+    let mut d = Value::Null;
+    for _ in 0..100 {
+        d = http.get(format!("{base_b}/api/tasks/{tid}")).send().await.unwrap().json().await.unwrap();
+        if ["COMPLETED", "FAILED"].contains(&d["task"]["status"].as_str().unwrap_or("")) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(d["task"]["status"], "COMPLETED", "{d}");
+    // mock 收到含"用户：删除旧数据"的上下文时回答 CONTEXT_OK，否则 CONTEXT 缺失
+    assert_eq!(d["task"]["result"]["summary"], "CONTEXT_OK", "{d}");
+    assert!(rt_b.store.get_task_context(&tid).unwrap().unwrap_or_default().contains("删除旧数据"));
 }

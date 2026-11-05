@@ -42,8 +42,6 @@ pub struct Orchestrator {
     task_timeout: Duration,
     /// 正在执行的任务，用于取消
     running: Mutex<HashMap<String, AbortHandle>>,
-    /// 任务的执行上下文（审批后启动时需要）
-    contexts: Mutex<HashMap<String, String>>,
 }
 
 impl Orchestrator {
@@ -66,7 +64,6 @@ impl Orchestrator {
             max_review_rounds,
             task_timeout,
             running: Mutex::new(HashMap::new()),
-            contexts: Mutex::new(HashMap::new()),
         }
     }
 
@@ -100,8 +97,7 @@ impl Orchestrator {
             created_at: ts.clone(),
             updated_at: ts,
         };
-        self.store.insert_task(&task)?;
-        self.contexts.lock().unwrap().insert(task.id.clone(), context.to_string());
+        self.store.insert_task(&task, context)?;
         self.bus.status(&task.conversation_id, &task.id, TaskStatus::Created, format!("任务已创建，执行角色：{}", task.role.as_str()));
 
         if task.policy.auto_execute {
@@ -133,7 +129,6 @@ impl Orchestrator {
         if let Some(h) = self.running.lock().unwrap().remove(task_id) {
             h.abort();
         }
-        self.contexts.lock().unwrap().remove(task_id);
         self.set_status(&task, TaskStatus::Cancelled, "任务已取消");
         Ok(true)
     }
@@ -148,7 +143,6 @@ impl Orchestrator {
             let id = task.id.clone();
             this.execute(task).await;
             this.running.lock().unwrap().remove(&id);
-            this.contexts.lock().unwrap().remove(&id);
         });
         running.insert(id, handle.abort_handle());
     }
@@ -211,7 +205,8 @@ impl Orchestrator {
 
     /// 执行 Worker，并按 Policy 组织审查与返工
     async fn run_with_review(&self, task: &TaskRecord) -> Result<(TaskStatus, Option<TaskResult>, Option<ReviewVerdict>)> {
-        let mut context = self.contexts.lock().unwrap().get(&task.id).cloned().unwrap_or_default();
+        // 执行上下文存在 tasks 表里：服务重启后（例如等待审批的任务被批准时）依然可用
+        let mut context = self.store.get_task_context(&task.id)?.unwrap_or_default();
         let sink = EventSink::new(self.bus.clone(), &task.conversation_id, &task.id);
 
         let mut round = 0;
@@ -255,13 +250,14 @@ impl Orchestrator {
                 Verdict::Pass => return Ok((TaskStatus::Completed, Some(result), Some(verdict))),
                 Verdict::NeedsHuman => return Ok((TaskStatus::NeedsHuman, Some(result), Some(verdict))),
                 Verdict::Fail if round < self.max_review_rounds => {
-                    // 闭环返工：把审查问题清单作为上下文，再执行一轮
+                    // 闭环返工：把审查问题清单作为上下文，再执行一轮（同时写回数据库，重启后返工上下文也不丢）
                     round += 1;
                     context = format!(
                         "{context}\n\n## 上一轮结果未通过审查，请修正以下问题\n{}\n\n## 上一轮结果摘要\n{}",
                         verdict.issues.iter().map(|i| format!("- {i}")).collect::<Vec<_>>().join("\n"),
                         an_core::truncate_chars(&result.summary, 2000)
                     );
+                    self.store.set_task_context(&task.id, &context)?;
                 }
                 Verdict::Fail => return Ok((TaskStatus::Failed, Some(result), Some(verdict))),
             }
