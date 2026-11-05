@@ -9,4 +9,8 @@ export type TaskEvent = { id: string, conversation_id: string, task_id: string |
 /**
  * 状态变化事件会带上新状态
  */
-status: TaskStatus | null, message: string, created_at: string, };
+status: TaskStatus | null, message: string, 
+/**
+ * 流式回复的标识（只有 assistant_delta 事件有）：同一条回复的所有片段共用，等于最终消息的 id
+ */
+stream_id: string | null, created_at: string, };

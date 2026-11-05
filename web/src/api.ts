@@ -6,6 +6,26 @@ import type { RouteLog } from "./bindings/RouteLog";
 import type { TaskEvent } from "./bindings/TaskEvent";
 import type { TaskRecord } from "./bindings/TaskRecord";
 import type { TurnDecision } from "./bindings/TurnDecision";
+import type { DiscoveredNode } from "./bindings/DiscoveredNode";
+import type { PairedNode } from "./bindings/PairedNode";
+import type { Problem } from "./bindings/Problem";
+
+export interface NodesView {
+  discovered: DiscoveredNode[];
+  paired: PairedNode[];
+}
+
+/** /api/diagnostics 的返回 */
+export interface Diagnostics {
+  version: string;
+  time: string;
+  llm: { ok: boolean; models?: string[]; code?: string; error?: string };
+  /** 角色 → 执行组 */
+  groups: Record<string, { members?: string[]; enabled?: boolean; error?: string }>;
+  agents: AgentCard[];
+  problem_counts: Record<string, number>;
+  recent_problems: Problem[];
+}
 
 /** 发送消息后的返回（对应 Rust 的 TurnOutcome） */
 export interface TurnOutcome {
@@ -54,6 +74,11 @@ export const api = {
   cancel: (id: string) => request<{ cancelled: boolean }>(`/api/tasks/${id}/cancel`, { method: "POST" }),
   approve: (id: string) => request<{ approved: boolean }>(`/api/tasks/${id}/approve`, { method: "POST" }),
   routeLogs: () => request<RouteLog[]>("/api/route-logs?limit=50"),
+  nodes: () => request<NodesView>("/api/nodes"),
+  pairNode: (address: string, code: string) =>
+    request<PairedNode>("/api/nodes/pair", { method: "POST", body: JSON.stringify({ address, code }) }),
+  unpairNode: (id: string) => request<{ unpaired: boolean }>(`/api/nodes/${id}`, { method: "DELETE" }),
+  diagnostics: () => request<Diagnostics>("/api/diagnostics"),
 };
 
 /** 订阅某个会话的 SSE 事件流，返回取消订阅函数 */

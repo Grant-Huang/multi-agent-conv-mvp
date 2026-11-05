@@ -3,9 +3,13 @@
 //! 每轮对话：
 //! 1. Session：把消息写入会话；
 //! 2. Context Builder：最近 N 条消息 + 会话中未结束的任务；
-//! 3. Turn Controller（LLM 结构化输出）：respond / clarify / delegate / follow_up；
-//! 4. delegate → Router → Orchestrator，立即回复"已开始处理"，结果稍后通过事件交付；
+//! 3. Turn Controller（LLM 结构化输出）：respond / clarify / delegate / follow_up。
+//!    **只输出动作，不写回答内容**——输出很短，判断很快；
+//! 4. respond → 单独生成回答，边生成边推送到界面（流式）；
+//!    delegate → Router → Orchestrator，立即回复"已开始处理"，结果稍后通过事件交付；
 //! 5. 记录路由日志（用于调试和积累评测集）。
+//!
+//! 提示词集中在 [`crate::prompts`]。
 //!
 //! 与 Router 的分工：Conversation 只决定"要不要委派"，Router 决定"派给谁、怎么做"。
 
@@ -18,16 +22,39 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::bus::Bus;
 use crate::orchestrator::Orchestrator;
+use crate::prompts::{reply_system_prompt, turn_system_prompt, ReviewMode, TurnPromptInfo};
 use crate::router::Router;
 use crate::store::Store;
 
 pub struct ConversationRuntime {
+    /// 判断"这一轮做什么"用的模型
     llm: LlmClient,
+    /// 直接回答时生成回复用的模型
+    reply_llm: LlmClient,
     store: Arc<Store>,
+    bus: Arc<Bus>,
     router: Arc<Router>,
     orchestrator: Arc<Orchestrator>,
     history_messages: usize,
+    prompt_info: TurnPromptInfo,
+    stream_replies: bool,
+}
+
+/// 构造 ConversationRuntime 需要的参数
+pub struct ConversationDeps {
+    pub llm: LlmClient,
+    pub reply_llm: LlmClient,
+    pub store: Arc<Store>,
+    pub bus: Arc<Bus>,
+    pub router: Arc<Router>,
+    pub orchestrator: Arc<Orchestrator>,
+    pub history_messages: usize,
+    /// General 工具清单（给 Turn Controller 看）
+    pub tools: String,
+    pub review_mode: ReviewMode,
+    pub stream_replies: bool,
 }
 
 /// 一轮对话的处理结果（HTTP 接口直接返回它）
@@ -45,8 +72,6 @@ pub struct TurnOutcome {
 struct RawTurn {
     action: String,
     #[serde(default)]
-    reply: String,
-    #[serde(default)]
     question: String,
     #[serde(default)]
     task_goal: String,
@@ -63,14 +88,13 @@ fn turn_schema() -> Value {
         "type": "object",
         "properties": {
             "action": { "type": "string", "enum": ["respond", "clarify", "delegate", "follow_up"] },
-            "reply": { "type": "string" },
             "question": { "type": "string" },
             "task_goal": { "type": "string" },
             "task_id": { "type": "string" },
             "follow_up_kind": { "type": "string", "enum": ["supplement", "cancel", ""] },
             "change": { "type": "string" }
         },
-        "required": ["action", "reply", "question", "task_goal", "task_id", "follow_up_kind", "change"]
+        "required": ["action", "question", "task_goal", "task_id", "follow_up_kind", "change"]
     })
 }
 
@@ -78,7 +102,8 @@ fn turn_schema() -> Value {
 fn to_decision(raw: &RawTurn, active: &[TaskRecord]) -> Result<TurnDecision, String> {
     let need = |v: &str, field: &str| if v.trim().is_empty() { Err(format!("action={} 时 {field} 不能为空", raw.action)) } else { Ok(()) };
     match raw.action.as_str() {
-        "respond" => need(&raw.reply, "reply").map(|_| TurnDecision::Respond { reply: raw.reply.clone() }),
+        // 回答内容在下一步单独生成，这里先留空
+        "respond" => Ok(TurnDecision::Respond { reply: String::new() }),
         "clarify" => need(&raw.question, "question").map(|_| TurnDecision::Clarify { question: raw.question.clone() }),
         "delegate" => need(&raw.task_goal, "task_goal").map(|_| TurnDecision::Delegate { task_goal: raw.task_goal.clone() }),
         "follow_up" => {
@@ -104,38 +129,32 @@ fn to_decision(raw: &RawTurn, active: &[TaskRecord]) -> Result<TurnDecision, Str
 }
 
 impl ConversationRuntime {
-    pub fn new(llm: LlmClient, store: Arc<Store>, router: Arc<Router>, orchestrator: Arc<Orchestrator>, history_messages: usize) -> Self {
-        Self { llm, store, router, orchestrator, history_messages }
+    pub fn new(d: ConversationDeps) -> Self {
+        Self {
+            llm: d.llm,
+            reply_llm: d.reply_llm,
+            store: d.store,
+            bus: d.bus,
+            router: d.router,
+            orchestrator: d.orchestrator,
+            history_messages: d.history_messages,
+            prompt_info: TurnPromptInfo { tools: d.tools, review_mode: d.review_mode },
+            stream_replies: d.stream_replies,
+        }
     }
 
-    fn system_prompt(active: &[TaskRecord]) -> String {
-        let tasks = if active.is_empty() {
-            "无".to_string()
-        } else {
-            active
-                .iter()
-                .map(|t| format!("- task_id={}，状态={}，角色={}，目标：{}", t.id, t.status.as_str(), t.role.as_str(), truncate_chars(&t.goal, 120)))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        format!(
-            "你是 AgentNexus 的会话负责人（Conversation Agent），代表用户协调后台的执行 Agent。\n\
-             后台能力：通用任务（分析、计算、读写文件、生成文档）、代码开发（修改代码仓库）、独立审查。\n\n\
-             针对用户的最新消息，决定这一轮的 action：\n\
-             - respond：闲聊、常识性问答、解释概念等你能直接可靠回答的，把回答写在 reply；\n\
-             - clarify：需求含糊、缺少关键信息、无法执行时，把要追问的问题写在 question；\n\
-             - delegate：需要计算、读写文件、生成文档报告、写代码改代码、审查内容等需要后台执行的，\n\
-               把整理清楚、可独立执行的任务描述写在 task_goal（要包含对话中的必要细节，执行者看不到对话）；\n\
-             - follow_up：用户的消息是针对下面某个进行中任务的补充要求（supplement）或取消（cancel），\n\
-               填写 task_id、follow_up_kind，补充要求写在 change。\n\
-             不适用的字段填空字符串。\n\n\
-             ## 进行中的任务\n{tasks}"
-        )
+    pub fn review_mode(&self) -> ReviewMode {
+        self.prompt_info.review_mode
+    }
+
+    /// 评测用：换一种审查模式（不影响其他配置）
+    pub fn set_review_mode(&mut self, mode: ReviewMode) {
+        self.prompt_info.review_mode = mode;
     }
 
     /// Turn Controller：只做决策，不产生副作用（评测脚本也直接调用它）
     pub async fn decide_turn(&self, history: &[Message], active: &[TaskRecord]) -> std::result::Result<Structured<TurnDecision>, StructuredError> {
-        let mut messages = vec![ChatMessage::system(Self::system_prompt(active))];
+        let mut messages = vec![ChatMessage::system(turn_system_prompt(&self.prompt_info, active))];
         for m in history {
             messages.push(if m.role == "user" { ChatMessage::user(&m.content) } else { ChatMessage::assistant(&m.content) });
         }
@@ -210,7 +229,12 @@ impl ConversationRuntime {
         // 4. 按决策执行
         let ctx = Self::context_text(&history);
         match &decision {
-            TurnDecision::Respond { reply } => self.finish(log, started, Some(decision.clone()), None, reply),
+            TurnDecision::Respond { .. } => {
+                let reply_id = an_core::new_id("msg");
+                let reply = self.generate_reply(conversation_id, &reply_id, &history).await;
+                let decision = TurnDecision::Respond { reply: reply.clone() };
+                self.finish_with_id(log, started, Some(decision), None, &reply, Some(&reply_id))
+            }
             TurnDecision::Clarify { question } => self.finish(log, started, Some(decision.clone()), None, question),
             TurnDecision::Delegate { task_goal } => {
                 let goal = task_goal.clone();
@@ -267,10 +291,66 @@ impl ConversationRuntime {
         }
     }
 
+    /// 直接回答：单独生成回复。开启流式时边生成边推送到界面（片段的 stream_id = 最终消息 id）；
+    /// 流式失败时退回一次性生成；都失败时给出带错误码的说明。
+    async fn generate_reply(&self, conversation_id: &str, reply_id: &str, history: &[Message]) -> String {
+        let mut messages = vec![ChatMessage::system(reply_system_prompt(self.prompt_info.review_mode))];
+        for m in history {
+            messages.push(if m.role == "user" { ChatMessage::user(&m.content) } else { ChatMessage::assistant(&m.content) });
+        }
+        let started = Instant::now();
+        if self.stream_replies {
+            let bus = self.bus.clone();
+            let result = self.reply_llm.chat_stream(&messages, |delta| bus.assistant_delta(conversation_id, reply_id, delta)).await;
+            match result {
+                Ok(text) => {
+                    tracing::info!(event = "conversation.reply", conv_id = %conversation_id, streamed = true, chars = text.chars().count(), elapsed_ms = started.elapsed().as_millis() as u64);
+                    return text;
+                }
+                Err(e) => tracing::warn!(event = "conversation.reply_stream_failed", code = an_core::codes::LLM_HTTP, conv_id = %conversation_id, error = %format!("{e:#}"), "流式生成失败，改用一次性生成"),
+            }
+        }
+        match self.reply_llm.chat(&messages).await {
+            Ok(text) if !text.trim().is_empty() => {
+                tracing::info!(event = "conversation.reply", conv_id = %conversation_id, streamed = false, chars = text.chars().count(), elapsed_ms = started.elapsed().as_millis() as u64);
+                text
+            }
+            Ok(_) => format!("[{}] 抱歉，模型没有返回内容，请再试一次。", an_core::codes::LLM_FORMAT),
+            Err(e) => {
+                tracing::error!(event = "conversation.reply_failed", code = an_core::codes::LLM_UNREACHABLE, conv_id = %conversation_id, error = %format!("{e:#}"));
+                format!("[{}] 抱歉，生成回答失败：{e:#}", an_core::codes::LLM_UNREACHABLE)
+            }
+        }
+    }
+
     /// 收尾：写入助手回复和路由日志
-    fn finish(&self, mut log: RouteLog, started: Instant, decision: Option<TurnDecision>, task: Option<TaskRecord>, reply: &str) -> Result<TurnOutcome> {
-        let msg = self.store.add_message(&log.conversation_id, "assistant", reply, task.as_ref().map(|t| t.id.as_str()))?;
+    fn finish(&self, log: RouteLog, started: Instant, decision: Option<TurnDecision>, task: Option<TaskRecord>, reply: &str) -> Result<TurnOutcome> {
+        self.finish_with_id(log, started, decision, task, reply, None)
+    }
+
+    /// 同上，可指定回复消息的 id（流式回复用）
+    fn finish_with_id(
+        &self,
+        mut log: RouteLog,
+        started: Instant,
+        decision: Option<TurnDecision>,
+        task: Option<TaskRecord>,
+        reply: &str,
+        reply_id: Option<&str>,
+    ) -> Result<TurnOutcome> {
+        let task_ref = task.as_ref().map(|t| t.id.as_str());
+        let msg = match reply_id {
+            Some(id) => self.store.add_message_with_id(id, &log.conversation_id, "assistant", reply, task_ref)?,
+            None => self.store.add_message(&log.conversation_id, "assistant", reply, task_ref)?,
+        };
         log.latency_ms = started.elapsed().as_millis() as u64;
+        // 埋点：每轮对话一条，记录决策、路由、重试次数和耗时
+        let action = log.turn_decision.as_ref().map(|d| serde_json::to_value(d).ok().and_then(|v| v["action"].as_str().map(String::from)).unwrap_or_default()).unwrap_or_else(|| "none".into());
+        let role = log.route_decision.as_ref().map(|r| r.execution_role.as_str()).unwrap_or("-");
+        match &log.error {
+            Some(err) => tracing::warn!(event = "conversation.turn", conv_id = %log.conversation_id, action = %action, role, task_id = ?log.task_id, attempts = log.attempts, elapsed_ms = log.latency_ms, error = %err),
+            None => tracing::info!(event = "conversation.turn", conv_id = %log.conversation_id, action = %action, role, task_id = ?log.task_id, attempts = log.attempts, elapsed_ms = log.latency_ms),
+        }
         if let Err(e) = self.store.insert_route_log(&log) {
             tracing::error!(error = %e, "写入路由日志失败");
         }

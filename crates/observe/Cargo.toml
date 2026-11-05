@@ -1,0 +1,14 @@
+[package]
+name = "an-observe"
+version.workspace = true
+edition.workspace = true
+
+# 日志与诊断：控制台日志、JSON 日志文件（埋点）、最近问题的内存环形缓冲（供诊断接口查询）
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+chrono.workspace = true
+ts-rs.workspace = true

@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use an_agents::ReviewerAgent;
 use an_core::{
-    now, EventSink, PolicyVerdict, ReviewVerdict, RouteDecision, TaskRecord, TaskResult, TaskSpec, TaskStatus, Verdict,
+    codes, now, AgentError, EventSink, Evidence, PolicyVerdict, ReviewVerdict, RouteDecision, TaskRecord, TaskResult, TaskSpec, TaskStatus, Verdict,
     WorkerStatus,
 };
 use anyhow::{bail, Context, Result};
@@ -158,7 +158,7 @@ impl Orchestrator {
         let (status, result, review) = match outcome {
             Ok(Ok(v)) => v,
             Ok(Err(e)) => (TaskStatus::Failed, Some(TaskResult::failed(format!("{e:#}"))), None),
-            Err(_) => (TaskStatus::Failed, Some(TaskResult::failed(format!("任务超时（{} 秒）", self.task_timeout.as_secs()))), None),
+            Err(_) => (TaskStatus::Failed, Some(TaskResult::failed_code(codes::TASK_TIMEOUT, format!("任务超时（{} 秒）", self.task_timeout.as_secs()))), None),
         };
         if let Some(r) = &result {
             let _ = self.store.set_task_result(&task.id, r);
@@ -173,9 +173,44 @@ impl Orchestrator {
         }
     }
 
+    /// 从执行组中分配一个 agent 执行任务。
+    /// - 组内 agent 都在忙时排队等待；
+    /// - 执行出错如实报告（带错误码），不会换给别的 agent 重做。
+    async fn run_on_group(&self, task: &TaskRecord, spec: TaskSpec, sink: &EventSink) -> TaskResult {
+        let lease = match self.registry.acquire(task.role, |msg| sink.progress(msg)).await {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::error!(event = "task.no_agent", code = e.code, task_id = %task.id, role = task.role.as_str(), error = %e.message);
+                return TaskResult::failed_code(e.code, e.message);
+            }
+        };
+        let card = lease.agent.card().clone();
+        // 节点 agent 的名称里已经带了机器名，不再重复
+        let place = if card.kind == "node" { card.kind.clone() } else { format!("{}，{}", card.kind, card.location) };
+        sink.progress(format!("由 {} 执行（{place}）", card.name));
+        tracing::info!(event = "agent.run_start", task_id = %task.id, agent_id = %card.id, kind = %card.kind, location = %card.location);
+        let started = std::time::Instant::now();
+        let mut result = match lease.agent.run(spec, sink.clone()).await {
+            Ok(r) => r,
+            Err(e) => match e.downcast_ref::<AgentError>() {
+                Some(ae) => TaskResult::failed_code(ae.code, &ae.message),
+                None => TaskResult::failed_code(codes::AGENT_RUNTIME, format!("{}：{e:#}", card.name)),
+            },
+        };
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        // 名额在审查之前归还，让排队的任务尽早开始
+        drop(lease);
+        if result.status == WorkerStatus::Failed {
+            tracing::error!(event = "agent.run_failed", task_id = %task.id, agent_id = %card.id, elapsed_ms, errors = %result.errors.join(" | "));
+        } else {
+            tracing::info!(event = "agent.run_end", task_id = %task.id, agent_id = %card.id, elapsed_ms);
+        }
+        result.evidence.insert(0, Evidence { kind: "executed_by".into(), content: format!("{}（{place}）", card.name) });
+        result
+    }
+
     /// 执行 Worker，并按 Policy 组织审查与返工
     async fn run_with_review(&self, task: &TaskRecord) -> Result<(TaskStatus, Option<TaskResult>, Option<ReviewVerdict>)> {
-        let agent = self.registry.get(task.role).context("执行角色未注册")?;
         let mut context = self.contexts.lock().unwrap().get(&task.id).cloned().unwrap_or_default();
         let sink = EventSink::new(self.bus.clone(), &task.conversation_id, &task.id);
 
@@ -189,10 +224,7 @@ impl Orchestrator {
                 context: context.clone(),
                 route: task.route.clone(),
             };
-            let result = match agent.run(spec, sink.clone()).await {
-                Ok(r) => r,
-                Err(e) => TaskResult::failed(format!("{e:#}")),
-            };
+            let result = self.run_on_group(task, spec, &sink).await;
             self.store.set_task_result(&task.id, &result)?;
 
             // Worker 自己失败：不进入审查
@@ -209,12 +241,14 @@ impl Orchestrator {
                 Ok(v) => v,
                 // 审查本身失败：不能当作通过，交给人工
                 Err(e) => {
-                    let v = ReviewVerdict { verdict: Verdict::NeedsHuman, issues: vec![], comment: format!("审查失败：{e:#}") };
+                    tracing::error!(event = "review.failed", code = codes::REVIEW_FAILED, task_id = %task.id, error = %format!("{e:#}"));
+                    let v = ReviewVerdict { verdict: Verdict::NeedsHuman, issues: vec![], comment: format!("[{}] 审查失败：{e:#}", codes::REVIEW_FAILED) };
                     self.store.set_task_review(&task.id, &v)?;
                     return Ok((TaskStatus::NeedsHuman, Some(result), Some(v)));
                 }
             };
             self.store.set_task_review(&task.id, &verdict)?;
+            tracing::info!(event = "review.verdict", task_id = %task.id, verdict = ?verdict.verdict, issues = verdict.issues.len(), round);
             sink.progress(format!("审查结论：{:?}。{}", verdict.verdict, verdict.comment));
 
             match verdict.verdict {

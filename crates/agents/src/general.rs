@@ -37,11 +37,16 @@ struct Step {
 }
 
 impl GeneralAgent {
-    pub fn new(llm: LlmClient, tools: ToolRegistry, max_steps: usize) -> Self {
+    pub fn new(llm: LlmClient, tools: ToolRegistry, max_steps: usize, max_concurrent: u32) -> Self {
         let card = AgentCard {
+            id: "general".into(),
+            kind: "builtin".into(),
+            agent_type: "general".into(),
+            location: "本机".into(),
+            max_concurrent: max_concurrent.max(1),
             role: Role::General,
             name: "General Agent".into(),
-            description: "通用执行：知识问答、分析、计算、读写工作目录中的文件、生成 Markdown 文档或报告".into(),
+            description: Role::General.description().into(),
             tools: tools.infos(),
             enabled: true,
             disabled_reason: None,
@@ -114,7 +119,7 @@ impl AgentAdapter for GeneralAgent {
                 .await
             {
                 Ok(s) => s.value,
-                Err(e) => return Ok(TaskResult { evidence, artifacts, ..TaskResult::failed(e.to_string()) }),
+                Err(e) => return Ok(TaskResult { evidence, artifacts, ..TaskResult::failed_code(an_core::codes::LLM_FORMAT, e) }),
             };
 
             // 把模型这一步的输出加回对话历史

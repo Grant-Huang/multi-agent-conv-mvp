@@ -1,9 +1,11 @@
 # AgentNexus MVP —— Rust 工作区
 # crates 之间的依赖方向（只能从上往下依赖）：
 #   server  ->  runtime  ->  agents  ->  llm  ->  core
+#   node    ->  agents（节点只负责在本机执行 agent）
+#   observe：日志与诊断，被 server / node 共用
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/llm", "crates/agents", "crates/runtime", "crates/server"]
+members = ["crates/core", "crates/observe", "crates/llm", "crates/agents", "crates/runtime", "crates/node", "crates/server"]
 
 [workspace.package]
 edition = "2021"
@@ -16,6 +18,8 @@ an-core = { path = "crates/core" }
 an-llm = { path = "crates/llm" }
 an-agents = { path = "crates/agents" }
 an-runtime = { path = "crates/runtime" }
+an-observe = { path = "crates/observe" }
+an-node = { path = "crates/node" }
 
 anyhow = "1"
 thiserror = "2"
@@ -23,15 +27,20 @@ async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+serde_ignored = "0.1"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures = "0.3"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 axum = "0.8"
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+mdns-sd = "0.21"
 ts-rs = { version = "12", features = ["serde-json-impl"] }
+# ACP 官方 Rust SDK：process 用于启动 agent 子进程，stdio 用于假 agent（测试/演示）
+agent-client-protocol = "5"

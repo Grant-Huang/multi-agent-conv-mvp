@@ -7,6 +7,8 @@ import type { TaskRecord } from "./bindings/TaskRecord";
 import { ChatView } from "./components/ChatView";
 import { RouteLogPanel } from "./components/RouteLogPanel";
 import { TaskPanel } from "./components/TaskPanel";
+import { NodesPanel } from "./components/NodesPanel";
+import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -14,16 +16,18 @@ export default function App() {
   const [current, setCurrent] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
-  const [sideTab, setSideTab] = useState<"tasks" | "logs">("tasks");
+  const [sideTab, setSideTab] = useState<"tasks" | "nodes" | "diag" | "logs">("tasks");
   // 每次收到事件时递增，用来通知子组件刷新（例如展开中的任务详情）
   const [eventTick, setEventTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // 正在流式生成的回答：id 等于最终消息的 id，最终消息到达后自动隐藏
+  const [streaming, setStreaming] = useState<{ id: string; text: string } | null>(null);
 
-  // 健康检查：启动时 + 每 30 秒
+  // 健康检查：启动时 + 每 10 秒（节点配对、上线、离线后左下角能及时更新）
   useEffect(() => {
     const load = () => api.health().then(setHealth).catch(() => setHealth(null));
     load();
-    const t = setInterval(load, 30_000);
+    const t = setInterval(load, 10_000);
     return () => clearInterval(t);
   }, []);
 
@@ -55,6 +59,12 @@ export default function App() {
     }
     refreshConversation(current).catch((e) => setError(String(e)));
     return subscribeEvents(current, (ev) => {
+      if (ev.kind === "assistant_delta") {
+        // 流式片段：拼接到当前回答上，不触发其他刷新
+        const id = ev.stream_id ?? "";
+        setStreaming((prev) => (prev && prev.id === id ? { id, text: prev.text + ev.message } : { id, text: ev.message }));
+        return;
+      }
       setEventTick((n) => n + 1);
       if (ev.kind === "assistant_message") {
         // 任务结果交付：刷新消息
@@ -89,6 +99,7 @@ export default function App() {
       created_at: new Date().toISOString(),
     };
     setMessages((m) => [...m, optimistic]);
+    setStreaming(null);
     try {
       await api.send(cid, text);
       setError(null);
@@ -122,7 +133,7 @@ export default function App() {
 
       <main className="main">
         {error && <div className="error-bar" onClick={() => setError(null)}>{error}（点击关闭）</div>}
-        <ChatView messages={messages} onSend={send} />
+        <ChatView messages={messages} onSend={send} streaming={streaming} />
       </main>
 
       <aside className="side">
@@ -130,17 +141,23 @@ export default function App() {
           <button className={sideTab === "tasks" ? "active" : ""} onClick={() => setSideTab("tasks")}>
             任务 {tasks.length > 0 && <span className="count">{tasks.length}</span>}
           </button>
+          <button className={sideTab === "nodes" ? "active" : ""} onClick={() => setSideTab("nodes")}>节点</button>
+          <button className={sideTab === "diag" ? "active" : ""} onClick={() => setSideTab("diag")}>诊断</button>
           <button className={sideTab === "logs" ? "active" : ""} onClick={() => setSideTab("logs")}>路由日志</button>
         </div>
-        {sideTab === "tasks" ? (
+        {sideTab === "tasks" && (
           <TaskPanel tasks={tasks} eventTick={eventTick} onChanged={() => current && refreshConversation(current)} />
-        ) : (
-          <RouteLogPanel eventTick={eventTick} />
         )}
+        {sideTab === "nodes" && <NodesPanel />}
+        {sideTab === "diag" && <DiagnosticsPanel eventTick={eventTick} />}
+        {sideTab === "logs" && <RouteLogPanel eventTick={eventTick} />}
       </aside>
     </div>
   );
 }
+
+/** 接入方式的显示名 */
+const KIND_LABEL: Record<string, string> = { builtin: "内置", cli: "CLI", acp: "ACP", node: "节点" };
 
 /** 左下角：LLM 连接状态和 Agent 可用状态 */
 function HealthBox({ health }: { health: Health | null }) {
@@ -152,10 +169,12 @@ function HealthBox({ health }: { health: Health | null }) {
         <span className={`dot ${health.llm.ok ? "ok" : "bad"}`} />
         LLM {health.llm.ok ? "已连接" : "未连接"}
       </div>
+      {/* 每个 agent 一行：名称 + 角色 + 接入方式；不可用时悬停可看原因 */}
       {health.agents.map((a) => (
-        <div key={a.role} title={a.disabled_reason ?? a.description}>
+        <div key={a.id} title={a.disabled_reason ?? a.description}>
           <span className={`dot ${a.enabled ? "ok" : "bad"}`} />
           {a.name}
+          <span className="agent-meta">{a.role} · {KIND_LABEL[a.kind] ?? a.kind}</span>
         </div>
       ))}
       {open && (

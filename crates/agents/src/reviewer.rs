@@ -45,9 +45,14 @@ fn verdict_schema() -> Value {
 impl ReviewerAgent {
     pub fn new(llm: LlmClient) -> Self {
         let card = AgentCard {
+            id: "reviewer".into(),
+            kind: "builtin".into(),
+            agent_type: "reviewer".into(),
+            location: "本机".into(),
+            max_concurrent: 4,
             role: Role::Reviewer,
             name: "Reviewer Agent".into(),
-            description: "独立审查：只读，检查用户提供的方案、文档、代码片段是否正确完整，给出评估意见和问题清单".into(),
+            description: Role::Reviewer.description().into(),
             tools: vec![],
             enabled: true,
             disabled_reason: None,
@@ -131,7 +136,7 @@ impl AgentAdapter for ReviewerAgent {
                     errors: vec![],
                 })
             }
-            Err(e) => Ok(TaskResult::failed(format!("审查失败：{e:#}"))),
+            Err(e) => Ok(TaskResult::failed_code(an_core::codes::REVIEW_FAILED, format!("审查失败：{e:#}"))),
         }
     }
 }

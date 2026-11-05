@@ -60,14 +60,8 @@ impl Router {
     }
 
     fn system_prompt(&self, roles: &[Role]) -> String {
-        let agents = self
-            .registry
-            .cards()
-            .into_iter()
-            .filter(|c| roles.contains(&c.role))
-            .map(|c| format!("- {}：{}", c.role.as_str(), c.description))
-            .collect::<Vec<_>>()
-            .join("\n");
+        // 角色是"做什么"，同一角色可能有多个 agent，这里按角色描述，避免重复
+        let agents = roles.iter().map(|r| format!("- {}：{}", r.as_str(), r.description())).collect::<Vec<_>>().join("\n");
         format!(
             "你是 AgentNexus 的任务路由器（Router）。你只负责分类和选择执行者，不负责完成任务。\n\n\
              ## 可选执行角色\n{agents}\n\n\
@@ -75,11 +69,12 @@ impl Router {
              ## 任务类别（task_class）\n\
              - L1：不需要工具，也不需要生成文档\n\
              - L2：需要工具（查询、计算、读文件等），不需要生成文档\n\
-             - L3：不需要工具，但需要生成文档/报告\n\
-             - L4：既需要工具，也需要生成文档/报告\n\n\
+             - L3：不需要获取数据的工具，但需要生成文档/报告（保存文档用的 write_file 不算\"需要工具\"）\n\
+             - L4：既需要获取数据的工具（读文件、计算、查时间等），也需要生成文档/报告\n\n\
              ## 选择规则\n\
              1. 需要修改代码仓库、写程序、修 bug、跑测试 → coding；\n\
-             2. 用户要求审查/评估/挑错已有内容 → reviewer；\n\
+             2. 用户要求审查/评估/挑错对话中给出的内容 → reviewer；\n\
+             \u{20}  审查对象是工作目录中的文件（需要先读取）→ general；审查代码仓库中的代码或改动 → coding；\n\
              3. 其他（问答、分析、计算、读写普通文件、写文档）→ general；\n\
              4. required_tools 只列 general 真正需要的工具，其他角色留空数组；\n\
              5. risk_level：只读操作为 low；会写文件或改代码为 medium；删除数据、对外发送、涉及生产环境为 high；\n\
@@ -90,16 +85,10 @@ impl Router {
 
     /// 执行路由：分类 + 规则校验
     pub async fn route(&self, task_goal: &str, context: &str) -> Result<RouteOutcome, RouteFailure> {
-        let roles = self.registry.enabled_roles();
-        if roles.is_empty() {
-            return Err(RouteFailure {
-                message: "没有可用的执行 Agent".into(),
-                decision: None,
-                raw_outputs: vec![],
-                attempts: 0,
-                latency_ms: 0,
-            });
-        }
+        // 始终让模型在全部角色中选择："该由谁做"只看任务本身。
+        // 某角色当前没有可用的 agent 时由 Policy 明确报错（E_ROUTE_NO_AGENT），
+        // 而不是让模型只能在可用角色里挑，把写代码的请求悄悄改派给别的角色。
+        let roles = Role::ALL.to_vec();
 
         let user = if context.is_empty() {
             format!("任务目标：{task_goal}")
@@ -115,9 +104,6 @@ impl Router {
             .chat_json::<RouteDecision, _>(&messages, "route_decision", &self.schema(&roles), |d| {
                 if let Some(bad) = d.required_tools.iter().find(|t| !tool_names.contains(t)) {
                     return Err(format!("工具 {bad} 不存在，可用工具：{}", tool_names.join(", ")));
-                }
-                if !roles.contains(&d.execution_role) {
-                    return Err(format!("角色 {} 不可用", d.execution_role.as_str()));
                 }
                 Ok(())
             })

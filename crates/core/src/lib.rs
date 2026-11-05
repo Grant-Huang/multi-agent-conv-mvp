@@ -38,6 +38,20 @@ impl Role {
             Role::Reviewer => "reviewer",
         }
     }
+
+    /// 角色的语义描述（给 Router 模型看）。
+    /// 角色是"做什么"，具体由哪个 agent 来做由注册表和配置决定。
+    pub fn description(&self) -> &'static str {
+        match self {
+            Role::General => "通用执行：知识问答、分析、计算、读写普通文件、生成 Markdown 文档或报告",
+            Role::Coding => "工程执行：在代码仓库中阅读、修改、调试代码，运行测试。适合明确的代码开发/修复任务",
+            Role::Reviewer => "独立审查：只读，检查用户提供的方案、文档、代码片段是否正确完整，给出评估意见",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Role::ALL.into_iter().find(|r| r.as_str() == s)
+    }
 }
 
 /// JEV 任务分类：是否需要工具 × 是否需要生成文档。
@@ -182,6 +196,17 @@ pub struct PolicyVerdict {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct AgentCard {
+    /// 唯一标识，例如 "general"、"codex"、"opencode"、"hermes@mac-mini"（配置执行组时用它）
+    pub id: String,
+    /// 接入方式："builtin"（内置）、"cli"（命令行子进程）、"acp"（本机 ACP）、"node"（远程节点）
+    pub kind: String,
+    /// agent 的类型，例如 "hermes"、"opencode"、"codex"。
+    /// 只有类型相同的 agent 才能放进同一个执行组互为备份。
+    pub agent_type: String,
+    /// 在哪台机器上："本机" 或节点名称
+    pub location: String,
+    /// 同时最多执行几个任务（执行组按它分配并发）
+    pub max_concurrent: u32,
     pub role: Role,
     pub name: String,
     /// 给 Router 模型看的能力描述
@@ -230,6 +255,11 @@ pub struct TaskResult {
 }
 
 impl TaskResult {
+    /// 带错误码的失败结果，错误码写在消息开头：`[E_XXX] 说明`
+    pub fn failed_code(code: &str, msg: impl std::fmt::Display) -> Self {
+        Self::failed(format!("[{code}] {msg}"))
+    }
+
     pub fn failed(msg: impl Into<String>) -> Self {
         let msg = msg.into();
         TaskResult {
@@ -351,6 +381,9 @@ pub struct TaskEvent {
     /// 状态变化事件会带上新状态
     pub status: Option<TaskStatus>,
     pub message: String,
+    /// 流式回复的标识（只有 assistant_delta 事件有）：同一条回复的所有片段共用，等于最终消息的 id
+    #[serde(default)]
+    pub stream_id: Option<String>,
     pub created_at: String,
 }
 
@@ -364,6 +397,8 @@ pub enum EventKind {
     Progress,
     /// 会话中出现了新的助手消息（例如任务结果交付）
     AssistantMessage,
+    /// 直接回答时的流式片段（只推送给界面，不写数据库）
+    AssistantDelta,
 }
 
 /// 事件发布接口：由运行时实现（写库 + 广播），Agent 只管调用。
@@ -393,6 +428,7 @@ impl EventSink {
             kind: EventKind::Progress,
             status: None,
             message: message.into(),
+            stream_id: None,
             created_at: now(),
         });
     }
@@ -413,6 +449,120 @@ pub trait AgentAdapter: Send + Sync {
     async fn run(&self, task: TaskSpec, events: EventSink) -> anyhow::Result<TaskResult>;
 }
 
+/// 带错误码的 agent 错误。错误码会出现在日志、任务结果和诊断接口中，方便自动排查。
+/// 出错一律如实报告，编排层不会因此悄悄换用别的 agent。
+#[derive(Debug, Clone)]
+pub struct AgentError {
+    pub code: &'static str,
+    pub message: String,
+}
+
+impl AgentError {
+    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self { code, message: message.into() }
+    }
+}
+
+impl std::fmt::Display for AgentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}] {}", self.code, self.message)
+    }
+}
+impl std::error::Error for AgentError {}
+
+/// 错误码清单（完整说明见 docs/DESIGN.md「日志与排查」）。
+/// 约定：E_ 开头是错误（任务失败或功能不可用），W_ 开头是警告（可自动恢复）。
+pub mod codes {
+    // 模型
+    pub const LLM_UNREACHABLE: &str = "E_LLM_UNREACHABLE";
+    pub const LLM_HTTP: &str = "E_LLM_HTTP";
+    pub const LLM_FORMAT: &str = "E_LLM_FORMAT";
+    pub const LLM_FORMAT_RETRY: &str = "W_LLM_FORMAT_RETRY";
+    // 路由与执行组
+    pub const ROUTE_NO_AGENT: &str = "E_ROUTE_NO_AGENT";
+    pub const POOL_CONFIG: &str = "E_POOL_CONFIG";
+    pub const POOL_MEMBER_MISSING: &str = "W_POOL_MEMBER_MISSING";
+    pub const POOL_WAIT: &str = "W_POOL_WAIT";
+    // agent 执行
+    pub const AGENT_NOT_INSTALLED: &str = "E_AGENT_NOT_INSTALLED";
+    pub const AGENT_SPAWN: &str = "E_AGENT_SPAWN";
+    pub const AGENT_TIMEOUT: &str = "E_AGENT_TIMEOUT";
+    pub const AGENT_RUNTIME: &str = "E_AGENT_RUNTIME";
+    pub const ACP_HANDSHAKE: &str = "E_ACP_HANDSHAKE";
+    pub const ACP_RUNTIME: &str = "E_ACP_RUNTIME";
+    pub const ACP_STOP: &str = "E_ACP_STOP";
+    pub const REVIEW_FAILED: &str = "E_REVIEW_FAILED";
+    pub const TASK_TIMEOUT: &str = "E_TASK_TIMEOUT";
+    // 节点
+    pub const NODE_UNREACHABLE: &str = "E_NODE_UNREACHABLE";
+    pub const NODE_AUTH: &str = "E_NODE_AUTH";
+    pub const NODE_PAIR: &str = "E_NODE_PAIR";
+    pub const NODE_BUSY: &str = "E_NODE_BUSY";
+    pub const NODE_PROTOCOL: &str = "E_NODE_PROTOCOL";
+    pub const NODE_AGENT_NOT_FOUND: &str = "E_NODE_AGENT_NOT_FOUND";
+    pub const NODE_OFFLINE: &str = "W_NODE_OFFLINE";
+    pub const DISCOVERY: &str = "W_DISCOVERY";
+    // 配置
+    pub const CONFIG_UNKNOWN_KEY: &str = "W_CONFIG_UNKNOWN_KEY";
+}
+
+/// AgentNexus 与节点之间的协议数据（HTTP + SSE）。
+pub mod node {
+    use serde::{Deserialize, Serialize};
+    use ts_rs::TS;
+
+    /// mDNS 服务类型
+    pub const SERVICE_TYPE: &str = "_agentnexus._tcp.local.";
+    /// 协议版本：不兼容的修改时加一
+    pub const PROTOCOL_VERSION: u32 = 1;
+
+    /// `GET /node/info`（无需认证）
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[ts(export)]
+    pub struct NodeInfo {
+        pub node_id: String,
+        pub name: String,
+        pub version: String,
+        pub protocol: u32,
+        /// 操作系统，例如 "macos" / "linux" / "windows"
+        pub os: String,
+    }
+
+    /// `POST /node/pair`
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PairRequest {
+        pub code: String,
+        pub client_name: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PairResponse {
+        pub token: String,
+        pub node_id: String,
+        pub name: String,
+    }
+
+    /// `POST /node/run`：在节点上执行任务，响应是 SSE 流（progress* → result | error）
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RunRequest {
+        pub agent_id: String,
+        pub task: crate::TaskSpec,
+    }
+
+    /// SSE `progress` 事件
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Progress {
+        pub message: String,
+    }
+
+    /// 错误响应 / SSE `error` 事件
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct NodeError {
+        pub code: String,
+        pub message: String,
+    }
+}
+
 // ───────────────────────── 小工具函数 ─────────────────────────
 
 /// 生成带前缀的 ID，例如 `task-3f2a...`
@@ -423,6 +573,17 @@ pub fn new_id(prefix: &str) -> String {
 /// 当前时间（RFC3339）
 pub fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// 本机名称（跨平台：调用系统的 `hostname` 命令），去掉 `.local` 后缀；失败时返回 "unknown"
+pub fn hostname() -> String {
+    std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_end_matches(".local").to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .unwrap_or_else(|| "unknown".into())
 }
 
 /// 按字符数截断（不会切坏中文字符）

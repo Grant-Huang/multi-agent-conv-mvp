@@ -13,7 +13,9 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
-use an_core::{truncate_chars, AgentAdapter, AgentCard, Artifact, EventSink, Evidence, Role, TaskResult, TaskSpec, WorkerStatus};
+use an_core::{truncate_chars, codes, AgentAdapter, AgentCard, AgentError, EventSink, Evidence, Role, TaskResult, TaskSpec, WorkerStatus};
+
+use crate::util::{collect_git_changes, expand_tilde, resolve_command};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -34,6 +36,13 @@ pub struct CodingConfig {
     /// 超时时间（秒）
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
+    /// 同时最多执行几个任务（多个任务共用一个工作目录时，建议保持 1）
+    #[serde(default = "default_concurrency")]
+    pub max_concurrent: u32,
+}
+
+fn default_concurrency() -> u32 {
+    1
 }
 
 fn default_command() -> String {
@@ -63,7 +72,13 @@ fn default_timeout() -> u64 {
 
 impl Default for CodingConfig {
     fn default() -> Self {
-        Self { command: default_command(), args: default_args(), workdir: default_workdir(), timeout_secs: default_timeout() }
+        Self {
+            command: default_command(),
+            args: default_args(),
+            workdir: default_workdir(),
+            timeout_secs: default_timeout(),
+            max_concurrent: default_concurrency(),
+        }
     }
 }
 
@@ -75,33 +90,27 @@ pub struct CodingAgent {
 /// 保留的输出行数（用于摘要和证据）
 const TAIL_LINES: usize = 40;
 
-/// 展开路径开头的 `~`（子进程不会经过 shell，`~` 不会被自动展开）
-pub fn expand_tilde(s: &str) -> String {
-    match (s.strip_prefix("~/"), std::env::var("HOME")) {
-        (Some(rest), Ok(home)) => format!("{home}/{rest}"),
-        _ if s == "~" => std::env::var("HOME").unwrap_or_else(|_| s.into()),
-        _ => s.into(),
-    }
-}
-
 impl CodingAgent {
     /// 创建时检查命令是否可用；不可用时 Agent 仍然注册，但标记为 disabled，Router 不会选它
     pub fn new(mut cfg: CodingConfig) -> Self {
-        cfg.command = expand_tilde(&cfg.command);
         cfg.workdir = PathBuf::from(expand_tilde(&cfg.workdir.to_string_lossy()));
-        let probe = std::process::Command::new(&cfg.command)
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        let (enabled, disabled_reason) = match probe {
-            Ok(_) => (true, None),
-            Err(e) => (false, Some(format!("找不到命令 `{}`：{e}", cfg.command))),
+        // 只检查命令是否存在，不运行它
+        let (enabled, disabled_reason) = match resolve_command(&cfg.command) {
+            Some(path) => {
+                cfg.command = path.to_string_lossy().into_owned();
+                (true, None)
+            }
+            None => (false, Some(format!("找不到命令 `{}`", cfg.command))),
         };
         let card = AgentCard {
+            id: "codex".into(),
+            kind: "cli".into(),
+            agent_type: "codex".into(),
+            location: "本机".into(),
+            max_concurrent: cfg.max_concurrent.max(1),
             role: Role::Coding,
-            name: "Coding Agent (Codex CLI)".into(),
-            description: "工程执行：在代码仓库中阅读、修改、调试代码，运行测试。适合明确的代码开发/修复任务".into(),
+            name: "Codex CLI".into(),
+            description: Role::Coding.description().into(),
             tools: vec![],
             enabled,
             disabled_reason,
@@ -130,12 +139,6 @@ impl CodingAgent {
     }
 }
 
-/// 在工作目录执行 git 命令，返回 stdout（失败返回 None）
-async fn git(workdir: &PathBuf, args: &[&str]) -> Option<String> {
-    let out = Command::new("git").arg("-C").arg(workdir).args(args).output().await.ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).to_string())
-}
-
 #[async_trait::async_trait]
 impl AgentAdapter for CodingAgent {
     fn card(&self) -> &AgentCard {
@@ -144,7 +147,7 @@ impl AgentAdapter for CodingAgent {
 
     async fn run(&self, task: TaskSpec, events: EventSink) -> Result<TaskResult> {
         if !self.card.enabled {
-            return Ok(TaskResult::failed(self.card.disabled_reason.clone().unwrap_or_default()));
+            return Err(AgentError::new(codes::AGENT_NOT_INSTALLED, self.card.disabled_reason.clone().unwrap_or_default()).into());
         }
 
         // 1. 准备工作目录和输出文件
@@ -170,7 +173,7 @@ impl AgentAdapter for CodingAgent {
             .stderr(Stdio::piped())
             .kill_on_drop(true) // 任务被取消时自动杀掉子进程
             .spawn()
-            .with_context(|| format!("无法启动 {}", self.cfg.command))?;
+            .map_err(|e| AgentError::new(codes::AGENT_SPAWN, format!("无法启动 {}：{e}", self.cfg.command)))?;
 
         let mut stdout = BufReader::new(child.stdout.take().expect("stdout piped")).lines();
         let mut stderr = BufReader::new(child.stderr.take().expect("stderr piped")).lines();
@@ -203,7 +206,7 @@ impl AgentAdapter for CodingAgent {
         let exit = match tokio::time::timeout(Duration::from_secs(self.cfg.timeout_secs), run).await {
             Ok(r) => r.context("等待子进程失败")?,
             // 超时：返回后 child 被 drop，kill_on_drop 会杀掉进程
-            Err(_) => return Ok(TaskResult::failed(format!("Coding Agent 超时（{} 秒）", self.cfg.timeout_secs))),
+            Err(_) => return Ok(TaskResult::failed_code(codes::AGENT_TIMEOUT, format!("Codex 超时（{} 秒）", self.cfg.timeout_secs))),
         };
 
         // 4. 收集结果与证据
@@ -215,20 +218,8 @@ impl AgentAdapter for CodingAgent {
             evidence.push(Evidence { kind: "stderr_tail".into(), content: truncate_chars(&s, 3000) });
         }
 
-        let mut artifacts = vec![];
-        match git(&workdir, &["rev-parse", "--is-inside-work-tree"]).await {
-            Some(_) => {
-                // 包含未跟踪文件：先 add -N（intent-to-add），让新文件也出现在 diff 里
-                let _ = git(&workdir, &["add", "-N", "."]).await;
-                if let Some(stat) = git(&workdir, &["diff", "--stat"]).await {
-                    evidence.push(Evidence { kind: "git_diff_stat".into(), content: if stat.trim().is_empty() { "无改动".into() } else { stat } });
-                }
-                if let Some(diff) = git(&workdir, &["diff"]).await.filter(|d| !d.trim().is_empty()) {
-                    artifacts.push(Artifact { kind: "diff".into(), name: "git diff".into(), content: truncate_chars(&diff, 20000) });
-                }
-            }
-            None => evidence.push(Evidence { kind: "git_diff_stat".into(), content: "工作目录不是 git 仓库，无法收集代码改动".into() }),
-        }
+        let (git_evidence, artifacts) = collect_git_changes(&workdir).await;
+        evidence.extend(git_evidence);
 
         // 摘要优先使用 Codex 写出的最后一条回复，否则用输出末尾几行
         let summary = match tokio::fs::read_to_string(&last_msg_file).await {
@@ -242,7 +233,7 @@ impl AgentAdapter for CodingAgent {
             summary,
             artifacts,
             evidence,
-            errors: if exit.success() { vec![] } else { vec![format!("进程退出：{exit}")] },
+            errors: if exit.success() { vec![] } else { vec![format!("[{}] 进程退出：{exit}", codes::AGENT_RUNTIME)] },
         })
     }
 }

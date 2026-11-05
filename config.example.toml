@@ -25,15 +25,26 @@ max_retries = 2                    # 输出不合格时把错误反馈给模型�
 # 只有一个 llama.cpp 实例时不用管。多个模型（例如用 llama-swap 按模型名切换）时，
 # 可以让 Router 用更小更快的模型，General 用更大的模型。
 [models]
-# conversation = "qwen3-4b"
-# router = "qwen3-1.7b"
+# conversation = "qwen3-4b"      # 前台判断"这一轮做什么"，输出很短，适合小而快的模型
+# reply = "qwen3-8b"             # 直接回答用户时生成回复（不填则与 conversation 相同）
+# router = "qwen3-1.7b"          # 判断交给哪类执行者
 # general = "qwen3-8b"
 # reviewer = "qwen3-8b"
+
+# ───── 前台行为 ─────
+[conversation]
+# 用户发起的"审查 / 评估 / 检查"类请求怎么处理：
+#   reviewer —— 一律交给独立审查（有记录和证据，但多一轮后台任务）
+#   direct   —— 对话里直接给出的内容由前台直接回答；需要读文件或仓库的仍交给后台
+#   auto     —— 短内容直接回答；长内容（约 30 行 / 1500 字以上）、文件、仓库交给后台
+review_requests = "reviewer"
+stream_replies = true             # 直接回答时边生成边显示
 
 # ───── Agents ─────
 [agents.general]
 enabled = true
 max_steps = 6                      # 工具循环最大步数
+max_concurrent = 4                 # 同时最多执行几个任务（受本地模型并发能力限制）
 workspace_dir = "workspace/files"  # 文件工具只能读写这个目录
 
 [agents.reviewer]
@@ -47,6 +58,52 @@ command = "~/.npm-global/bin/codex"   # 支持 ~ 开头
 args = ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "--cd", "{workdir}", "--output-last-message", "{last_message_file}", "{prompt}"]
 workdir = "workspace/code"         # 建议指向一个独立的 git 仓库（会收集 git diff 作为审查证据）
 timeout_secs = 900
+
+# ───── 执行组：每个角色由哪些 agent 来做（可选）─────
+# 不配置时，每个角色用它第一个可用的 agent（顺序：内置 → Codex → 本机 ACP → 节点）。
+# 写一个：指定由谁来做。写多个：第一个是主力，后面是待命的备份，主力忙满时分担任务。
+# 规则：只能写同一类型的 agent（例如都是 hermes）；执行出错会直接报错，不会换人重做。
+# 节点上的 agent 写成 "agent id@节点名"，可以在界面「诊断」页看到准确的 id。
+[agents.assign]
+# coding = "opencode"
+# general = ["hermes@mac-mini", "hermes@office-pc"]
+
+# ───── 通过 ACP（Agent Client Protocol）接入外部 agent ─────
+# 新手什么都不用配：本机装了 opencode / hermes / pi-acp，启动时会被自动发现。
+[acp]
+auto_detect = true
+
+# 接入其他支持 ACP 的 agent，最少只要三行（id、command、role）：
+# [[acp.agents]]
+# id = "my-agent"
+# command = "my-agent"          # 命令名或路径（支持 ~）
+# args = ["acp"]                # 启动 ACP 模式的参数，见该 agent 的文档
+# role = "coding"               # general / coding / reviewer
+# 可选项：
+# name = "我的 Agent"            # 显示名称
+# workdir = "~/projects/demo"   # 不填：coding 用代码目录，其他用文件目录
+# permission = "allow_all"      # agent 请求权限时：allow_all / read_only / deny_all
+# timeout_secs = 1800
+# env = { API_KEY = "..." }
+
+# 可选项还有：max_concurrent = 1（同时最多执行几个任务）、agent_type = "hermes"（类型，默认取命令名）
+#
+# 想先体验 ACP 接入？用自带的模拟 agent（cargo build --release 后可用）：
+# [[acp.agents]]
+# id = "mock"
+# command = "./target/release/an-mock-acp"
+# role = "coding"
+
+# ───── 其他电脑上的 agent（节点）─────
+# 在那台电脑上运行 an-node，它会显示配对码；然后在本界面的「节点」页配对即可。
+[nodes]
+discovery = true                   # 自动发现局域网中的节点（网络屏蔽组播时，可在界面按地址添加）
+refresh_secs = 15                  # 多久检查一次节点是否在线
+
+# ───── 日志（用于自动排查问题）─────
+[logging]
+dir = "logs"                       # JSON 日志目录，按天滚动；留空表示不写文件
+level = "info"                     # error / warn / info / debug
 
 [orchestrator]
 max_review_rounds = 1              # Reviewer 判 fail 后最多返工几轮

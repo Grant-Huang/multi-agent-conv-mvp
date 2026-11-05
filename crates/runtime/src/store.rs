@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS events (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, created_at);
+CREATE TABLE IF NOT EXISTS nodes (
+    node_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    address TEXT NOT NULL,
+    token TEXT NOT NULL,
+    cards_json TEXT NOT NULL,
+    paired_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS route_logs (
     id TEXT PRIMARY KEY,
     json TEXT NOT NULL,
@@ -113,8 +121,13 @@ impl Store {
     // ───────────── 消息 ─────────────
 
     pub fn add_message(&self, conversation_id: &str, role: &str, content: &str, task_id: Option<&str>) -> Result<Message> {
+        self.add_message_with_id(&an_core::new_id("msg"), conversation_id, role, content, task_id)
+    }
+
+    /// 同上，但使用指定的 id（流式回复：界面先用这个 id 显示片段，最终消息用同一个 id）
+    pub fn add_message_with_id(&self, id: &str, conversation_id: &str, role: &str, content: &str, task_id: Option<&str>) -> Result<Message> {
         let m = Message {
-            id: an_core::new_id("msg"),
+            id: id.into(),
             conversation_id: conversation_id.into(),
             role: role.into(),
             content: content.into(),
@@ -253,6 +266,40 @@ impl Store {
         rows.map(|j| Ok(serde_json::from_str(&j?)?)).collect()
     }
 
+    // ───────────── 节点 ─────────────
+
+    /// 保存（或更新）配对的节点。`cards` 是节点最后一次上报的 agent 列表，节点离线时用它显示
+    pub fn upsert_node(&self, n: &StoredNode) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO nodes (node_id, name, address, token, cards_json, paired_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(node_id) DO UPDATE SET name = ?2, address = ?3, token = ?4, cards_json = ?5",
+            params![n.node_id, n.name, n.address, n.token, serde_json::to_string(&n.cards)?, n.paired_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_node_cards(&self, node_id: &str, cards: &[an_core::AgentCard]) -> Result<()> {
+        self.conn().execute("UPDATE nodes SET cards_json = ?2 WHERE node_id = ?1", params![node_id, serde_json::to_string(cards)?])?;
+        Ok(())
+    }
+
+    pub fn list_nodes(&self) -> Result<Vec<StoredNode>> {
+        let conn = self.conn();
+        let mut st = conn.prepare("SELECT node_id, name, address, token, cards_json, paired_at FROM nodes ORDER BY paired_at")?;
+        let rows = st.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?))
+        })?;
+        rows.map(|row| {
+            let (node_id, name, address, token, cards, paired_at) = row?;
+            Ok(StoredNode { node_id, name, address, token, cards: serde_json::from_str(&cards)?, paired_at })
+        })
+        .collect()
+    }
+
+    pub fn delete_node(&self, node_id: &str) -> Result<bool> {
+        Ok(self.conn().execute("DELETE FROM nodes WHERE node_id = ?1", [node_id])? > 0)
+    }
+
     // ───────────── 路由日志 ─────────────
 
     pub fn insert_route_log(&self, log: &RouteLog) -> Result<()> {
@@ -299,4 +346,15 @@ fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Result<TaskRecord>> {
             updated_at,
         })
     })())
+}
+
+/// 数据库中保存的节点
+#[derive(Debug, Clone)]
+pub struct StoredNode {
+    pub node_id: String,
+    pub name: String,
+    pub address: String,
+    pub token: String,
+    pub cards: Vec<an_core::AgentCard>,
+    pub paired_at: String,
 }
