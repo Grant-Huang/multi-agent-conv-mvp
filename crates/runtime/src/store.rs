@@ -121,8 +121,13 @@ impl Store {
     // ───────────── 消息 ─────────────
 
     pub fn add_message(&self, conversation_id: &str, role: &str, content: &str, task_id: Option<&str>) -> Result<Message> {
+        self.add_message_with_id(&an_core::new_id("msg"), conversation_id, role, content, task_id)
+    }
+
+    /// 同上，但使用指定的 id（流式回复：界面先用这个 id 显示片段，最终消息用同一个 id）
+    pub fn add_message_with_id(&self, id: &str, conversation_id: &str, role: &str, content: &str, task_id: Option<&str>) -> Result<Message> {
         let m = Message {
-            id: an_core::new_id("msg"),
+            id: id.into(),
             conversation_id: conversation_id.into(),
             role: role.into(),
             content: content.into(),

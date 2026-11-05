@@ -48,10 +48,16 @@ cargo run --release --bin agentnexus
 ## 测试小模型的路由效果
 
 ```bash
-cargo run --release --bin an-eval -- config.toml evals/routing.jsonl
+cargo run --release --bin an-eval -- config.toml evals/routing.jsonl --review-mode reviewer --label 模型简称
 ```
 
-只跑 Turn Controller + Router（不执行任务），输出动作 / 角色 / 类别准确率、格式重试次数、P50/P95 延迟，详细结果（含模型原始输出）写入 `evals/results/`。换模型后重跑即可对比。把真实使用中路由错误的消息补进 `evals/routing.jsonl`，逐步积累评测集。
+只跑"前台判断 + Router 分类"（不执行任务），输出整体通过率、动作 / 角色 / 类别 / 工具 / 风险 / 跟进准确率、动作混淆矩阵、误判分类（多派、漏派、多问……）、按标签的通过率和延迟。逐条结果（含模型原始输出）和汇总 JSON 写入 `evals/results/`，换模型后重跑即可对比。
+
+- `evals/routing.jsonl`：评测集 v2，90 条，由 `evals/make_dataset.py` 生成（补样本请改脚本）
+- `evals/routing-v1.jsonl`：第一次评测的 26 条，用于和旧基线对比
+- `evals/EVAL_PROMPT.md`：**完整的评测步骤和报告模板，可以直接交给本地 Claude 执行**
+
+选项：`--review-mode reviewer|direct|auto`、`--tag 标签`（只跑某类）、`--limit N`、`--label 名称`。
 
 界面右侧的「路由日志」也能看到每轮的决策和模型原始输出。
 
@@ -61,7 +67,7 @@ cargo run --release --bin an-eval -- config.toml evals/routing.jsonl
 |---|---|
 | 格式经常出错、重试多 | 确认 `structured_mode = "json_schema"` 生效（llama.cpp 日志里能看到 grammar）；不支持时试 `json_object`；仍不行再用 `prompt_only` |
 | llama.cpp 返回 400 | 多半是不支持该 `response_format` 写法，换另一种 `structured_mode` |
-| 响应很慢 | 推理类模型（带 `<think>` 输出）会先思考很久，可以换非推理模型或在 llama.cpp 侧关闭思考；Router 可以单独配更小的模型（`[models]`） |
+| 响应很慢 | 判断和回答已经分两步、回答流式显示；还可以在 `[models]` 里给 `conversation`（判断）和 `router` 配更小更快的模型，`reply`（回答）用质量更好的模型。推理类模型（带 `<think>`）会先思考很久，可在 llama.cpp 侧关闭思考 |
 | 简单问题也被委派 | 调整 `crates/runtime/src/conversation.rs` 中的 system prompt，或换更大的模型做 conversation |
 | 工具循环不收敛 | 调小 `agents.general.max_steps`，或给 General 配更大的模型 |
 

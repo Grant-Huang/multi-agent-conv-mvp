@@ -108,6 +108,7 @@ version = "0.1.0"
 dependencies = [
  "an-core",
  "anyhow",
+ "futures",
  "reqwest",
  "serde",
  "serde_json",

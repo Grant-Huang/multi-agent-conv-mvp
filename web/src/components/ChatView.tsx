@@ -2,7 +2,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { Message } from "../bindings/Message";
 
-export function ChatView({ messages, onSend }: { messages: Message[]; onSend: (text: string) => Promise<void> }) {
+export function ChatView(props: {
+  messages: Message[];
+  onSend: (text: string) => Promise<void>;
+  /** 正在流式生成的回答（最终消息到达后不再显示） */
+  streaming: { id: string; text: string } | null;
+}) {
+  const { messages, onSend } = props;
+  const streaming = props.streaming && !messages.some((m) => m.id === props.streaming!.id) ? props.streaming : null;
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -10,7 +17,7 @@ export function ChatView({ messages, onSend }: { messages: Message[]; onSend: (t
   // 有新消息时滚动到底部
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, sending]);
+  }, [messages.length, sending, streaming?.text.length]);
 
   const submit = async () => {
     const t = text.trim();
@@ -46,9 +53,17 @@ export function ChatView({ messages, onSend }: { messages: Message[]; onSend: (t
             </div>
           </div>
         ))}
-        {sending && (
+        {streaming && (
           <div className="msg assistant">
-            <div className="bubble thinking">思考中…（本地小模型可能需要几秒到几十秒）</div>
+            <div className="bubble">
+              {streaming.text}
+              <span className="cursor">▍</span>
+            </div>
+          </div>
+        )}
+        {sending && !streaming && (
+          <div className="msg assistant">
+            <div className="bubble thinking">思考中…</div>
           </div>
         )}
         <div ref={bottomRef} />

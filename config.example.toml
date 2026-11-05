@@ -25,10 +25,20 @@ max_retries = 2                    # 输出不合格时把错误反馈给模型�
 # 只有一个 llama.cpp 实例时不用管。多个模型（例如用 llama-swap 按模型名切换）时，
 # 可以让 Router 用更小更快的模型，General 用更大的模型。
 [models]
-# conversation = "qwen3-4b"
-# router = "qwen3-1.7b"
+# conversation = "qwen3-4b"      # 前台判断"这一轮做什么"，输出很短，适合小而快的模型
+# reply = "qwen3-8b"             # 直接回答用户时生成回复（不填则与 conversation 相同）
+# router = "qwen3-1.7b"          # 判断交给哪类执行者
 # general = "qwen3-8b"
 # reviewer = "qwen3-8b"
+
+# ───── 前台行为 ─────
+[conversation]
+# 用户发起的"审查 / 评估 / 检查"类请求怎么处理：
+#   reviewer —— 一律交给独立审查（有记录和证据，但多一轮后台任务）
+#   direct   —— 对话里直接给出的内容由前台直接回答；需要读文件或仓库的仍交给后台
+#   auto     —— 短内容直接回答；长内容（约 30 行 / 1500 字以上）、文件、仓库交给后台
+review_requests = "reviewer"
+stream_replies = true             # 直接回答时边生成边显示
 
 # ───── Agents ─────
 [agents.general]

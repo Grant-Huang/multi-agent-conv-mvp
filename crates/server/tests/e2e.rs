@@ -12,6 +12,7 @@ use an_runtime::config::AppConfig;
 use an_runtime::store::Store;
 use an_runtime::Runtime;
 use axum::routing::{get, post};
+use axum::response::IntoResponse;
 use axum::{Json, Router};
 use serde_json::{json, Value};
 
@@ -34,7 +35,8 @@ fn mock_reply(req: &Value, format_calls: &AtomicUsize) -> String {
 
     match schema {
         "turn_decision" => {
-            let empty = json!({"action":"","reply":"","question":"","task_goal":"","task_id":"","follow_up_kind":"","change":""});
+            // 第一步只输出动作，不含回答内容
+            let empty = json!({"action":"","question":"","task_goal":"","task_id":"","follow_up_kind":"","change":""});
             let mut d = empty;
             if last_user.contains("格式测试") {
                 // 第一次故意输出非法内容，测试重试
@@ -42,7 +44,6 @@ fn mock_reply(req: &Value, format_calls: &AtomicUsize) -> String {
                     return "我觉得应该直接回答".into();
                 }
                 d["action"] = "respond".into();
-                d["reply"] = "格式修正后的回答".into();
             } else if last_user.contains("取消") {
                 // 从 system prompt 的"进行中的任务"里找 task_id
                 let id = system.split("task_id=").nth(1).and_then(|s| s.split('，').next()).unwrap_or("");
@@ -51,7 +52,6 @@ fn mock_reply(req: &Value, format_calls: &AtomicUsize) -> String {
                 d["follow_up_kind"] = "cancel".into();
             } else if last_user.contains("你好") {
                 d["action"] = "respond".into();
-                d["reply"] = "你好！有什么可以帮你？".into();
             } else {
                 d["action"] = "delegate".into();
                 d["task_goal"] = last_user.into();
@@ -80,7 +80,10 @@ fn mock_reply(req: &Value, format_calls: &AtomicUsize) -> String {
             }
         }
         "review_verdict" => json!({"verdict":"pass","issues":[],"comment":"符合要求"}).to_string(),
-        // 没有 response_format：Composer 生成交付消息
+        // 没有 response_format：直接回答（第二步）或 Composer 生成交付消息
+        _ if system.contains("直接回答用户的最新消息") => {
+            if last_user.contains("格式测试") { "格式修正后的回答".into() } else { "你好！有什么可以帮你？".into() }
+        }
         _ => "【交付】任务已完成，详见产物。".into(),
     }
 }
@@ -94,7 +97,19 @@ async fn start_mock_llm() -> String {
                 let fc = format_calls.clone();
                 async move {
                     let content = mock_reply(&req, &fc);
-                    Json(json!({"choices": [{"message": {"role": "assistant", "content": content}}]}))
+                    if req["stream"] == true {
+                        // 流式：先发一段思考内容（应被过滤），再把回答拆成几块发送
+                        let mut pieces = vec!["<think>".to_string(), "先想一想".to_string(), "</think>\n".to_string()];
+                        let chars: Vec<char> = content.chars().collect();
+                        pieces.extend(chars.chunks(3).map(|c| c.iter().collect::<String>()));
+                        let mut body = String::new();
+                        for p in pieces {
+                            body += &format!("data: {}\n\n", json!({"choices": [{"delta": {"content": p}}]}));
+                        }
+                        body += "data: [DONE]\n\n";
+                        return ([(axum::http::header::CONTENT_TYPE, "text/event-stream")], body).into_response();
+                    }
+                    Json(json!({"choices": [{"message": {"role": "assistant", "content": content}}]})).into_response()
                 }
             }),
         )
@@ -234,10 +249,25 @@ async fn full_flow() {
     // SSE：先订阅
     let mut sse = env.http.get(format!("{}/api/events?conversation_id={cid}", env.base)).send().await.unwrap();
 
-    // 1. 直接回答
+    // 1. 直接回答：判断和回答分两步；回答流式推送到界面，思考段落被过滤
     let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "你好"})).await;
     assert_eq!(out["decision"]["action"], "respond");
     assert_eq!(out["reply"]["content"], "你好！有什么可以帮你？");
+    let reply_id = out["reply"]["id"].as_str().unwrap().to_string();
+    let mut streamed = String::new();
+    while !streamed.contains("有什么可以帮你") {
+        let chunk = tokio::time::timeout(Duration::from_secs(2), sse.chunk()).await.expect("等待流式片段超时").unwrap().unwrap();
+        for line in String::from_utf8_lossy(&chunk).lines() {
+            if let Some(data) = line.strip_prefix("data:") {
+                let ev: Value = serde_json::from_str(data.trim()).unwrap();
+                if ev["kind"] == "assistant_delta" {
+                    assert_eq!(ev["stream_id"], reply_id.as_str(), "片段的 stream_id 应等于最终消息 id");
+                    streamed += ev["message"].as_str().unwrap();
+                }
+            }
+        }
+    }
+    assert_eq!(streamed, "你好！有什么可以帮你？", "思考段落不应推送到界面");
 
     // 2. 格式错误 → 重试成功
     let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "格式测试"})).await;

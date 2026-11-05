@@ -177,6 +177,59 @@ impl LlmClient {
         self.complete(messages, None).await
     }
 
+    /// 流式对话：每收到一段**可见**文本（已过滤思考段落）就调用 `on_delta`，最后返回完整回答。
+    /// 推理服务不支持流式时返回错误，调用方可以退回到 [`chat`](Self::chat)。
+    pub async fn chat_stream(&self, messages: &[ChatMessage], mut on_delta: impl FnMut(&str)) -> Result<String> {
+        use futures::StreamExt;
+        let mut body = json!({
+            "model": self.cfg.model,
+            "messages": messages,
+            "temperature": self.cfg.temperature,
+            "stream": true,
+        });
+        if let Some(mt) = self.cfg.max_tokens {
+            body["max_tokens"] = json!(mt);
+        }
+        let mut req = self.http.post(self.endpoint("chat/completions")).json(&body);
+        if !self.cfg.api_key.is_empty() {
+            req = req.bearer_auth(&self.cfg.api_key);
+        }
+        let resp = req.send().await.with_context(|| format!("无法连接 LLM 服务 {}", self.cfg.base_url))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            bail!("LLM 返回 HTTP {status}: {}", truncate(&text, 500));
+        }
+
+        // SSE：每行 `data: {json}`，最后一行 `data: [DONE]`
+        let (mut full, mut sent, mut buf) = (String::new(), String::new(), String::new());
+        let mut stream = resp.bytes_stream();
+        'outer: while let Some(chunk) = stream.next().await {
+            buf.push_str(&String::from_utf8_lossy(&chunk.context("读取流式响应失败")?));
+            while let Some(pos) = buf.find('\n') {
+                let line: String = buf.drain(..=pos).collect();
+                let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else { continue };
+                if data == "[DONE]" {
+                    break 'outer;
+                }
+                let Ok(v) = serde_json::from_str::<Value>(data) else { continue };
+                if let Some(piece) = v["choices"][0]["delta"]["content"].as_str() {
+                    full.push_str(piece);
+                    // 只推送新增的可见部分
+                    let visible = visible_text(&full);
+                    if visible.len() > sent.len() && visible.starts_with(&sent) {
+                        on_delta(&visible[sent.len()..]);
+                        sent = visible;
+                    }
+                }
+            }
+        }
+        if full.trim().is_empty() {
+            bail!("LLM 流式响应为空");
+        }
+        Ok(strip_think(&full))
+    }
+
     /// 结构化输出：返回反序列化后的 `T`。
     ///
     /// - `schema_name`：schema 名字（也会出现在请求里，方便在 llama.cpp 日志里辨认）
@@ -295,6 +348,37 @@ pub fn strip_think(s: &str) -> String {
     out.trim().to_string()
 }
 
+/// 流式输出过程中"当前可以展示给用户的文本"：
+/// 去掉完整的思考段落；遇到未闭合的 `<think>` 时截断；末尾若是 `<think>` 的一部分（如 `<thi`）先不展示，等后续内容。
+pub fn visible_text(full: &str) -> String {
+    const OPEN: &str = "<think>";
+    const CLOSE: &str = "</think>";
+    let mut out = String::new();
+    let mut rest = full;
+    loop {
+        match rest.find(OPEN) {
+            Some(i) => {
+                out.push_str(&rest[..i]);
+                match rest[i..].find(CLOSE) {
+                    Some(j) => rest = &rest[i + j + CLOSE.len()..],
+                    None => return out.trim_start().to_string(),
+                }
+            }
+            None => {
+                out.push_str(rest);
+                break;
+            }
+        }
+    }
+    for k in (1..OPEN.len()).rev() {
+        if out.ends_with(&OPEN[..k]) {
+            out.truncate(out.len() - k);
+            break;
+        }
+    }
+    out.trim_start().to_string()
+}
+
 /// 从模型输出中提取第一个完整的 JSON 对象（兼容 ```json 代码块和前后多余文字）。
 /// 通过括号配对查找，并正确跳过字符串里的括号。
 pub fn extract_json(s: &str) -> Option<&str> {
@@ -342,6 +426,17 @@ mod tests {
     fn strips_think_blocks() {
         assert_eq!(strip_think("<think>嗯…</think>\n{\"a\":1}"), "{\"a\":1}");
         assert_eq!(strip_think("答案<think>没写完"), "答案");
+    }
+
+    #[test]
+    fn visible_text_hides_thinking_while_streaming() {
+        // 模拟流式到达的各个阶段
+        assert_eq!(visible_text("<thi"), "");
+        assert_eq!(visible_text("<think>想一想"), "");
+        assert_eq!(visible_text("<think>想一想</think>\n答案"), "答案");
+        assert_eq!(visible_text("答案是 1 <"), "答案是 1 ");
+        assert_eq!(visible_text("a</think>b"), "a</think>b"); // 没有开头标签时原样输出
+        assert_eq!(visible_text("前<think>x</think>后<think>未完"), "前后");
     }
 
     #[test]

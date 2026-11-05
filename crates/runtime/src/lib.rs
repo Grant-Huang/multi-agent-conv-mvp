@@ -17,6 +17,7 @@ pub mod conversation;
 pub mod nodes;
 pub mod orchestrator;
 pub mod policy;
+pub mod prompts;
 pub mod registry;
 pub mod router;
 pub mod store;
@@ -81,9 +82,12 @@ impl Runtime {
         let registry = AgentRegistry::new(config.agents.assign_map()?);
         let a = &config.agents;
         let mut tool_names = vec![];
+        // 工具清单也要给 Turn Controller 看，否则它不知道"现在几点"可以交给 current_time
+        let mut tool_listing = "  （General 未启用，没有可用工具）".to_string();
         if a.general.enabled {
             let tools = ToolRegistry::with_builtin(&a.general.workspace_dir)?;
             tool_names = tools.names();
+            tool_listing = tools.infos().iter().map(|t| format!("  - {}：{}", t.name, t.description)).collect::<Vec<_>>().join("\n");
             registry.register(Arc::new(GeneralAgent::new(llm_for(&m.general), tools, a.general.max_steps, a.general.max_concurrent)));
         }
         let reviewer = a.reviewer.enabled.then(|| Arc::new(ReviewerAgent::new(llm_for(&m.reviewer))));
@@ -118,13 +122,20 @@ impl Runtime {
             o.max_review_rounds,
             Duration::from_secs(o.task_timeout_secs),
         ));
-        let conversation = Arc::new(ConversationRuntime::new(
-            llm_for(&m.conversation),
-            store.clone(),
-            router.clone(),
-            orchestrator.clone(),
-            o.history_messages,
-        ));
+        let conversation = Arc::new(ConversationRuntime::new(conversation::ConversationDeps {
+            llm: llm_for(&m.conversation),
+            // 回复模型：没单独配置时与前台判断用同一个模型
+            reply_llm: llm_for(if m.reply.is_some() { &m.reply } else { &m.conversation }),
+            store: store.clone(),
+            bus: bus.clone(),
+            router: router.clone(),
+            orchestrator: orchestrator.clone(),
+            history_messages: o.history_messages,
+            tools: tool_listing,
+            review_mode: config.conversation.review_requests,
+            stream_replies: config.conversation.stream_replies,
+        }));
+        tracing::info!(event = "conversation.config", review_requests = config.conversation.review_requests.as_str(), stream_replies = config.conversation.stream_replies);
 
         Ok(Self { config, store, bus, registry, router, orchestrator, conversation, nodes, diagnostics, llm: base })
     }

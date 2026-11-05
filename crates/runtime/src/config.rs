@@ -30,6 +30,25 @@ pub struct AppConfig {
     pub nodes: NodesSection,
     #[serde(default)]
     pub logging: LoggingSection,
+    #[serde(default)]
+    pub conversation: ConversationSection,
+}
+
+/// 前台（Conversation）的行为
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationSection {
+    /// 用户发起的审查请求怎么处理：reviewer（交给独立审查）/ direct（直接回答）/ auto（短内容直接回答）
+    #[serde(default)]
+    pub review_requests: crate::prompts::ReviewMode,
+    /// 直接回答时是否边生成边显示（推理服务不支持流式时会自动退回一次性返回）
+    #[serde(default = "d_true")]
+    pub stream_replies: bool,
+}
+
+impl Default for ConversationSection {
+    fn default() -> Self {
+        Self { review_requests: Default::default(), stream_replies: true }
+    }
 }
 
 impl AppConfig {
@@ -80,7 +99,10 @@ impl Default for ServerConfig {
 /// 各角色使用的模型名；不填则使用 `[llm].model`
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ModelOverrides {
+    /// 前台判断"这一轮做什么"（输出很短，适合用小而快的模型）
     pub conversation: Option<String>,
+    /// 直接回答用户时生成回复（不填则与 conversation 相同）
+    pub reply: Option<String>,
     pub router: Option<String>,
     pub general: Option<String>,
     pub reviewer: Option<String>,
@@ -298,6 +320,8 @@ mod tests {
         assert!(cfg.agents.assign_map().unwrap().is_empty());
         assert!(cfg.nodes.discovery);
         assert_eq!(cfg.logging.dir, "logs");
+        assert_eq!(cfg.conversation.review_requests, crate::prompts::ReviewMode::Reviewer);
+        assert!(cfg.conversation.stream_replies);
         assert_eq!(cfg.llm.base_url, "http://127.0.0.1:8098/v1");
     }
 }

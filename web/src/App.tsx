@@ -20,6 +20,8 @@ export default function App() {
   // 每次收到事件时递增，用来通知子组件刷新（例如展开中的任务详情）
   const [eventTick, setEventTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // 正在流式生成的回答：id 等于最终消息的 id，最终消息到达后自动隐藏
+  const [streaming, setStreaming] = useState<{ id: string; text: string } | null>(null);
 
   // 健康检查：启动时 + 每 10 秒（节点配对、上线、离线后左下角能及时更新）
   useEffect(() => {
@@ -57,6 +59,12 @@ export default function App() {
     }
     refreshConversation(current).catch((e) => setError(String(e)));
     return subscribeEvents(current, (ev) => {
+      if (ev.kind === "assistant_delta") {
+        // 流式片段：拼接到当前回答上，不触发其他刷新
+        const id = ev.stream_id ?? "";
+        setStreaming((prev) => (prev && prev.id === id ? { id, text: prev.text + ev.message } : { id, text: ev.message }));
+        return;
+      }
       setEventTick((n) => n + 1);
       if (ev.kind === "assistant_message") {
         // 任务结果交付：刷新消息
@@ -91,6 +99,7 @@ export default function App() {
       created_at: new Date().toISOString(),
     };
     setMessages((m) => [...m, optimistic]);
+    setStreaming(null);
     try {
       await api.send(cid, text);
       setError(null);
@@ -124,7 +133,7 @@ export default function App() {
 
       <main className="main">
         {error && <div className="error-bar" onClick={() => setError(null)}>{error}（点击关闭）</div>}
-        <ChatView messages={messages} onSend={send} />
+        <ChatView messages={messages} onSend={send} streaming={streaming} />
       </main>
 
       <aside className="side">

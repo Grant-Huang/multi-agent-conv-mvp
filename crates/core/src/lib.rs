@@ -381,6 +381,9 @@ pub struct TaskEvent {
     /// 状态变化事件会带上新状态
     pub status: Option<TaskStatus>,
     pub message: String,
+    /// 流式回复的标识（只有 assistant_delta 事件有）：同一条回复的所有片段共用，等于最终消息的 id
+    #[serde(default)]
+    pub stream_id: Option<String>,
     pub created_at: String,
 }
 
@@ -394,6 +397,8 @@ pub enum EventKind {
     Progress,
     /// 会话中出现了新的助手消息（例如任务结果交付）
     AssistantMessage,
+    /// 直接回答时的流式片段（只推送给界面，不写数据库）
+    AssistantDelta,
 }
 
 /// 事件发布接口：由运行时实现（写库 + 广播），Agent 只管调用。
@@ -423,6 +428,7 @@ impl EventSink {
             kind: EventKind::Progress,
             status: None,
             message: message.into(),
+            stream_id: None,
             created_at: now(),
         });
     }
