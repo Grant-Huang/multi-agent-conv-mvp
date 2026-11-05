@@ -1,5 +1,5 @@
-//! 事件总线：事件先写库（可回放），再广播给 SSE 订阅者。
-//! 借鉴"任务事件 + 持久化状态 + 回调"的思路：Conversation 不轮询任务状态，而是订阅事件。
+//! 事件总线：先广播给 SSE 订阅者，再把事件放进存储的写队列。
+//! 落库由专用线程批量完成，广播不等待写库。界面漏收时仍可从数据库补拉。
 
 use std::sync::Arc;
 
@@ -78,10 +78,9 @@ impl Bus {
 
 impl EventPublisher for Bus {
     fn publish(&self, event: TaskEvent) {
-        if let Err(e) = self.store.insert_event(&event) {
-            tracing::error!(error = %e, "事件写库失败");
-        }
-        // 没有订阅者时 send 会返回 Err，属于正常情况
-        let _ = self.tx.send(event);
+        // 没有订阅者时 send 会返回 Err，属于正常情况。先广播，再入队：
+        // 通道满时入队会堵住，但界面已经收到，顺序也不会和别的发布方交错错乱。
+        let _ = self.tx.send(event.clone());
+        self.store.enqueue_event(event);
     }
 }

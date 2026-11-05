@@ -179,6 +179,48 @@ impl CodingAgent {
     }
 }
 
+/// 子进程标准输出的进度合并：满 20 行，或距第一条已经过了 200ms，才发一条进度。
+const PROGRESS_LINES: usize = 20;
+const PROGRESS_WAIT: Duration = Duration::from_millis(200);
+
+struct ProgressBuf {
+    lines: Vec<String>,
+    since: tokio::time::Instant,
+}
+
+impl ProgressBuf {
+    fn new() -> Self {
+        Self { lines: Vec::new(), since: tokio::time::Instant::now() }
+    }
+
+    fn pending(&self) -> bool {
+        !self.lines.is_empty()
+    }
+
+    fn deadline(&self) -> tokio::time::Instant {
+        self.since + PROGRESS_WAIT
+    }
+
+    /// 返回 Some 表示这一批该发出去了
+    fn push(&mut self, line: String) -> Option<String> {
+        if self.lines.is_empty() {
+            self.since = tokio::time::Instant::now();
+        }
+        self.lines.push(line);
+        if self.lines.len() >= PROGRESS_LINES || self.since.elapsed() >= PROGRESS_WAIT {
+            Some(self.drain())
+        } else {
+            None
+        }
+    }
+
+    fn drain(&mut self) -> String {
+        let text = self.lines.join("\n");
+        self.lines.clear();
+        truncate_chars(&text, 2000)
+    }
+}
+
 #[async_trait::async_trait]
 impl AgentAdapter for CodingAgent {
     fn card(&self) -> &AgentCard {
@@ -246,20 +288,34 @@ impl AgentAdapter for CodingAgent {
             q.push_back(l);
         };
 
-        // 4. 一边读输出（推送进度），一边等待进程结束，整体受超时控制
+        // 4. 一边读输出（进度按 20 行或 200ms 合并成一条），一边等待进程结束，整体受超时控制
         let run = async {
+            let mut progress = ProgressBuf::new();
             let (mut out_done, mut err_done) = (false, false);
             while !(out_done && err_done) {
+                let deadline = progress.deadline();
+                let pending = progress.pending();
                 tokio::select! {
                     line = stdout.next_line(), if !out_done => match line {
-                        Ok(Some(l)) => { events.progress(Self::describe_line(&l)); push(&mut out_tail, l); }
+                        Ok(Some(l)) => {
+                            if let Some(msg) = progress.push(Self::describe_line(&l)) {
+                                events.progress(msg);
+                            }
+                            push(&mut out_tail, l);
+                        }
                         _ => out_done = true,
                     },
                     line = stderr.next_line(), if !err_done => match line {
                         Ok(Some(l)) => push(&mut err_tail, l),
                         _ => err_done = true,
                     },
+                    _ = tokio::time::sleep_until(deadline), if pending => {
+                        events.progress(progress.drain());
+                    },
                 }
+            }
+            if progress.pending() {
+                events.progress(progress.drain());
             }
             child.wait().await
         };
@@ -409,6 +465,21 @@ mod tests {
         slots.sort_unstable();
         assert_eq!(slots, vec![1, 2], "两个后台槽位各被一个任务占用，且不会落到前台槽位 0");
         assert_eq!(busy, 1, "第三个任务等不到槽位，应明确报忙");
+    }
+
+    #[test]
+    fn stdout_progress_merges_every_n_lines_or_after_the_wait() {
+        let mut buf = ProgressBuf::new();
+        for i in 0..19 {
+            assert!(buf.push(format!("l{i}")).is_none());
+        }
+        let merged = buf.push("l19".into()).expect("满 20 行应合并成一条");
+        assert_eq!(merged.lines().count(), 20);
+
+        let mut buf = ProgressBuf::new();
+        assert!(buf.push("a".into()).is_none());
+        std::thread::sleep(Duration::from_millis(210));
+        assert_eq!(buf.push("b".into()).as_deref(), Some("a\nb"));
     }
 
     #[test]

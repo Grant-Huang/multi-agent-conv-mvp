@@ -514,6 +514,8 @@ pub mod codes {
     pub const DISCOVERY: &str = "W_DISCOVERY";
     // 配置
     pub const CONFIG_UNKNOWN_KEY: &str = "W_CONFIG_UNKNOWN_KEY";
+    // 存储
+    pub const STORE_READ_SLOW: &str = "W_STORE_READ_SLOW";
 }
 
 /// AgentNexus 与节点之间的协议数据（HTTP + SSE）。

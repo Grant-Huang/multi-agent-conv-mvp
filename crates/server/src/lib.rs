@@ -154,6 +154,8 @@ struct AfterQuery {
 
 async fn get_task(State(rt): State<AppState>, Path(id): Path<String>, Query(q): Query<AfterQuery>) -> ApiResult<TaskDetail> {
     let task = rt.store.get_task(&id)?.ok_or_else(|| not_found("任务"))?;
+    // 状态行已经落库，对应的事件可能还在写队列里。先等队列写完，详情里的时间线才完整。
+    rt.store.flush_events();
     Ok(Json(TaskDetail { events: rt.store.list_events_after(&id, q.after.as_deref())?, task }))
 }
 

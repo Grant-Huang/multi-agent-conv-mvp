@@ -699,6 +699,7 @@ General Agent 没有用推理服务自带的"函数调用"功能（不同小模�
 | `W_NODE_OFFLINE` | 节点离线 | |
 | `W_DISCOVERY` | 局域网发现不可用 | 网络不支持组播，改用"按地址添加" |
 | `W_CONFIG_UNKNOWN_KEY` | 配置里有不认识的字段，已忽略 | 多半是拼写错误或旧版本写法（例如旧的 `[agents.prefer]`） |
+| `W_STORE_READ_SLOW` | 一次数据库读取超过 50ms | 看 `store.read_slow` 的 `op` 和 `ms`；事件写入已改成批量，若仍频繁出现再看磁盘 |
 
 ### 10.5 排查示例
 

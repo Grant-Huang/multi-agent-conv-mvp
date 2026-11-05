@@ -23,7 +23,7 @@
 | M0 | 本地部署 + e2e 发现的 5 个问题 + 派发边界规则 | ✅ 完成 |
 | M1 | 派发"越用越聪明"：纠错反馈、相似经验检索、纠错回归 | 待开始 |
 | M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.7 完成，2.8 待定 |
-| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .7 完成，.8 起待做 |
+| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .8 完成，.9 起待做 |
 | 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
 | M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
 | M4 | 多问题消息逐条对应回答 | 待开始 |
@@ -332,7 +332,14 @@ reviewer = "local"
   - 诊断页 / 路由日志页：打开页签时取一次 + 仅在 `status_changed` / `assistant_message` 时节流刷新 + 手动刷新
   - 流式渲染：delta 用 `requestAnimationFrame` 合批；历史消息 `React.memo`；流式气泡按纯文本或 ≥250ms 才重新解析 Markdown，结束后完整渲染
   - 引入 vitest + @testing-library/react：断言"连发 50 个进度事件，接口请求次数 ≤ 节流上限"、"流式 100 个片段，Markdown 解析次数 ≤ 上限"
-- [ ] **pre-M3.8 H4 存储（降级为中，先量后改）**
+- [x] **pre-M3.8 H4 存储（降级为中，先量后改）**（2026-11-05 完成）
+  - 基准（debug，文件库）：2 个读者循环 `list_tasks` + 一条固定小任务的 `list_events`，同时 8 个任务往别的任务灌事件。8×100 写得太快，只采到 5 个样本，读 P95 954µs；8×1000 采到 2564 个样本，读 P95 72µs。写入量 ×10，读 P95 没有上升（两者都 < 100ms）
+  - `PRAGMA synchronous=NORMAL`、`busy_timeout=5000`。事件走容量 1024 的通道，`store-writer` 线程按 64 条或 20ms 一批提交。`Bus::publish` 先广播再入队；通道满了就等，不丢、不乱序。`insert_event` 仍是同步，直接写库的测试不用改
+  - 文件库另开一条 `query_only` 连接读。`:memory:` 不能跨连接共享，读写仍走同一条。`Store` 丢弃时通知写线程把缓冲区写完再退出
+  - `events` 只留最新 20000 行，每批提交时删掉更旧的。任务详情读取前会先等队列写完，时间线不缺刚刚的状态变化
+  - coding 标准输出：满 20 行或距第一条过了 200ms 合并成一条进度，进程正常结束时把剩余的发出去
+  - 埋点：`store.event_batch`（`size, flush_ms, queue_len`）、`store.read_slow`（`op, ms`，超过 50ms，错误码 `W_STORE_READ_SLOW`）
+  - 原计划条目（供对照）：
   - 先做并发基准：8 个任务 × 1000 事件同时写 + 并发读 `list_tasks` / `list_events`，记录读延迟 P95
   - 低成本修改：`synchronous=NORMAL`、`busy_timeout`；事件写入改成"有界通道 + 专用写线程 + 批量提交"（SSE 广播不等落库）；读用独立只读连接（WAL 支持并发读）
   - coding agent 逐行进度事件节流合并（≥200ms 或 N 行一条）；`events` 表加保留策略
