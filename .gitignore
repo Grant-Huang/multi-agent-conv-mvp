@@ -6,3 +6,10 @@
 web/node_modules
 web/dist
 /logs
+/.tmp
+/*.tar.gz
+.env
+__pycache__/
+.venv/
+venv/
+.claude/

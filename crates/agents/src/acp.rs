@@ -33,7 +33,7 @@ use an_core::{truncate_chars, codes, AgentAdapter, AgentCard, AgentError, Artifa
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::util::{collect_git_changes, expand_tilde, resolve_command};
+use crate::util::{collect_git_changes, expand_tilde, resolve_command, snapshot_worktree};
 
 // ───────────────────────── 配置 ─────────────────────────
 
@@ -309,6 +309,7 @@ impl AgentAdapter for AcpAgent {
         tokio::fs::create_dir_all(&self.workdir).await?;
         let workdir = self.workdir.canonicalize()?;
         let prompt = if task.context.is_empty() { task.goal.clone() } else { format!("{}\n\n## 背景信息\n{}", task.goal, task.context) };
+        let baseline = snapshot_worktree(&workdir).await;
         events.progress(format!("启动 ACP agent：{}（工作目录 {}）", self.card.name, workdir.display()));
 
         let state = Arc::new(Mutex::new(Collected::default()));
@@ -390,7 +391,7 @@ impl AgentAdapter for AcpAgent {
             evidence.push(Evidence { kind: "permissions".into(), content: st.permissions.join("\n") });
         }
         // 优先用 git diff 作为改动证据；工作目录不是 git 仓库时退回 agent 自己报告的 diff
-        let (git_evidence, git_artifacts) = collect_git_changes(&workdir).await;
+        let (git_evidence, git_artifacts) = collect_git_changes(&workdir, baseline.as_deref()).await;
         evidence.extend(git_evidence);
         let artifacts = if git_artifacts.is_empty() { st.diffs } else { git_artifacts };
 

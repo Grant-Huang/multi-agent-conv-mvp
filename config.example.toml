@@ -58,6 +58,12 @@ command = "~/.npm-global/bin/codex"   # 支持 ~ 开头
 args = ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "--cd", "{workdir}", "--output-last-message", "{last_message_file}", "{prompt}"]
 workdir = "workspace/code"         # 建议指向一个独立的 git 仓库（会收集 git diff 作为审查证据）
 timeout_secs = 900
+# 改用其他命令行编码 agent 时，同时改 id / name / agent_type（默认 codex / Codex CLI / codex），例如 pi：
+# id = "pi"
+# name = "pi"
+# agent_type = "pi"
+# command = "~/.npm-global/bin/pi"
+# args = ["-p", "--no-session", "{prompt}"]
 
 # ───── 执行组：每个角色由哪些 agent 来做（可选）─────
 # 不配置时，每个角色用它第一个可用的 agent（顺序：内置 → Codex → 本机 ACP → 节点）。

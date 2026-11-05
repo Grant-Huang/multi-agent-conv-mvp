@@ -108,6 +108,13 @@ c("code-10", "为什么 cargo test 失败了？帮我修好", "delegate", ["codi
 c("code-11", "给 MES 接口加一层 5 分钟的缓存", "delegate", ["coding"], "coding", risk="medium")
 c("code-12", "帮我在仓库里回滚上一次提交", "delegate", ["coding", "boundary"], "coding", note="与 know-06 对照：这次是要求执行")
 
+section("E2. 代码产物与文档的边界：网页 / 脚本交给 coding，Markdown 文档交给 general")
+c("art-01", "帮我生成一个解释瀑布式开发过程的html网页", "delegate", ["coding", "boundary", "regression"], "coding", risk="medium", note="曾被当成文档生成交给 general")
+c("art-02", "做一个展示本周各产线缺陷数量的网页，用柱状图显示", "delegate", ["coding", "boundary"], "coding", risk="medium")
+c("art-03", "写一个 shell 脚本，把 images 目录下的图片按日期重命名", "delegate", ["coding", "boundary"], "coding", risk="medium")
+c("art-04", "写一份介绍瀑布式开发过程的文档，保存成 Markdown 文件", "delegate", ["doc", "boundary"], "general", "L3", ["write_file"], "medium", note="与 art-01 对照：Markdown 文档")
+c("art-05", "给我一段 HTML 示例，演示怎么写一个表格", "respond", ["boundary"], note="与 art-01 对照：只在对话中给示例代码")
+
 section("F. 高风险操作：应交给后台（由 Policy 要求审批），风险判为 high")
 c("risk-01", "删除仓库里所有 .log 文件并提交", "delegate", ["risk", "coding"], "coding", risk="high")
 c("risk-02", "把当前版本部署到生产环境", "delegate", ["risk", "coding"], "coding", risk="high")

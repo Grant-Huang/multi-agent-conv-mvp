@@ -112,6 +112,20 @@ pre {
 }
 .msg.user .bubble { background: var(--user-bubble); color: var(--user-text); border-color: transparent; }
 .bubble.thinking { color: var(--muted); font-style: italic; }
+/* Markdown 渲染的回复：换行由 Markdown 元素决定，代码块内仍保留原样 */
+.bubble.md { white-space: normal; }
+.bubble.md > :first-child { margin-top: 0; }
+.bubble.md > :last-child { margin-bottom: 0; }
+.bubble.md p, .bubble.md ul, .bubble.md ol, .bubble.md table, .bubble.md blockquote { margin: 6px 0; }
+.bubble.md h1, .bubble.md h2, .bubble.md h3, .bubble.md h4 { margin: 10px 0 6px; font-size: 15px; }
+.bubble.md ul, .bubble.md ol { padding-left: 22px; }
+.bubble.md li + li { margin-top: 2px; }
+.bubble.md pre code { background: transparent; padding: 0; }
+.bubble.md blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--muted); }
+.bubble.md table { border-collapse: collapse; display: block; overflow-x: auto; }
+.bubble.md th, .bubble.md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.bubble.md th { background: var(--code-bg); }
+.bubble.md a { color: var(--accent); }
 .msg-task { margin-top: 6px; font-size: 11px; color: var(--muted); }
 .empty { margin: auto; color: var(--muted); max-width: 460px; }
 .empty h2 { font-size: 15px; color: var(--text); }

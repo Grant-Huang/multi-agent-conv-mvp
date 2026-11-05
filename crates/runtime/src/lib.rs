@@ -96,8 +96,9 @@ impl Runtime {
         }
         if a.coding.enabled {
             let coding = CodingAgent::new(a.coding.cfg.clone());
-            if let Some(reason) = &an_core::AgentAdapter::card(&coding).disabled_reason {
-                tracing::warn!(event = "agent.not_installed", code = an_core::codes::AGENT_NOT_INSTALLED, agent_id = "codex", "Codex CLI 不可用：{reason}");
+            let card = an_core::AgentAdapter::card(&coding);
+            if let Some(reason) = &card.disabled_reason {
+                tracing::warn!(event = "agent.not_installed", code = an_core::codes::AGENT_NOT_INSTALLED, agent_id = %card.id, "{} 不可用：{reason}", card.name);
             }
             registry.register(Arc::new(coding));
         }

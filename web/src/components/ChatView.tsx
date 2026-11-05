@@ -1,6 +1,22 @@
 // 对话区：消息列表 + 输入框（Enter 发送，Shift+Enter 换行）
 import { useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Message } from "../bindings/Message";
+
+/** 助手回复按 Markdown 渲染（react-markdown 默认不渲染原始 HTML） */
+function MarkdownText(props: { text: string }) {
+  return (
+    <Markdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        a: ({ node: _node, ...rest }) => <a {...rest} target="_blank" rel="noopener noreferrer" />,
+      }}
+    >
+      {props.text}
+    </Markdown>
+  );
+}
 
 export function ChatView(props: {
   messages: Message[];
@@ -47,16 +63,16 @@ export function ChatView(props: {
         )}
         {messages.map((m) => (
           <div key={m.id} className={`msg ${m.role}`}>
-            <div className="bubble">
-              {m.content}
+            <div className={m.role === "user" ? "bubble" : "bubble md"}>
+              {m.role === "user" ? m.content : <MarkdownText text={m.content} />}
               {m.task_id && <div className="msg-task">任务 {m.task_id.slice(0, 13)}</div>}
             </div>
           </div>
         ))}
         {streaming && (
           <div className="msg assistant">
-            <div className="bubble">
-              {streaming.text}
+            <div className="bubble md">
+              <MarkdownText text={streaming.text} />
               <span className="cursor">▍</span>
             </div>
           </div>

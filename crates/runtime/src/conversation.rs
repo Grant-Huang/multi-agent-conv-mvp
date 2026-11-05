@@ -294,7 +294,7 @@ impl ConversationRuntime {
     /// 直接回答：单独生成回复。开启流式时边生成边推送到界面（片段的 stream_id = 最终消息 id）；
     /// 流式失败时退回一次性生成；都失败时给出带错误码的说明。
     async fn generate_reply(&self, conversation_id: &str, reply_id: &str, history: &[Message]) -> String {
-        let mut messages = vec![ChatMessage::system(reply_system_prompt(self.prompt_info.review_mode))];
+        let mut messages = vec![ChatMessage::system(reply_system_prompt(&self.prompt_info))];
         for m in history {
             messages.push(if m.role == "user" { ChatMessage::user(&m.content) } else { ChatMessage::assistant(&m.content) });
         }

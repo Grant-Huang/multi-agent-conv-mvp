@@ -44,7 +44,7 @@ impl Role {
     pub fn description(&self) -> &'static str {
         match self {
             Role::General => "通用执行：知识问答、分析、计算、读写普通文件、生成 Markdown 文档或报告",
-            Role::Coding => "工程执行：在代码仓库中阅读、修改、调试代码，运行测试。适合明确的代码开发/修复任务",
+            Role::Coding => "工程执行：在代码仓库中阅读、修改、调试代码，运行测试；生成网页、脚本等代码产物。适合明确的代码开发/修复任务",
             Role::Reviewer => "独立审查：只读，检查用户提供的方案、文档、代码片段是否正确完整，给出评估意见",
         }
     }

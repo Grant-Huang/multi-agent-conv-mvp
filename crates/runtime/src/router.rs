@@ -72,10 +72,10 @@ impl Router {
              - L3：不需要获取数据的工具，但需要生成文档/报告（保存文档用的 write_file 不算\"需要工具\"）\n\
              - L4：既需要获取数据的工具（读文件、计算、查时间等），也需要生成文档/报告\n\n\
              ## 选择规则\n\
-             1. 需要修改代码仓库、写程序、修 bug、跑测试 → coding；\n\
+             1. 需要修改代码仓库、写程序、修 bug、跑测试，或生成网页（HTML/CSS/JS）、脚本、程序等代码产物（即使任务描述称之为文档或页面）→ coding；\n\
              2. 用户要求审查/评估/挑错对话中给出的内容 → reviewer；\n\
              \u{20}  审查对象是工作目录中的文件（需要先读取）→ general；审查代码仓库中的代码或改动 → coding；\n\
-             3. 其他（问答、分析、计算、读写普通文件、写文档）→ general；\n\
+             3. 其他（问答、分析、计算、读写普通文件、写 Markdown 或纯文本的文档）→ general；\n\
              4. required_tools 只列 general 真正需要的工具，其他角色留空数组；\n\
              5. risk_level：只读操作为 low；会写文件或改代码为 medium；删除数据、对外发送、涉及生产环境为 high；\n\
              6. reason 用一句中文说明理由。",
@@ -133,5 +133,36 @@ impl Router {
                 latency_ms: structured.latency_ms,
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use an_core::Risk;
+    use an_llm::LlmConfig;
+    use std::collections::BTreeMap;
+
+    fn router() -> Router {
+        let llm = LlmClient::new(LlmConfig {
+            base_url: "http://127.0.0.1:9/v1".into(),
+            api_key: String::new(),
+            model: "m".into(),
+            temperature: 0.2,
+            max_tokens: None,
+            timeout_secs: 1,
+            structured_mode: Default::default(),
+            max_retries: 0,
+        })
+        .unwrap();
+        Router::new(llm, AgentRegistry::new(BTreeMap::new()), vec!["write_file".into()], Policy { approval_risk: Risk::High })
+    }
+
+    #[test]
+    fn prompt_routes_code_artifacts_to_coding() {
+        let p = router().system_prompt(&Role::ALL);
+        let coding_rule = p.lines().find(|l| l.contains("→ coding") && l.contains("HTML")).unwrap_or_default();
+        assert!(coding_rule.contains("网页"), "网页 / HTML 等代码产物应交给 coding：{p}");
+        assert!(p.contains("Markdown 或纯文本"), "general 的文档应限定为 Markdown 或纯文本：{p}");
     }
 }

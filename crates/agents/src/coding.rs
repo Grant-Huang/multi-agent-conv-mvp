@@ -1,9 +1,11 @@
-//! Coding Agent：外部 Harness 适配器，以子进程方式调用 Codex CLI（非交互模式）。
+//! Coding Agent：外部 Harness 适配器，以子进程方式调用命令行编码 agent（非交互模式），
+//! 默认是 Codex CLI，也可以配置成 pi（`pi -p`）等任何"传入任务、执行完退出"的命令。
 //!
 //! 设计要点：
 //! - 命令和参数完全由配置决定，参数里的占位符会被替换：
 //!   `{prompt}` 任务描述、`{workdir}` 工作目录、`{last_message_file}` 最后一条回复的输出文件；
 //!   不同版本 Codex 的参数可能不同，请用 `codex exec --help` 核对后修改配置；
+//! - 卡片的 id / 名称 / 类型可在配置中指定，默认是 codex / Codex CLI / codex；
 //! - 子进程设置 `kill_on_drop`：编排层取消任务（abort）时子进程会被一起杀掉；
 //! - 执行后在工作目录跑 `git diff`，把改动作为产物和证据交给 Reviewer。
 //!   "Codex 说改好了"不等于"改对了"，验收要看证据。
@@ -15,7 +17,7 @@ use std::time::Duration;
 
 use an_core::{truncate_chars, codes, AgentAdapter, AgentCard, AgentError, EventSink, Evidence, Role, TaskResult, TaskSpec, WorkerStatus};
 
-use crate::util::{collect_git_changes, expand_tilde, resolve_command};
+use crate::util::{collect_git_changes, expand_tilde, resolve_command, snapshot_worktree};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -39,10 +41,25 @@ pub struct CodingConfig {
     /// 同时最多执行几个任务（多个任务共用一个工作目录时，建议保持 1）
     #[serde(default = "default_concurrency")]
     pub max_concurrent: u32,
+    /// agent 的唯一标识（配置执行组 [agents.assign] 时使用），默认 `codex`
+    #[serde(default = "default_id")]
+    pub id: String,
+    /// 显示名称，默认 `Codex CLI`
+    #[serde(default = "default_name")]
+    pub name: String,
+    /// agent 类型（执行组只允许同类型互为备份），默认 `codex`
+    #[serde(default = "default_id")]
+    pub agent_type: String,
 }
 
 fn default_concurrency() -> u32 {
     1
+}
+fn default_id() -> String {
+    "codex".into()
+}
+fn default_name() -> String {
+    "Codex CLI".into()
 }
 
 fn default_command() -> String {
@@ -78,6 +95,9 @@ impl Default for CodingConfig {
             workdir: default_workdir(),
             timeout_secs: default_timeout(),
             max_concurrent: default_concurrency(),
+            id: default_id(),
+            name: default_name(),
+            agent_type: default_id(),
         }
     }
 }
@@ -103,13 +123,13 @@ impl CodingAgent {
             None => (false, Some(format!("找不到命令 `{}`", cfg.command))),
         };
         let card = AgentCard {
-            id: "codex".into(),
+            id: cfg.id.clone(),
             kind: "cli".into(),
-            agent_type: "codex".into(),
+            agent_type: cfg.agent_type.clone(),
             location: "本机".into(),
             max_concurrent: cfg.max_concurrent.max(1),
             role: Role::Coding,
-            name: "Codex CLI".into(),
+            name: cfg.name.clone(),
             description: Role::Coding.description().into(),
             tools: vec![],
             enabled,
@@ -162,6 +182,7 @@ impl AgentAdapter for CodingAgent {
             format!("{}\n\n## 背景信息\n{}", task.goal, task.context)
         };
         let args = self.render_args(&prompt, &workdir.to_string_lossy(), &last_msg_file.to_string_lossy());
+        let baseline = snapshot_worktree(&workdir).await;
         events.progress(format!("启动 {}（工作目录 {}）", self.cfg.command, workdir.display()));
 
         // 2. 启动子进程
@@ -206,7 +227,7 @@ impl AgentAdapter for CodingAgent {
         let exit = match tokio::time::timeout(Duration::from_secs(self.cfg.timeout_secs), run).await {
             Ok(r) => r.context("等待子进程失败")?,
             // 超时：返回后 child 被 drop，kill_on_drop 会杀掉进程
-            Err(_) => return Ok(TaskResult::failed_code(codes::AGENT_TIMEOUT, format!("Codex 超时（{} 秒）", self.cfg.timeout_secs))),
+            Err(_) => return Ok(TaskResult::failed_code(codes::AGENT_TIMEOUT, format!("{} 超时（{} 秒）", self.card.name, self.cfg.timeout_secs))),
         };
 
         // 4. 收集结果与证据
@@ -218,13 +239,13 @@ impl AgentAdapter for CodingAgent {
             evidence.push(Evidence { kind: "stderr_tail".into(), content: truncate_chars(&s, 3000) });
         }
 
-        let (git_evidence, artifacts) = collect_git_changes(&workdir).await;
+        let (git_evidence, artifacts) = collect_git_changes(&workdir, baseline.as_deref()).await;
         evidence.extend(git_evidence);
 
-        // 摘要优先使用 Codex 写出的最后一条回复，否则用输出末尾几行
+        // 摘要优先使用 Codex 写出的最后一条回复；没有时用标准输出末尾（pi -p 只在标准输出打印最终回复）
         let summary = match tokio::fs::read_to_string(&last_msg_file).await {
             Ok(s) if !s.trim().is_empty() => s.trim().to_string(),
-            _ => out_tail.iter().rev().take(5).rev().cloned().collect::<Vec<_>>().join("\n"),
+            _ => stdout_tail.trim().to_string(),
         };
         let _ = tokio::fs::remove_file(&last_msg_file).await;
 
@@ -235,5 +256,42 @@ impl AgentAdapter for CodingAgent {
             evidence,
             errors: if exit.success() { vec![] } else { vec![format!("[{}] 进程退出：{exit}", codes::AGENT_RUNTIME)] },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_card_is_codex() {
+        let cfg: CodingConfig = serde_json::from_value(serde_json::json!({ "command": "sh" })).unwrap();
+        let agent = CodingAgent::new(cfg);
+        let card = agent.card();
+        assert_eq!((card.id.as_str(), card.agent_type.as_str(), card.name.as_str()), ("codex", "codex", "Codex CLI"));
+        assert!(card.enabled);
+    }
+
+    #[test]
+    fn card_follows_config() {
+        let cfg: CodingConfig = serde_json::from_value(serde_json::json!({
+            "command": "sh",
+            "id": "pi",
+            "name": "pi（本地模型）",
+            "agent_type": "pi"
+        }))
+        .unwrap();
+        let agent = CodingAgent::new(cfg);
+        let card = agent.card();
+        assert_eq!((card.id.as_str(), card.agent_type.as_str(), card.name.as_str()), ("pi", "pi", "pi（本地模型）"));
+        assert_eq!(card.role, Role::Coding);
+    }
+
+    #[test]
+    fn missing_command_keeps_configured_id() {
+        let cfg: CodingConfig = serde_json::from_value(serde_json::json!({ "command": "no-such-cmd-xyz", "id": "pi" })).unwrap();
+        let card = CodingAgent::new(cfg).card().clone();
+        assert_eq!(card.id, "pi");
+        assert!(!card.enabled && card.disabled_reason.unwrap().contains("no-such-cmd-xyz"));
     }
 }
