@@ -265,7 +265,8 @@ impl Store {
 
     pub fn list_route_logs(&self, limit: usize) -> Result<Vec<RouteLog>> {
         let conn = self.conn();
-        let mut st = conn.prepare("SELECT json FROM route_logs ORDER BY created_at DESC LIMIT ?1")?;
+        // rowid 决胜：同一毫秒内写入的日志保持"新的在前"（与 messages 的排序约定一致）
+        let mut st = conn.prepare("SELECT json FROM route_logs ORDER BY created_at DESC, rowid DESC LIMIT ?1")?;
         let rows = st.query_map([limit as i64], |r| r.get::<_, String>(0))?;
         rows.map(|j| Ok(serde_json::from_str(&j?)?)).collect()
     }
