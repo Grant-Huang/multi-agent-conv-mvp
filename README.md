@@ -65,6 +65,55 @@ cargo run --release --bin an-eval -- config.toml evals/routing.jsonl
 | 简单问题也被委派 | 调整 `crates/runtime/src/conversation.rs` 中的 system prompt，或换更大的模型做 conversation |
 | 工具循环不收敛 | 调小 `agents.general.max_steps`，或给 General 配更大的模型 |
 
+## 接入新 agent（ACP）
+
+AgentNexus 通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）接入外部 agent：一个通用适配器，所有支持 ACP 的 agent 都能用。
+
+**第 0 步：什么都不用做。** 本机装了下面这些 agent，启动时会被自动发现，左下角会显示出来：
+
+| agent | 角色 | 启动方式 | 说明 |
+|---|---|---|---|
+| [OpenCode](https://opencode.ai/docs/acp) | coding | `opencode acp` | 原生支持 |
+| [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/acp) | general | `hermes acp` | 原生支持，需安装 ACP 扩展 |
+| pi | coding | `pi-acp` | 需另装第三方适配器 pi-acp，成熟度较低 |
+
+**第 1 步：想让它优先干活，加一行。** 默认内置 agent 和 Codex 排在前面：
+
+```toml
+[agents.prefer]
+coding = "opencode"
+```
+
+**第 2 步：接入其他 ACP agent，写三行。**
+
+```toml
+[[acp.agents]]
+id = "my-agent"
+command = "my-agent"
+args = ["acp"]
+role = "coding"
+```
+
+首选 agent 启动失败时会自动换下一个；任务执行中途失败不会换（避免重复执行有副作用的操作）。
+
+**先体验一下？** 自带一个模拟 ACP agent，不需要安装任何东西：
+
+```toml
+[[acp.agents]]
+id = "mock"
+command = "./target/release/an-mock-acp"
+role = "coding"
+
+[agents.prefer]
+coding = "mock"
+```
+
+然后在界面里说"帮我改代码"，任务面板里能看到工具调用、权限请求、git diff 等完整过程。
+
+注意：
+- 这些 agent 用的是**它们自己的模型配置**。想让它们也用本地 llama.cpp，需要在各自的配置里设置。
+- agent 请求权限时默认自动允许（任务已通过 Policy 和人工审批），每次请求都记录在证据里；可以用 `permission = "read_only"` 收紧。
+
 ## Codex CLI
 
 `config.toml` 里的 `[agents.coding]` 决定怎么调用 codex，占位符 `{prompt}` `{workdir}` `{last_message_file}` 会被替换。不同版本的参数可能不同，**请先运行 `codex exec --help` 核对**。`workdir` 建议指向一个独立的 git 仓库：执行后会收集 `git diff` 作为审查证据。找不到命令时 Coding Agent 会被标记为不可用，Router 不会选它。
@@ -75,9 +124,9 @@ cargo run --release --bin an-eval -- config.toml evals/routing.jsonl
 crates/
   core/      数据结构、状态机、AgentAdapter trait（导出 TS 类型到 web/src/bindings）
   llm/       OpenAI 兼容客户端：结构化输出、<think> 清理、JSON 提取、校验重试
-  agents/    general（工具循环）/ coding（codex 子进程）/ reviewer（只读审查）/ tools
+  agents/    general（工具循环）/ coding（codex 子进程）/ reviewer（只读审查）/ acp（通用 ACP 适配器）/ tools
   runtime/   conversation / router / policy / orchestrator / composer / store / bus
-  server/    HTTP API + SSE + 静态前端；bin/eval.rs 路由评测；tests/e2e.rs 端到端测试
+  server/    HTTP API + SSE + 静态前端；bin/eval.rs 路由评测；bin/mock_acp_agent.rs 模拟 ACP agent；tests/e2e.rs 端到端测试
 web/         React + Vite 前端
 evals/       路由评测集
 ```
@@ -94,7 +143,7 @@ cargo test -p an-core # 修改 core 的类型后运行，重新生成 web/src/bi
 
 ## MVP 刻意没做的
 
-任务 DAG / 并行子任务、长期记忆（RelOS）、MCP 工具接入（`Tool` trait 已预留）、断点续跑（服务重启时中断的任务标记为 FAILED）、多用户与鉴权、Slack 入口。
+任务 DAG / 并行子任务、长期记忆（RelOS）、MCP 工具接入（`Tool` trait 已预留）、ACP 的文件/终端代理能力、断点续跑（服务重启时中断的任务标记为 FAILED）、多用户与鉴权、Slack 入口。
 
 ## API
 

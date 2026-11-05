@@ -38,6 +38,20 @@ impl Role {
             Role::Reviewer => "reviewer",
         }
     }
+
+    /// 角色的语义描述（给 Router 模型看）。
+    /// 角色是"做什么"，具体由哪个 agent 来做由注册表和配置决定。
+    pub fn description(&self) -> &'static str {
+        match self {
+            Role::General => "通用执行：知识问答、分析、计算、读写普通文件、生成 Markdown 文档或报告",
+            Role::Coding => "工程执行：在代码仓库中阅读、修改、调试代码，运行测试。适合明确的代码开发/修复任务",
+            Role::Reviewer => "独立审查：只读，检查用户提供的方案、文档、代码片段是否正确完整，给出评估意见",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Role::ALL.into_iter().find(|r| r.as_str() == s)
+    }
 }
 
 /// JEV 任务分类：是否需要工具 × 是否需要生成文档。
@@ -182,6 +196,10 @@ pub struct PolicyVerdict {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct AgentCard {
+    /// 唯一标识，例如 "general"、"codex"、"opencode"（配置 prefer 时用它）
+    pub id: String,
+    /// 接入方式："builtin"（内置）、"cli"（命令行子进程）、"acp"（Agent Client Protocol）
+    pub kind: String,
     pub role: Role,
     pub name: String,
     /// 给 Router 模型看的能力描述
@@ -412,6 +430,19 @@ pub trait AgentAdapter: Send + Sync {
     /// 执行任务。出错时也尽量返回 `TaskResult::failed`，而不是直接 Err。
     async fn run(&self, task: TaskSpec, events: EventSink) -> anyhow::Result<TaskResult>;
 }
+
+/// Agent 无法启动（命令不存在、进程启动失败、握手失败）。
+/// 编排层遇到这个错误会自动换用同角色的下一个 agent；
+/// 其他错误（任务执行中失败）不会换，避免有副作用的任务被重复执行。
+#[derive(Debug)]
+pub struct AgentUnavailable(pub String);
+
+impl std::fmt::Display for AgentUnavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "agent 不可用：{}", self.0)
+    }
+}
+impl std::error::Error for AgentUnavailable {}
 
 // ───────────────────────── 小工具函数 ─────────────────────────
 

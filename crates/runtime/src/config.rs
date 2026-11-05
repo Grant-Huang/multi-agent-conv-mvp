@@ -2,7 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use an_agents::CodingConfig;
+use std::collections::BTreeMap;
+
+use an_agents::{AcpConfig, CodingConfig};
 use an_core::Risk;
 use an_llm::LlmConfig;
 use anyhow::{Context, Result};
@@ -20,6 +22,9 @@ pub struct AppConfig {
     pub agents: AgentsConfig,
     #[serde(default)]
     pub orchestrator: OrchestratorConfig,
+    /// 通过 ACP 接入的外部 agent
+    #[serde(default)]
+    pub acp: AcpSection,
 }
 
 impl AppConfig {
@@ -72,6 +77,10 @@ pub struct AgentsConfig {
     pub reviewer: ToggleConfig,
     #[serde(default)]
     pub coding: CodingSection,
+    /// 每个角色的首选 agent（角色名 → agent id），例如 `coding = "opencode"`。
+    /// 不配置时按注册顺序：内置 / Codex 在前，ACP agent 在后。
+    #[serde(default)]
+    pub prefer: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,5 +168,36 @@ impl Default for OrchestratorConfig {
             task_timeout_secs: d_task_timeout(),
             approval_risk: d_approval(),
         }
+    }
+}
+
+/// ACP 接入配置。新手什么都不用写：默认会自动发现本机已安装的常见 ACP agent。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpSection {
+    /// 自动发现内置预设（opencode、hermes、pi-acp）中本机已安装的 agent
+    #[serde(default = "d_true")]
+    pub auto_detect: bool,
+    /// 自定义 agent；id 与预设相同时覆盖预设
+    #[serde(default)]
+    pub agents: Vec<AcpConfig>,
+}
+impl Default for AcpSection {
+    fn default() -> Self {
+        Self { auto_detect: true, agents: vec![] }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 配置模板必须始终能被解析（防止改模板时写错）
+    #[test]
+    fn example_config_parses() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config.example.toml");
+        let cfg = AppConfig::load(&path).expect("config.example.toml 解析失败");
+        assert!(cfg.acp.auto_detect);
+        assert!(cfg.agents.prefer.is_empty());
+        assert_eq!(cfg.llm.base_url, "http://127.0.0.1:8098/v1");
     }
 }

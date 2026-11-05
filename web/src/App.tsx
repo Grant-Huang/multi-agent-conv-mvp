@@ -142,6 +142,9 @@ export default function App() {
   );
 }
 
+/** 接入方式的显示名 */
+const KIND_LABEL: Record<string, string> = { builtin: "内置", cli: "CLI", acp: "ACP" };
+
 /** 左下角：LLM 连接状态和 Agent 可用状态 */
 function HealthBox({ health }: { health: Health | null }) {
   const [open, setOpen] = useState(false);
@@ -152,10 +155,12 @@ function HealthBox({ health }: { health: Health | null }) {
         <span className={`dot ${health.llm.ok ? "ok" : "bad"}`} />
         LLM {health.llm.ok ? "已连接" : "未连接"}
       </div>
+      {/* 每个 agent 一行：名称 + 角色 + 接入方式；不可用时悬停可看原因 */}
       {health.agents.map((a) => (
-        <div key={a.role} title={a.disabled_reason ?? a.description}>
+        <div key={a.id} title={a.disabled_reason ?? a.description}>
           <span className={`dot ${a.enabled ? "ok" : "bad"}`} />
           {a.name}
+          <span className="agent-meta">{a.role} · {KIND_LABEL[a.kind] ?? a.kind}</span>
         </div>
       ))}
       {open && (

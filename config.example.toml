@@ -48,6 +48,37 @@ args = ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "--cd",
 workdir = "workspace/code"         # 建议指向一个独立的 git 仓库（会收集 git diff 作为审查证据）
 timeout_secs = 900
 
+# ───── 每个角色的首选 agent（可选）─────
+# 同一角色有多个 agent 时，默认顺序是：内置 / Codex 在前，ACP agent 在后。
+# 首选的 agent 启动失败（未安装、进程崩溃、握手失败）时，会自动换下一个。
+[agents.prefer]
+# coding = "opencode"
+# general = "hermes"
+
+# ───── 通过 ACP（Agent Client Protocol）接入外部 agent ─────
+# 新手什么都不用配：本机装了 opencode / hermes / pi-acp，启动时会被自动发现。
+[acp]
+auto_detect = true
+
+# 接入其他支持 ACP 的 agent，最少只要三行（id、command、role）：
+# [[acp.agents]]
+# id = "my-agent"
+# command = "my-agent"          # 命令名或路径（支持 ~）
+# args = ["acp"]                # 启动 ACP 模式的参数，见该 agent 的文档
+# role = "coding"               # general / coding / reviewer
+# 可选项：
+# name = "我的 Agent"            # 显示名称
+# workdir = "~/projects/demo"   # 不填：coding 用代码目录，其他用文件目录
+# permission = "allow_all"      # agent 请求权限时：allow_all / read_only / deny_all
+# timeout_secs = 1800
+# env = { API_KEY = "..." }
+
+# 想先体验 ACP 接入？用自带的模拟 agent（cargo build --release 后可用）：
+# [[acp.agents]]
+# id = "mock"
+# command = "./target/release/an-mock-acp"
+# role = "coding"
+
 [orchestrator]
 max_review_rounds = 1              # Reviewer 判 fail 后最多返工几轮
 history_messages = 12              # 每轮带上最近多少条消息

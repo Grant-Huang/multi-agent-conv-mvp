@@ -60,14 +60,8 @@ impl Router {
     }
 
     fn system_prompt(&self, roles: &[Role]) -> String {
-        let agents = self
-            .registry
-            .cards()
-            .into_iter()
-            .filter(|c| roles.contains(&c.role))
-            .map(|c| format!("- {}：{}", c.role.as_str(), c.description))
-            .collect::<Vec<_>>()
-            .join("\n");
+        // 角色是"做什么"，同一角色可能有多个 agent，这里按角色描述，避免重复
+        let agents = roles.iter().map(|r| format!("- {}：{}", r.as_str(), r.description())).collect::<Vec<_>>().join("\n");
         format!(
             "你是 AgentNexus 的任务路由器（Router）。你只负责分类和选择执行者，不负责完成任务。\n\n\
              ## 可选执行角色\n{agents}\n\n\

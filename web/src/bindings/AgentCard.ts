@@ -5,7 +5,15 @@ import type { ToolInfo } from "./ToolInfo";
 /**
  * 能力卡片：Router 根据它来选择角色，Policy 根据它来校验。
  */
-export type AgentCard = { role: Role, name: string, 
+export type AgentCard = { 
+/**
+ * 唯一标识，例如 "general"、"codex"、"opencode"（配置 prefer 时用它）
+ */
+id: string, 
+/**
+ * 接入方式："builtin"（内置）、"cli"（命令行子进程）、"acp"（Agent Client Protocol）
+ */
+kind: string, role: Role, name: string, 
 /**
  * 给 Router 模型看的能力描述
  */

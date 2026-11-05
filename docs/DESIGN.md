@@ -2,10 +2,10 @@
 
 | 项目 | 内容 |
 |---|---|
-| 版本 | v0.1（对应提交 `AgentNexus MVP: Conversation + Router + ...`） |
+| 版本 | v0.2（新增 ACP 通用接入、同角色多 agent 与自动换用） |
 | 日期 | 2026-11-04 |
 | 状态 | 骨架已实现，全部测试通过；尚未接真实模型 / 真实 Codex 验证 |
-| 范围 | Conversation Agent + Router + General / Coding / Reviewer 三个执行 Agent |
+| 范围 | Conversation Agent + Router + General / Coding / Reviewer 三个执行角色；外部 agent 通过 ACP 接入 |
 
 ---
 
@@ -17,7 +17,7 @@
 4. [核心数据模型](#4-核心数据模型)
 5. [任务状态机](#5-任务状态机)
 6. [关键流程](#6-关键流程)
-7. [组件详细设计](#7-组件详细设计)
+7. [组件详细设计](#7-组件详细设计)（含 [7.8 ACP 通用接入](#78-acp-通用接入)）
 8. [存储与事件](#8-存储与事件)
 9. [HTTP 接口](#9-http-接口)
 10. [配置说明](#10-配置说明)
@@ -54,6 +54,7 @@ AgentNexus 的长期目标是一个"组织级智能工作平台"：用户通过�
 | G3 | "Worker 完成 ≠ 验收通过"能否落到流程里 | Policy 决定是否审查 + Reviewer 独立审查 + 返工 |
 | G4 | 用户始终只面对一个入口，后台进度可见 | Conversation 统一交付 + SSE 事件流 + 任务面板 |
 | G5 | 技术栈可行性：Rust 后端 + TS 前端 | axum + SQLite + React/Vite，前后端类型自动同步 |
+| G6 | 接入新 agent 对新手极简 | ACP 通用适配器 + 预设自动发现 + 三行配置 |
 
 ### 1.3 非目标（MVP 不做）
 
@@ -115,13 +116,14 @@ flowchart TB
         GEN["General Agent<br/>LLM + 工具循环"]
         COD["Coding Agent<br/>Codex CLI 子进程"]
         REV["Reviewer Agent<br/>只读审查"]
+        ACPA["ACP 适配器<br/>通用"]
         STORE[("SQLite<br/>Store")]
         BUS["Event Bus<br/>写库 + 广播"]
     end
 
     API --> Conv
     TC -- delegate --> CLS --> POL --> ORC
-    ORC --> REG --> GEN & COD & REV
+    ORC --> REG --> GEN & COD & REV & ACPA
     ORC -- 验收 --> REV
     ORC --> CMP
     ORC & Conv --> STORE
@@ -129,6 +131,7 @@ flowchart TB
     BUS --> API
     GEN & REV & TC & CLS & CMP -. "OpenAI 兼容接口" .-> LLM["llama.cpp<br/>127.0.0.1:8098"]
     COD -. 子进程 .-> CODEX["codex exec"]
+    ACPA -. "ACP / stdio" .-> EXT["opencode acp<br/>hermes acp<br/>pi-acp …"]
 ```
 
 ### 3.2 职责划分
@@ -140,7 +143,8 @@ flowchart TB
 | 派给哪个角色、需要哪些工具、风险多高？ | Router（Classifier） | 是 |
 | 能不能自动执行、要不要审查？ | Policy | **否** |
 | 创建任务、推进状态、收回结果、组织返工 | Orchestrator | 否 |
-| 真正执行 | General / Coding / Reviewer | 视 Agent 而定 |
+| 由哪个 agent 执行（同角色多个时） | Agent Registry（首选 + 注册顺序）+ Orchestrator（启动失败自动换用） | 否 |
+| 真正执行 | 内置 General / Reviewer、Codex CLI、ACP agent | 视 agent 而定 |
 | 结果是否满足目标？ | Reviewer（给意见）+ Orchestrator（按规则定状态） | 是 / 否 |
 | 把结果讲给用户 | Composer | 是（失败时退回模板） |
 
@@ -150,9 +154,9 @@ flowchart TB
 crates/
   core/      数据结构、状态机、AgentAdapter / EventPublisher trait（无 LLM、无 Web 依赖）
   llm/       OpenAI 兼容客户端
-  agents/    三个 Agent 与工具
+  agents/    内置 Agent、Codex 适配器、通用 ACP 适配器（acp.rs）、工具、公共工具函数（util.rs）
   runtime/   conversation / router / policy / orchestrator / composer / store / bus / config
-  server/    HTTP API、SSE、静态前端；bin/eval.rs；tests/e2e.rs
+  server/    HTTP API、SSE、静态前端；bin/eval.rs；bin/mock_acp_agent.rs（模拟 ACP agent）；tests/e2e.rs
 web/         React + Vite 前端（web/src/bindings 由 core 自动生成）
 evals/       路由评测集
 ```
@@ -175,7 +179,7 @@ evals/       路由评测集
 
 | 类型 | 取值 | 说明 |
 |---|---|---|
-| `Role` | `general` / `coding` / `reviewer` | 执行角色；Router 只能从已注册且可用的角色中选 |
+| `Role` | `general` / `coding` / `reviewer` | 执行角色（"做什么"）；Router 只能从有可用 agent 的角色中选。同一角色可以有多个 agent（"谁来做"） |
 | `TaskClass` | `L1` / `L2` / `L3` / `L4` | JEV 分类：是否需要工具 × 是否需要生成文档 |
 | `Risk` | `low` / `medium` / `high` | 风险等级（模型建议值） |
 | `TaskStatus` | 见第 5 节 | 任务状态 |
@@ -225,6 +229,8 @@ struct PolicyVerdict {
 
 ```rust
 struct AgentCard {               // 能力卡片
+    id: String,                  // 唯一标识："general"、"codex"、"opencode"…（prefer 配置用）
+    kind: String,                // 接入方式："builtin" / "cli" / "acp"
     role: Role, name: String,
     description: String,         // 给 Router 模型看的能力描述
     tools: Vec<ToolInfo>,
@@ -264,6 +270,7 @@ pub trait AgentAdapter: Send + Sync {
 
 - 执行中的进度通过 `EventSink::progress()` 上报，不需要关心事件如何存储和推送。
 - 业务失败尽量返回 `Ok(TaskResult::failed(..))`，`Err` 只用于意外错误（两者在编排层都会变成 FAILED）。
+- **启动失败**（命令不存在、进程启动失败、ACP 握手失败）返回 `Err(AgentUnavailable)`：编排层会自动换用同角色的下一个 agent。执行开始后的失败不能用这个错误，否则有副作用的任务可能被另一个 agent 重复执行。
 - **取消通过 abort 实现**：编排层直接 abort 执行 `run` 的 tokio 任务，实现方需保证被 drop 时释放资源（例如子进程设置 `kill_on_drop(true)`），因此 trait 中没有 `cancel` 方法。
 
 ### 4.5 持久化记录
@@ -549,7 +556,7 @@ System prompt 要点：
 
 | # | 规则 | 结果 |
 |---|---|---|
-| 1 | 角色未注册或不可用 | 拒绝路由，返回原因（例如"找不到命令 codex"） |
+| 1 | 该角色没有任何可用的 agent | 拒绝路由，列出每个 agent 不可用的原因（例如"找不到命令 codex"） |
 | 2 | 非 General 角色带了 `required_tools` | 清空，记录说明 |
 | 3 | `risk_level ≥ approval_risk` | `auto_execute = false` |
 | 4 | Coding → 审查；General 且 L3/L4 → 审查；Reviewer → 不审查 | `needs_review`；Reviewer 不可用时跳过审查并记录说明 |
@@ -560,6 +567,7 @@ System prompt 要点：
 |---|---|
 | `submit` | 写入 TaskRecord（CREATED）→ 按 Policy 进入 QUEUED 或 NEEDS_HUMAN；同时把执行上下文暂存在内存 |
 | `start` | **持锁 spawn**：先登记 AbortHandle，再让任务运行；任务结束时从表中移除。保证不会出现"任务已结束但句柄残留"的竞态 |
+| `run_with_fallback` | 按候选顺序执行；遇到 `AgentUnavailable` 换下一个，并在证据中记录 `executed_by` |
 | `run_with_review` | 执行 → 保存结果 → 按 Policy 审查 → 返工循环（见 6.2） |
 | `execute` | 包装总超时，最终状态落库，调用 Composer 生成交付消息并推送 |
 | `cancel` | abort + 状态置 CANCELLED；终态任务返回 `false` |
@@ -633,6 +641,125 @@ flowchart TB
 - 把"事实材料"交给模型：目标、角色、最终状态、结果摘要（截断 4000 字）、产物名、错误、审查结论和问题。
 - 要求：先一句话说明结果（完成 / 未通过审查 / 失败 / 需要人工确认），如实说明审查意见，不编造事实材料以外的内容。
 - **模型调用失败或返回空时退回模板**，保证用户一定能收到交付消息。
+
+### 7.8 ACP 通用接入
+
+#### 为什么选 ACP
+
+目标是"接入新 agent 对新手极简"。对比过的几种方式：
+
+| 方式 | 例子 | 优点 | 缺点 |
+|---|---|---|---|
+| **ACP（Agent Client Protocol）** | `opencode acp`、`hermes acp`、`pi-acp`、`codex-acp` | **一个适配器接入所有 agent**；有流式进度、工具调用、权限请求、diff、取消的标准定义 | 部分 agent 需要第三方适配器 |
+| 各工具原生接口 | `opencode serve`（HTTP）、`codex app-server`（JSON-RPC）、`pi --mode rpc`（JSON 行） | 功能最全 | 每个工具一个适配器，协议各不相同，维护成本随数量线性增长 |
+| 命令行一次性执行 | `codex exec`（当前 Coding Agent 的方式） | 简单 | 只能解析文本输出，没有结构化事件和权限交互 |
+| MCP | 把 agent 包装成 MCP 工具 | 生态大 | 面向"工具调用"，缺少会话、流式进度和权限的语义 |
+
+结论：**ACP 作为唯一的标准接入路径**；已有的 Codex CLI 适配器保留（已可用，且不需要额外安装 codex-acp）。
+
+#### 角色与 agent 的关系
+
+```mermaid
+flowchart LR
+    R["Router<br/>只选角色"] --> ROLE{"coding"}
+    ROLE --> P["candidates(coding)<br/>1. prefer 首选<br/>2. 其余按注册顺序<br/>3. 排除不可用"]
+    P --> A1["opencode (acp)"]
+    P --> A2["codex (cli)"]
+    P --> A3["pi (acp)"]
+    A1 -- "AgentUnavailable" --> A2
+```
+
+- 注册顺序：内置 General / Reviewer → Codex CLI → 自定义 ACP agent → 自动发现的预设。
+- id 重复时先注册的生效，因此自定义配置可以覆盖同 id 的预设。
+- 未安装的**预设**不注册（界面不出现）；未安装的**自定义** agent 会注册为不可用，便于在界面上看到原因。
+
+#### 新手接入的三个层次
+
+| 层次 | 用户要做的 | 机制 |
+|---|---|---|
+| 0 | 什么都不做 | 启动时按预设查找命令（PATH + `~/.npm-global/bin`、`~/.local/bin`、`/opt/homebrew/bin` 等常见目录），找到即注册 |
+| 1 | 加一行 `[agents.prefer] coding = "opencode"` | 让某个 agent 优先 |
+| 2 | 写三行 `[[acp.agents]] id / command / role` | 接入任意 ACP agent |
+
+内置预设：
+
+| id | 命令 | 角色 | 来源 |
+|---|---|---|---|
+| `opencode` | `opencode acp` | coding | 原生支持（opencode.ai/docs/acp） |
+| `hermes` | `hermes acp` | general | 原生支持，需安装 ACP 扩展（Hermes Agent 文档） |
+| `pi` | `pi-acp` | coding | 第三方适配器，成熟度较低 |
+
+命令查找只检查文件是否存在且可执行，**不会运行它**（有些 agent 的 `--version` 会启动交互）。
+
+#### 一次 ACP 任务
+
+```mermaid
+sequenceDiagram
+    participant O as Orchestrator
+    participant A as AcpAgent 适配器
+    participant X as 外部 agent（子进程）
+    O->>A: run(TaskSpec, EventSink)
+    A->>X: 启动子进程（stdio）
+    A->>X: initialize（ProtocolVersion V1）
+    Note over A: 握手成功前的失败 → AgentUnavailable → 换下一个
+    A->>X: session/new（cwd = 工作目录）
+    A->>X: session/prompt（任务目标 + 背景）
+    loop 执行中
+        X-->>A: session/update（消息片段 / 工具调用 / 计划 / diff）
+        A-->>O: progress 事件
+        X->>A: session/request_permission
+        A-->>X: 按权限模式应答（记录到证据）
+    end
+    X-->>A: stop_reason
+    A->>A: git diff 收集改动
+    A-->>O: TaskResult
+```
+
+`session/update` 的处理：
+
+| 更新类型 | 处理 |
+|---|---|
+| `AgentMessageChunk` | 文本拼接为结果摘要 |
+| `ToolCall` | 记录（标题、类型、状态），发进度事件 |
+| `ToolCallUpdate` | 更新状态；完成或失败时发进度事件；其中的 diff 收集为产物 |
+| `Plan` | 发进度事件（计划步骤） |
+| 其他（思考、模式、用量…） | 忽略 |
+
+结果整理：
+
+| TaskResult 字段 | 来源 |
+|---|---|
+| `status` | `stop_reason == end_turn` 为成功，其他（refusal、max_tokens、cancelled…）为失败 |
+| `summary` | agent 的回复文本 |
+| `artifacts` | 工作目录是 git 仓库时用 `git diff`；否则用 agent 报告的 diff |
+| `evidence` | `executed_by`、`acp_stop_reason`、`tool_calls`（清单）、`permissions`（每次应答）、`git_diff_stat` |
+
+#### 权限应答
+
+任务能执行到这里，说明已通过 Policy（含高风险人工审批），所以默认自动允许：
+
+| `permission` | 行为 |
+|---|---|
+| `allow_all`（默认） | 全部允许 |
+| `read_only` | 只允许 read / search / think / fetch 类操作 |
+| `deny_all` | 全部拒绝 |
+
+只按选项的 `kind` 选择（优先"允许一次"而不是"总是允许"），不按位置或名称，与 SDK 官方示例一致。每次应答都写入证据和事件。
+
+#### 文件与终端能力
+
+ACP 允许 client 声明"由我来提供文件读写和终端"，此时 agent 会回调 client。MVP **不声明**这些能力：agent 使用自己的本地工具，实现最简单；代价是安全边界取决于 agent 自身的沙箱（见第 13 节）。
+
+#### 取消与超时
+
+- 编排层 abort 任务 → 连接被 drop → SDK 杀掉 agent 的**整个进程组**（包括 `npx` 等启动器拉起的子孙进程）。端到端测试验证了取消后没有残留进程。
+- 每个 ACP agent 有自己的 `timeout_secs`（默认 1800 秒），外层还有任务总超时。
+
+#### 实现
+
+- 使用官方 Rust SDK `agent-client-protocol` 5.x（`process` 特性），参考其 `yolo_one_shot_client` 示例。
+- SDK 的回调运行在消息循环中，回调里同步等待对方响应会死锁；耗时操作（如模拟 agent 中等待权限应答）放到 `cx.spawn` 的独立任务中。
+- `an-mock-acp`（`crates/server/src/bin/mock_acp_agent.rs`）是用同一 SDK 写的模拟 agent：报告工具调用 → 请求权限 → 写 `hello.txt` → 报告 diff → 回复文字。用于测试，也让新手零依赖体验 ACP。
 
 ---
 
@@ -738,6 +865,14 @@ Agent / Orchestrator ──publish──▶ Bus ──① 写入 events 表
 | | `args` | 见模板 | 支持 `{prompt}` `{workdir}` `{last_message_file}` |
 | | `workdir` | `workspace/code` | 建议为独立 git 仓库 |
 | | `timeout_secs` | 900 | |
+| `[agents.prefer]` | `<角色> = "<agent id>"` | 空 | 每个角色的首选 agent |
+| `[acp]` | `auto_detect` | true | 自动发现本机已安装的预设 agent |
+| `[[acp.agents]]` | `id` / `command` / `role` | 必填 | 自定义 ACP agent 的最小配置 |
+| | `name` | 等于 id | 显示名称 |
+| | `args` / `env` | 空 | 启动参数 / 环境变量 |
+| | `workdir` | 按角色 | coding 用代码目录，其他用文件目录 |
+| | `permission` | `allow_all` | `allow_all` / `read_only` / `deny_all` |
+| | `timeout_secs` | 1800 | |
 | `[orchestrator]` | `max_review_rounds` | 1 | 审查不通过后的返工轮数 |
 | | `history_messages` | 12 | Turn Controller 带的历史消息数 |
 | | `task_timeout_secs` | 1800 | 单任务（含返工）总超时 |
@@ -766,6 +901,7 @@ Agent / Orchestrator ──publish──▶ Bus ──① 写入 events 表
 - 切换会话：加载消息和任务，订阅 `/api/events?conversation_id=`。
 - 收到 `status_changed` → 刷新任务列表；`assistant_message` → 刷新消息和任务；任何事件都会让展开中的任务卡片重新拉取详情。
 - 发送消息：先乐观显示用户消息，等后端返回后整体刷新。输入法组字中按 Enter 不发送。
+- 左下角列出所有 agent：名称、角色、接入方式（内置 / CLI / ACP），不可用的悬停显示原因。自动发现的 agent 会直接出现在这里。
 - 类型：直接使用 `web/src/bindings` 中由 Rust 生成的类型。`u64` 等字段用 `#[ts(type = "number")]` 标注，避免被映射成 `bigint`。
 
 开发模式下 Vite（5173）把 `/api` 代理到后端（8787）；生产模式下由后端直接提供 `web/dist`。
@@ -818,6 +954,7 @@ cargo run --release --bin an-eval -- config.toml evals/routing.jsonl
 | 高风险操作自动执行 | Policy 按 `approval_risk` 强制人工审批 | 风险等级来自模型判断，可能低估 |
 | Worker 报告成功但结果错误 | Coding 与 L3/L4 任务强制审查；审查出错按 NEEDS_HUMAN 处理 | Reviewer 也是模型，可能误判 |
 | 代码修改破坏环境 | Codex `--sandbox workspace-write`，工作目录独立 | 安全性取决于 Codex 自身 sandbox |
+| ACP agent 执行危险操作 | 每次权限请求都记录；可配置 `read_only` / `deny_all`；工作目录由 AgentNexus 指定 | 默认 `allow_all`；agent 不经权限请求直接操作时无法拦截（取决于 agent 自身实现和沙箱） |
 | 失控的长任务 | Coding 超时、任务总超时、取消时 kill 子进程 | |
 | 提示词注入（文件内容、用户输入） | 工具输出作为普通消息传回模型 | **未防护**，MVP 仅限本机可信使用 |
 | 未授权访问 | 默认只监听 127.0.0.1 | **没有鉴权**，不要暴露到公网 |
@@ -830,7 +967,8 @@ cargo run --release --bin an-eval -- config.toml evals/routing.jsonl
 |---|---|---|
 | 单元测试 | `core` | 状态序列化往返、中文安全截断 |
 | | `llm` | `<think>` 清理、带噪声的 JSON 提取 |
-| | `agents` | 计算器（优先级、右结合、除零）、路径越界防护 |
+| | `agents` | 计算器（优先级、右结合、除零）、路径越界防护、命令查找、ACP 权限应答（三种模式）、预设有效性 |
+| | `runtime` | 注册表首选与排序、`config.example.toml` 可解析 |
 | 类型导出 | `core` | ts-rs 导出 22 个 TS 类型 |
 | 端到端 | `server/tests/e2e.rs` | 见下表 |
 
@@ -847,10 +985,13 @@ cargo run --release --bin an-eval -- config.toml evals/routing.jsonl
 | 高风险审批 | 创建即 NEEDS_HUMAN，批准后 COMPLETED |
 | 中途取消 | 慢任务 RUNNING 时用户说"取消"→ follow_up → CANCELLED |
 | 路由日志 | 每轮对话一条 |
+| ACP：自动换用 | codex 不可用、首选 agent 握手前崩溃 → 自动换用模拟 ACP agent，事件中可见 |
+| ACP：完整流程 | 权限请求被允许、`hello.txt` 写入、git diff 证据、`executed_by`、stop_reason、审查 pass |
+| ACP：取消 | 执行中取消 → CANCELLED，agent 进程无残留 |
 
 另外用 Playwright 驱动前端走过一遍完整流程（手工验证，未纳入自动化测试）。
 
-**尚未验证**：真实 llama.cpp 的结构化输出兼容性、真实小模型的路由准确率、真实 Codex CLI 的参数和输出格式。
+**尚未验证**：真实 llama.cpp 的结构化输出兼容性、真实小模型的路由准确率、真实 Codex CLI 的参数和输出格式、真实 opencode / Hermes / pi-acp 的 ACP 交互。
 
 ---
 
@@ -867,6 +1008,10 @@ cargo run --release --bin an-eval -- config.toml evals/routing.jsonl
 | 7 | 单连接 SQLite、单进程 | 不支持多实例 | 换 Postgres + 外部消息队列 |
 | 8 | 无鉴权、无多用户 | 只能本机使用 | 增加用户体系 |
 | 9 | 一个会话中同一时刻可能有多个任务，Turn Controller 靠模型判断 follow_up 指向哪个 | 多任务时可能指错 | 前端提供"针对某任务回复"的显式入口 |
+| 10 | ACP 未声明文件 / 终端能力 | agent 用自己的工具，AgentNexus 无法代理和审计其文件操作 | 实现 fs / terminal 能力并接入路径防护 |
+| 11 | ACP agent 使用各自的模型配置 | 不会自动使用 `[llm]` 中的本地模型 | 文档说明；后续可通过 env 传递 |
+| 12 | 同一角色多个 agent 时只能通过配置指定首选 | 不能按任务选择、不能并行对比 | 增加按任务选择 / 多 agent 对比模式 |
+| 13 | 每个 ACP 任务新开一个 agent 进程和会话 | 不保留跨任务的 agent 会话上下文；启动有开销 | 进程池 / 会话复用（`session/load`） |
 
 ---
 
@@ -892,7 +1037,8 @@ flowchart LR
 
 | 要做的事 | 改哪里 |
 |---|---|
-| 接新的执行 Agent / Harness | 实现 `AgentAdapter`，在 `Runtime::new` 注册；需要新角色时扩展 `Role` |
+| 接新的 ACP agent | 配置文件 `[[acp.agents]]` 三行；常用的可加入 `agents/src/acp.rs` 的 `presets()` |
+| 接不支持 ACP 的执行 Agent / Harness | 实现 `AgentAdapter`，在 `Runtime::new` 注册；需要新角色时扩展 `Role` |
 | 加工具 / 接 MCP | 实现 `Tool` trait 并注册到 `ToolRegistry` |
 | 改审批 / 审查规则 | `runtime/policy.rs` |
 | 换模型或推理服务 | `config.toml` 的 `[llm]` / `[models]` |
@@ -906,4 +1052,10 @@ flowchart LR
 - OpenAI Agents SDK（JS）多 Agent 编排指南（Handoff 与 Agents as Tools）：https://openai.github.io/openai-agents-js/guides/multi-agent
 - Rig（Rust LLM 库，本项目未采用，作为备选）：https://docs.rs/crate/rig-core/0.35.0/source/README.md
 - rmcp（MCP 官方 Rust SDK，阶段二接入 MCP 时使用）：https://docs.rs/crate/rmcp
+- Agent Client Protocol：https://agentclientprotocol.com （传输：https://agentclientprotocol.com/protocol/transports）
+- ACP 官方 Rust SDK `agent-client-protocol`：https://github.com/agentclientprotocol/rust-sdk
+- OpenCode ACP：https://opencode.ai/docs/acp ；OpenCode Server：https://opencode.ai/docs/server
+- Hermes Agent ACP：https://hermes-agent.nousresearch.com/docs/user-guide/features/acp
+- pi RPC 模式：https://pi.dev/docs/latest/cli-integration ；第三方 pi-acp 适配器：https://pi.dev/packages/@geohar/pi-acp
+- Codex App Server：https://developers.openai.com/codex/app-server
 - AgentNexus 前期设计讨论记录（Router / Conversation Agent / Harness 选型）

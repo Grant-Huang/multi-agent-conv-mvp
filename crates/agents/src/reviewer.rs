@@ -45,9 +45,11 @@ fn verdict_schema() -> Value {
 impl ReviewerAgent {
     pub fn new(llm: LlmClient) -> Self {
         let card = AgentCard {
+            id: "reviewer".into(),
+            kind: "builtin".into(),
             role: Role::Reviewer,
             name: "Reviewer Agent".into(),
-            description: "独立审查：只读，检查用户提供的方案、文档、代码片段是否正确完整，给出评估意见和问题清单".into(),
+            description: Role::Reviewer.description().into(),
             tools: vec![],
             enabled: true,
             disabled_reason: None,

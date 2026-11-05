@@ -31,10 +31,12 @@ async fn main() -> Result<()> {
     }
     for card in rt.registry.cards() {
         tracing::info!(
-            "Agent {:<9} {}{}",
+            "Agent [{:<8}] {}（{}，{}）{}",
             card.role.as_str(),
-            if card.enabled { "可用" } else { "不可用" },
-            card.disabled_reason.map(|r| format!("（{r}）")).unwrap_or_default()
+            card.name,
+            card.id,
+            card.kind,
+            if card.enabled { "可用".to_string() } else { format!("不可用：{}", card.disabled_reason.unwrap_or_default()) }
         );
     }
 

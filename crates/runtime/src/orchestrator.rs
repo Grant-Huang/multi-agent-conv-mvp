@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use an_agents::ReviewerAgent;
 use an_core::{
-    now, EventSink, PolicyVerdict, ReviewVerdict, RouteDecision, TaskRecord, TaskResult, TaskSpec, TaskStatus, Verdict,
+    now, AgentUnavailable, EventSink, Evidence, PolicyVerdict, ReviewVerdict, RouteDecision, TaskRecord, TaskResult, TaskSpec, TaskStatus, Verdict,
     WorkerStatus,
 };
 use anyhow::{bail, Context, Result};
@@ -173,9 +173,34 @@ impl Orchestrator {
         }
     }
 
+    /// 按候选顺序执行：首选 agent 启动失败（AgentUnavailable）时自动换下一个。
+    /// 任务执行中途失败不换，避免有副作用的操作被另一个 agent 重复执行。
+    async fn run_with_fallback(&self, task: &TaskRecord, spec: TaskSpec, sink: &EventSink) -> TaskResult {
+        let candidates = self.registry.candidates(task.role);
+        if candidates.is_empty() {
+            return TaskResult::failed(format!("没有可用的 {} agent", task.role.as_str()));
+        }
+        let mut skipped = vec![];
+        for agent in candidates {
+            let name = agent.card().name.clone();
+            sink.progress(format!("由 {name} 执行"));
+            match agent.run(spec.clone(), sink.clone()).await {
+                Ok(mut r) => {
+                    r.evidence.insert(0, Evidence { kind: "executed_by".into(), content: format!("{name}（{}）", agent.card().kind) });
+                    return r;
+                }
+                Err(e) if e.downcast_ref::<AgentUnavailable>().is_some() => {
+                    sink.progress(format!("{e:#}，尝试下一个 agent"));
+                    skipped.push(format!("{e:#}"));
+                }
+                Err(e) => return TaskResult::failed(format!("{name}：{e:#}")),
+            }
+        }
+        TaskResult::failed(format!("所有 {} agent 都无法启动：{}", task.role.as_str(), skipped.join("；")))
+    }
+
     /// 执行 Worker，并按 Policy 组织审查与返工
     async fn run_with_review(&self, task: &TaskRecord) -> Result<(TaskStatus, Option<TaskResult>, Option<ReviewVerdict>)> {
-        let agent = self.registry.get(task.role).context("执行角色未注册")?;
         let mut context = self.contexts.lock().unwrap().get(&task.id).cloned().unwrap_or_default();
         let sink = EventSink::new(self.bus.clone(), &task.conversation_id, &task.id);
 
@@ -189,10 +214,7 @@ impl Orchestrator {
                 context: context.clone(),
                 route: task.route.clone(),
             };
-            let result = match agent.run(spec, sink.clone()).await {
-                Ok(r) => r,
-                Err(e) => TaskResult::failed(format!("{e:#}")),
-            };
+            let result = self.run_with_fallback(task, spec, &sink).await;
             self.store.set_task_result(&task.id, &result)?;
 
             // Worker 自己失败：不进入审查

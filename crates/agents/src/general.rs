@@ -39,9 +39,11 @@ struct Step {
 impl GeneralAgent {
     pub fn new(llm: LlmClient, tools: ToolRegistry, max_steps: usize) -> Self {
         let card = AgentCard {
+            id: "general".into(),
+            kind: "builtin".into(),
             role: Role::General,
             name: "General Agent".into(),
-            description: "通用执行：知识问答、分析、计算、读写工作目录中的文件、生成 Markdown 文档或报告".into(),
+            description: Role::General.description().into(),
             tools: tools.infos(),
             enabled: true,
             disabled_reason: None,

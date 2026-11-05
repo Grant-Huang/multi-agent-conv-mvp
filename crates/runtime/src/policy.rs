@@ -16,15 +16,13 @@ impl Policy {
     pub fn evaluate(&self, route: &mut RouteDecision, registry: &AgentRegistry) -> Result<PolicyVerdict, String> {
         let mut notes = vec![];
 
-        // 规则 1：角色必须已注册且可用
-        let Some(agent) = registry.get(route.execution_role) else {
-            return Err(format!("角色 {} 未注册", route.execution_role.as_str()));
-        };
-        if !agent.card().enabled {
+        // 规则 1：角色必须至少有一个可用的 agent
+        if !registry.is_enabled(route.execution_role) {
+            let reasons = registry.unavailable_reasons(route.execution_role);
             return Err(format!(
-                "{} 当前不可用：{}",
-                agent.card().name,
-                agent.card().disabled_reason.clone().unwrap_or_default()
+                "没有可用的 {} agent{}",
+                route.execution_role.as_str(),
+                if reasons.is_empty() { String::new() } else { format!("（{}）", reasons.join("；")) }
             ));
         }
 

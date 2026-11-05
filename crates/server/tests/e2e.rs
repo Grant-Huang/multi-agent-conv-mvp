@@ -113,7 +113,16 @@ struct Env {
     code_dir: std::path::PathBuf,
 }
 
-async fn setup() -> Env {
+/// 测试场景
+#[derive(PartialEq)]
+enum Mode {
+    /// 用 sh 脚本冒充 codex
+    Codex,
+    /// codex 不可用；coding 首选一个启动即崩溃的 ACP agent，应自动换用假 ACP agent
+    Acp,
+}
+
+async fn setup(mode: Mode) -> Env {
     let llm_url = start_mock_llm().await;
     let tmp = std::env::temp_dir().join(an_core::new_id("an-e2e"));
     let code_dir = tmp.join("code");
@@ -143,6 +152,34 @@ timeout_secs = 60
         ws = tmp.join("files").display(),
         code = code_dir.display(),
     );
+    let config_toml = if mode == Mode::Acp {
+        // codex 命令改成不存在的；broken 握手前就退出，用来验证自动换用
+        config_toml.replace("command = \"sh\"", "command = \"no-such-codex-cmd\"")
+            + &format!(
+                r#"
+[agents.prefer]
+coding = "broken"
+
+[acp]
+auto_detect = false
+
+[[acp.agents]]
+id = "broken"
+command = "sh"
+args = ["-c", "exit 3"]
+role = "coding"
+
+[[acp.agents]]
+id = "mock"
+name = "Mock ACP"
+command = "{mock}"
+role = "coding"
+"#,
+                mock = env!("CARGO_BIN_EXE_an-mock-acp")
+            )
+    } else {
+        config_toml
+    };
     let config: AppConfig = toml::from_str(&config_toml).unwrap();
     let rt = Arc::new(Runtime::new(config, Store::open(std::path::Path::new(":memory:")).unwrap()).unwrap());
 
@@ -180,12 +217,13 @@ impl Env {
 
 #[tokio::test]
 async fn full_flow() {
-    let env = setup().await;
+    let env = setup(Mode::Codex).await;
 
     // 健康检查
     let h = env.get("/api/health").await;
     assert_eq!(h["llm"]["ok"], true);
-    assert_eq!(h["agents"].as_array().unwrap().len(), 3);
+    // 内置 general / reviewer + codex；测试环境不会自动发现预设之外的 agent
+    assert!(h["agents"].as_array().unwrap().len() >= 3);
 
     let conv = env.post("/api/conversations", json!({})).await;
     let cid = conv["id"].as_str().unwrap().to_string();
@@ -254,4 +292,49 @@ async fn full_flow() {
     // 7. 路由日志：每轮对话一条
     let logs = env.get("/api/route-logs").await;
     assert_eq!(logs.as_array().unwrap().len(), 7);
+}
+
+/// ACP 接入：首选 agent 启动失败 → 自动换用假 ACP agent → 权限请求 → 写文件 → git diff 证据 → 审查 → 完成；
+/// 以及 ACP 任务执行中取消。
+#[tokio::test]
+async fn acp_flow() {
+    let env = setup(Mode::Acp).await;
+
+    // 卡片：codex 不可用，broken 和 mock 都已注册
+    let agents = env.get("/api/agents").await;
+    let card = |id: &str| agents.as_array().unwrap().iter().find(|a| a["id"] == id).cloned().unwrap();
+    assert_eq!(card("codex")["enabled"], false);
+    assert_eq!(card("mock")["kind"], "acp");
+
+    let conv = env.post("/api/conversations", json!({})).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+
+    // 1. 完整流程
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "帮我改代码，加一个文件"})).await;
+    assert_eq!(out["task"]["role"], "coding", "{out}");
+    let tid = out["task"]["id"].as_str().unwrap().to_string();
+    let d = env.wait_status(&tid, &["COMPLETED", "FAILED"]).await;
+    assert_eq!(d["task"]["status"], "COMPLETED", "{d}");
+    let result = &d["task"]["result"];
+    assert_eq!(result["summary"], "已创建 hello.txt（来自模拟 ACP agent）");
+    let ev = |kind: &str| result["evidence"].as_array().unwrap().iter().find(|e| e["kind"] == kind).map(|e| e["content"].as_str().unwrap().to_string());
+    assert_eq!(ev("executed_by").unwrap(), "Mock ACP（acp）");
+    assert!(ev("permissions").unwrap().contains("允许"));
+    assert_eq!(ev("acp_stop_reason").unwrap(), "正常结束");
+    assert!(ev("git_diff_stat").unwrap().contains("hello.txt"));
+    assert!(env.code_dir.join("hello.txt").exists());
+    assert_eq!(d["task"]["review"]["verdict"], "pass");
+    // 事件里能看到自动换用
+    let msgs: Vec<String> = d["events"].as_array().unwrap().iter().map(|e| e["message"].as_str().unwrap().to_string()).collect();
+    assert!(msgs.iter().any(|m| m.contains("尝试下一个 agent")), "{msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains("权限请求")), "{msgs:?}");
+
+    // 2. 执行中取消：子进程应被杀掉，状态为 CANCELLED
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "改代码，这个会很慢"})).await;
+    let tid = out["task"]["id"].as_str().unwrap().to_string();
+    env.wait_status(&tid, &["RUNNING"]).await;
+    tokio::time::sleep(Duration::from_millis(300)).await; // 等 agent 进程启动
+    env.post(&format!("/api/tasks/{tid}/cancel"), json!({})).await;
+    let d = env.wait_status(&tid, &["CANCELLED"]).await;
+    assert_eq!(d["task"]["status"], "CANCELLED");
 }
