@@ -417,6 +417,93 @@ async fn format_failure_keeps_the_format_code() {
     assert_eq!((e.code, e.attempts, m.count()), ("E_LLM_FORMAT", 2, 2));
 }
 
+// ───────────────────────── 上下文预算 ─────────────────────────
+
+fn sized_backend(url: &str, context_tokens: u32) -> Arc<Backend> {
+    Arc::new(Backend::new("local", BackendConfig { kind: an_llm::BackendKind::LlamaCpp, base_url: url.into(), slots: 1, context_tokens, ..Default::default() }))
+}
+
+fn long_conversation() -> Vec<ChatMessage> {
+    vec![ChatMessage::system("系统提示"), ChatMessage::user("很久以前的话".repeat(3000)), ChatMessage::assistant("好"), ChatMessage::user("最新问题")]
+}
+
+fn sent_chars(body: &Value) -> usize {
+    body["messages"].as_array().unwrap().iter().map(|m| m["content"].as_str().unwrap().chars().count()).sum()
+}
+
+#[tokio::test]
+async fn oversized_history_is_trimmed_to_the_backend_budget_before_sending() {
+    let m = start(|_, _| ok_reply(&["好"])).await;
+    // 4096 上下文 - 100 输出 - 1024 余量 ≈ 2972 token 的提示词预算
+    let c = on(&m.url, &sized_backend(&m.url, 4096), "conversation", Priority::Interactive);
+    assert_eq!(c.chat(&long_conversation()).await.unwrap(), "好");
+    let body = m.body(0);
+    let msgs = body["messages"].as_array().unwrap();
+    assert_eq!(msgs.first().unwrap()["content"], "系统提示");
+    assert_eq!(msgs.last().unwrap()["content"], "最新问题");
+    assert!(sent_chars(&body) < 4000, "没有裁剪：{} 字", sent_chars(&body));
+    assert!(body["messages"].to_string().contains("已截断"));
+}
+
+#[tokio::test]
+async fn unknown_context_size_means_no_pre_trimming() {
+    let m = start(|_, _| ok_reply(&["好"])).await;
+    let c = on(&m.url, &sized_backend(&m.url, 0), "conversation", Priority::Interactive);
+    c.chat(&long_conversation()).await.unwrap();
+    assert!(sent_chars(&m.body(0)) > 18_000);
+}
+
+#[tokio::test]
+async fn context_exceeded_error_triggers_one_shrunk_retry() {
+    let body = r#"{"error":{"code":400,"message":"the request exceeds the available context size","type":"exceed_context_size_error"}}"#;
+    let m = start(move |i, _| if i == 0 { Reply::Status(400, vec![], body.into()) } else { ok_reply(&["好"]) }).await;
+    let c = on(&m.url, &sized_backend(&m.url, 0), "conversation", Priority::Interactive);
+    assert_eq!(c.chat(&long_conversation()).await.unwrap(), "好");
+    assert_eq!(m.count(), 2);
+    assert!(sent_chars(&m.body(1)) < sent_chars(&m.body(0)) / 2 + 500, "{} vs {}", sent_chars(&m.body(1)), sent_chars(&m.body(0)));
+    assert_eq!(m.body(1)["messages"].as_array().unwrap().last().unwrap()["content"], "最新问题");
+}
+
+#[tokio::test]
+async fn context_exceeded_twice_gives_up_with_the_context_code() {
+    let body = r#"{"error":{"code":400,"message":"the request exceeds the available context size","type":"exceed_context_size_error"}}"#;
+    let m = start(move |_, _| Reply::Status(400, vec![], body.into())).await;
+    let c = on(&m.url, &sized_backend(&m.url, 0), "conversation", Priority::Interactive);
+    let err = c.chat(&long_conversation()).await.unwrap_err();
+    assert_eq!(kind(&err), ErrorKind::ContextExceeded);
+    assert_eq!(m.count(), 2, "只缩减重试一次");
+}
+
+#[tokio::test]
+async fn probe_reads_context_size_from_props_but_keeps_an_explicit_setting() {
+    let app = Router::new().route(
+        "/props",
+        axum::routing::get(|| async { Json(json!({"total_slots": 6, "default_generation_settings": {"n_ctx": 262144}})) }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/v1", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let auto = Backend::new("local", BackendConfig { kind: an_llm::BackendKind::LlamaCpp, base_url: url.clone(), slots: 6, interactive_slots: vec![0, 1], background_slots: vec![2, 3, 4, 5], ..Default::default() });
+    assert_eq!(auto.context_tokens(), 0);
+    let p = auto.probe().await.unwrap();
+    assert_eq!((p.n_ctx, p.total_slots), (262_144, 6));
+    assert_eq!(auto.context_tokens(), 262_144);
+    assert_eq!(auto.context_divisor(), 6, "llama_cpp 默认按槽位数分摊共享池");
+
+    let fixed = Backend::new("local", BackendConfig { kind: an_llm::BackendKind::LlamaCpp, base_url: url, slots: 6, context_tokens: 32_000, context_shared: Some(false), ..Default::default() });
+    fixed.probe().await.unwrap();
+    assert_eq!(fixed.context_tokens(), 32_000);
+    assert_eq!(fixed.context_divisor(), 1);
+}
+
+#[tokio::test]
+async fn probe_failure_is_an_error_not_a_panic() {
+    let b = Backend::new("local", BackendConfig { kind: an_llm::BackendKind::LlamaCpp, base_url: "http://127.0.0.1:1/v1".into(), slots: 1, ..Default::default() });
+    assert!(b.probe().await.is_err());
+    assert_eq!(b.context_tokens(), 0);
+}
+
 // ───────────────────────── 槽位调度（经客户端） ─────────────────────────
 
 use an_llm::BackendKind;

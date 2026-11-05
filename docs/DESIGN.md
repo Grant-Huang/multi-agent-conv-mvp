@@ -674,6 +674,8 @@ General Agent 没有用推理服务自带的"函数调用"功能（不同小模�
 | `E_LLM_STREAM` | 流式响应中途断开 | 服务端崩溃或网络中断；会自动重试 |
 | `E_LLM_BREAKER` | 后端连续失败，熔断中，快速失败 | 先看前面几条失败原因；熔断 10 秒后自动试探恢复 |
 | `E_LLM_BUSY` | 后端繁忙：排队等不到空闲槽位 / 并发许可 | 看诊断页的槽位占用；前台槽位不够就增加 `interactive_slots`，或换云端后端；排队期限用 `queue_secs` 调整 |
+| `W_LLM_SLOTS_MISMATCH` | 配置的 `slots` 和 llama-server 实际槽位数（`-np`）不一致 | 改 `[backends.*] slots` 或重启 llama-server，使两边一致 |
+| `W_LLM_CONTEXT_TRIM` | 提示词超过上下文预算，已裁剪（丢旧历史 / 长消息保留头尾） | 看 `llm.context_trim`：丢了几条、截断了几条；经常出现说明会话太长或 `context_tokens` 太小 |
 | `W_LLM_RETRY` | 模型调用失败，已按退避重试 | 偶尔出现正常；频繁出现看 `llm.call` 的 `outcome` |
 | `E_ROUTE_NO_AGENT` | 这类工作没有可用的 agent | 看错误信息里每个成员的原因：未安装、节点离线…… |
 | `E_POOL_CONFIG` | 执行组配置错误 | 成员类型或角色不一致；或 `[agents.assign]` 角色名写错 |

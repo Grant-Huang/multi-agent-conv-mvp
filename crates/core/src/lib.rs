@@ -485,6 +485,8 @@ pub mod codes {
     pub const LLM_STREAM: &str = "E_LLM_STREAM";
     pub const LLM_BREAKER: &str = "E_LLM_BREAKER";
     pub const LLM_BUSY: &str = "E_LLM_BUSY";
+    pub const LLM_SLOTS_MISMATCH: &str = "W_LLM_SLOTS_MISMATCH";
+    pub const LLM_CONTEXT_TRIM: &str = "W_LLM_CONTEXT_TRIM";
     pub const LLM_RETRY: &str = "W_LLM_RETRY";
     // 路由与执行组
     pub const ROUTE_NO_AGENT: &str = "E_ROUTE_NO_AGENT";

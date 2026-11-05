@@ -7,6 +7,9 @@
 
 use std::collections::BTreeSet;
 
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -95,6 +98,10 @@ pub struct BackendConfig {
     /// 模型的上下文总量；0 = llama_cpp 启动后从 `/props` 读取
     #[serde(default)]
     pub context_tokens: u32,
+    /// 上下文是否被所有槽位 / 请求共享（llama.cpp `--kv-unified`）：共享时每个请求只能用 总量 ÷ 槽位数；
+    /// 不写：llama_cpp 默认共享，openai 默认不共享（每个请求独占）
+    #[serde(default)]
+    pub context_shared: Option<bool>,
     /// 不写则用 `[llm].structured_mode`
     #[serde(default)]
     pub structured_mode: Option<StructuredMode>,
@@ -213,13 +220,63 @@ pub struct Backend {
     pub stats: Stats,
     /// 槽位 / 并发许可 / 限速调度
     pub sched: Scheduler,
+    /// 上下文总量（token）：配置里写了就用配置值，否则等 `probe()` 从服务读取；0 = 未知，不做预算裁剪
+    ctx: AtomicU32,
+}
+
+/// llama-server `/props` 里我们关心的字段
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServerProps {
+    pub n_ctx: u32,
+    pub total_slots: u32,
+}
+
+pub fn parse_props(v: &Value) -> Option<ServerProps> {
+    Some(ServerProps { n_ctx: v["default_generation_settings"]["n_ctx"].as_u64()? as u32, total_slots: v["total_slots"].as_u64()? as u32 })
 }
 
 impl Backend {
     pub fn new(name: impl Into<String>, cfg: BackendConfig) -> Self {
         let name = name.into();
         let sched = Scheduler::new(&name, &cfg);
-        Self { name, cfg, breaker: Breaker::default_policy(), stats: Stats::new(500), sched }
+        let ctx = AtomicU32::new(cfg.context_tokens);
+        Self { name, cfg, breaker: Breaker::default_policy(), stats: Stats::new(500), sched, ctx }
+    }
+
+    pub fn context_tokens(&self) -> u32 {
+        self.ctx.load(Ordering::Relaxed)
+    }
+
+    pub fn set_context_tokens(&self, n: u32) {
+        self.ctx.store(n, Ordering::Relaxed);
+    }
+
+    /// 同时占用这个上下文的请求数：共享池（llama.cpp 的 `--kv-unified`）按槽位数分摊，否则每个请求独占
+    pub fn context_divisor(&self) -> u32 {
+        if self.cfg.context_shared.unwrap_or(self.cfg.kind == BackendKind::LlamaCpp) {
+            self.cfg.slots.max(1)
+        } else {
+            1
+        }
+    }
+
+    /// 向 llama-server 读取 `/props`：未配置 `context_tokens` 时记下服务的上下文总量，并核对槽位数。
+    /// 只对 `llama_cpp` 后端有意义。
+    pub async fn probe(&self) -> anyhow::Result<ServerProps> {
+        use anyhow::Context;
+        let base = self.cfg.base_url.trim_end_matches('/');
+        let url = format!("{}/props", base.strip_suffix("/v1").unwrap_or(base));
+        let http = reqwest::Client::builder().timeout(Duration::from_secs(5)).build()?;
+        let v: Value = http.get(&url).send().await.with_context(|| format!("无法连接 {url}"))?.error_for_status()?.json().await?;
+        let props = parse_props(&v).with_context(|| format!("{url} 的返回里没有 n_ctx / total_slots（不是 llama-server？）"))?;
+        if self.cfg.context_tokens == 0 {
+            self.set_context_tokens(props.n_ctx);
+        }
+        if self.cfg.kind == BackendKind::LlamaCpp && props.total_slots != self.cfg.slots {
+            tracing::warn!(event = "llm.slots_mismatch", code = an_core::codes::LLM_SLOTS_MISMATCH, backend = %self.name, configured = self.cfg.slots, server = props.total_slots, "[backends.{}] slots = {}，但 llama-server 实际是 {} 个槽位（-np）；请让两边一致，否则 id_slot 可能指向不存在的槽位", self.name, self.cfg.slots, props.total_slots);
+        }
+        tracing::info!(event = "llm.backend_probe", backend = %self.name, n_ctx = props.n_ctx, total_slots = props.total_slots, context_tokens = self.context_tokens());
+        Ok(props)
     }
 }
 

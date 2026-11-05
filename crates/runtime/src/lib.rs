@@ -148,6 +148,7 @@ impl Runtime {
 
     /// 启动后台任务：节点心跳、局域网发现。由 main 在 tokio 运行时中调用
     pub fn start_background(&self) {
+        self.backends.spawn_probes();
         self.nodes.start_heartbeat(Duration::from_secs(self.config.nodes.refresh_secs.max(3)));
         if self.config.nodes.discovery {
             self.nodes.start_discovery();

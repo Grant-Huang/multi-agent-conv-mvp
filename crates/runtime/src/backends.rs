@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use an_llm::{Backend, BackendConfig, LlmClient, Priority};
+use an_llm::{Backend, BackendConfig, BackendKind, LlmClient, Priority};
 use anyhow::{bail, Result};
 use serde::Serialize;
 
@@ -197,6 +197,23 @@ impl Backends {
 
     pub fn backends(&self) -> impl Iterator<Item = &Arc<Backend>> {
         self.backends.values()
+    }
+
+    /// 在后台探测每个本地推理服务（`/props`）：读取上下文总量用于预算裁剪，并核对槽位数。
+    /// 服务还没起来时每 5 秒重试，最多 6 次；之后靠健康检查提示。需在 tokio 运行时中调用。
+    pub fn spawn_probes(&self) {
+        for b in self.backends.values().filter(|b| b.cfg.kind == BackendKind::LlamaCpp) {
+            let b = b.clone();
+            tokio::spawn(async move {
+                for attempt in 1..=6 {
+                    match b.probe().await {
+                        Ok(_) => return,
+                        Err(e) if attempt == 6 => tracing::warn!(event = "llm.backend_probe_failed", code = an_core::codes::LLM_UNREACHABLE, backend = %b.name, error = %format!("{e:#}"), "无法读取后端 /props，上下文预算裁剪暂不生效（超长时仍会由服务端报错后缩减重试）"),
+                        Err(_) => tokio::time::sleep(std::time::Duration::from_secs(5)).await,
+                    }
+                }
+            });
+        }
     }
 
     /// 启动时打一条日志：每个角色 → 后端 / 模型 / 限流方式（不含密钥）

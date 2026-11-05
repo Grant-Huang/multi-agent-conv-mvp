@@ -13,6 +13,9 @@ use serde_json::{json, Value};
 
 use crate::tools::{args_schema, ToolRegistry};
 
+/// 单次工具结果放进对话历史的 token 上限（超出保留头尾），防止一次网页抓取撑爆上下文
+const OBSERVATION_MAX_TOKENS: u32 = 4000;
+
 pub struct GeneralAgent {
     llm: LlmClient,
     tools: ToolRegistry,
@@ -155,6 +158,8 @@ impl AgentAdapter for GeneralAgent {
                 kind: "tool_call".into(),
                 content: format!("{}({}) → {}", step.tool, step.args, an_core::truncate_chars(&observation, 500)),
             });
+            // 单次工具结果过长会把上下文撑爆：保留头尾，中间截掉（完整内容仍在 artifacts / 工具自己的输出里）
+            let (observation, _) = an_llm::clip_middle(&observation, OBSERVATION_MAX_TOKENS);
             messages.push(ChatMessage::user(format!("工具 {} 的返回结果：\n{}", step.tool, observation)));
         }
 

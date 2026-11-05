@@ -8,12 +8,14 @@
 //!    （借鉴 Pydantic AI 的"结构化输出 + 闭环重试"）。
 
 mod backend;
+mod budget;
 mod error;
 mod policy;
 mod scheduler;
 mod tokens;
 
-pub use backend::{Backend, BackendConfig, BackendKind, Priority};
+pub use backend::{parse_props, Backend, BackendConfig, BackendKind, Priority, ServerProps};
+pub use budget::{clip_middle, fit, ContextBudget, TrimReport};
 pub use error::{is_context_error, parse_retry_after, ErrorKind, LlmError};
 pub use policy::{backoff_delay, jitter01, Breaker, CallRecord, Stats, StatsSummary, Timeouts};
 pub use scheduler::{Lease, SchedSnapshot, Scheduler, SlotInfo, Who};
@@ -32,6 +34,10 @@ use tokio::time::{timeout_at, Instant as TokioInstant};
 
 /// 输出被截断时，`max_tokens` 最多放大到这个值
 const MAX_TOKENS_CAP: u32 = 16384;
+/// 没配 `max_tokens` 时，估算预算用的输出长度
+const DEFAULT_OUTPUT_TOKENS: u32 = 2048;
+/// 提示词不到这么多 token 时，"超上下文"不是裁剪能解决的，不再缩减重试
+const MIN_SHRINK_TOKENS: u32 = 600;
 
 fn next_req_id() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -563,11 +569,54 @@ impl LlmClient {
         CallReq { messages, response_format: None, max_tokens: self.cfg.max_tokens, schema, req_id: next_req_id(), format_attempt: 1, streaming: false }
     }
 
+    fn log_trim(&self, req_id: u64, r: &TrimReport, budget: u32, reason: &str) {
+        tracing::warn!(event = "llm.context_trim", code = codes::LLM_CONTEXT_TRIM, req_id, role = %self.role, reason, budget, tokens_before = r.tokens_before, tokens_after = r.tokens_after, dropped_messages = r.dropped_messages, truncated_messages = r.truncated_messages, "提示词超出上下文预算，已裁剪（数据库里的原文不受影响）");
+    }
+
+    /// 按所属后端的上下文预算裁剪提示词；后端未知或上下文总量未知时原样返回。
+    /// `reserve_output` 是额外预留的输出空间（结构化输出的格式重试会把上一轮输出追加回提示词）
+    fn fit_for(&self, messages: &[ChatMessage], req_id: u64, reserve_output: u32) -> Vec<ChatMessage> {
+        let Some(b) = &self.backend else { return messages.to_vec() };
+        let ctx = b.context_tokens();
+        if ctx == 0 {
+            return messages.to_vec();
+        }
+        let max_output = self.cfg.max_tokens.unwrap_or(DEFAULT_OUTPUT_TOKENS).saturating_add(reserve_output);
+        let budget = ContextBudget { context_tokens: ctx, concurrency: b.context_divisor(), max_output }.prompt_tokens();
+        let (out, report) = fit(messages, budget);
+        if report.changed() {
+            self.log_trim(req_id, &report, budget, "budget");
+        }
+        out
+    }
+
+    /// 同 `run`；服务端仍报"超上下文"（估算偏小、或上下文总量未知）时，把提示词砍到约一半再试一次
+    async fn run_fitted<F: FnMut(&str)>(&self, req: &CallReq<'_>, deadline: &Deadline, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
+        let err = match self.run(req, deadline, on_delta).await {
+            Err(e) if e.kind == ErrorKind::ContextExceeded => e,
+            other => return other,
+        };
+        let before = estimate_messages(req.messages);
+        if before < MIN_SHRINK_TOKENS {
+            return Err(err);
+        }
+        let (msgs, report) = fit(req.messages, before / 2);
+        if !report.changed() {
+            return Err(err);
+        }
+        self.log_trim(req.req_id, &report, before / 2, "ctx_exceeded_retry");
+        let req2 = CallReq { messages: &msgs, response_format: req.response_format.clone(), max_tokens: req.max_tokens, schema: req.schema, req_id: req.req_id, format_attempt: req.format_attempt, streaming: req.streaming };
+        self.run(&req2, deadline, on_delta).await
+    }
+
     /// 普通文本对话
     pub async fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
         let deadline = Deadline::new(self.timeouts.deadline);
         // 输出被 max_tokens 截断时仍返回已有文本（回复被截短好过没有回复），只在日志里记 truncated
-        let a = self.run(&self.new_req(messages, ""), &deadline, &mut |_: &str| {}).await?;
+        let req = self.new_req(messages, "");
+        let fitted = self.fit_for(messages, req.req_id, 0);
+        let req = CallReq { messages: &fitted, ..req };
+        let a = self.run_fitted(&req, &deadline, &mut |_: &str| {}).await?;
         Ok(strip_think(&a.text))
     }
 
@@ -576,7 +625,9 @@ impl LlmClient {
     pub async fn chat_stream(&self, messages: &[ChatMessage], mut on_delta: impl FnMut(&str)) -> Result<String> {
         let deadline = Deadline::new(self.timeouts.deadline);
         let req = CallReq { streaming: true, ..self.new_req(messages, "") };
-        let a = self.run(&req, &deadline, &mut on_delta).await?;
+        let fitted = self.fit_for(messages, req.req_id, 0);
+        let req = CallReq { messages: &fitted, ..req };
+        let a = self.run_fitted(&req, &deadline, &mut on_delta).await?;
         if a.text.trim().is_empty() {
             return Err(LlmError::new(ErrorKind::Empty, "LLM 流式响应为空").into());
         }
@@ -628,6 +679,8 @@ impl LlmClient {
         let max_attempts = self.cfg.max_retries + 1;
         let deadline = Deadline::new(self.timeouts.deadline);
         let req_id = next_req_id();
+        // 格式重试会把上一轮输出追加回提示词，所以多预留一份输出空间；之后追加的反馈不再重新裁剪
+        let mut msgs = self.fit_for(&msgs, req_id, self.cfg.max_tokens.unwrap_or(DEFAULT_OUTPUT_TOKENS));
         let mut max_tokens = self.cfg.max_tokens;
         let mut escalated = false;
         let mut attempt = 0;
@@ -639,7 +692,7 @@ impl LlmClient {
         while attempt < max_attempts {
             attempt += 1;
             let req = CallReq { messages: &msgs, response_format: response_format.clone(), max_tokens, schema: schema_name, req_id, format_attempt: attempt, streaming: false };
-            let a = match self.run(&req, &deadline, &mut |_: &str| {}).await {
+            let a = match self.run_fitted(&req, &deadline, &mut |_: &str| {}).await {
                 Ok(a) => a,
                 Err(e) => return Err(fail(&e, raw_outputs, attempt)),
             };

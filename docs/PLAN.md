@@ -23,7 +23,7 @@
 | M0 | 本地部署 + e2e 发现的 5 个问题 + 派发边界规则 | ✅ 完成 |
 | M1 | 派发"越用越聪明"：纠错反馈、相似经验检索、纠错回归 | 待开始 |
 | M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.7 完成，2.8 待定 |
-| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .3 完成，.4 起待做 |
+| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .4 完成，.5 起待做 |
 | 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
 | M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
 | M4 | 多问题消息逐条对应回答 | 待开始 |
@@ -276,7 +276,14 @@ reviewer = "local"
   - 租约（lease）用 RAII：请求结束或被取消时自动归还槽位；调度器记录每个槽位的持有者和持有时长
   - 埋点：`llm.slot_acquire` / `llm.slot_release`；诊断页显示各槽位当前占用
   - 测试：前台只拿前台槽位（默认不借用）、`borrow_idle = true` 时才借用、后台永不拿前台槽位、归还、排队超时、并发 10 个前台请求在 2 个槽位上的分配；云端后端：`max_inflight`、预留许可、`rpm` 令牌桶、429 的 `Retry-After`；三种部署示例各跑一遍
-- [ ] **pre-M3.4 H2：上下文预算 `ContextBudget`（放 `an-llm`）**
+- [x] **pre-M3.4 H2：上下文预算 `ContextBudget`（放 `an-llm`）**（2026-11-05 完成）
+  - 实现：`crates/llm/src/budget.rs`（`ContextBudget` 预算、`fit` 裁剪、`clip_middle` 头尾保留 + "中间已截断 N 字"）；`Backend` 记录上下文总量（配置 `context_tokens`，为 0 时由 `Backend::probe()` 读 `/props`，运行时 `Backends::spawn_probes()` 在启动后台任务时探测，服务未起来每 5s 重试，最多 6 次）；新增 `[backends.*] context_shared`（不写：`llama_cpp` 默认共享，按槽位数分摊；`openai` 默认每请求独占）
+  - 预算 = 上下文总量 ÷ 分摊数 − 本次 `max_tokens` − 1024 余量，下限 2048；总量未知则不预裁剪。本机 35B：262144 ÷ 6 ≈ 43690，扣输出和余量后提示词约 4 万 token
+  - 接入点：`chat` / `chat_stream` 发送前裁剪；`chat_json` 开头裁剪一次（多预留一份输出，给格式重试追加的上一轮输出留空间）；服务端仍报超上下文时，`run_fitted` 把提示词砍到约一半再试 **1 次**（提示词不足 600 token 不重试），仍失败返回 `E_LLM_CONTEXT`
+  - General 工具返回：单次放进对话历史上限 4000 token（头尾保留），整体仍受 `fit` 约束
+  - 埋点：`llm.context_trim`（`W_LLM_CONTEXT_TRIM`，含 reason = budget / ctx_exceeded_retry、前后 token、丢弃 / 截断条数）、`llm.backend_probe`、`llm.slots_mismatch`（`W_LLM_SLOTS_MISMATCH`：配置槽位数 ≠ `/props` 的 `total_slots`，**这就是 pre-M3.1 推迟的槽位数校验**）
+  - 验证：`budget` 单元 7 个（预算算术、未超不动、头尾保留、先丢最旧、巨型粘贴、单条超长只截不丢、系统提示不动）；客户端集成 5 个（按预算预裁剪、上下文未知不裁剪、400 缩减重试 1 次、两次 400 放弃、`/props` 探测 + 显式配置优先 + 失败不 panic）；全工作区测试通过
+  - 原计划条目（供对照）：
   - 估算 token（中文约 1 字 1 token，其它约 3.5 字符 1 token，偏保守）；预算按**后端**分别计算：`context_tokens`（`llama_cpp` 默认启动时读 `/props`，云端写模型上限）÷ 预计并发 − `max_tokens` − 余量
   - 裁剪顺序：系统提示 + 最新用户消息保底 → 从最旧历史开始丢 → 单条超长消息保留头尾并注明"已截断 N 字"（数据库里仍存全文）
   - 用户长粘贴给前台只放头尾，完整内容通过任务上下文交给执行者；General 工具返回设单次上限和总预算（M3 网页内容按此分配）
