@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use an_core::codes;
 use serde_json::{json, Value};
 
 /// 结构化输出的实现方式。不同推理服务支持程度不同，所以做成可配置。
@@ -223,7 +224,8 @@ impl LlmClient {
                 Err(e) => {
                     // 网络/HTTP 错误：不反馈给模型，直接重试
                     last_err = format!("{e:#}");
-                    tracing::warn!(attempt, error = %last_err, "LLM 请求失败");
+                    let code = if last_err.contains("无法连接") { codes::LLM_UNREACHABLE } else { codes::LLM_HTTP };
+                    tracing::warn!(event = "llm.request_failed", code, schema = schema_name, model = %self.cfg.model, attempt, error = %last_err, "LLM 请求失败");
                     continue;
                 }
             };
@@ -237,6 +239,7 @@ impl LlmClient {
 
             match parsed {
                 Ok(value) => {
+                    tracing::debug!(event = "llm.structured_ok", schema = schema_name, model = %self.cfg.model, attempts = attempt, elapsed_ms = started.elapsed().as_millis() as u64);
                     return Ok(Structured {
                         value,
                         raw_outputs,
@@ -245,7 +248,7 @@ impl LlmClient {
                     })
                 }
                 Err(e) => {
-                    tracing::warn!(attempt, error = %e, raw = %truncate(&raw, 300), "结构化输出不合格，准备重试");
+                    tracing::warn!(event = "llm.format_retry", code = codes::LLM_FORMAT_RETRY, schema = schema_name, model = %self.cfg.model, attempt, error = %e, raw = %truncate(&raw, 300), "结构化输出不合格，准备重试");
                     last_err = e.clone();
                     // 把模型的错误输出和错误原因反馈回去，让它修正
                     msgs.push(ChatMessage::assistant(raw));
@@ -256,8 +259,9 @@ impl LlmClient {
             }
         }
 
+        tracing::error!(event = "llm.structured_failed", code = codes::LLM_FORMAT, schema = schema_name, model = %self.cfg.model, attempts = max_attempts, error = %last_err, "结构化输出最终失败");
         Err(StructuredError {
-            message: format!("结构化输出失败: {last_err}"),
+            message: format!("[{}] 结构化输出失败: {last_err}", codes::LLM_FORMAT),
             raw_outputs,
             attempts: max_attempts,
             latency_ms: started.elapsed().as_millis() as u64,

@@ -29,7 +29,7 @@ use acp::v1::schema::{
 };
 use acp::v1::ConnectionTo;
 use acp::{AcpAgentConfig, Agent};
-use an_core::{truncate_chars, AgentAdapter, AgentCard, AgentUnavailable, Artifact, EventSink, Evidence, Role, TaskResult, TaskSpec, WorkerStatus};
+use an_core::{truncate_chars, codes, AgentAdapter, AgentCard, AgentError, Artifact, EventSink, Evidence, Role, TaskResult, TaskSpec, WorkerStatus};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +48,7 @@ use crate::util::{collect_git_changes, expand_tilde, resolve_command};
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpConfig {
-    /// 唯一标识（配置 prefer 时使用）
+    /// 唯一标识（配置执行组 [agents.assign] 时使用）
     pub id: String,
     /// 显示名称，默认等于 id
     #[serde(default)]
@@ -62,6 +62,12 @@ pub struct AcpConfig {
     pub env: BTreeMap<String, String>,
     /// 承担的角色：general / coding / reviewer
     pub role: Role,
+    /// agent 类型，执行组只允许同类型互为备份。不填时取命令的文件名（例如 hermes）
+    #[serde(default)]
+    pub agent_type: Option<String>,
+    /// 同时最多执行几个任务
+    #[serde(default = "default_concurrency")]
+    pub max_concurrent: u32,
     /// 工作目录；不填时 coding 用代码目录，其他角色用文件工作目录
     #[serde(default)]
     pub workdir: Option<PathBuf>,
@@ -77,6 +83,19 @@ pub struct AcpConfig {
 
 fn default_timeout() -> u64 {
     1800
+}
+
+fn default_concurrency() -> u32 {
+    1
+}
+
+impl AcpConfig {
+    /// agent 类型：显式配置优先，否则取命令的文件名（`~/bin/hermes` → `hermes`）
+    pub fn agent_type(&self) -> String {
+        self.agent_type.clone().unwrap_or_else(|| {
+            std::path::Path::new(&self.command).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_else(|| self.id.clone())
+        })
+    }
 }
 
 /// 权限应答策略。任务能执行到这里，说明已经通过了 Policy（含高风险人工审批），
@@ -107,6 +126,8 @@ pub fn presets() -> Vec<AcpConfig> {
         args: args.iter().map(|s| s.to_string()).collect(),
         env: BTreeMap::new(),
         role,
+        agent_type: Some(id.into()),
+        max_concurrent: 1,
         workdir: None,
         timeout_secs: default_timeout(),
         permission: PermissionMode::AllowAll,
@@ -138,6 +159,9 @@ impl AcpAgent {
         let card = AgentCard {
             id: cfg.id.clone(),
             kind: "acp".into(),
+            agent_type: cfg.agent_type(),
+            location: "本机".into(),
+            max_concurrent: cfg.max_concurrent.max(1),
             role: cfg.role,
             name,
             description: cfg.role.description().into(),
@@ -279,21 +303,22 @@ impl AgentAdapter for AcpAgent {
 
     async fn run(&self, task: TaskSpec, events: EventSink) -> Result<TaskResult> {
         let Some(command) = self.resolved.clone() else {
-            return Err(AgentUnavailable(self.card.disabled_reason.clone().unwrap_or_default()).into());
+            return Err(AgentError::new(codes::AGENT_NOT_INSTALLED, self.card.disabled_reason.clone().unwrap_or_default()).into());
         };
+        let task_id = task.task_id.clone();
         tokio::fs::create_dir_all(&self.workdir).await?;
         let workdir = self.workdir.canonicalize()?;
         let prompt = if task.context.is_empty() { task.goal.clone() } else { format!("{}\n\n## 背景信息\n{}", task.goal, task.context) };
         events.progress(format!("启动 ACP agent：{}（工作目录 {}）", self.card.name, workdir.display()));
 
         let state = Arc::new(Mutex::new(Collected::default()));
-        // 握手成功之前的失败视为"agent 不可用"，编排层会换用下一个 agent
+        // 用于区分"握手失败"和"执行中出错"，两者错误码不同，便于排查
         let initialized = Arc::new(AtomicBool::new(false));
         let process = acp::AcpAgent::new(AcpAgentConfig::new(command).args(self.cfg.args.clone()).envs(self.cfg.env.clone()));
         let mode = self.cfg.permission;
 
         let (st_n, ev_n) = (state.clone(), events.clone());
-        let (st_p, ev_p) = (state.clone(), events.clone());
+        let (st_p, ev_p, tid_p) = (state.clone(), events.clone(), task_id.clone());
         let init_flag = initialized.clone();
         let cwd = workdir.clone();
 
@@ -312,6 +337,7 @@ impl AgentAdapter for AcpAgent {
             .on_receive_request(
                 async move |req: RequestPermissionRequest, responder, _cx| {
                     let (outcome, desc) = decide_permission(mode, &req);
+                    tracing::info!(event = "acp.permission", task_id = %tid_p, decision = %desc);
                     ev_p.progress(format!("权限请求：{desc}"));
                     st_p.lock().unwrap().permissions.push(desc);
                     responder.respond(RequestPermissionResponse::new(outcome))
@@ -333,11 +359,18 @@ impl AgentAdapter for AcpAgent {
         let stop = match outcome {
             Ok(Ok(stop)) => stop,
             Ok(Err(e)) if !initialized.load(Ordering::SeqCst) => {
-                return Err(AgentUnavailable(format!("{} 启动或握手失败：{e}", self.card.name)).into());
+                tracing::error!(event = "acp.handshake_failed", code = codes::ACP_HANDSHAKE, task_id = %task_id, agent_id = %self.card.id, error = %e);
+                return Err(AgentError::new(codes::ACP_HANDSHAKE, format!("{} 启动或握手失败：{e}", self.card.name)).into());
             }
-            Ok(Err(e)) => return Ok(TaskResult::failed(format!("{} 执行出错：{e}", self.card.name))),
+            Ok(Err(e)) => {
+                tracing::error!(event = "acp.runtime_error", code = codes::ACP_RUNTIME, task_id = %task_id, agent_id = %self.card.id, error = %e);
+                return Ok(TaskResult::failed_code(codes::ACP_RUNTIME, format!("{} 执行出错：{e}", self.card.name)));
+            }
             // 超时：future 被 drop，SDK 会杀掉 agent 进程
-            Err(_) => return Ok(TaskResult::failed(format!("{} 超时（{} 秒）", self.card.name, self.cfg.timeout_secs))),
+            Err(_) => {
+                tracing::error!(event = "acp.timeout", code = codes::AGENT_TIMEOUT, task_id = %task_id, agent_id = %self.card.id, timeout_secs = self.cfg.timeout_secs);
+                return Ok(TaskResult::failed_code(codes::AGENT_TIMEOUT, format!("{} 超时（{} 秒）", self.card.name, self.cfg.timeout_secs)));
+            }
         };
 
         // ───── 整理结果 ─────
@@ -362,13 +395,21 @@ impl AgentAdapter for AcpAgent {
         let artifacts = if git_artifacts.is_empty() { st.diffs } else { git_artifacts };
 
         let ok = stop == StopReason::EndTurn;
+        tracing::info!(
+            event = "acp.finished",
+            task_id = %task_id,
+            agent_id = %self.card.id,
+            stop_reason = %enum_str(&stop),
+            tool_calls = st.tool_order.len(),
+            permissions = st.permissions.len()
+        );
         let summary = if st.message.trim().is_empty() { "（agent 没有返回文字说明）".to_string() } else { st.message.trim().to_string() };
         Ok(TaskResult {
             status: if ok { WorkerStatus::Succeeded } else { WorkerStatus::Failed },
             summary,
             artifacts,
             evidence,
-            errors: if ok { vec![] } else { vec![format!("agent 结束原因：{}", stop_reason_text(&stop))] },
+            errors: if ok { vec![] } else { vec![format!("[{}] agent 结束原因：{}", codes::ACP_STOP, stop_reason_text(&stop))] },
         })
     }
 }

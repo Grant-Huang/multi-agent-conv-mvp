@@ -84,16 +84,10 @@ impl Router {
 
     /// 执行路由：分类 + 规则校验
     pub async fn route(&self, task_goal: &str, context: &str) -> Result<RouteOutcome, RouteFailure> {
-        let roles = self.registry.enabled_roles();
-        if roles.is_empty() {
-            return Err(RouteFailure {
-                message: "没有可用的执行 Agent".into(),
-                decision: None,
-                raw_outputs: vec![],
-                attempts: 0,
-                latency_ms: 0,
-            });
-        }
+        // 始终让模型在全部角色中选择："该由谁做"只看任务本身。
+        // 某角色当前没有可用的 agent 时由 Policy 明确报错（E_ROUTE_NO_AGENT），
+        // 而不是让模型只能在可用角色里挑，把写代码的请求悄悄改派给别的角色。
+        let roles = Role::ALL.to_vec();
 
         let user = if context.is_empty() {
             format!("任务目标：{task_goal}")
@@ -109,9 +103,6 @@ impl Router {
             .chat_json::<RouteDecision, _>(&messages, "route_decision", &self.schema(&roles), |d| {
                 if let Some(bad) = d.required_tools.iter().find(|t| !tool_names.contains(t)) {
                     return Err(format!("工具 {bad} 不存在，可用工具：{}", tool_names.join(", ")));
-                }
-                if !roles.contains(&d.execution_role) {
-                    return Err(format!("角色 {} 不可用", d.execution_role.as_str()));
                 }
                 Ok(())
             })

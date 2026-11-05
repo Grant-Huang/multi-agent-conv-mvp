@@ -7,13 +7,26 @@ import type { ToolInfo } from "./ToolInfo";
  */
 export type AgentCard = { 
 /**
- * 唯一标识，例如 "general"、"codex"、"opencode"（配置 prefer 时用它）
+ * 唯一标识，例如 "general"、"codex"、"opencode"、"hermes@mac-mini"（配置执行组时用它）
  */
 id: string, 
 /**
- * 接入方式："builtin"（内置）、"cli"（命令行子进程）、"acp"（Agent Client Protocol）
+ * 接入方式："builtin"（内置）、"cli"（命令行子进程）、"acp"（本机 ACP）、"node"（远程节点）
  */
-kind: string, role: Role, name: string, 
+kind: string, 
+/**
+ * agent 的类型，例如 "hermes"、"opencode"、"codex"。
+ * 只有类型相同的 agent 才能放进同一个执行组互为备份。
+ */
+agent_type: string, 
+/**
+ * 在哪台机器上："本机" 或节点名称
+ */
+location: string, 
+/**
+ * 同时最多执行几个任务（执行组按它分配并发）
+ */
+max_concurrent: number, role: Role, name: string, 
 /**
  * 给 Router 模型看的能力描述
  */

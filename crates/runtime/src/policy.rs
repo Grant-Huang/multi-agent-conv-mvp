@@ -19,8 +19,10 @@ impl Policy {
         // 规则 1：角色必须至少有一个可用的 agent
         if !registry.is_enabled(route.execution_role) {
             let reasons = registry.unavailable_reasons(route.execution_role);
+            tracing::warn!(event = "policy.reject", code = an_core::codes::ROUTE_NO_AGENT, role = route.execution_role.as_str(), reasons = %reasons.join("；"), "没有可用的 agent，拒绝路由");
             return Err(format!(
-                "没有可用的 {} agent{}",
+                "[{}] 没有可用的 {} agent{}",
+                an_core::codes::ROUTE_NO_AGENT,
                 route.execution_role.as_str(),
                 if reasons.is_empty() { String::new() } else { format!("（{}）", reasons.join("；")) }
             ));

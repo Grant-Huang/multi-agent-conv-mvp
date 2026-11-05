@@ -7,6 +7,8 @@ import type { TaskRecord } from "./bindings/TaskRecord";
 import { ChatView } from "./components/ChatView";
 import { RouteLogPanel } from "./components/RouteLogPanel";
 import { TaskPanel } from "./components/TaskPanel";
+import { NodesPanel } from "./components/NodesPanel";
+import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -14,16 +16,16 @@ export default function App() {
   const [current, setCurrent] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
-  const [sideTab, setSideTab] = useState<"tasks" | "logs">("tasks");
+  const [sideTab, setSideTab] = useState<"tasks" | "nodes" | "diag" | "logs">("tasks");
   // 每次收到事件时递增，用来通知子组件刷新（例如展开中的任务详情）
   const [eventTick, setEventTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  // 健康检查：启动时 + 每 30 秒
+  // 健康检查：启动时 + 每 10 秒（节点配对、上线、离线后左下角能及时更新）
   useEffect(() => {
     const load = () => api.health().then(setHealth).catch(() => setHealth(null));
     load();
-    const t = setInterval(load, 30_000);
+    const t = setInterval(load, 10_000);
     return () => clearInterval(t);
   }, []);
 
@@ -130,20 +132,23 @@ export default function App() {
           <button className={sideTab === "tasks" ? "active" : ""} onClick={() => setSideTab("tasks")}>
             任务 {tasks.length > 0 && <span className="count">{tasks.length}</span>}
           </button>
+          <button className={sideTab === "nodes" ? "active" : ""} onClick={() => setSideTab("nodes")}>节点</button>
+          <button className={sideTab === "diag" ? "active" : ""} onClick={() => setSideTab("diag")}>诊断</button>
           <button className={sideTab === "logs" ? "active" : ""} onClick={() => setSideTab("logs")}>路由日志</button>
         </div>
-        {sideTab === "tasks" ? (
+        {sideTab === "tasks" && (
           <TaskPanel tasks={tasks} eventTick={eventTick} onChanged={() => current && refreshConversation(current)} />
-        ) : (
-          <RouteLogPanel eventTick={eventTick} />
         )}
+        {sideTab === "nodes" && <NodesPanel />}
+        {sideTab === "diag" && <DiagnosticsPanel eventTick={eventTick} />}
+        {sideTab === "logs" && <RouteLogPanel eventTick={eventTick} />}
       </aside>
     </div>
   );
 }
 
 /** 接入方式的显示名 */
-const KIND_LABEL: Record<string, string> = { builtin: "内置", cli: "CLI", acp: "ACP" };
+const KIND_LABEL: Record<string, string> = { builtin: "内置", cli: "CLI", acp: "ACP", node: "节点" };
 
 /** 左下角：LLM 连接状态和 Agent 可用状态 */
 function HealthBox({ health }: { health: Health | null }) {

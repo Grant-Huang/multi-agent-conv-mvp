@@ -6,7 +6,7 @@
 //! 3. 获准后在工作目录写入 `hello.txt`，并以 diff 形式报告改动；
 //! 4. 回复一段文字，正常结束。
 //!
-//! 特殊指令（便于测试）：任务描述含"慢"时先睡 30 秒；含"拒绝"时以 refusal 结束。
+//! 特殊指令（便于测试）：含"稍慢"时执行约 1.5 秒；含"慢"时先睡 30 秒；含"拒绝"时以 refusal 结束。
 //!
 //! 体验方式（config.toml）：
 //! ```toml
@@ -45,7 +45,11 @@ fn prompt_text(req: &PromptRequest) -> String {
 /// 模拟一次任务执行。在独立任务中运行：这里需要等待 client 对权限请求的应答，
 /// 不能在请求回调里直接等（会阻塞消息循环导致死锁）。
 async fn run_prompt(cx: acp::v1::ConnectionTo<Client>, session_id: SessionId, cwd: PathBuf, text: String) -> acp::Result<StopReason> {
-    if text.contains("慢") {
+    if text.contains("稍慢") {
+        // 用于测试并发：执行约 1.5 秒
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+    } else if text.contains("慢") {
+        // 用于测试取消
         tokio::time::sleep(Duration::from_secs(30)).await;
     }
     if text.contains("拒绝") {

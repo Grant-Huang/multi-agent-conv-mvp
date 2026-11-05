@@ -21,6 +21,7 @@ path = "src/bin/mock_acp_agent.rs"
 an-core.workspace = true
 an-llm.workspace = true
 an-runtime.workspace = true
+an-observe.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -34,5 +35,6 @@ tracing-subscriber.workspace = true
 agent-client-protocol = { workspace = true, features = ["stdio"] }
 
 [dev-dependencies]
+an-node.workspace = true
 reqwest.workspace = true
 toml.workspace = true

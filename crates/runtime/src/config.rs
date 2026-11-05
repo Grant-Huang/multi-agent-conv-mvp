@@ -25,12 +25,29 @@ pub struct AppConfig {
     /// 通过 ACP 接入的外部 agent
     #[serde(default)]
     pub acp: AcpSection,
+    /// 局域网节点
+    #[serde(default)]
+    pub nodes: NodesSection,
+    #[serde(default)]
+    pub logging: LoggingSection,
 }
 
 impl AppConfig {
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path).with_context(|| format!("无法读取配置文件 {}", path.display()))?;
-        toml::from_str(&text).with_context(|| format!("配置文件格式错误 {}", path.display()))
+        let (cfg, unknown) = Self::parse(&text).with_context(|| format!("配置文件格式错误 {}", path.display()))?;
+        for key in unknown {
+            tracing::warn!(event = "config.unknown_key", code = an_core::codes::CONFIG_UNKNOWN_KEY, key = %key, "配置中有不认识的字段，已忽略（可能是拼写错误或旧版本的写法）");
+        }
+        Ok(cfg)
+    }
+
+    /// 解析配置，同时返回被忽略的（不认识的）字段路径，例如 `agents.prefer`
+    pub fn parse(text: &str) -> Result<(Self, Vec<String>)> {
+        let mut unknown = vec![];
+        let de = toml::Deserializer::new(text);
+        let cfg = serde_ignored::deserialize(de, |path| unknown.push(path.to_string()))?;
+        Ok((cfg, unknown))
     }
 }
 
@@ -77,10 +94,42 @@ pub struct AgentsConfig {
     pub reviewer: ToggleConfig,
     #[serde(default)]
     pub coding: CodingSection,
-    /// 每个角色的首选 agent（角色名 → agent id），例如 `coding = "opencode"`。
-    /// 不配置时按注册顺序：内置 / Codex 在前，ACP agent 在后。
+    /// 执行组：每个角色由哪些 agent 来做（第一个是主力，后面是待命的备份，必须同类型）。
+    /// 例如 `coding = "opencode"` 或 `general = ["hermes@mac-a", "hermes@mac-b"]`。
+    /// 不配置的角色使用该角色第一个可用的 agent。
     #[serde(default)]
-    pub prefer: BTreeMap<String, String>,
+    pub assign: BTreeMap<String, OneOrMany>,
+}
+
+/// 配置里既可以写一个字符串，也可以写字符串数组
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum OneOrMany {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl OneOrMany {
+    pub fn to_vec(&self) -> Vec<String> {
+        match self {
+            OneOrMany::One(s) => vec![s.clone()],
+            OneOrMany::Many(v) => v.clone(),
+        }
+    }
+}
+
+impl AgentsConfig {
+    /// 执行组配置（角色 → 成员 id 列表）；角色名写错时启动报错
+    pub fn assign_map(&self) -> Result<BTreeMap<String, Vec<String>>> {
+        let mut m = BTreeMap::new();
+        for (role, members) in &self.assign {
+            if an_core::Role::parse(role).is_none() {
+                anyhow::bail!("[{}] [agents.assign] 中的角色 `{role}` 不存在，只能是 general / coding / reviewer", an_core::codes::POOL_CONFIG);
+            }
+            m.insert(role.clone(), members.to_vec());
+        }
+        Ok(m)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +142,12 @@ pub struct GeneralConfig {
     /// 文件工具只能访问这个目录
     #[serde(default = "d_ws")]
     pub workspace_dir: PathBuf,
+    /// 同时最多执行几个任务（受本地模型并发能力限制）
+    #[serde(default = "d_general_concurrency")]
+    pub max_concurrent: u32,
+}
+fn d_general_concurrency() -> u32 {
+    4
 }
 fn d_true() -> bool {
     true
@@ -105,7 +160,7 @@ fn d_ws() -> PathBuf {
 }
 impl Default for GeneralConfig {
     fn default() -> Self {
-        Self { enabled: true, max_steps: d_steps(), workspace_dir: d_ws() }
+        Self { enabled: true, max_steps: d_steps(), workspace_dir: d_ws(), max_concurrent: d_general_concurrency() }
     }
 }
 
@@ -187,6 +242,47 @@ impl Default for AcpSection {
     }
 }
 
+/// 局域网节点配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodesSection {
+    /// 自动发现局域网中的节点（mDNS）。有的网络会屏蔽组播，此时可以在界面上按地址手动添加
+    #[serde(default = "d_true")]
+    pub discovery: bool,
+    /// 多久检查一次已配对节点是否在线（秒）
+    #[serde(default = "d_refresh")]
+    pub refresh_secs: u64,
+}
+fn d_refresh() -> u64 {
+    15
+}
+impl Default for NodesSection {
+    fn default() -> Self {
+        Self { discovery: true, refresh_secs: d_refresh() }
+    }
+}
+
+/// 日志配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingSection {
+    /// JSON 日志文件目录（按天滚动）；设为空字符串表示不写文件
+    #[serde(default = "d_log_dir")]
+    pub dir: String,
+    /// 日志级别：error / warn / info / debug（环境变量 RUST_LOG 优先）
+    #[serde(default = "d_log_level")]
+    pub level: String,
+}
+fn d_log_dir() -> String {
+    "logs".into()
+}
+fn d_log_level() -> String {
+    "info".into()
+}
+impl Default for LoggingSection {
+    fn default() -> Self {
+        Self { dir: d_log_dir(), level: d_log_level() }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,9 +291,39 @@ mod tests {
     #[test]
     fn example_config_parses() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config.example.toml");
-        let cfg = AppConfig::load(&path).expect("config.example.toml 解析失败");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let (cfg, unknown) = AppConfig::parse(&text).expect("config.example.toml 解析失败");
+        assert!(unknown.is_empty(), "配置模板中有不认识的字段：{unknown:?}");
         assert!(cfg.acp.auto_detect);
-        assert!(cfg.agents.prefer.is_empty());
+        assert!(cfg.agents.assign_map().unwrap().is_empty());
+        assert!(cfg.nodes.discovery);
+        assert_eq!(cfg.logging.dir, "logs");
         assert_eq!(cfg.llm.base_url, "http://127.0.0.1:8098/v1");
+    }
+}
+
+#[cfg(test)]
+mod assign_tests {
+    use super::*;
+
+    #[test]
+    fn assign_accepts_one_or_many_and_checks_role() {
+        let a: AgentsConfig = toml::from_str("[assign]\ncoding = \"opencode\"\ngeneral = [\"hermes@a\", \"hermes@b\"]").unwrap();
+        let m = a.assign_map().unwrap();
+        assert_eq!(m["coding"], ["opencode"]);
+        assert_eq!(m["general"], ["hermes@a", "hermes@b"]);
+        let bad: AgentsConfig = toml::from_str("[assign]\ncodeing = \"x\"").unwrap();
+        assert!(bad.assign_map().unwrap_err().to_string().contains("E_POOL_CONFIG"));
+    }
+}
+
+#[cfg(test)]
+mod unknown_key_tests {
+    use super::*;
+
+    #[test]
+    fn reports_unknown_keys() {
+        let (_, unknown) = AppConfig::parse("[llm]\nbase_url = \"x\"\nmodel = \"m\"\n[agents.prefer]\ncoding = \"a\"\n[agents.general]\nmax_stpes = 3").unwrap();
+        assert_eq!(unknown, ["agents.prefer", "agents.general.max_stpes"]);
     }
 }

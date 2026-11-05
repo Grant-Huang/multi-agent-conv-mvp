@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
-use an_core::{truncate_chars, AgentAdapter, AgentCard, AgentUnavailable, EventSink, Evidence, Role, TaskResult, TaskSpec, WorkerStatus};
+use an_core::{truncate_chars, codes, AgentAdapter, AgentCard, AgentError, EventSink, Evidence, Role, TaskResult, TaskSpec, WorkerStatus};
 
 use crate::util::{collect_git_changes, expand_tilde, resolve_command};
 use anyhow::{Context, Result};
@@ -36,6 +36,13 @@ pub struct CodingConfig {
     /// 超时时间（秒）
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
+    /// 同时最多执行几个任务（多个任务共用一个工作目录时，建议保持 1）
+    #[serde(default = "default_concurrency")]
+    pub max_concurrent: u32,
+}
+
+fn default_concurrency() -> u32 {
+    1
 }
 
 fn default_command() -> String {
@@ -65,7 +72,13 @@ fn default_timeout() -> u64 {
 
 impl Default for CodingConfig {
     fn default() -> Self {
-        Self { command: default_command(), args: default_args(), workdir: default_workdir(), timeout_secs: default_timeout() }
+        Self {
+            command: default_command(),
+            args: default_args(),
+            workdir: default_workdir(),
+            timeout_secs: default_timeout(),
+            max_concurrent: default_concurrency(),
+        }
     }
 }
 
@@ -92,6 +105,9 @@ impl CodingAgent {
         let card = AgentCard {
             id: "codex".into(),
             kind: "cli".into(),
+            agent_type: "codex".into(),
+            location: "本机".into(),
+            max_concurrent: cfg.max_concurrent.max(1),
             role: Role::Coding,
             name: "Codex CLI".into(),
             description: Role::Coding.description().into(),
@@ -131,7 +147,7 @@ impl AgentAdapter for CodingAgent {
 
     async fn run(&self, task: TaskSpec, events: EventSink) -> Result<TaskResult> {
         if !self.card.enabled {
-            return Err(AgentUnavailable(self.card.disabled_reason.clone().unwrap_or_default()).into());
+            return Err(AgentError::new(codes::AGENT_NOT_INSTALLED, self.card.disabled_reason.clone().unwrap_or_default()).into());
         }
 
         // 1. 准备工作目录和输出文件
@@ -157,7 +173,7 @@ impl AgentAdapter for CodingAgent {
             .stderr(Stdio::piped())
             .kill_on_drop(true) // 任务被取消时自动杀掉子进程
             .spawn()
-            .map_err(|e| AgentUnavailable(format!("无法启动 {}：{e}", self.cfg.command)))?;
+            .map_err(|e| AgentError::new(codes::AGENT_SPAWN, format!("无法启动 {}：{e}", self.cfg.command)))?;
 
         let mut stdout = BufReader::new(child.stdout.take().expect("stdout piped")).lines();
         let mut stderr = BufReader::new(child.stderr.take().expect("stderr piped")).lines();
@@ -190,7 +206,7 @@ impl AgentAdapter for CodingAgent {
         let exit = match tokio::time::timeout(Duration::from_secs(self.cfg.timeout_secs), run).await {
             Ok(r) => r.context("等待子进程失败")?,
             // 超时：返回后 child 被 drop，kill_on_drop 会杀掉进程
-            Err(_) => return Ok(TaskResult::failed(format!("Coding Agent 超时（{} 秒）", self.cfg.timeout_secs))),
+            Err(_) => return Ok(TaskResult::failed_code(codes::AGENT_TIMEOUT, format!("Codex 超时（{} 秒）", self.cfg.timeout_secs))),
         };
 
         // 4. 收集结果与证据
@@ -217,7 +233,7 @@ impl AgentAdapter for CodingAgent {
             summary,
             artifacts,
             evidence,
-            errors: if exit.success() { vec![] } else { vec![format!("进程退出：{exit}")] },
+            errors: if exit.success() { vec![] } else { vec![format!("[{}] 进程退出：{exit}", codes::AGENT_RUNTIME)] },
         })
     }
 }

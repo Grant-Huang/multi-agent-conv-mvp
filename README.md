@@ -77,10 +77,10 @@ AgentNexus 通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP
 | [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/acp) | general | `hermes acp` | 原生支持，需安装 ACP 扩展 |
 | pi | coding | `pi-acp` | 需另装第三方适配器 pi-acp，成熟度较低 |
 
-**第 1 步：想让它优先干活，加一行。** 默认内置 agent 和 Codex 排在前面：
+**第 1 步：指定由谁来做，加一行。** 不指定时，每类工作用第一个可用的 agent（内置和 Codex 排在前面）：
 
 ```toml
-[agents.prefer]
+[agents.assign]
 coding = "opencode"
 ```
 
@@ -94,7 +94,7 @@ args = ["acp"]
 role = "coding"
 ```
 
-首选 agent 启动失败时会自动换下一个；任务执行中途失败不会换（避免重复执行有副作用的操作）。
+agent 执行出错时会如实报错（带错误码），不会自动换别的 agent 重做。
 
 **先体验一下？** 自带一个模拟 ACP agent，不需要安装任何东西：
 
@@ -104,7 +104,7 @@ id = "mock"
 command = "./target/release/an-mock-acp"
 role = "coding"
 
-[agents.prefer]
+[agents.assign]
 coding = "mock"
 ```
 
@@ -114,6 +114,44 @@ coding = "mock"
 - 这些 agent 用的是**它们自己的模型配置**。想让它们也用本地 llama.cpp，需要在各自的配置里设置。
 - agent 请求权限时默认自动允许（任务已通过 Policy 和人工审批），每次请求都记录在证据里；可以用 `permission = "read_only"` 收紧。
 
+## 用其他电脑上的 agent（节点）
+
+agent 装在另一台电脑上（macOS / Linux / Windows 都可以）时：
+
+1. 在那台电脑上运行节点程序（从本项目编译：`cargo build --release --bin an-node`，然后把 `target/release/an-node` 拷过去）：
+   ```bash
+   an-node
+   ```
+   它会自动发现那台电脑上的 agent，并显示地址和 **6 位配对码**。
+2. 在 AgentNexus 界面右侧打开「节点」页：同一局域网的节点会自动出现，输入配对码点「配对」。
+   网络不允许自动发现时，用「按地址添加」填 IP 和配对码。
+3. 完成。那台电脑上的 agent 以 `agent名@节点名` 的形式出现，例如 `hermes@office-pc`。
+
+几台电脑上有同一种 agent 时，可以组成执行组分担工作：
+
+```toml
+[agents.assign]
+general = ["hermes@office-pc", "hermes@mac-mini"]   # 第一个是主力，其余待命
+```
+
+规则：只能放**同一类型**的 agent；主力忙满时交给空闲的备份，都忙就排队；离线的跳过；**执行出错直接报错，不换人重做**。
+
+节点的配置（全部可选）：`an-node node.toml`，或用参数 `--port`、`--name`、`--workdir`、`--bind`、`--no-advertise`。详见 [设计文档第 8 节](docs/DESIGN.md#8-节点用其他电脑上的-agent)。
+
+⚠️ 节点与 AgentNexus 之间目前是明文 HTTP，只在可信的局域网使用；跨网络请用 Tailscale 等私有网络。
+
+## 日志与排查
+
+- 界面右侧「诊断」页：模型连通性、执行组状态、最近的问题和错误码。点「复制诊断信息」可直接贴给 AI 或开发者。
+- JSON 日志：`logs/agentnexus.jsonl.<日期>`（节点在 `~/.agentnexus-node/logs/`）。每条记录有固定的 `event`（事件名）和 `code`（错误码），并关联 `task_id` 等。AgentNexus 和节点用同一个 `task_id`，跨电脑也能串起来查：
+
+```bash
+jq -c 'select(.task_id == "task-xxxx") | [.timestamp, .event, .status, .code]' logs/agentnexus.jsonl.*
+```
+
+- 配置里写错字段名时，启动日志会提示（`W_CONFIG_UNKNOWN_KEY`）。
+- 完整的事件清单和错误码说明见 [设计文档第 10 节](docs/DESIGN.md#10-日志与排查)。
+
 ## Codex CLI
 
 `config.toml` 里的 `[agents.coding]` 决定怎么调用 codex，占位符 `{prompt}` `{workdir}` `{last_message_file}` 会被替换。不同版本的参数可能不同，**请先运行 `codex exec --help` 核对**。`workdir` 建议指向一个独立的 git 仓库：执行后会收集 `git diff` 作为审查证据。找不到命令时 Coding Agent 会被标记为不可用，Router 不会选它。
@@ -122,10 +160,12 @@ coding = "mock"
 
 ```
 crates/
-  core/      数据结构、状态机、AgentAdapter trait（导出 TS 类型到 web/src/bindings）
+  core/      数据结构、状态机、错误码、节点协议、AgentAdapter trait（导出 TS 类型到 web/src/bindings）
+  observe/   日志与诊断（AgentNexus 和节点共用）
   llm/       OpenAI 兼容客户端：结构化输出、<think> 清理、JSON 提取、校验重试
-  agents/    general（工具循环）/ coding（codex 子进程）/ reviewer（只读审查）/ acp（通用 ACP 适配器）/ tools
-  runtime/   conversation / router / policy / orchestrator / composer / store / bus
+  agents/    general（工具循环）/ coding（codex 子进程）/ reviewer（只读审查）/ acp（通用 ACP 适配器）/ remote（节点上的 agent）/ tools
+  runtime/   conversation / router / policy / orchestrator / registry（执行组）/ nodes（节点管理）/ composer / store / bus
+  node/      节点程序 an-node
   server/    HTTP API + SSE + 静态前端；bin/eval.rs 路由评测；bin/mock_acp_agent.rs 模拟 ACP agent；tests/e2e.rs 端到端测试
 web/         React + Vite 前端
 evals/       路由评测集
@@ -143,7 +183,7 @@ cargo test -p an-core # 修改 core 的类型后运行，重新生成 web/src/bi
 
 ## MVP 刻意没做的
 
-任务 DAG / 并行子任务、长期记忆（RelOS）、MCP 工具接入（`Tool` trait 已预留）、ACP 的文件/终端代理能力、断点续跑（服务重启时中断的任务标记为 FAILED）、多用户与鉴权、Slack 入口。
+任务 DAG / 并行子任务、跨互联网的节点、节点 TLS、长期记忆（RelOS）、MCP 工具接入（`Tool` trait 已预留）、ACP 的文件/终端代理能力、断点续跑（服务重启时中断的任务标记为 FAILED）、多用户与鉴权、Slack 入口。
 
 ## API
 
@@ -157,3 +197,7 @@ cargo test -p an-core # 修改 core 的类型后运行，重新生成 web/src/bi
 | POST | /api/tasks/{id}/cancel、/approve | 取消 / 人工批准 |
 | GET | /api/route-logs?limit= | 路由日志 |
 | GET | /api/events?conversation_id= | SSE 事件流 |
+| GET | /api/nodes | 局域网发现的节点 + 已配对节点 |
+| POST | /api/nodes/pair | 配对节点 `{"address": "192.168.1.23", "code": "757563"}` |
+| DELETE | /api/nodes/{id} | 解除配对 |
+| GET | /api/diagnostics | 诊断：最近的问题、错误码统计、执行组与节点状态 |

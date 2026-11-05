@@ -1,0 +1,28 @@
+[package]
+name = "an-node"
+version.workspace = true
+edition.workspace = true
+
+# AgentNexus 节点：在本机运行 agent，供局域网内的 AgentNexus 调用
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "an-node"
+path = "src/main.rs"
+
+[dependencies]
+an-core.workspace = true
+an-agents.workspace = true
+an-observe.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+axum.workspace = true
+tracing.workspace = true
+mdns-sd.workspace = true
+uuid.workspace = true

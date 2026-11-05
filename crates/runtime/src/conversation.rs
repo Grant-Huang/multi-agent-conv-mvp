@@ -271,6 +271,13 @@ impl ConversationRuntime {
     fn finish(&self, mut log: RouteLog, started: Instant, decision: Option<TurnDecision>, task: Option<TaskRecord>, reply: &str) -> Result<TurnOutcome> {
         let msg = self.store.add_message(&log.conversation_id, "assistant", reply, task.as_ref().map(|t| t.id.as_str()))?;
         log.latency_ms = started.elapsed().as_millis() as u64;
+        // 埋点：每轮对话一条，记录决策、路由、重试次数和耗时
+        let action = log.turn_decision.as_ref().map(|d| serde_json::to_value(d).ok().and_then(|v| v["action"].as_str().map(String::from)).unwrap_or_default()).unwrap_or_else(|| "none".into());
+        let role = log.route_decision.as_ref().map(|r| r.execution_role.as_str()).unwrap_or("-");
+        match &log.error {
+            Some(err) => tracing::warn!(event = "conversation.turn", conv_id = %log.conversation_id, action = %action, role, task_id = ?log.task_id, attempts = log.attempts, elapsed_ms = log.latency_ms, error = %err),
+            None => tracing::info!(event = "conversation.turn", conv_id = %log.conversation_id, action = %action, role, task_id = ?log.task_id, attempts = log.attempts, elapsed_ms = log.latency_ms),
+        }
         if let Err(e) = self.store.insert_route_log(&log) {
             tracing::error!(error = %e, "写入路由日志失败");
         }

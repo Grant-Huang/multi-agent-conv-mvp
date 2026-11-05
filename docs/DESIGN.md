@@ -2,996 +2,767 @@
 
 | 项目 | 内容 |
 |---|---|
-| 版本 | v0.2（新增 ACP 通用接入、同角色多 agent 与自动换用） |
-| 日期 | 2026-11-04 |
-| 状态 | 骨架已实现，全部测试通过；尚未接真实模型 / 真实 Codex 验证 |
-| 范围 | Conversation Agent + Router + General / Coding / Reviewer 三个执行角色；外部 agent 通过 ACP 接入 |
+| 版本 | v0.3：新增节点（跨机器）、执行组（备份与并发）、日志埋点与诊断 |
+| 日期 | 2026-11-05 |
+| 状态 | 已实现，全部自动化测试通过；尚未接真实模型、真实 Codex / opencode / Hermes 验证 |
+
+这份文档先用大白话讲清楚"系统是什么、怎么用"，再讲"每一块怎么实现"。只想了解全貌的话，读第 1–3 节就够了。
 
 ---
 
 ## 目录
 
-1. [背景与目标](#1-背景与目标)
+1. [一页看懂](#1-一页看懂)
 2. [设计原则](#2-设计原则)
-3. [总体架构](#3-总体架构)
-4. [核心数据模型](#4-核心数据模型)
-5. [任务状态机](#5-任务状态机)
-6. [关键流程](#6-关键流程)
-7. [组件详细设计](#7-组件详细设计)（含 [7.8 ACP 通用接入](#78-acp-通用接入)）
-8. [存储与事件](#8-存储与事件)
-9. [HTTP 接口](#9-http-接口)
-10. [配置说明](#10-配置说明)
-11. [前端设计](#11-前端设计)
-12. [可观测性与评测](#12-可观测性与评测)
-13. [安全与治理](#13-安全与治理)
-14. [测试策略](#14-测试策略)
+3. [怎么用](#3-怎么用)
+4. [整体结构](#4-整体结构)
+5. [一个请求的完整旅程](#5-一个请求的完整旅程)
+6. [任务状态](#6-任务状态)
+7. [执行者：agent 与执行组](#7-执行者agent-与执行组)
+8. [节点：用其他电脑上的 agent](#8-节点用其他电脑上的-agent)
+9. [模型调用：让小模型稳定输出](#9-模型调用让小模型稳定输出)
+10. [日志与排查](#10-日志与排查)
+11. [数据与接口](#11-数据与接口)
+12. [配置一览](#12-配置一览)
+13. [安全](#13-安全)
+14. [测试](#14-测试)
 15. [已知限制](#15-已知限制)
-16. [演进路线](#16-演进路线)
-17. [附录：参考来源](#17-附录参考来源)
+16. [后续计划](#16-后续计划)
+17. [参考来源](#17-参考来源)
 
 ---
 
-## 1. 背景与目标
+## 1. 一页看懂
 
-### 1.1 背景
+把 AgentNexus 想象成一个小团队：
 
-AgentNexus 的长期目标是一个"组织级智能工作平台"：用户通过一个对话入口提出需求，后台由多个 Agent（以及外部 Harness，如 Codex CLI）协作完成，任务、权限、证据和验收由平台统一管理。
-
-前期讨论得出的核心判断：
-
-- **自研调度和治理，不自研通用 Agent 框架**：Router、任务状态、Agent 注册表、Policy 由 AgentNexus 自己掌握；具体执行优先复用成熟 Harness。
-- **Agent 按"执行角色"划分，而不是按业务名称划分**：文档生成、数据分析等先作为 General Agent 的工具/技能，不单独建 Agent。
-- **Conversation 和 Router 必须分开**：前者对用户负责，后者对调度负责。
-
-### 1.2 MVP 目标
-
-用最小的代码量验证以下几点：
-
-| # | 要验证的问题 | 对应实现 |
+| 团队里的角色 | 系统里的组件 | 做什么 |
 |---|---|---|
-| G1 | 本地小模型能否稳定完成"要不要委派 → 派给谁"的结构化决策 | Turn Controller + Router + 结构化输出 + `an-eval` 评测工具 |
-| G2 | 一个统一的 `AgentAdapter` 抽象能否同时接入内置 Agent 和外部 Harness | General（内置）/ Coding（Codex 子进程）/ Reviewer（内置） |
-| G3 | "Worker 完成 ≠ 验收通过"能否落到流程里 | Policy 决定是否审查 + Reviewer 独立审查 + 返工 |
-| G4 | 用户始终只面对一个入口，后台进度可见 | Conversation 统一交付 + SSE 事件流 + 任务面板 |
-| G5 | 技术栈可行性：Rust 后端 + TS 前端 | axum + SQLite + React/Vite，前后端类型自动同步 |
-| G6 | 接入新 agent 对新手极简 | ACP 通用适配器 + 预设自动发现 + 三行配置 |
+| 前台 | **Conversation** | 跟你对话。简单问题直接答；说不清楚就追问；需要干活就交给调度；干完了把结果讲给你听 |
+| 调度员 | **Router** | 判断这件事属于哪一类：一般事务（general）、写代码（coding）、审查（reviewer） |
+| 规章制度 | **Policy** | 固定规则，不靠模型判断：有没有人能做？风险高要不要先审批？做完要不要质检？ |
+| 干活的人 | **agent** | 真正执行的程序：内置的、本机的 Codex / opencode / Hermes，或者**另一台电脑**上的 agent |
+| 小组 | **执行组** | 同一类工作可以安排几个同类型的 agent：一个主力，其余待命，忙不过来时分担 |
+| 质检 | **Reviewer** | 独立检查结果，只给意见，最后的状态由规则决定 |
+| 分公司 | **节点** | 装在另一台电脑上的小程序（`an-node`），让那台电脑上的 agent 也能接活 |
+| 工作日志 | **日志与诊断** | 每一步都有记录，出了问题能按编号查到原因 |
 
-### 1.3 非目标（MVP 不做）
+一句话：**你只跟前台说话；后面谁来做、在哪台电脑上做、做得对不对，系统按规则安排，并且全程有记录。**
 
-任务 DAG 与并行子任务、长期记忆（RelOS）、MCP 工具接入、断点续跑（Durable Execution）、多用户与鉴权、Slack 入口、模型微调。
+### MVP 要验证的问题
+
+| # | 问题 | 怎么验证 |
+|---|---|---|
+| G1 | 本地小模型能不能稳定地判断"要不要派活、派给谁" | 结构化输出 + 自动重试 + 评测工具 `an-eval` |
+| G2 | 一套接口能不能同时接内置 agent、本机外部 agent、其他电脑上的 agent | 统一的 `AgentAdapter` 接口 |
+| G3 | "agent 说做完了"和"真的做对了"能不能分开 | Policy 决定是否质检，Reviewer 独立审查，不通过就返工 |
+| G4 | 用户只面对一个入口，后台进度看得见 | Conversation 统一交付，任务进度实时推送到界面 |
+| G5 | Rust 后端 + TS 前端是否可行 | 已实现，前后端类型自动同步 |
+| G6 | 新手接入新 agent 是否足够简单 | 本机自动发现；其他电脑运行一条命令 + 输入配对码 |
+| G7 | 出了问题能不能快速、自动地定位 | 统一事件名和错误码的 JSON 日志 + 诊断接口 |
+
+### 这一版不做
+
+任务拆分与并行子任务、长期记忆、MCP 工具、服务重启后续跑、多用户与登录、Slack 入口、跨互联网的节点连接、模型微调。
 
 ---
 
 ## 2. 设计原则
 
-### 2.1 五条原则
+1. **模型负责理解，程序负责决定。** 模型给出的判断（比如风险高低）只是建议；能不能执行、要不要审批、要不要质检，由固定规则决定。
+2. **用户只面对一个入口。** 执行的 agent 只把结果交回来，从不直接跟用户说话（"Agents as Tools"）。
+3. **出错就报错，不悄悄换人。** agent 执行失败时如实告诉用户（带错误码），不会自动找别的 agent 重做。原因：失败的任务可能已经改了一半文件，换人重做可能把事情弄得更糟，也会掩盖问题。
+4. **只用明确指定的人。** 执行组的成员必须在配置里写明，而且必须是同一类型。系统不会根据"能力描述"自己去找别的 agent 顶上。
+5. **本机的事在本机做。** 另一台电脑上的 agent，由那台电脑上的节点负责启动、限制权限、收集改动证据，AgentNexus 只收结果。
+6. **所有状态由 AgentNexus 自己保存。** 任务、结果、事件都写进数据库，不依赖任何 agent 的内存。
+7. **每一步都可追查。** 日志里每条记录都有固定的事件名，出问题时带错误码，并关联到具体的会话、任务、agent、节点。
 
-1. **模型负责理解，程序负责决策，Harness 负责执行，治理层负责约束和验收。**
-   模型的输出（包括风险等级）只是"建议"；是否自动执行、是否需要审查由确定性规则决定。
-2. **Agents as Tools，而不是 Handoff。**
-   Conversation 始终持有对话控制权，执行 Agent 只返回结构化结果，从不直接面对用户。
-3. **结构化输出优先。**
-   所有决策点（Turn、Route、General 每一步、Review）都是 JSON Schema 约束下的结构化输出，并经过业务校验；不合格时把错误反馈给模型重试。
-4. **任务状态由 AgentNexus 掌握。**
-   状态、结果、证据、事件全部落库，不依赖任何 Harness 的内存。
-5. **可替换。**
-   模型（OpenAI 兼容接口，可按角色配置）、Harness（`AgentAdapter` trait）、存储（`Store` 封装）都可以独立替换。
+### 参考了哪些开源框架
 
-### 2.2 对开源框架的借鉴
+参考《来自工业界的多 Agent 框架最全细节对比》（2025-08-28）中的 7 个框架，只借鉴做法，不引入框架本身（它们以 Python 为主）：
 
-参考了《来自工业界的多 Agent 框架最全细节对比》（hustyichi.github.io，2025-08-28）中对比的框架，只借鉴模式，不引入框架本身（这些框架以 Python 为主，没有 Rust 对应实现）：
-
-| 来源 | 借鉴点 | 在本项目中的落地 |
+| 来源 | 借鉴了什么 | 在本项目中 |
 |---|---|---|
-| OpenAI Agents SDK | Agents as Tools：主 Agent 保留控制权 | Conversation 统一交付，Worker 返回 `TaskResult` |
-| LangGraph | 共享状态 + Checkpointer 持久化 | 任务状态机落 SQLite，事件可回放 |
-| Pydantic AI | 强制结构化输出 + 闭环重试 | `LlmClient::chat_json`：Schema 约束 + 校验 + 错误反馈重试 |
-| CrewAI / Agno | 角色 + 能力描述，由协调者分配 | `AgentCard` 能力卡片 + `AgentRegistry` |
-| AutoGen | 多 Agent 群聊 | **不借鉴**：Token 消耗大、难控制 |
+| OpenAI Agents SDK | 主 agent 保留对话控制权，其他 agent 当工具用 | Conversation 统一交付 |
+| LangGraph | 状态持久化 | 任务状态全部写数据库 |
+| Pydantic AI | 强制结构化输出 + 出错重试 | 所有模型决策都是 JSON，不合格就带着错误原因重试 |
+| CrewAI / Agno | 角色 + 能力描述 | 能力卡片 `AgentCard` |
+| AutoGen | 多 agent 群聊 | **不借鉴**：成本高、难控制 |
 
 ---
 
-## 3. 总体架构
+## 3. 怎么用
 
-### 3.1 组件图
+### 3.1 只用这台电脑
+
+```bash
+cp config.example.toml config.toml        # 改一下本地模型地址
+cd web && npm install && npm run build && cd ..
+cargo run --release --bin agentnexus
+```
+
+打开 http://127.0.0.1:8787 。本机装了 opencode / Hermes / pi-acp 的话，启动时会被**自动发现**，左下角能看到。
+
+### 3.2 用另一台电脑上的 agent（节点）
+
+假设 Hermes 装在另一台电脑上（macOS、Linux、Windows 都可以）：
+
+1. **在那台电脑上**运行节点程序：
+   ```bash
+   an-node
+   ```
+   它会显示：
+   ```
+   AgentNexus 节点已启动
+    名称：Office-PC（node-b82c…）
+    地址：http://192.168.1.23:7788
+    agent：
+      ✓ hermes（Hermes Agent，角色 general，并发 1）
+    配对码：757 563（10 分钟内有效，在 AgentNexus 的「节点」页输入）
+   ```
+2. **在 AgentNexus 界面**打开右侧「节点」页。同一局域网里的节点会自动出现；输入配对码，点「配对」。
+3. 完成。那台电脑上的 Hermes 会以 `hermes@office-pc` 的名字出现在 agent 列表里。
+
+如果网络不允许自动发现（有些公司网络会屏蔽），在「节点」页的「按地址添加」里填地址和配对码即可。
+
+### 3.3 安排执行组（可选）
+
+想让两台电脑上的 Hermes 一起分担 general 类工作：
+
+```toml
+[agents.assign]
+general = ["hermes@office-pc", "hermes@mac-mini"]
+```
+
+第一个是主力，第二个待命。主力正在忙（达到它的并发上限）时，新任务交给待命的；都在忙就排队。详见第 7 节。
+
+### 3.4 出问题了怎么办
+
+1. 打开界面右侧「诊断」页：能看到模型是否连通、每个执行组的成员和状态、最近的问题和错误码。
+2. 点「复制诊断信息」，把内容贴给 AI 或开发者。
+3. 需要更多细节时，看 `logs/agentnexus.jsonl.<日期>`（节点的在 `~/.agentnexus-node/logs/`），按任务编号过滤即可还原完整过程。详见第 10 节。
+
+---
+
+## 4. 整体结构
+
+### 4.1 组件图
 
 ```mermaid
 flowchart TB
-    UI["Web 前端<br/>React + TS"] -- "HTTP: 发送消息" --> API
-    API -- "SSE: 任务事件" --> UI
+    UI["网页界面<br/>React + TS"] -- "发消息 / 配对节点" --> API
+    API -- "实时进度（SSE）" --> UI
 
-    subgraph Server["Rust 后端（单进程）"]
-        API["HTTP API<br/>axum"]
-        subgraph Conv["Conversation Runtime"]
-            TC["Turn Controller<br/>(LLM)"]
-            CB["Context Builder"]
-        end
-        subgraph Rt["Router"]
-            CLS["Intent Classifier<br/>(LLM)"]
-            POL["Policy<br/>(确定性规则)"]
-        end
-        ORC["Orchestrator<br/>派发 / 审查 / 返工 / 取消 / 审批"]
-        CMP["Composer<br/>(LLM，交付消息)"]
-        REG["Agent Registry"]
-        GEN["General Agent<br/>LLM + 工具循环"]
-        COD["Coding Agent<br/>Codex CLI 子进程"]
-        REV["Reviewer Agent<br/>只读审查"]
-        ACPA["ACP 适配器<br/>通用"]
-        STORE[("SQLite<br/>Store")]
-        BUS["Event Bus<br/>写库 + 广播"]
+    subgraph Server["AgentNexus（Rust，一个进程）"]
+        API["HTTP 接口"]
+        CONV["Conversation<br/>前台"]
+        ROUTER["Router<br/>调度（模型）"]
+        POLICY["Policy<br/>规章（规则）"]
+        ORC["Orchestrator<br/>派活 / 质检 / 返工 / 取消"]
+        REG["注册表 + 执行组<br/>分配 agent、排队"]
+        NM["节点管理<br/>发现 / 配对 / 心跳"]
+        LOCAL["本机 agent<br/>内置 General / Reviewer<br/>Codex CLI / ACP agent"]
+        REMOTE["远程 agent<br/>（代理节点上的 agent）"]
+        DB[("SQLite")]
+        LOG["日志与诊断"]
     end
 
-    API --> Conv
-    TC -- delegate --> CLS --> POL --> ORC
-    ORC --> REG --> GEN & COD & REV & ACPA
-    ORC -- 验收 --> REV
-    ORC --> CMP
-    ORC & Conv --> STORE
-    ORC & GEN & COD --> BUS --> STORE
-    BUS --> API
-    GEN & REV & TC & CLS & CMP -. "OpenAI 兼容接口" .-> LLM["llama.cpp<br/>127.0.0.1:8098"]
-    COD -. 子进程 .-> CODEX["codex exec"]
-    ACPA -. "ACP / stdio" .-> EXT["opencode acp<br/>hermes acp<br/>pi-acp …"]
+    subgraph NodeBox["另一台电脑"]
+        NODE["an-node 节点"]
+        NA["opencode / Hermes …"]
+    end
+
+    API --> CONV --> ROUTER --> POLICY --> ORC --> REG
+    REG --> LOCAL & REMOTE
+    NM --> REG
+    REMOTE -- "HTTP（局域网）" --> NODE -- "ACP（本机）" --> NA
+    NM -. "mDNS 发现 / 心跳" .-> NODE
+    CONV & ORC & NM --> DB
+    LOCAL & ROUTER & CONV -. "OpenAI 兼容接口" .-> LLM["本地模型<br/>llama.cpp"]
 ```
 
-### 3.2 职责划分
+### 4.2 谁负责什么
 
-| 问题 | 负责组件 | 是否调用模型 |
+| 问题 | 负责的组件 | 用不用模型 |
 |---|---|---|
-| 用户这句话要不要后台执行？ | Turn Controller | 是 |
-| 需求不清楚时向用户追问 | Turn Controller | 是 |
-| 派给哪个角色、需要哪些工具、风险多高？ | Router（Classifier） | 是 |
-| 能不能自动执行、要不要审查？ | Policy | **否** |
-| 创建任务、推进状态、收回结果、组织返工 | Orchestrator | 否 |
-| 由哪个 agent 执行（同角色多个时） | Agent Registry（首选 + 注册顺序）+ Orchestrator（启动失败自动换用） | 否 |
-| 真正执行 | 内置 General / Reviewer、Codex CLI、ACP agent | 视 agent 而定 |
-| 结果是否满足目标？ | Reviewer（给意见）+ Orchestrator（按规则定状态） | 是 / 否 |
-| 把结果讲给用户 | Composer | 是（失败时退回模板） |
+| 这句话要不要派活？说清楚了吗？ | Conversation | 用 |
+| 这件事属于哪一类？ | Router | 用 |
+| 能不能做、要不要审批、要不要质检？ | Policy | 不用 |
+| 具体由哪个 agent 做、忙了怎么办？ | 注册表 + 执行组 | 不用 |
+| 派活、收结果、组织质检和返工、取消 | Orchestrator | 不用 |
+| 真正干活 | agent | 视 agent 而定 |
+| 结果对不对？ | Reviewer 给意见，规则定状态 | 用 / 不用 |
+| 把结果讲给用户 | Composer（Conversation 的一部分） | 用（失败时退回固定模板） |
 
-### 3.3 代码结构与依赖方向
+### 4.3 代码结构
 
 ```
 crates/
-  core/      数据结构、状态机、AgentAdapter / EventPublisher trait（无 LLM、无 Web 依赖）
-  llm/       OpenAI 兼容客户端
-  agents/    内置 Agent、Codex 适配器、通用 ACP 适配器（acp.rs）、工具、公共工具函数（util.rs）
-  runtime/   conversation / router / policy / orchestrator / composer / store / bus / config
-  server/    HTTP API、SSE、静态前端；bin/eval.rs；bin/mock_acp_agent.rs（模拟 ACP agent）；tests/e2e.rs
-web/         React + Vite 前端（web/src/bindings 由 core 自动生成）
+  core/      公共数据结构、错误码、节点协议（不依赖任何具体实现）
+  observe/   日志与诊断（AgentNexus 和节点共用）
+  llm/       模型调用：结构化输出、重试
+  agents/    各种 agent：内置 General / Reviewer、Codex、ACP、远程（节点）
+  runtime/   Conversation、Router、Policy、Orchestrator、注册表与执行组、节点管理、数据库
+  node/      节点程序 an-node
+  server/    AgentNexus 主程序、HTTP 接口；评测工具 an-eval；模拟 agent an-mock-acp
+web/         网页界面
 evals/       路由评测集
 ```
 
-依赖只能从上往下：`server → runtime → agents → llm → core`。`core` 不依赖任何具体实现，保证以后替换 LLM 库或 Web 框架时数据结构不动。
+依赖方向只能从上往下：`server → runtime → agents → llm → core`；`node → agents`；`observe` 被 server 和 node 共用。
 
-### 3.4 进程模型
+### 4.4 四个程序
 
-- **单进程**：所有组件在同一个 tokio 运行时中。Conversation 和 Router 是两个模块，不是两个互相对话的 Agent，没有进程间通信成本。
-- **每个任务一个 tokio 任务**：`Orchestrator::start` 用 `tokio::spawn` 执行，保存 `AbortHandle` 用于取消。
-- **对话请求是同步的**：`POST /messages` 等待 Turn Controller（和 Router）返回后才响应；任务执行是异步的，结果通过事件交付。
-
----
-
-## 4. 核心数据模型
-
-全部定义在 `crates/core/src/lib.rs`，带 `#[derive(TS)]` 的类型会在 `cargo test -p an-core` 时导出为 TypeScript（`web/src/bindings/`）。
-
-### 4.1 枚举
-
-| 类型 | 取值 | 说明 |
+| 程序 | 运行在 | 作用 |
 |---|---|---|
-| `Role` | `general` / `coding` / `reviewer` | 执行角色（"做什么"）；Router 只能从有可用 agent 的角色中选。同一角色可以有多个 agent（"谁来做"） |
-| `TaskClass` | `L1` / `L2` / `L3` / `L4` | JEV 分类：是否需要工具 × 是否需要生成文档 |
-| `Risk` | `low` / `medium` / `high` | 风险等级（模型建议值） |
-| `TaskStatus` | 见第 5 节 | 任务状态 |
-| `WorkerStatus` | `succeeded` / `failed` | Worker **进程层面**的结果，与验收无关 |
-| `Verdict` | `pass` / `fail` / `needs_human` | Reviewer 的意见 |
-| `FollowUpKind` | `supplement` / `cancel` | 针对进行中任务的跟进类型 |
-| `EventKind` | `status_changed` / `progress` / `assistant_message` | 事件类型 |
-
-JEV 分类：
-
-| 类别 | 需要工具 | 需要文档 | 典型例子 |
-|---|---|---|---|
-| L1 | 否 | 否 | 纯分析、改写 |
-| L2 | 是 | 否 | 计算、查时间、读文件 |
-| L3 | 否 | 是 | 写一份指南并保存 |
-| L4 | 是 | 是 | 读数据 → 分析 → 写报告 |
-
-### 4.2 决策类结构
-
-```rust
-/// Turn Controller 每轮的决策（serde 以 action 字段区分）
-enum TurnDecision {
-    Respond  { reply: String },
-    Clarify  { question: String },
-    Delegate { task_goal: String },
-    FollowUp { task_id: String, kind: FollowUpKind, change: String },
-}
-
-/// Router 的输出
-struct RouteDecision {
-    task_class: TaskClass,
-    execution_role: Role,
-    required_tools: Vec<String>,   // 必须在工具注册表中
-    risk_level: Risk,              // 建议值
-    reason: String,                // 一句话理由，写入日志
-}
-
-/// Policy 的裁决
-struct PolicyVerdict {
-    auto_execute: bool,   // false → NEEDS_HUMAN 等待审批
-    needs_review: bool,   // 执行后是否需要 Reviewer
-    notes: Vec<String>,   // 命中的规则说明
-}
-```
-
-### 4.3 执行类结构
-
-```rust
-struct AgentCard {               // 能力卡片
-    id: String,                  // 唯一标识："general"、"codex"、"opencode"…（prefer 配置用）
-    kind: String,                // 接入方式："builtin" / "cli" / "acp"
-    role: Role, name: String,
-    description: String,         // 给 Router 模型看的能力描述
-    tools: Vec<ToolInfo>,
-    enabled: bool,               // 例如本机没装 codex 时为 false
-    disabled_reason: Option<String>,
-}
-
-struct TaskSpec {                // 交给 Agent 的任务
-    task_id, conversation_id: String,
-    goal: String,                // Turn Controller 整理过的独立任务描述
-    context: String,             // 近期对话摘录；返工时追加审查问题
-    route: RouteDecision,
-}
-
-struct TaskResult {              // 所有 Worker 的统一返回
-    status: WorkerStatus,
-    summary: String,
-    artifacts: Vec<Artifact>,    // {kind, name, content}：file / diff / text
-    evidence: Vec<Evidence>,     // {kind, content}：tool_call / exit_code / stdout_tail / git_diff_stat ...
-    errors: Vec<String>,
-}
-
-struct ReviewVerdict { verdict: Verdict, issues: Vec<String>, comment: String }
-```
-
-### 4.4 Agent 接入接口
-
-```rust
-#[async_trait]
-pub trait AgentAdapter: Send + Sync {
-    fn card(&self) -> &AgentCard;
-    async fn run(&self, task: TaskSpec, events: EventSink) -> anyhow::Result<TaskResult>;
-}
-```
-
-约定：
-
-- 执行中的进度通过 `EventSink::progress()` 上报，不需要关心事件如何存储和推送。
-- 业务失败尽量返回 `Ok(TaskResult::failed(..))`，`Err` 只用于意外错误（两者在编排层都会变成 FAILED）。
-- **启动失败**（命令不存在、进程启动失败、ACP 握手失败）返回 `Err(AgentUnavailable)`：编排层会自动换用同角色的下一个 agent。执行开始后的失败不能用这个错误，否则有副作用的任务可能被另一个 agent 重复执行。
-- **取消通过 abort 实现**：编排层直接 abort 执行 `run` 的 tokio 任务，实现方需保证被 drop 时释放资源（例如子进程设置 `kill_on_drop(true)`），因此 trait 中没有 `cancel` 方法。
-
-### 4.5 持久化记录
-
-| 类型 | 用途 |
-|---|---|
-| `Conversation` | 会话（id、标题、创建时间）；第一条消息自动成为标题 |
-| `Message` | 消息（role = user / assistant，可关联 task_id） |
-| `TaskRecord` | 任务（目标、角色、状态、路由、Policy、结果、审查意见） |
-| `TaskEvent` | 事件（状态变化、进度、交付消息） |
-| `RouteLog` | 每轮对话的完整决策日志（含模型原始输出、尝试次数、延迟、错误） |
+| `agentnexus` | 你的主电脑 | 主程序：界面、对话、调度、执行 |
+| `an-node` | 任何想贡献 agent 的电脑 | 节点 |
+| `an-eval` | 开发者 | 批量测试小模型的路由准确率 |
+| `an-mock-acp` | 测试 / 新手体验 | 模拟的 ACP agent，不需要安装任何东西 |
 
 ---
 
-## 5. 任务状态机
+## 5. 一个请求的完整旅程
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant C as Conversation
+    participant R as Router + Policy
+    participant O as Orchestrator
+    participant G as 执行组
+    participant A as agent
+    participant V as Reviewer
+
+    U->>C: 发消息
+    C->>C: 模型判断：直接回答 / 追问 / 派活 / 跟进已有任务
+    alt 直接回答或追问
+        C-->>U: 立即回复
+    else 派活
+        C->>R: 任务目标
+        R->>R: 模型判断类别 → 规则检查
+        alt 规则不通过（例如没有可用的 agent）
+            R-->>C: 原因（带错误码）
+            C-->>U: "暂时无法派发：……"
+        else 通过
+            R->>O: 创建任务
+            C-->>U: "已交给 X 处理，完成后告诉你"
+            O->>G: 要一个 agent
+            Note over G: 有空闲的立即给；都在忙就排队
+            G-->>O: agent
+            O->>A: 执行（进度实时推送到界面）
+            A-->>O: 结果 + 证据
+            O->>G: 归还名额
+            opt 需要质检
+                O->>V: 审查
+                V-->>O: 通过 / 不通过（附问题）/ 需要人工
+                Note over O,A: 不通过且还有返工次数：带着问题清单让 agent 再做一轮
+            end
+            O-->>U: 把结果整理成回复，推送到对话
+        end
+    end
+```
+
+几个要点：
+
+- **对话请求只等决策，不等执行。** 派活后立刻回复"已开始处理"，结果做完后再推送过来。
+- **任务执行中用户又发消息**：前台会判断这是对某个进行中任务的"补充要求"还是"取消"。补充要求的做法是：取消旧任务，把要求合并后重新派发。
+- **名额在质检前归还**，让排队的任务尽早开始。
+- **需要审批的任务**（风险达到 `approval_risk`）创建后停在"待人工"，在任务面板点"批准执行"后才开始。
+
+---
+
+## 6. 任务状态
 
 ```mermaid
 stateDiagram-v2
     [*] --> CREATED
-    CREATED --> QUEUED: Policy 允许自动执行
-    CREATED --> NEEDS_HUMAN: 风险 ≥ approval_risk
-    NEEDS_HUMAN --> QUEUED: 人工批准（仅限尚未执行的任务）
-    QUEUED --> RUNNING
-    RUNNING --> FAILED: Worker 失败 / 超时
-    RUNNING --> COMPLETED: 不需要审查
-    RUNNING --> VERIFYING: 需要审查
-    VERIFYING --> COMPLETED: pass
-    VERIFYING --> NEEDS_HUMAN: needs_human / 审查本身出错
-    VERIFYING --> RUNNING: fail 且还有返工次数
-    VERIFYING --> FAILED: fail 且返工次数用完
+    CREATED --> QUEUED: 规则允许直接执行
+    CREATED --> NEEDS_HUMAN: 风险高，需要审批
+    NEEDS_HUMAN --> QUEUED: 人工批准
+    QUEUED --> RUNNING: 分到 agent（忙时在这里排队）
+    RUNNING --> FAILED: 执行出错 / 超时
+    RUNNING --> COMPLETED: 不需要质检
+    RUNNING --> VERIFYING: 需要质检
+    VERIFYING --> COMPLETED: 通过
+    VERIFYING --> NEEDS_HUMAN: 需要人工判断 / 审查本身出错
+    VERIFYING --> RUNNING: 不通过，还有返工次数
+    VERIFYING --> FAILED: 不通过，返工次数用完
     CREATED --> CANCELLED
     QUEUED --> CANCELLED
     RUNNING --> CANCELLED
     VERIFYING --> CANCELLED
     NEEDS_HUMAN --> CANCELLED
-    COMPLETED --> [*]
-    FAILED --> [*]
-    CANCELLED --> [*]
 ```
 
-| 状态 | 含义 | 由谁推进 |
-|---|---|---|
-| CREATED | 任务已创建 | Orchestrator |
-| QUEUED | 已提交到执行队列 | Orchestrator |
-| RUNNING | Agent 执行中（返工也回到这里） | Orchestrator |
-| VERIFYING | Reviewer 审查中 | Orchestrator |
-| NEEDS_HUMAN | 等待人工审批，或审查认为需要人工判断 | Policy / Reviewer |
-| COMPLETED | 验收通过（或不需要审查且执行成功） | Orchestrator |
-| FAILED | 执行失败、超时、审查不通过且返工用完、服务重启中断 | Orchestrator |
-| CANCELLED | 用户取消 | Orchestrator |
+| 状态 | 含义 |
+|---|---|
+| CREATED | 刚创建 |
+| QUEUED | 等待执行；执行组都在忙时停在这里排队 |
+| RUNNING | 执行中（返工也回到这里） |
+| VERIFYING | 质检中 |
+| NEEDS_HUMAN | 等人工：审批，或审查认为需要人判断 |
+| COMPLETED | 完成（通过质检，或不需要质检） |
+| FAILED | 失败。原因会带错误码，例如 `[E_ACP_HANDSHAKE] …` |
+| CANCELLED | 已取消 |
 
-终态：COMPLETED / FAILED / CANCELLED（`TaskStatus::is_terminal`）。NEEDS_HUMAN **不是**终态，仍会出现在"进行中的任务"里，可以被批准或取消。
+COMPLETED、FAILED、CANCELLED 是终点。服务重启时，还没结束的任务（CREATED / QUEUED / RUNNING / VERIFYING）会被标记为 FAILED，这一版不做续跑。
 
 ---
 
-## 6. 关键流程
+## 7. 执行者：agent 与执行组
 
-### 6.1 一轮对话
+### 7.1 agent 的种类
 
-```mermaid
-sequenceDiagram
-    actor U as 用户
-    participant API
-    participant C as Conversation
-    participant L as LLM
-    participant R as Router + Policy
-    participant O as Orchestrator
-    participant S as Store
+| 种类（kind） | 例子 | 运行在 | 说明 |
+|---|---|---|---|
+| `builtin` | General、Reviewer | AgentNexus 内部 | General 用本地模型 + 5 个工具（时间、计算器、列文件、读文件、写文件），文件只能在工作目录内读写 |
+| `cli` | Codex | 本机 | 以命令行方式调用 `codex exec`，参数可配置 |
+| `acp` | opencode、Hermes、pi-acp | 本机 | 通过 ACP（Agent Client Protocol）标准协议接入，一个适配器接所有 |
+| `node` | `hermes@office-pc` | 另一台电脑 | 通过节点执行，见第 8 节 |
 
-    U->>API: POST /conversations/{id}/messages
-    API->>C: handle_message
-    C->>S: 写入用户消息（首条消息设为标题）
-    C->>S: 读取最近 N 条消息、进行中的任务
-    C->>L: Turn Controller（turn_decision schema）
-    L-->>C: {"action": ...}
-    alt respond / clarify
-        C->>S: 写入助手回复
-    else delegate
-        C->>R: route(task_goal, 对话摘录)
-        R->>L: Classifier（route_decision schema）
-        L-->>R: RouteDecision
-        R->>R: Policy.evaluate
-        alt Policy 通过
-            R-->>C: RouteDecision + PolicyVerdict
-            C->>O: submit
-            O-->>C: TaskRecord（QUEUED 或 NEEDS_HUMAN）
-            C->>S: 写入"已交给 X 处理"或"需要审批"
-        else 角色不可用 / 输出不合格
-            R-->>C: RouteFailure
-            C->>S: 写入"暂时无法派发：原因"
-        end
-    else follow_up
-        C->>O: cancel / 取消后重新委派
-    end
-    C->>S: 写入 RouteLog
-    C-->>API: TurnOutcome {reply, decision, task}
-    API-->>U: 立即回复
+每个 agent 都有一张**能力卡片**：
+
+| 字段 | 含义 | 例子 |
+|---|---|---|
+| `id` | 唯一名称，执行组配置用它 | `opencode`、`hermes@office-pc` |
+| `kind` | 种类 | `acp` |
+| `agent_type` | 类型，只有同类型才能进同一个执行组 | `hermes` |
+| `role` | 能做哪类事 | `coding` |
+| `location` | 在哪台电脑 | `本机`、`Office-PC` |
+| `max_concurrent` | 同时最多做几件事 | `1` |
+| `enabled` / `disabled_reason` | 现在能不能用；不能用的原因 | `找不到命令 opencode` |
+
+### 7.2 本机 agent 的自动发现
+
+启动时按预设查找命令，找到就注册，不需要任何配置：
+
+| 预设 | 命令 | 角色 |
+|---|---|---|
+| `opencode` | `opencode acp` | coding |
+| `hermes` | `hermes acp` | general |
+| `pi` | `pi-acp`（第三方适配器，较不成熟） | coding |
+
+查找范围：PATH，以及 `~/.npm-global/bin`、`~/.local/bin`、`~/.opencode/bin`、`~/.bun/bin`、`~/.cargo/bin`、`~/.hermes/bin`、`/opt/homebrew/bin`、`/usr/local/bin`。只检查文件是否存在，**不会运行它**。
+
+接入其他 ACP agent 只需三行配置（`id`、`command`、`role`），见第 12 节。
+
+### 7.3 执行组
+
+**执行组 = 某类工作由哪几个 agent 来做。**
+
+```toml
+[agents.assign]
+coding = "opencode"                                   # 只用一个
+general = ["hermes@office-pc", "hermes@mac-mini"]     # 一个主力 + 一个备份
 ```
 
-要点：
+规则：
 
-- 对话请求**只等待决策**，不等待任务执行完成。委派后立即回复"已开始处理"。
-- 回复文本在委派分支是**模板生成**（不调用模型），减少一次 LLM 调用。
-- 任何一步失败都会写入 RouteLog 并给用户一个可读的回复，不会让请求挂起。
+| # | 规则 | 为什么 |
+|---|---|---|
+| 1 | 成员必须在配置里**明确写出**；系统不会自己找 | 谁在干活应该是确定的、可预期的 |
+| 2 | 成员必须**同一类型**（`agent_type` 相同）、**同一角色**，否则报 `E_POOL_CONFIG` | 不同类型的 agent 能力、模型、权限都可能不同，混在一起结果不可预期 |
+| 3 | 分配时按顺序找**第一个有空闲名额**的成员 | 主力优先，忙不过来时备份分担 |
+| 4 | 全都忙时**排队等待**，有人做完立即接上（事件里显示"排队等待"，日志 `W_POOL_WAIT`） | 处理并发，而不是报错 |
+| 5 | **离线**或**未安装**的成员直接跳过 | 备份本来就是为了应对"主力不在" |
+| 6 | 执行**出错就报错**，不会换给备份重做 | 见原则 3 |
+| 7 | 全部成员都不可用时报 `E_ROUTE_NO_AGENT`，并列出每个成员的原因 | 让用户知道该修什么 |
 
-### 6.2 任务执行、审查与返工
-
-```mermaid
-sequenceDiagram
-    participant O as Orchestrator
-    participant A as 执行 Agent
-    participant V as Reviewer
-    participant M as Composer
-    participant B as Bus
-    participant S as Store
-
-    O->>B: QUEUED → RUNNING
-    O->>A: run(TaskSpec, EventSink)
-    A-->>B: progress 事件（工具调用、命令输出）
-    A-->>O: TaskResult
-    O->>S: 保存结果
-    alt Worker 失败
-        O->>B: FAILED
-    else 不需要审查
-        O->>B: COMPLETED
-    else 需要审查
-        O->>B: VERIFYING
-        O->>V: review(goal, result)
-        V-->>O: ReviewVerdict
-        alt pass
-            O->>B: COMPLETED
-        else needs_human
-            O->>B: NEEDS_HUMAN
-        else fail 且 round < max_review_rounds
-            O->>O: 把 issues 追加到 context，回到 RUNNING
-        else fail
-            O->>B: FAILED
-        end
-    end
-    O->>M: compose(task, status, result, review)
-    M-->>O: 交付文本
-    O->>S: 写入助手消息（带 task_id）
-    O->>B: assistant_message 事件 → 前端刷新对话
-```
-
-返工时追加给 Agent 的上下文格式：
-
-```
-## 上一轮结果未通过审查，请修正以下问题
-- 问题 1
-- 问题 2
-
-## 上一轮结果摘要
-（截断到 2000 字）
-```
-
-整个执行（含返工）受 `task_timeout_secs` 总超时控制；Coding Agent 另有自己的 `timeout_secs`。
-
-### 6.3 跟进：补充要求与取消
-
-当用户在任务执行过程中发来新消息，Turn Controller 能看到"进行中的任务"列表（id、状态、角色、目标），可以输出 `follow_up`：
-
-| kind | 处理 |
-|---|---|
-| `cancel` | `Orchestrator::cancel(task_id)`：abort 执行任务（子进程随之被杀）→ CANCELLED；已结束的任务回复"无需取消" |
-| `supplement` | 取消旧任务 → 目标合并为 `旧目标 + "\n\n补充要求：" + change` → 重新路由和派发（新任务） |
-
-校验：`task_id` 必须是当前会话中进行中的任务，否则作为格式错误反馈给模型重试。
-
-> 补充要求采用"取消后重新派发"是 MVP 的简化做法。已完成的部分会被丢弃，见[已知限制](#15-已知限制)。
-
-### 6.4 人工审批
-
-1. Router 判定的风险 ≥ `approval_risk`（默认 `high`）时，Policy 给出 `auto_execute = false`。
-2. 任务创建后直接进入 NEEDS_HUMAN，对话中回复"需要人工审批（原因）"。
-3. 用户在任务面板点击"批准执行"→ `POST /api/tasks/{id}/approve`。
-4. 只有 **NEEDS_HUMAN 且尚未执行（result 为空）** 的任务可以批准；因审查意见进入 NEEDS_HUMAN 的任务不能通过此接口"批准"（返回 409）。
-
-### 6.5 服务重启
-
-启动时 `Store::fail_interrupted_tasks()` 把 CREATED / QUEUED / RUNNING / VERIFYING 的任务标记为 FAILED。MVP 不做断点续跑。
-
----
-
-## 7. 组件详细设计
-
-### 7.1 LLM 客户端（`crates/llm`）
-
-对接任意 OpenAI 兼容的 `/v1/chat/completions`（llama.cpp、Ollama、vLLM、DeepSeek 等）。
-
-#### 结构化输出
-
-`chat_json<T>(messages, schema_name, schema, validate)` 的处理流程：
+没有配置执行组的角色：使用该角色**第一个可用**的 agent，顺序是：内置 → Codex → 本机 ACP（自定义的在前，自动发现的在后）→ 节点。
 
 ```mermaid
 flowchart LR
-    A[构造请求] --> B[response_format<br/>按 structured_mode]
-    B --> C[system prompt 末尾<br/>追加 Schema 说明]
-    C --> D[调用模型]
-    D --> E[去掉 think 段落]
-    E --> F[提取第一个 JSON 对象]
-    F --> G[serde 反序列化]
-    G --> H[业务校验 validate]
-    H -- 通过 --> OK[返回 Structured]
-    H -- 不通过 --> R{还有重试次数?}
-    F -- 没找到 --> R
-    G -- 格式错 --> R
-    R -- 是 --> FB[追加: 模型原输出 + 错误原因] --> D
-    R -- 否 --> ERR[返回 StructuredError<br/>含全部原始输出]
+    T["新任务（coding）"] --> Q{"组里有空闲的？"}
+    Q -- "主力有空" --> A1["hermes@office-pc"]
+    Q -- "主力忙，备份有空" --> A2["hermes@mac-mini"]
+    Q -- "都在忙" --> W["排队，有人做完就接上"]
+    Q -- "都离线 / 未安装" --> E["报错 E_ROUTE_NO_AGENT"]
+    A1 & A2 -- "执行出错" --> F["任务失败，报告错误码<br/>（不换人重做）"]
 ```
 
-三种 `structured_mode`：
+**Router 总是在全部三类工作中选择。** 早期版本只让模型在"当前有人能做"的类别里选，结果是 coding 没人时，模型会把写代码的请求悄悄改派给 general。现在改为：模型只按任务本身判断类别，没有可用 agent 时由 Policy 明确报错。
 
-| 模式 | 请求中的 `response_format` | 适用 |
-|---|---|---|
-| `json_schema`（默认） | `{"type":"json_schema","json_schema":{"name","strict":true,"schema"}}` | OpenAI 标准写法；较新的 llama.cpp 会转成语法约束 |
-| `json_object` | `{"type":"json_object","schema":{...}}` | llama.cpp 早期扩展写法 |
-| `prompt_only` | 不发送 | 兼容所有服务，小模型格式错误最多 |
+### 7.4 ACP agent 的执行过程
 
-无论哪种模式，Schema 都会同时写进 system prompt，让模型"知道"要输出什么。
-
-#### 针对小模型的容错
-
-- **`strip_think`**：去掉 `<think>…</think>`；只有开头没有结尾（输出被截断）时丢弃后面全部。
-- **`extract_json`**：括号配对查找第一个完整 JSON 对象，正确跳过字符串中的括号，兼容 ```` ```json ```` 代码块和前后多余文字。
-- **反馈式重试**：失败原因（"action=delegate 时 task_goal 不能为空"、"工具 xxx 不存在，可用工具：..."）连同模型原输出追加到对话中再试。HTTP / 网络错误直接重试，不反馈给模型。
-- **扁平 Schema**：所有 Schema 都手写成扁平结构（所有字段必填，不适用的填空字符串），而不是用 `oneOf` / 嵌套可选字段。小模型和语法约束都更容易处理；转换成 Rust 枚举的工作在程序里完成。
-
-#### 按角色配置模型
-
-`LlmClient::with_model(name)` 复制客户端只换模型名。配置 `[models]` 后，Conversation / Router / General / Reviewer 可以使用不同模型（多模型部署时有用，例如 Router 用更小更快的模型）。
-
-### 7.2 Conversation Runtime（`runtime/conversation.rs`）
-
-#### Turn Controller
-
-Schema（扁平）：
-
-```json
-{
-  "action": "respond | clarify | delegate | follow_up",
-  "reply": "", "question": "", "task_goal": "",
-  "task_id": "", "follow_up_kind": "supplement | cancel | \"\"", "change": ""
-}
-```
-
-System prompt 要点：
-
-- 能直接可靠回答的（闲聊、常识、解释概念）→ `respond`；
-- 需求含糊、缺少关键信息 → `clarify`；
-- 需要计算、读写文件、生成文档、写代码、审查内容 → `delegate`，且 `task_goal` 必须是**整理过、可独立执行**的描述（执行者看不到对话）；
-- 针对进行中任务的补充或取消 → `follow_up`；
-- 附上"进行中的任务"列表（id、状态、角色、目标前 120 字）。
-
-转换校验（`to_decision`）：每种 action 对应的必填字段不能为空；`follow_up` 的 `task_id` 必须在进行中任务里。
-
-`decide_turn` 没有副作用，评测工具直接调用它。
-
-#### Context Builder（MVP 版）
-
-| 用途 | 内容 |
-|---|---|
-| Turn Controller 的对话历史 | 最近 `history_messages` 条消息（默认 12），按原角色传入 |
-| 执行 Agent 的背景（`TaskSpec.context`） | 最近 6 条消息，每条截断 500 字，格式"用户：… / 助手：…" |
-
-后续演进为分层上下文（会话摘要、项目上下文、长期记忆），见第 16 节。
-
-### 7.3 Router（`runtime/router.rs`）
-
-- **Schema 约束**：`execution_role` 的 enum **只包含当前可用的角色**，`required_tools` 的 enum 只包含工具注册表中的工具名。在 `json_schema` 模式下模型无法输出不存在的角色或工具。
-- **System prompt**：列出可用角色的能力描述（来自 `AgentCard.description`）、General 的工具列表、L1–L4 定义、选择规则：
-  1. 修改代码仓库、写程序、修 bug、跑测试 → `coding`
-  2. 审查 / 评估 / 挑错已有内容 → `reviewer`
-  3. 其他 → `general`
-  4. `required_tools` 只列 General 真正需要的
-  5. 风险：只读 = low；写文件 / 改代码 = medium；删除数据、对外发送、涉及生产 = high
-- **业务校验**（`prompt_only` 模式下尤其需要）：工具名存在、角色可用。
-- 输出交给 Policy；被拒绝时返回 `RouteFailure`（含原始输出，写入日志）。
-
-### 7.4 Policy（`runtime/policy.rs`）
-
-纯函数，不调用模型：
-
-| # | 规则 | 结果 |
-|---|---|---|
-| 1 | 该角色没有任何可用的 agent | 拒绝路由，列出每个 agent 不可用的原因（例如"找不到命令 codex"） |
-| 2 | 非 General 角色带了 `required_tools` | 清空，记录说明 |
-| 3 | `risk_level ≥ approval_risk` | `auto_execute = false` |
-| 4 | Coding → 审查；General 且 L3/L4 → 审查；Reviewer → 不审查 | `needs_review`；Reviewer 不可用时跳过审查并记录说明 |
-
-### 7.5 Orchestrator（`runtime/orchestrator.rs`）
-
-| 方法 | 说明 |
-|---|---|
-| `submit` | 写入 TaskRecord（CREATED）→ 按 Policy 进入 QUEUED 或 NEEDS_HUMAN；同时把执行上下文暂存在内存 |
-| `start` | **持锁 spawn**：先登记 AbortHandle，再让任务运行；任务结束时从表中移除。保证不会出现"任务已结束但句柄残留"的竞态 |
-| `run_with_fallback` | 按候选顺序执行；遇到 `AgentUnavailable` 换下一个，并在证据中记录 `executed_by` |
-| `run_with_review` | 执行 → 保存结果 → 按 Policy 审查 → 返工循环（见 6.2） |
-| `execute` | 包装总超时，最终状态落库，调用 Composer 生成交付消息并推送 |
-| `cancel` | abort + 状态置 CANCELLED；终态任务返回 `false` |
-| `approve` | 校验状态后调用 `start` |
-
-审查本身失败（例如 Reviewer 输出一直不合格）时**不视为通过**，而是 NEEDS_HUMAN。
-
-### 7.6 执行 Agent（`crates/agents`）
-
-#### General Agent：LLM + 工具循环
-
-没有使用推理服务的原生 function calling（llama.cpp 需要 `--jinja` 且依赖模型的 chat template，不同小模型差异大），而是让模型每一步输出一个结构化决策：
-
-```json
-{"thought": "简短思考", "action": "tool_call | final", "tool": "工具名或空", "args": {}, "answer": "最终结果或空"}
-```
-
-- `tool` 的 enum = 全部工具名 + 空字符串；
-- 校验：`tool_call` 时 `tool` 不能为空；
-- 工具结果以 user 消息"工具 X 的返回结果：…"追加到对话；
-- 每次工具调用产生一条 `tool_call` 证据（结果截断 500 字）和一条进度事件；
-- `write_file` 产生的文件作为产物（artifact）返回；
-- 最多 `max_steps` 步（默认 6），超过则失败。
-
-内置工具：
-
-| 工具 | 说明 | 参数示例 |
-|---|---|---|
-| `current_time` | 当前本地时间 | `{}` |
-| `calculator` | 四则运算、取模、乘方、括号（递归下降解析器，拒绝除零） | `{"expression": "(12.5+3)*4"}` |
-| `list_files` | 列出工作目录下的文件 | `{"path": ""}` |
-| `read_file` | 读文本文件（最多 8000 字） | `{"path": "notes/a.md"}` |
-| `write_file` | 写文本文件（自动建目录，覆盖） | `{"path": "reports/r.md", "content": "..."}` |
-
-扩展方式：实现 `Tool` trait（`name / description / args_hint / call`）并注册到 `ToolRegistry`。Router 的工具枚举和 General 的工具清单会自动更新。
-
-#### Coding Agent：Codex CLI 适配器
-
-```mermaid
-flowchart TB
-    A[启动时 probe: command --version] -->|失败| X[标记 disabled<br/>Router 不会选]
-    A -->|成功| B[run]
-    B --> C[准备工作目录<br/>临时文件 last_message_file]
-    C --> D[渲染参数模板<br/>prompt / workdir / last_message_file]
-    D --> E[spawn 子进程<br/>kill_on_drop]
-    E --> F[并发读 stdout/stderr<br/>stdout 每行 → progress 事件]
-    F --> G{超时?}
-    G -->|是| T[失败；drop 杀进程]
-    G -->|否| H[收集证据]
-    H --> H1[exit_code]
-    H --> H2[stdout 末 40 行]
-    H --> H3[失败时 stderr 末 40 行]
-    H --> H4["git add -N . / git diff --stat / git diff"]
-    H --> I[摘要：优先读 last_message_file<br/>否则 stdout 末 5 行]
-```
-
-- 命令路径和工作目录支持 `~` 开头（子进程不经过 shell，需要自己展开）。
-- `git add -N .`（intent-to-add）让新建的未跟踪文件也出现在 diff 里，**不会**真正暂存内容。
-- 工作目录不是 git 仓库时，证据中注明"无法收集代码改动"。
-- 如果 stdout 的行是 JSON（例如 codex 的 `--json` 模式），会尽量提取 `type` 和文本用于展示。
-- 代码改动的安全边界依赖 Codex 自身的 sandbox 设置（见第 13 节）。
-
-#### Reviewer Agent
-
-- **验收模式** `review(goal, result)`：输入任务目标、结果摘要、产物（每个截断 4000 字）、证据（每条截断 800 字）。
-- **直接审查模式**（作为普通 Agent 被 Router 选中）：审查用户提交的内容。
-- 判定标准写在 prompt 中：满足目标且无明显错误 → pass；不满足 → fail 且必须列出问题（校验）；无法判断或证据不足 → needs_human。"不要因为风格偏好判 fail"。
-
-### 7.7 Composer（`runtime/composer.rs`）
-
-- 把"事实材料"交给模型：目标、角色、最终状态、结果摘要（截断 4000 字）、产物名、错误、审查结论和问题。
-- 要求：先一句话说明结果（完成 / 未通过审查 / 失败 / 需要人工确认），如实说明审查意见，不编造事实材料以外的内容。
-- **模型调用失败或返回空时退回模板**，保证用户一定能收到交付消息。
-
-### 7.8 ACP 通用接入
-
-#### 为什么选 ACP
-
-目标是"接入新 agent 对新手极简"。对比过的几种方式：
-
-| 方式 | 例子 | 优点 | 缺点 |
-|---|---|---|---|
-| **ACP（Agent Client Protocol）** | `opencode acp`、`hermes acp`、`pi-acp`、`codex-acp` | **一个适配器接入所有 agent**；有流式进度、工具调用、权限请求、diff、取消的标准定义 | 部分 agent 需要第三方适配器 |
-| 各工具原生接口 | `opencode serve`（HTTP）、`codex app-server`（JSON-RPC）、`pi --mode rpc`（JSON 行） | 功能最全 | 每个工具一个适配器，协议各不相同，维护成本随数量线性增长 |
-| 命令行一次性执行 | `codex exec`（当前 Coding Agent 的方式） | 简单 | 只能解析文本输出，没有结构化事件和权限交互 |
-| MCP | 把 agent 包装成 MCP 工具 | 生态大 | 面向"工具调用"，缺少会话、流式进度和权限的语义 |
-
-结论：**ACP 作为唯一的标准接入路径**；已有的 Codex CLI 适配器保留（已可用，且不需要额外安装 codex-acp）。
-
-#### 角色与 agent 的关系
-
-```mermaid
-flowchart LR
-    R["Router<br/>只选角色"] --> ROLE{"coding"}
-    ROLE --> P["candidates(coding)<br/>1. prefer 首选<br/>2. 其余按注册顺序<br/>3. 排除不可用"]
-    P --> A1["opencode (acp)"]
-    P --> A2["codex (cli)"]
-    P --> A3["pi (acp)"]
-    A1 -- "AgentUnavailable" --> A2
-```
-
-- 注册顺序：内置 General / Reviewer → Codex CLI → 自定义 ACP agent → 自动发现的预设。
-- id 重复时先注册的生效，因此自定义配置可以覆盖同 id 的预设。
-- 未安装的**预设**不注册（界面不出现）；未安装的**自定义** agent 会注册为不可用，便于在界面上看到原因。
-
-#### 新手接入的三个层次
-
-| 层次 | 用户要做的 | 机制 |
-|---|---|---|
-| 0 | 什么都不做 | 启动时按预设查找命令（PATH + `~/.npm-global/bin`、`~/.local/bin`、`/opt/homebrew/bin` 等常见目录），找到即注册 |
-| 1 | 加一行 `[agents.prefer] coding = "opencode"` | 让某个 agent 优先 |
-| 2 | 写三行 `[[acp.agents]] id / command / role` | 接入任意 ACP agent |
-
-内置预设：
-
-| id | 命令 | 角色 | 来源 |
-|---|---|---|---|
-| `opencode` | `opencode acp` | coding | 原生支持（opencode.ai/docs/acp） |
-| `hermes` | `hermes acp` | general | 原生支持，需安装 ACP 扩展（Hermes Agent 文档） |
-| `pi` | `pi-acp` | coding | 第三方适配器，成熟度较低 |
-
-命令查找只检查文件是否存在且可执行，**不会运行它**（有些 agent 的 `--version` 会启动交互）。
-
-#### 一次 ACP 任务
+ACP（Agent Client Protocol）是编辑器和 AI agent 之间的开放协议。AgentNexus 扮演"编辑器"的角色，把 agent 作为子进程启动，通过标准输入输出通信。
 
 ```mermaid
 sequenceDiagram
-    participant O as Orchestrator
-    participant A as AcpAgent 适配器
-    participant X as 外部 agent（子进程）
-    O->>A: run(TaskSpec, EventSink)
-    A->>X: 启动子进程（stdio）
-    A->>X: initialize（ProtocolVersion V1）
-    Note over A: 握手成功前的失败 → AgentUnavailable → 换下一个
-    A->>X: session/new（cwd = 工作目录）
-    A->>X: session/prompt（任务目标 + 背景）
+    participant O as AgentNexus（或节点）
+    participant X as agent 子进程
+    O->>X: 启动，握手（initialize）
+    O->>X: 新建会话（工作目录）
+    O->>X: 发送任务
     loop 执行中
-        X-->>A: session/update（消息片段 / 工具调用 / 计划 / diff）
-        A-->>O: progress 事件
-        X->>A: session/request_permission
-        A-->>X: 按权限模式应答（记录到证据）
+        X-->>O: 进度：回复片段 / 工具调用 / 计划 / 文件改动
+        X->>O: 请求权限（例如"要写文件"）
+        O-->>X: 按权限模式自动回答（每次都记录）
     end
-    X-->>A: stop_reason
-    A->>A: git diff 收集改动
-    A-->>O: TaskResult
+    X-->>O: 结束原因
+    O->>O: 收集 git diff 作为改动证据
 ```
 
-`session/update` 的处理：
-
-| 更新类型 | 处理 |
+| 权限模式 `permission` | 行为 |
 |---|---|
-| `AgentMessageChunk` | 文本拼接为结果摘要 |
-| `ToolCall` | 记录（标题、类型、状态），发进度事件 |
-| `ToolCallUpdate` | 更新状态；完成或失败时发进度事件；其中的 diff 收集为产物 |
-| `Plan` | 发进度事件（计划步骤） |
-| 其他（思考、模式、用量…） | 忽略 |
-
-结果整理：
-
-| TaskResult 字段 | 来源 |
-|---|---|
-| `status` | `stop_reason == end_turn` 为成功，其他（refusal、max_tokens、cancelled…）为失败 |
-| `summary` | agent 的回复文本 |
-| `artifacts` | 工作目录是 git 仓库时用 `git diff`；否则用 agent 报告的 diff |
-| `evidence` | `executed_by`、`acp_stop_reason`、`tool_calls`（清单）、`permissions`（每次应答）、`git_diff_stat` |
-
-#### 权限应答
-
-任务能执行到这里，说明已通过 Policy（含高风险人工审批），所以默认自动允许：
-
-| `permission` | 行为 |
-|---|---|
-| `allow_all`（默认） | 全部允许 |
-| `read_only` | 只允许 read / search / think / fetch 类操作 |
+| `allow_all`（默认） | 全部允许。任务已经过了规则检查和人工审批，所以默认放行；每次都记录在证据里 |
+| `read_only` | 只允许读取、搜索类操作 |
 | `deny_all` | 全部拒绝 |
 
-只按选项的 `kind` 选择（优先"允许一次"而不是"总是允许"），不按位置或名称，与 SDK 官方示例一致。每次应答都写入证据和事件。
+结果中的证据：执行者（`executed_by`）、结束原因、工具调用清单、每次权限请求的处理、git 改动统计。产物优先用 `git diff`；工作目录不是 git 仓库时，用 agent 自己报告的改动。
 
-#### 文件与终端能力
+取消任务时，SDK 会结束 agent 的**整个进程组**（包括它启动的子进程），测试验证过没有残留。
 
-ACP 允许 client 声明"由我来提供文件读写和终端"，此时 agent 会回调 client。MVP **不声明**这些能力：agent 使用自己的本地工具，实现最简单；代价是安全边界取决于 agent 自身的沙箱（见第 13 节）。
+实现使用 ACP 官方 Rust SDK `agent-client-protocol` 5.x。
 
-#### 取消与超时
+### 7.5 Codex CLI
 
-- 编排层 abort 任务 → 连接被 drop → SDK 杀掉 agent 的**整个进程组**（包括 `npx` 等启动器拉起的子孙进程）。端到端测试验证了取消后没有残留进程。
-- 每个 ACP agent 有自己的 `timeout_secs`（默认 1800 秒），外层还有任务总超时。
+以命令行方式调用 `codex exec`，参数模板中的 `{prompt}`、`{workdir}`、`{last_message_file}` 会被替换。不同版本参数可能不同，请先运行 `codex exec --help` 核对。执行后收集 `git diff` 作为证据。
 
-#### 实现
+### 7.6 质检与返工
 
-- 使用官方 Rust SDK `agent-client-protocol` 5.x（`process` 特性），参考其 `yolo_one_shot_client` 示例。
-- SDK 的回调运行在消息循环中，回调里同步等待对方响应会死锁；耗时操作（如模拟 agent 中等待权限应答）放到 `cx.spawn` 的独立任务中。
-- `an-mock-acp`（`crates/server/src/bin/mock_acp_agent.rs`）是用同一 SDK 写的模拟 agent：报告工具调用 → 请求权限 → 写 `hello.txt` → 报告 diff → 回复文字。用于测试，也让新手零依赖体验 ACP。
+| 任务 | 是否质检 |
+|---|---|
+| coding | 一律质检 |
+| general 且需要生成文档（L3 / L4） | 质检 |
+| reviewer 自己的任务 | 不质检 |
 
----
-
-## 8. 存储与事件
-
-### 8.1 SQLite 表结构
-
-| 表 | 主要字段 | 说明 |
-|---|---|---|
-| `conversations` | id, title, created_at | |
-| `messages` | id, conversation_id, role, content, task_id, created_at | 索引 (conversation_id, created_at) |
-| `tasks` | id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at | 结构化字段用 JSON 列保存 |
-| `events` | id, conversation_id, task_id, json, created_at | 索引 (task_id, created_at) |
-| `route_logs` | id, json, created_at | |
-
-实现说明：
-
-- 使用 `rusqlite`（bundled），单连接 + `Mutex`，开启 WAL。查询都很短，MVP 足够；需要并发或多实例时换 Postgres，`Store` 的方法签名不变。
-- 消息按 `created_at DESC, rowid DESC` 排序后反转，保证同一毫秒内写入的消息顺序正确。
-
-### 8.2 事件总线
-
-```
-Agent / Orchestrator ──publish──▶ Bus ──① 写入 events 表
-                                       └─② tokio broadcast（容量 1024）──▶ SSE 订阅者
-```
-
-- 先写库再广播：前端断线后可以通过 `GET /api/tasks/{id}` 补拉事件。
-- 订阅者处理过慢时 broadcast 会丢弃最旧的事件（`Lagged`），SSE 直接跳过，前端靠刷新补齐。
-- 事件格式：
-
-```json
-{
-  "id": "evt-…",
-  "conversation_id": "conv-…",
-  "task_id": "task-…",
-  "kind": "status_changed | progress | assistant_message",
-  "status": "RUNNING",
-  "message": "开始执行",
-  "created_at": "2026-11-04T23:44:48.123Z"
-}
-```
+审查结论：通过 → 完成；需要人工 → 待人工；不通过 → 带着问题清单返工（默认最多 1 轮），返工用完仍不通过 → 失败。审查本身出错时**不算通过**，进入"待人工"。
 
 ---
 
-## 9. HTTP 接口
+## 8. 节点：用其他电脑上的 agent
 
-所有接口返回 JSON，错误统一为 `{"error": "说明"}`（400 参数错误、404 不存在、409 状态冲突、500 内部错误）。
+### 8.1 为什么需要节点
 
-| 方法 | 路径 | 请求 | 响应 |
-|---|---|---|---|
-| GET | `/api/health` | | `{llm: {ok, base_url, model, server_models, error, structured_mode}, agents: AgentCard[]}` |
-| GET | `/api/agents` | | `AgentCard[]` |
-| GET | `/api/conversations` | | `Conversation[]`（新的在前） |
-| POST | `/api/conversations` | `{title?}` | `Conversation` |
-| GET | `/api/conversations/{id}/messages` | | `Message[]`（按时间顺序） |
-| POST | `/api/conversations/{id}/messages` | `{text}` | `TurnOutcome {reply, decision, task}` |
-| GET | `/api/tasks?conversation_id=` | | `TaskRecord[]`（不带参数时返回最近 200 条） |
-| GET | `/api/tasks/{id}` | | `{task: TaskRecord, events: TaskEvent[]}` |
-| POST | `/api/tasks/{id}/cancel` | | `{cancelled: bool}` |
-| POST | `/api/tasks/{id}/approve` | | `{approved: true}` 或 409 |
-| GET | `/api/route-logs?limit=` | | `RouteLog[]`（默认 50，最大 500） |
-| GET | `/api/events?conversation_id=` | | SSE，事件名 `task_event`，每 15 秒 keep-alive |
+ACP 是通过"启动子进程"来通信的，只能用**同一台电脑**上的 agent。用户的 agent 可能装在另一台电脑上，所以需要在那台电脑上运行一个小程序——**节点**（`an-node`）。
 
-`POST /messages` 响应示例（委派）：
+为什么不让 AgentNexus 直接远程连 agent，而要在中间加一个节点？
 
-```json
-{
-  "reply": {"id": "msg-…", "role": "assistant", "content": "收到，已交给 general 处理（需要生成并保存 Markdown 报告）。完成后我会在这里给你结果。", "task_id": "task-…"},
-  "decision": {"action": "delegate", "task_goal": "写一份关于本地小模型选型的报告，保存为 Markdown"},
-  "task": {"id": "task-…", "role": "general", "status": "QUEUED",
-           "route": {"task_class": "L4", "execution_role": "general", "required_tools": ["write_file"], "risk_level": "low", "reason": "…"},
-           "policy": {"auto_execute": true, "needs_review": true, "notes": []}}
-}
+| 好处 | 说明 |
+|---|---|
+| 本机的事在本机做 | 自动发现 agent、工作目录、git 改动收集，都在 agent 所在的电脑上完成，路径和证据都是对的 |
+| 安全边界在那台电脑上 | 权限规则、允许的工作目录由节点在本机执行 |
+| 通用 | 节点上跑的是 opencode、Hermes 还是以后的新 agent，AgentNexus 这边都一样 |
+| 不依赖 macOS | 自动发现用 mDNS 标准协议（纯 Rust 实现），macOS、Linux、Windows 都可以 |
+
+### 8.2 工作方式
+
+```mermaid
+sequenceDiagram
+    participant N as an-node（另一台电脑）
+    participant AN as AgentNexus
+    participant U as 用户
+
+    N->>N: 启动：发现本机 agent，生成 6 位配对码
+    N-->>AN: 局域网广播（mDNS）
+    AN->>AN: 「节点」页显示：发现 Office-PC
+    U->>AN: 输入配对码
+    AN->>N: 读取身份（无需认证），检查协议版本
+    AN->>N: 用配对码换令牌
+    N-->>AN: 长期令牌（配对码立即作废，换新的）
+    AN->>N: 读取 agent 列表
+    AN->>AN: 注册为 hermes@office-pc 等
+    loop 每 15 秒
+        AN->>N: 心跳（读取 agent 列表）
+        Note over AN: 失败：标记离线，执行组跳过它<br/>恢复：自动重新可用
+    end
+    AN->>N: 执行任务
+    N-->>AN: 进度（实时）… 结果
+    Note over AN,N: 取消任务 = 断开连接，节点立即结束 agent 进程
 ```
 
----
+### 8.3 配对与安全
 
-## 10. 配置说明
+| 规则 | 说明 |
+|---|---|
+| 配对码 | 6 位数字，10 分钟有效，**用一次就作废**，节点会显示新的 |
+| 输错保护 | 同一个配对码输错 5 次，节点自动换新码（防止暴力尝试） |
+| 令牌 | 配对成功后发放的长期令牌，之后所有请求都要带上；保存在节点的 `~/.agentnexus-node/node.json`（只有当前用户可读）和 AgentNexus 的数据库 |
+| 未配对的请求 | 一律拒绝（`E_NODE_AUTH`），只有"读取身份"接口不需要认证 |
+| 并发保护 | 节点自己也会检查每个 agent 的并发上限，超出时拒绝（`E_NODE_BUSY`） |
+| 解除配对 | 在「节点」页点"解除配对"，AgentNexus 删除令牌，该节点的 agent 立即不可用 |
 
-配置文件 `config.toml`（模板见 `config.example.toml`）。除 `[llm]` 外都有默认值。
+⚠️ **局域网通信目前是明文 HTTP**：任务内容、代码改动在局域网内可能被他人看到。只在可信的网络（家里、公司内网）使用；跨网络请用 Tailscale 等私有网络，不要把节点暴露到互联网。见第 13 节。
 
-| 段 | 键 | 默认值 | 说明 |
-|---|---|---|---|
-| `[server]` | `bind` | `127.0.0.1:8787` | 监听地址 |
-| | `db_path` | `data/agentnexus.db` | SQLite 路径 |
-| | `static_dir` | `web/dist` | 前端构建产物；不存在时只提供 API |
-| `[llm]` | `base_url` | 必填 | 例如 `http://127.0.0.1:8098/v1` |
-| | `api_key` | 空 | 非空时以 Bearer 发送 |
-| | `model` | 必填 | 模型名 |
-| | `temperature` | 0.2 | |
-| | `max_tokens` | 不限 | |
-| | `timeout_secs` | 180 | 单次请求超时 |
-| | `structured_mode` | `json_schema` | `json_schema` / `json_object` / `prompt_only` |
-| | `max_retries` | 2 | 结构化输出重试次数（总尝试 = 重试 + 1） |
-| `[models]` | `conversation` / `router` / `general` / `reviewer` | 空 | 按角色覆盖模型名 |
-| `[agents.general]` | `enabled` | true | |
-| | `max_steps` | 6 | 工具循环最大步数 |
-| | `workspace_dir` | `workspace/files` | 文件工具的根目录 |
-| `[agents.reviewer]` | `enabled` | true | 关闭后所有任务跳过审查 |
-| `[agents.coding]` | `enabled` | true | |
-| | `command` | `codex` | 支持 `~` |
-| | `args` | 见模板 | 支持 `{prompt}` `{workdir}` `{last_message_file}` |
-| | `workdir` | `workspace/code` | 建议为独立 git 仓库 |
-| | `timeout_secs` | 900 | |
-| `[agents.prefer]` | `<角色> = "<agent id>"` | 空 | 每个角色的首选 agent |
-| `[acp]` | `auto_detect` | true | 自动发现本机已安装的预设 agent |
-| `[[acp.agents]]` | `id` / `command` / `role` | 必填 | 自定义 ACP agent 的最小配置 |
-| | `name` | 等于 id | 显示名称 |
-| | `args` / `env` | 空 | 启动参数 / 环境变量 |
-| | `workdir` | 按角色 | coding 用代码目录，其他用文件目录 |
-| | `permission` | `allow_all` | `allow_all` / `read_only` / `deny_all` |
-| | `timeout_secs` | 1800 | |
-| `[orchestrator]` | `max_review_rounds` | 1 | 审查不通过后的返工轮数 |
-| | `history_messages` | 12 | Turn Controller 带的历史消息数 |
-| | `task_timeout_secs` | 1800 | 单任务（含返工）总超时 |
-| | `approval_risk` | `high` | 达到该风险等级需人工审批 |
+### 8.4 节点上线与离线
 
----
+- AgentNexus 启动时先从数据库读出已配对的节点，标记为离线；随后的心跳把它们更新为真实状态。
+- 节点离线时，它的 agent 显示为不可用（原因"节点 X 离线"），执行组会跳过它们；正在执行的任务会因连接中断而失败（`E_NODE_UNREACHABLE`）。
+- 节点恢复后，下一次心跳自动恢复可用，排队中的任务会被唤醒。
+- 节点拒绝令牌（例如节点的数据被清掉了）时报 `E_NODE_AUTH`，需要重新配对。
 
-## 11. 前端设计
+### 8.5 节点的配置
 
-技术：React 19 + Vite + TypeScript，无 UI 组件库，纯 CSS（支持浅色/深色）。
-
-```
-┌──────────┬────────────────────────────┬──────────────────────┐
-│ 会话列表  │ 对话区                      │ [任务] [路由日志]      │
-│ ＋新会话  │  用户 / 助手气泡             │  任务卡片（可展开）：   │
-│          │  交付消息带任务编号          │   路由 / Policy        │
-│          │  "思考中…"提示               │   事件时间线           │
-│──────────│                            │   执行结果 / 产物 / 证据 │
-│ LLM 状态  │ ┌────────────────────┐     │   审查意见             │
-│ Agent 状态│ │输入框 Enter 发送      │     │   取消 / 批准执行       │
-└──────────┴────────────────────────────┴──────────────────────┘
-```
-
-数据流：
-
-- 切换会话：加载消息和任务，订阅 `/api/events?conversation_id=`。
-- 收到 `status_changed` → 刷新任务列表；`assistant_message` → 刷新消息和任务；任何事件都会让展开中的任务卡片重新拉取详情。
-- 发送消息：先乐观显示用户消息，等后端返回后整体刷新。输入法组字中按 Enter 不发送。
-- 左下角列出所有 agent：名称、角色、接入方式（内置 / CLI / ACP），不可用的悬停显示原因。自动发现的 agent 会直接出现在这里。
-- 类型：直接使用 `web/src/bindings` 中由 Rust 生成的类型。`u64` 等字段用 `#[ts(type = "number")]` 标注，避免被映射成 `bigint`。
-
-开发模式下 Vite（5173）把 `/api` 代理到后端（8787）；生产模式下由后端直接提供 `web/dist`。
-
----
-
-## 12. 可观测性与评测
-
-### 12.1 路由日志
-
-每轮对话写一条 `RouteLog`：用户原文、Turn 决策、Route 决策、Policy 裁决、关联任务、**模型每次尝试的原始输出**、总尝试次数、总延迟、错误。前端"路由日志"页可直接查看，用于：
-
-- 排查小模型格式问题（看原始输出）；
-- 发现路由错误并补充到评测集。
-
-### 12.2 `an-eval` 评测工具
+全部可选，不写配置也能直接运行。命令行参数会覆盖配置文件：
 
 ```bash
-cargo run --release --bin an-eval -- config.toml evals/routing.jsonl
+an-node                                   # 全部默认
+an-node node.toml                         # 使用配置文件
+an-node --port 7799 --name 办公室电脑 --workdir ~/code/demo --no-advertise
 ```
 
-- 评测集格式：每行 `{"text", "expect_action", "expect_role"?, "expect_class"?}`，`//` 开头的行忽略。
-- 只跑 Turn Controller +（判定为 delegate 时）Router，不执行任务，使用内存数据库。
-- 指标：
+| 配置项 | 默认值 | 说明 |
+|---|---|---|
+| `name` | 本机名 | 显示名称；会成为 agent id 的后缀（`hermes@办公室电脑`） |
+| `bind` | `0.0.0.0` | 局域网使用需要它；只给本机用改成 `127.0.0.1` |
+| `port` | `7788` | |
+| `workdir` | `~/agentnexus-node/workspace` | agent 的默认工作目录，建议是 git 仓库 |
+| `state_dir` | `~/.agentnexus-node` | 节点身份和令牌 |
+| `advertise` | `true` | 是否在局域网广播 |
+| `log_dir` | `~/.agentnexus-node/logs` | JSON 日志目录 |
+| `[acp] auto_detect` | `true` | 自动发现本机 agent |
+| `[[acp.agents]]` | 无 | 自定义 agent，写法与 AgentNexus 相同 |
 
-| 指标 | 计算方式 |
-|---|---|
-| 动作准确率 | `got_action == expect_action` 的比例 |
-| 角色准确率 | 在标注了 `expect_role` 的样本中 `got_role == expect_role` 的比例 |
-| 类别准确率 | 在标注了 `expect_class` 的样本中的比例 |
-| 格式重试样本数 | 总尝试次数 > 结构化调用次数 |
-| 出错样本数 | 最终仍失败（格式不合格或 Policy 拒绝） |
-| 延迟 P50 / P95 / 平均 | 单条样本（含两次调用）的端到端时间 |
+### 8.6 节点接口
 
-- 详细结果写入 `evals/results/<时间戳>.jsonl`（含原始输出），换模型后重跑对比。
-- 当前评测集 26 条：respond 6、clarify 4、general 8（L2 ×4、L3 ×2、L4 ×2）、coding 5、reviewer 3。前期讨论建议积累到 300–500 条。
+| 接口 | 认证 | 作用 |
+|---|---|---|
+| `GET /node/info` | 无 | 节点身份：id、名称、版本、协议版本、操作系统 |
+| `POST /node/pair` | 配对码 | 换取令牌 |
+| `GET /node/agents` | 令牌 | agent 列表（也用作心跳） |
+| `POST /node/run` | 令牌 | 执行任务；响应是实时事件流：若干 `progress`，最后一个 `result` 或 `error` |
+| `GET /node/diagnostics` | 令牌 | 节点的诊断信息 |
 
-### 12.3 日志
-
-后端使用 `tracing`，级别由 `RUST_LOG` 控制。结构化输出不合格时以 warn 级别记录尝试次数和原始输出前 300 字。
+局域网广播的服务类型是 `_agentnexus._tcp.local.`，附带 `id`、`name`、`ver`、`proto`、`os` 信息。
 
 ---
 
-## 13. 安全与治理
+## 9. 模型调用：让小模型稳定输出
 
-| 风险 | 措施 | 剩余风险 |
-|---|---|---|
-| 模型编造不存在的 Agent / 工具 | Schema enum 约束 + 业务校验 + Policy 检查 | 无 |
-| 文件工具越界访问 | `resolve_in_root`：拒绝绝对路径、`..` 越过根目录 | 符号链接未做额外检查 |
-| 高风险操作自动执行 | Policy 按 `approval_risk` 强制人工审批 | 风险等级来自模型判断，可能低估 |
-| Worker 报告成功但结果错误 | Coding 与 L3/L4 任务强制审查；审查出错按 NEEDS_HUMAN 处理 | Reviewer 也是模型，可能误判 |
-| 代码修改破坏环境 | Codex `--sandbox workspace-write`，工作目录独立 | 安全性取决于 Codex 自身 sandbox |
-| ACP agent 执行危险操作 | 每次权限请求都记录；可配置 `read_only` / `deny_all`；工作目录由 AgentNexus 指定 | 默认 `allow_all`；agent 不经权限请求直接操作时无法拦截（取决于 agent 自身实现和沙箱） |
-| 失控的长任务 | Coding 超时、任务总超时、取消时 kill 子进程 | |
-| 提示词注入（文件内容、用户输入） | 工具输出作为普通消息传回模型 | **未防护**，MVP 仅限本机可信使用 |
-| 未授权访问 | 默认只监听 127.0.0.1 | **没有鉴权**，不要暴露到公网 |
+所有需要模型做决定的地方（Conversation 判断、Router 分类、General 每一步、Reviewer 审查），都要求模型输出**固定格式的 JSON**。
+
+```mermaid
+flowchart LR
+    A[发请求<br/>附带 JSON Schema] --> B[去掉 &lt;think&gt; 思考段落]
+    B --> C[找出第一个完整 JSON]
+    C --> D[按格式解析]
+    D --> E[业务检查<br/>例如工具名必须存在]
+    E -- 通过 --> OK[返回]
+    E -- 不通过 --> R{还能重试?}
+    C -- 没找到 --> R
+    D -- 格式错 --> R
+    R -- 能 --> FB["把模型的原输出和错误原因<br/>一起发回去，让它改"] --> A
+    R -- 不能 --> ERR["失败 E_LLM_FORMAT<br/>保留每次的原始输出"]
+```
+
+| 做法 | 说明 |
+|---|---|
+| 三种格式约束方式 | `json_schema`（默认，较新的 llama.cpp 会据此限制输出）、`json_object`（llama.cpp 旧写法）、`prompt_only`（只靠提示词，兼容性最好） |
+| 扁平的格式 | 所有字段都必填，不适用的填空字符串；比嵌套、可选字段更适合小模型 |
+| 用枚举限制选项 | 角色、工具名都写成固定选项，模型无法编造不存在的 agent 或工具 |
+| 出错反馈 | 把具体错误（"action=delegate 时 task_goal 不能为空"）发回给模型重试，默认最多重试 2 次 |
+| 按角色选模型 | `[models]` 可以给 Conversation、Router、General、Reviewer 分别指定模型 |
+
+General Agent 没有用推理服务自带的"函数调用"功能（不同小模型对它的支持差别很大），而是每一步都让模型输出 `{"action": "tool_call" | "final", "tool", "args", "answer"}`。
+
+评测工具 `an-eval` 只跑"判断"部分、不执行任务，统计动作 / 角色 / 类别准确率、格式重试次数、延迟，用于对比不同小模型。
 
 ---
 
-## 14. 测试策略
+## 10. 日志与排查
 
-| 层级 | 位置 | 内容 |
+### 10.1 三种输出
+
+| 输出 | 给谁看 | 内容 |
 |---|---|---|
-| 单元测试 | `core` | 状态序列化往返、中文安全截断 |
-| | `llm` | `<think>` 清理、带噪声的 JSON 提取 |
-| | `agents` | 计算器（优先级、右结合、除零）、路径越界防护、命令查找、ACP 权限应答（三种模式）、预设有效性 |
-| | `runtime` | 注册表首选与排序、`config.example.toml` 可解析 |
-| 类型导出 | `core` | ts-rs 导出 22 个 TS 类型 |
-| 端到端 | `server/tests/e2e.rs` | 见下表 |
+| 控制台 | 人 | 简洁的运行信息 |
+| **JSON 日志文件** | 程序、脚本、AI | 一行一条记录，字段固定；按天分文件：`logs/agentnexus.jsonl.2026-11-05`，节点在 `~/.agentnexus-node/logs/an-node.jsonl.*` |
+| **诊断接口** | 人和程序 | `GET /api/diagnostics`（节点：`/node/diagnostics`）：最近 100 条问题、按错误码统计、执行组状态、节点状态、模型连通性。界面「诊断」页显示的就是它 |
 
-端到端测试启动一个**假的 OpenAI 兼容服务**（根据请求中的 schema 名称返回预设内容）和真实 HTTP 服务，用 `sh` 脚本冒充 codex：
+内存中保留最近 500 条 WARN / ERROR，供诊断接口查询。
 
-| 场景 | 断言 |
+### 10.2 每条记录的固定字段
+
+| 字段 | 含义 | 例子 |
+|---|---|---|
+| `event` | 发生了什么，格式"模块.动作" | `task.status`、`acp.permission` |
+| `code` | 错误码（只在出问题时有）。`E_` 开头是错误，`W_` 开头是警告 | `E_ACP_HANDSHAKE` |
+| `conv_id` | 会话 | |
+| `task_id` | 任务。**AgentNexus 和节点用同一个 task_id**，跨电脑的问题也能串起来查 | |
+| `agent_id` | agent | `hermes@office-pc` |
+| `node_id` | 节点 | |
+| `elapsed_ms` | 耗时 | |
+
+### 10.3 事件清单
+
+| 模块 | 事件 | 什么时候记录 |
+|---|---|---|
+| 启动 | `server.started`、`log.file`、`agent.registered`、`agent.detected`、`agent.not_installed`、`pool.resolved`、`pool.invalid`、`config.unknown_key`、`task.interrupted`、`llm.connected`、`llm.unreachable` | 启动时的状态和配置问题 |
+| 对话 | `conversation.turn` | 每轮对话一条：决策、路由到的角色、任务、模型尝试次数、耗时 |
+| 模型 | `llm.request_failed`、`llm.format_retry`、`llm.structured_failed`、`llm.structured_ok`（debug 级别） | 请求失败、格式不合格重试、最终失败 |
+| 规则 | `policy.reject` | 没有可用 agent，拒绝派发 |
+| 任务 | `task.status` | 每次状态变化一条（FAILED 为 ERROR 级别，NEEDS_HUMAN 为 WARN） |
+| 执行组 | `pool.wait`、`pool.member_missing`（debug） | 都在忙需要排队；配置的成员还没连上 |
+| 执行 | `task.no_agent`、`agent.run_start`、`agent.run_end`、`agent.run_failed` | 分配和执行 |
+| ACP | `acp.permission`、`acp.finished`、`acp.handshake_failed`、`acp.runtime_error`、`acp.timeout` | |
+| 质检 | `review.verdict`、`review.failed` | |
+| 节点（AgentNexus 侧） | `discovery.found`、`discovery.removed`、`discovery.unavailable`、`node.paired`、`node.pair_failed`、`node.unpaired`、`node.online`、`node.offline`、`node.auth_failed`、`node.run_start`、`node.run_end` | 上线 / 离线只在状态变化时记录，避免刷屏 |
+| 节点（节点侧） | `node.advertised`、`node.advertise_failed`、`node.code_rotated`、`node.paired`、`node.pair_failed`、`node.auth_failed`、`node.busy`、`node.run_start`、`node.run_end`、`node.run_failed`、`node.run_cancelled`、`node.state_save_failed` | |
+
+### 10.4 错误码清单
+
+| 错误码 | 含义 | 常见原因 / 怎么办 |
+|---|---|---|
+| `E_LLM_UNREACHABLE` | 连不上模型服务 | llama.cpp 没启动，或 `[llm] base_url` 写错 |
+| `E_LLM_HTTP` | 模型服务返回错误 | 常见于不支持当前的 `structured_mode`，换一种试试 |
+| `E_LLM_FORMAT` | 重试后格式仍不合格 | 换更大的模型，或改用 `json_schema` 模式；看路由日志里的原始输出 |
+| `W_LLM_FORMAT_RETRY` | 格式不合格，已自动重试 | 偶尔出现正常；频繁出现说明模型偏小 |
+| `E_ROUTE_NO_AGENT` | 这类工作没有可用的 agent | 看错误信息里每个成员的原因：未安装、节点离线…… |
+| `E_POOL_CONFIG` | 执行组配置错误 | 成员类型或角色不一致；或 `[agents.assign]` 角色名写错 |
+| `W_POOL_WAIT` | 执行组都在忙，任务排队 | 经常出现说明需要加备份或调大并发 |
+| `W_POOL_MEMBER_MISSING` | 配置的成员还不存在 | 节点还没连上，或 id 写错（「诊断」页有准确的 id） |
+| `E_AGENT_NOT_INSTALLED` | agent 命令找不到 | 安装它，或修正 `command` |
+| `E_AGENT_SPAWN` | agent 进程启动失败 | 权限、依赖问题 |
+| `E_AGENT_TIMEOUT` | agent 超时 | 调大 `timeout_secs`，或拆小任务 |
+| `E_AGENT_RUNTIME` | agent 执行出错（其他） | 看错误信息 |
+| `E_ACP_HANDSHAKE` | ACP 握手失败 | 命令不是 ACP 模式（例如少了 `acp` 参数），或 agent 一启动就崩溃 |
+| `E_ACP_RUNTIME` | ACP 执行中出错 | 看 agent 自己的日志 |
+| `E_ACP_STOP` | agent 非正常结束 | 拒绝执行、超出 token 等，错误信息里有原因 |
+| `E_REVIEW_FAILED` | 审查本身失败 | 通常是模型格式问题，任务会进入"待人工" |
+| `E_TASK_TIMEOUT` | 任务总超时 | 调大 `task_timeout_secs` |
+| `E_NODE_UNREACHABLE` | 连不上节点 / 执行中断开 | 节点没运行、网络不通、防火墙挡了端口 |
+| `E_NODE_AUTH` | 节点不认令牌 | 节点数据被清掉了，重新配对 |
+| `E_NODE_PAIR` | 配对失败 | 配对码错误或过期，看节点上显示的最新配对码 |
+| `E_NODE_BUSY` | 节点上的 agent 已满 | 多个 AgentNexus 共用一个节点时可能出现 |
+| `E_NODE_AGENT_NOT_FOUND` | 节点上没有这个 agent | 节点重新配置过，等下一次心跳刷新 |
+| `E_NODE_PROTOCOL` | 节点返回了看不懂的内容 | 版本不一致，升级两边 |
+| `W_NODE_OFFLINE` | 节点离线 | |
+| `W_DISCOVERY` | 局域网发现不可用 | 网络不支持组播，改用"按地址添加" |
+| `W_CONFIG_UNKNOWN_KEY` | 配置里有不认识的字段，已忽略 | 多半是拼写错误或旧版本写法（例如旧的 `[agents.prefer]`） |
+
+### 10.5 排查示例
+
+```bash
+# 某个任务的完整时间线（AgentNexus 和节点的日志都可以这样查）
+jq -c 'select(.task_id == "task-xxxx") | [.timestamp, .event, .status, .code]' logs/agentnexus.jsonl.*
+
+# 所有错误，按错误码统计
+jq -r 'select(.code != null) | .code' logs/agentnexus.jsonl.* | sort | uniq -c | sort -rn
+
+# 当前状态一览（与界面「诊断」页相同）
+curl -s http://127.0.0.1:8787/api/diagnostics | jq
+```
+
+---
+
+## 11. 数据与接口
+
+### 11.1 数据库（SQLite）
+
+| 表 | 内容 |
 |---|---|
-| 健康检查 | LLM 连通，3 个 Agent |
-| 直接回答 | action = respond，回复内容正确 |
-| 格式错误重试 | 第一次返回非 JSON，路由日志 attempts = 2，最终回复正确 |
-| General 委派 | 工具调用写文件 → 审查 pass → COMPLETED；状态序列为 CREATED → QUEUED → RUNNING → VERIFYING → COMPLETED；交付消息带 task_id |
-| SSE | 能收到 `task_event` |
-| Coding | 子进程执行、读取最后回复文件、`git diff` 产物包含新文件 |
-| 高风险审批 | 创建即 NEEDS_HUMAN，批准后 COMPLETED |
-| 中途取消 | 慢任务 RUNNING 时用户说"取消"→ follow_up → CANCELLED |
-| 路由日志 | 每轮对话一条 |
-| ACP：自动换用 | codex 不可用、首选 agent 握手前崩溃 → 自动换用模拟 ACP agent，事件中可见 |
-| ACP：完整流程 | 权限请求被允许、`hello.txt` 写入、git diff 证据、`executed_by`、stop_reason、审查 pass |
-| ACP：取消 | 执行中取消 → CANCELLED，agent 进程无残留 |
+| `conversations` | 会话 |
+| `messages` | 消息（可关联任务） |
+| `tasks` | 任务：目标、角色、状态、路由、规则结论、结果、审查意见 |
+| `events` | 任务事件（界面的时间线） |
+| `route_logs` | 每轮对话的决策记录（含模型原始输出），用于调试和积累评测集 |
+| `nodes` | 已配对的节点：地址、令牌、最后一次上报的 agent 列表 |
 
-另外用 Playwright 驱动前端走过一遍完整流程（手工验证，未纳入自动化测试）。
+### 11.2 AgentNexus 接口
 
-**尚未验证**：真实 llama.cpp 的结构化输出兼容性、真实小模型的路由准确率、真实 Codex CLI 的参数和输出格式、真实 opencode / Hermes / pi-acp 的 ACP 交互。
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| GET | `/api/health` | 模型连通性、agent 列表 |
+| GET | `/api/agents` | agent 能力卡片 |
+| GET / POST | `/api/conversations` | 会话列表 / 新建 |
+| GET / POST | `/api/conversations/{id}/messages` | 消息列表 / 发消息 `{"text"}` |
+| GET | `/api/tasks?conversation_id=` | 任务列表 |
+| GET | `/api/tasks/{id}` | 任务详情 + 事件 |
+| POST | `/api/tasks/{id}/cancel`、`/approve` | 取消 / 批准 |
+| GET | `/api/route-logs` | 路由日志 |
+| GET | `/api/events?conversation_id=` | 实时事件流（SSE） |
+| GET | `/api/nodes` | 发现的节点 + 已配对节点 |
+| POST | `/api/nodes/pair` | 配对 `{"address", "code"}`；地址可以只写 IP，会自动补成 `http://IP:7788` |
+| DELETE | `/api/nodes/{id}` | 解除配对 |
+| GET | `/api/diagnostics` | 诊断 |
+
+错误统一返回 `{"error": "说明"}`，说明里带错误码。
+
+### 11.3 界面
+
+右侧四个页签：
+
+| 页签 | 内容 |
+|---|---|
+| 任务 | 任务卡片：路由、规则结论、事件时间线、结果、产物、证据、审查意见；取消 / 批准按钮 |
+| 节点 | 已配对节点（在线状态、agent、解除配对）；局域网中发现的节点（输入配对码）；按地址添加 |
+| 诊断 | 模型、执行组、问题统计、最近问题；"复制诊断信息"按钮 |
+| 路由日志 | 每轮对话的决策和模型原始输出 |
+
+左下角列出所有 agent：名称、角色、种类（内置 / CLI / ACP / 节点），不可用的悬停可看原因。
+
+---
+
+## 12. 配置一览
+
+`config.toml`（模板 `config.example.toml`）。除 `[llm]` 外都有默认值。**配置里出现不认识的字段时，启动日志会警告**（`W_CONFIG_UNKNOWN_KEY`），避免写错了却不知道。
+
+| 段 | 配置项 | 默认值 | 说明 |
+|---|---|---|---|
+| `[server]` | `bind` / `db_path` / `static_dir` | `127.0.0.1:8787` / `data/agentnexus.db` / `web/dist` | |
+| `[llm]` | `base_url`、`model` | 必填 | 例如 `http://127.0.0.1:8098/v1` |
+| | `structured_mode` | `json_schema` | 见第 9 节 |
+| | `max_retries` / `timeout_secs` / `temperature` | 2 / 180 / 0.2 | |
+| `[models]` | `conversation` / `router` / `general` / `reviewer` | 空 | 按角色指定模型 |
+| `[agents.general]` | `max_steps` / `max_concurrent` / `workspace_dir` | 6 / 4 / `workspace/files` | |
+| `[agents.reviewer]` | `enabled` | true | 关闭后所有任务跳过质检 |
+| `[agents.coding]` | `command` / `args` / `workdir` / `timeout_secs` / `max_concurrent` | `codex` / 见模板 / `workspace/code` / 900 / 1 | Codex CLI |
+| `[agents.assign]` | `<角色> = "id"` 或 `["id", …]` | 空 | 执行组，见第 7.3 节 |
+| `[acp]` | `auto_detect` | true | 自动发现本机 agent |
+| `[[acp.agents]]` | `id`、`command`、`role` | 必填 | 自定义 ACP agent 的最少配置 |
+| | `args` / `env` / `name` | 空 / 空 / 等于 id | |
+| | `agent_type` | 命令的文件名 | 例如 `~/bin/hermes` → `hermes` |
+| | `max_concurrent` / `timeout_secs` / `permission` | 1 / 1800 / `allow_all` | |
+| | `workdir` | 按角色 | coding 用代码目录，其他用文件目录 |
+| `[nodes]` | `discovery` / `refresh_secs` | true / 15 | |
+| `[logging]` | `dir` / `level` | `logs` / `info` | `dir` 留空表示不写文件；环境变量 `RUST_LOG` 优先 |
+| `[orchestrator]` | `max_review_rounds` / `history_messages` / `task_timeout_secs` / `approval_risk` | 1 / 12 / 1800 / `high` | |
+
+---
+
+## 13. 安全
+
+| 风险 | 已有措施 | 还没解决的 |
+|---|---|---|
+| 模型编造不存在的 agent / 工具 | 选项写死成枚举 + 业务检查 | — |
+| 文件工具越界 | 只能访问工作目录，拒绝绝对路径和 `..` 越界 | 没检查符号链接 |
+| 高风险操作自动执行 | 风险达到 `approval_risk` 必须人工批准 | 风险等级来自模型判断，可能低估 |
+| 结果有错 | coding 和写文档的任务强制质检；审查出错不算通过 | Reviewer 也是模型，可能误判 |
+| agent 做危险操作 | 权限请求按模式应答并全部记录；工作目录由我们指定 | 默认 `allow_all`；agent 不经请求直接操作时拦不住（取决于 agent 自己的沙箱） |
+| 换人导致权限、数据去向变化 | 执行组只允许明确指定的同类型 agent；出错不换人 | — |
+| 未授权使用节点 | 配对码（一次性、10 分钟、输错 5 次换码）+ 令牌 | 令牌在节点上以明文保存（文件仅当前用户可读） |
+| **局域网窃听** | 默认只在局域网使用 | **通信是明文 HTTP**；跨网络请用 Tailscale 等私有网络 |
+| 节点被发现 | — | 局域网里任何人都能看到节点的名称和地址（看不到 agent，也用不了） |
+| 提示词注入 | — | 未防护，只在可信环境使用 |
+| 未授权访问 AgentNexus | 默认只监听 127.0.0.1 | 没有登录，不要暴露到网络 |
+
+---
+
+## 14. 测试
+
+| 层级 | 覆盖内容 |
+|---|---|
+| core | 状态序列化、中文安全截断；导出 TS 类型 |
+| observe | WARN / ERROR 被记录、字段提取、按错误码统计、容量限制 |
+| llm | 思考段落清理、从杂乱输出中提取 JSON |
+| agents | 计算器、路径越界防护、命令查找、ACP 权限三种模式、预设有效性、节点名转 id、错误码映射 |
+| runtime | 执行组：默认选择、类型不一致报错、角色不一致报错、**主力忙时用备份、都忙时排队、释放后接上**、节点刷新不影响执行中的名额；配置：一个或多个成员、角色名写错报错、**不认识的字段被找出来**、模板可解析；地址补全 |
+| node | 配对码格式、默认配置 |
+
+端到端测试（假的模型服务 + 真实 HTTP + 模拟 agent）：
+
+| 场景 | 验证点 |
+|---|---|
+| 基础流程 | 直接回答、格式错误自动重试、派给 General（写文件 + 质检）、Codex（用 sh 脚本模拟）+ git diff、高风险审批、执行中取消、SSE、路由日志 |
+| ACP | 模拟 ACP agent：权限请求、写文件、git diff 证据、结束原因、质检；执行中取消且无残留进程 |
+| **出错不换人** | 执行组指定的 agent 握手失败 → 任务失败并带 `E_ACP_HANDSHAKE`；同时存在的其他 agent 没有被使用 |
+| **节点** | 未配对请求被拒（`E_NODE_AUTH`）；错误配对码被拒（`E_NODE_PAIR`）；配对成功；任务经节点执行，改动和 git diff 在节点那边；**3 个任务 2 个 agent：两个同时做，第三个排队，两个备份都被用上**；经节点执行的任务取消后名额正确归还；解除配对后报 `E_ROUTE_NO_AGENT`；诊断接口反映执行组状态 |
+| 局域网发现 | 节点广播 → AgentNexus 在 1 秒内发现（依赖网络支持组播，默认跳过，需要时手动运行） |
+
+另外用浏览器手动走过完整流程：自动发现 → 输入配对码 → 经节点执行 → 诊断页。
+
+**还没验证**：真实 llama.cpp 的格式约束兼容性、真实小模型的路由准确率、真实 Codex / opencode / Hermes / pi-acp、多台真实电脑之间的局域网环境。
 
 ---
 
@@ -999,63 +770,55 @@ cargo run --release --bin an-eval -- config.toml evals/routing.jsonl
 
 | # | 限制 | 影响 | 计划 |
 |---|---|---|---|
-| 1 | 补充要求 = 取消旧任务 + 重新派发 | 已完成的工作被丢弃 | 阶段二：任务 DAG 后只重跑受影响的子任务 |
-| 2 | 执行上下文（`TaskSpec.context`）只保存在内存 | 服务重启后，等待审批的任务被批准时上下文为空 | 把 context 写入 tasks 表 |
-| 3 | 重启后中断的任务直接标记 FAILED | 不能续跑 | 引入 Durable Execution 思路（参考 Temporal / LangGraph Checkpoint） |
-| 4 | 因审查进入 NEEDS_HUMAN 的任务没有"人工判定通过/不通过"的接口 | 只能取消或重新发起 | 增加人工验收接口 |
-| 5 | Context Builder 只取最近消息 | 长会话会丢失早期上下文 | 会话摘要 + 分层上下文 |
-| 6 | 对话请求同步等待 LLM | 小模型慢时前端要等几十秒 | 改为流式输出或异步决策 |
-| 7 | 单连接 SQLite、单进程 | 不支持多实例 | 换 Postgres + 外部消息队列 |
-| 8 | 无鉴权、无多用户 | 只能本机使用 | 增加用户体系 |
-| 9 | 一个会话中同一时刻可能有多个任务，Turn Controller 靠模型判断 follow_up 指向哪个 | 多任务时可能指错 | 前端提供"针对某任务回复"的显式入口 |
-| 10 | ACP 未声明文件 / 终端能力 | agent 用自己的工具，AgentNexus 无法代理和审计其文件操作 | 实现 fs / terminal 能力并接入路径防护 |
-| 11 | ACP agent 使用各自的模型配置 | 不会自动使用 `[llm]` 中的本地模型 | 文档说明；后续可通过 env 传递 |
-| 12 | 同一角色多个 agent 时只能通过配置指定首选 | 不能按任务选择、不能并行对比 | 增加按任务选择 / 多 agent 对比模式 |
-| 13 | 每个 ACP 任务新开一个 agent 进程和会话 | 不保留跨任务的 agent 会话上下文；启动有开销 | 进程池 / 会话复用（`session/load`） |
+| 1 | 补充要求 = 取消旧任务后重新派发 | 已完成的部分被丢弃 | 任务拆分后只重做受影响的部分 |
+| 2 | 任务的背景信息只存在内存里 | 服务重启后，等待审批的任务批准时没有背景信息 | 写入数据库 |
+| 3 | 服务重启时未完成的任务直接失败 | 不能续跑 | 参考 Temporal / LangGraph 的持久化执行 |
+| 4 | 因审查进入"待人工"的任务没有"人工判定通过 / 不通过"的入口 | 只能取消或重发 | 增加人工验收接口 |
+| 5 | 上下文只取最近的消息 | 长对话会丢早期内容 | 会话摘要 |
+| 6 | 发消息时同步等待模型判断 | 小模型慢时要等十几秒 | 流式输出 |
+| 7 | 单进程、SQLite | 不能多实例 | Postgres + 消息队列 |
+| 8 | 没有登录、没有多用户 | 只能本机使用 | 用户体系 |
+| 9 | 节点通信是明文 HTTP，令牌明文保存 | 局域网内可被窃听 | TLS（自签证书 + 配对时校验指纹）、令牌加密 |
+| 10 | ACP 没有代理文件和终端操作 | 无法审计 agent 自己做的文件操作 | 实现 ACP 的文件 / 终端能力 |
+| 11 | 外部 agent 用它们自己的模型配置 | 不会自动用 `[llm]` 里的本地模型 | 文档说明；以后可通过环境变量传递 |
+| 12 | 每个 ACP 任务都新开一个 agent 进程 | 不保留跨任务的 agent 上下文，启动有开销 | 进程池 / 会话复用 |
+| 13 | 执行组只按配置分配 | 不能按单个任务指定 agent，也不能多 agent 并行对比 | 按任务指定 / 对比模式 |
+| 14 | 节点只执行 ACP agent | 节点上的 Codex 等命令行工具要通过 ACP 适配器接入 | 节点支持 CLI agent |
+| 15 | 节点只支持局域网 | 跨互联网需要自己搭私有网络 | 中继服务 |
+| 16 | 用户在前一条消息处理完之前不能再发 | 界面限制 | 允许排队发送 |
 
 ---
 
-## 16. 演进路线
+## 16. 后续计划
 
 ```mermaid
 flowchart LR
-    P1["阶段一（当前）<br/>单任务路由<br/>3 个 Agent<br/>审查 + 返工"] --> P2["阶段二<br/>任务 DAG / 并行子任务<br/>执行上下文持久化<br/>MCP 工具接入（rmcp）<br/>会话摘要"]
-    P2 --> P3["阶段三<br/>评测集 300–500 条<br/>多模型路由对照<br/>成本预测<br/>（必要时）微调 Router"]
-    P3 --> P4["阶段四<br/>长期记忆 / RelOS<br/>Slack 入口<br/>七层围栏治理<br/>Durable Execution"]
+    P1["第一阶段（当前）<br/>单任务派发<br/>本机 + 局域网节点<br/>执行组 + 质检返工<br/>日志与诊断"] --> P2["第二阶段<br/>任务拆分与并行<br/>背景信息持久化<br/>节点 TLS<br/>MCP 工具<br/>会话摘要"]
+    P2 --> P3["第三阶段<br/>评测集 300–500 条<br/>多模型对比<br/>成本估算<br/>（必要时）微调 Router"]
+    P3 --> P4["第四阶段<br/>长期记忆<br/>Slack 入口<br/>完整治理体系<br/>持久化执行"]
 ```
 
-各阶段的验收重点：
-
-| 阶段 | 关键指标 |
+| 想做的事 | 改哪里 |
 |---|---|
-| 一 | 路由动作 / 角色准确率、结构化输出有效率、P95 路由延迟 |
-| 二 | 多步任务完成率、部分失败时的成果保留、工具错误率 |
-| 三 | 不同模型的准确率 / 成本曲线、高风险任务漏拦截率 |
-| 四 | 人工介入率、长任务恢复率 |
-
-扩展点汇总：
-
-| 要做的事 | 改哪里 |
-|---|---|
-| 接新的 ACP agent | 配置文件 `[[acp.agents]]` 三行；常用的可加入 `agents/src/acp.rs` 的 `presets()` |
-| 接不支持 ACP 的执行 Agent / Harness | 实现 `AgentAdapter`，在 `Runtime::new` 注册；需要新角色时扩展 `Role` |
-| 加工具 / 接 MCP | 实现 `Tool` trait 并注册到 `ToolRegistry` |
-| 改审批 / 审查规则 | `runtime/policy.rs` |
-| 换模型或推理服务 | `config.toml` 的 `[llm]` / `[models]` |
-| 换数据库 | 重新实现 `runtime/store.rs` |
+| 接新的 ACP agent | 配置 `[[acp.agents]]` 三行；常用的加进 `agents/src/acp.rs` 的预设 |
+| 让其他电脑的 agent 可用 | 那台电脑运行 `an-node`，界面配对 |
+| 接不支持 ACP 的 agent | 实现 `AgentAdapter` 接口并在 `runtime/src/lib.rs` 注册 |
+| 加工具 / 接 MCP | 实现 `Tool` 接口并注册到 `ToolRegistry` |
+| 改审批 / 质检规则 | `runtime/src/policy.rs` |
+| 改执行组的分配规则 | `runtime/src/registry.rs` |
+| 加新的错误码 | `core/src/lib.rs` 的 `codes`，并更新本文第 10.4 节 |
 
 ---
 
-## 17. 附录：参考来源
+## 17. 参考来源
 
-- 易迟的博客（Bryan），《来自工业界的多 Agent 框架最全细节对比》，2025-08-28：https://hustyichi.github.io/2025/08/28/multi-agent/
-- OpenAI Agents SDK（JS）多 Agent 编排指南（Handoff 与 Agents as Tools）：https://openai.github.io/openai-agents-js/guides/multi-agent
-- Rig（Rust LLM 库，本项目未采用，作为备选）：https://docs.rs/crate/rig-core/0.35.0/source/README.md
-- rmcp（MCP 官方 Rust SDK，阶段二接入 MCP 时使用）：https://docs.rs/crate/rmcp
-- Agent Client Protocol：https://agentclientprotocol.com （传输：https://agentclientprotocol.com/protocol/transports）
-- ACP 官方 Rust SDK `agent-client-protocol`：https://github.com/agentclientprotocol/rust-sdk
-- OpenCode ACP：https://opencode.ai/docs/acp ；OpenCode Server：https://opencode.ai/docs/server
+- Bryan，《来自工业界的多 Agent 框架最全细节对比》，2025-08-28：https://hustyichi.github.io/2025/08/28/multi-agent/
+- OpenAI Agents SDK 多 agent 编排（Handoff 与 Agents as Tools）：https://openai.github.io/openai-agents-js/guides/multi-agent
+- Agent Client Protocol：https://agentclientprotocol.com （传输方式：https://agentclientprotocol.com/protocol/transports ）
+- ACP 官方 Rust SDK：https://github.com/agentclientprotocol/rust-sdk
+- OpenCode ACP：https://opencode.ai/docs/acp
 - Hermes Agent ACP：https://hermes-agent.nousresearch.com/docs/user-guide/features/acp
-- pi RPC 模式：https://pi.dev/docs/latest/cli-integration ；第三方 pi-acp 适配器：https://pi.dev/packages/@geohar/pi-acp
-- Codex App Server：https://developers.openai.com/codex/app-server
-- AgentNexus 前期设计讨论记录（Router / Conversation Agent / Harness 选型）
+- pi RPC 模式：https://pi.dev/docs/latest/cli-integration ；第三方 pi-acp：https://pi.dev/packages/@geohar/pi-acp
+- mdns-sd（纯 Rust 的 mDNS 实现）：https://github.com/keepsimple1/mdns-sd
+- tracing-appender（日志文件按天滚动）：https://github.com/tokio-rs/tracing
+- AgentNexus 前期设计讨论记录

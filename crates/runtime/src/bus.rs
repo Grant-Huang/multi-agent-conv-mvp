@@ -26,13 +26,20 @@ impl Bus {
 
     /// 便捷方法：发布状态变化事件
     pub fn status(&self, conversation_id: &str, task_id: &str, status: TaskStatus, message: impl Into<String>) {
+        let message = message.into();
+        // 埋点：每次状态变化一条，排查时按 task_id 过滤即可还原完整时间线
+        match status {
+            TaskStatus::Failed => tracing::error!(event = "task.status", conv_id = %conversation_id, task_id = %task_id, status = status.as_str(), detail = %message),
+            TaskStatus::NeedsHuman => tracing::warn!(event = "task.status", conv_id = %conversation_id, task_id = %task_id, status = status.as_str(), detail = %message),
+            _ => tracing::info!(event = "task.status", conv_id = %conversation_id, task_id = %task_id, status = status.as_str(), detail = %message),
+        }
         self.publish(TaskEvent {
             id: an_core::new_id("evt"),
             conversation_id: conversation_id.into(),
             task_id: Some(task_id.into()),
             kind: EventKind::StatusChanged,
             status: Some(status),
-            message: message.into(),
+            message,
             created_at: an_core::now(),
         });
     }

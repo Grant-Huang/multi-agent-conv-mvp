@@ -168,3 +168,16 @@ details summary { cursor: pointer; font-size: 12.5px; color: var(--muted); margi
   .sidebar { display: none; }
   .side { border-left: 0; border-top: 1px solid var(--border); }
 }
+
+/* 节点页 / 诊断页 */
+.row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 3px 0; }
+.push-right { margin-left: auto; }
+.muted { color: var(--muted); }
+.input {
+  flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+  font: inherit; font-size: 12.5px; background: var(--bg); color: var(--text);
+}
+.input.code { flex: 0 0 90px; letter-spacing: 2px; font-family: ui-monospace, monospace; }
+.input:focus { outline: none; border-color: var(--accent); }
+code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--code-bg); padding: 0 4px; border-radius: 4px; }
+.tabs button { padding: 11px 4px; }

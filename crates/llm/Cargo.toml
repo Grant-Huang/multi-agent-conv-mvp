@@ -5,6 +5,7 @@ edition.workspace = true
 
 # OpenAI 兼容接口客户端（llama.cpp / Ollama / vLLM / DeepSeek 都能用）
 [dependencies]
+an-core.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

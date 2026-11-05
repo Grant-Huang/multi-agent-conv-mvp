@@ -11,6 +11,10 @@
 //! | POST | /api/tasks/{id}/cancel、/approve | 取消 / 人工批准 |
 //! | GET  | /api/route-logs?limit= | 路由日志 |
 //! | GET  | /api/events?conversation_id= | SSE 事件流 |
+//! | GET  | /api/nodes | 局域网发现的节点 + 已配对节点 |
+//! | POST | /api/nodes/pair | 配对节点 `{"address", "code"}` |
+//! | DELETE | /api/nodes/{id} | 解除配对 |
+//! | GET  | /api/diagnostics | 诊断：最近的问题、按错误码统计、agent 与节点状态 |
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -66,6 +70,10 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/tasks/{id}/approve", post(approve_task))
         .route("/api/route-logs", get(route_logs))
         .route("/api/events", get(events))
+        .route("/api/nodes", get(list_nodes))
+        .route("/api/nodes/pair", post(pair_node))
+        .route("/api/nodes/{id}", axum::routing::delete(unpair_node))
+        .route("/api/diagnostics", get(diagnostics))
         .with_state(rt)
 }
 
@@ -175,4 +183,62 @@ async fn events(State(rt): State<AppState>, Query(q): Query<EventQuery>) -> Sse<
         Some(Ok(Event::default().event("task_event").json_data(&ev).unwrap_or_default()))
     });
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}
+
+// ───────────────────────── 节点 ─────────────────────────
+
+async fn list_nodes(State(rt): State<AppState>) -> Json<serde_json::Value> {
+    Json(json!({ "discovered": rt.nodes.discovered(), "paired": rt.nodes.paired() }))
+}
+
+#[derive(Deserialize)]
+struct PairBody {
+    address: String,
+    code: String,
+}
+
+async fn pair_node(State(rt): State<AppState>, Json(body): Json<PairBody>) -> ApiResult<an_runtime::nodes::PairedNode> {
+    rt.nodes.pair(&body.address, &body.code).await.map(Json).map_err(|e| {
+        let status = if e.code == an_core::codes::NODE_UNREACHABLE { StatusCode::BAD_GATEWAY } else { StatusCode::BAD_REQUEST };
+        AppError(status, e.to_string())
+    })
+}
+
+async fn unpair_node(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<serde_json::Value> {
+    let removed = rt.nodes.unpair(&id)?;
+    if !removed {
+        return Err(not_found("节点"));
+    }
+    Ok(Json(json!({ "unpaired": true })))
+}
+
+// ───────────────────────── 诊断 ─────────────────────────
+
+/// 诊断接口：给人看，也给自动排查脚本看。
+/// 包含最近的 WARN / ERROR（带错误码和关联 id）、按错误码统计、agent 与执行组、节点状态、LLM 连通性。
+async fn diagnostics(State(rt): State<AppState>) -> Json<serde_json::Value> {
+    let groups: serde_json::Map<String, serde_json::Value> = an_core::Role::ALL
+        .iter()
+        .map(|r| {
+            let v = match rt.registry.group_ids(*r) {
+                Ok(ids) => json!({ "members": ids, "enabled": rt.registry.is_enabled(*r) }),
+                Err(e) => json!({ "error": e.to_string() }),
+            };
+            (r.as_str().to_string(), v)
+        })
+        .collect();
+    let llm = match rt.llm.list_models().await {
+        Ok(m) => json!({ "ok": true, "models": m }),
+        Err(e) => json!({ "ok": false, "code": an_core::codes::LLM_UNREACHABLE, "error": format!("{e:#}") }),
+    };
+    Json(json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "time": an_core::now(),
+        "llm": llm,
+        "groups": groups,
+        "agents": rt.registry.cards(),
+        "nodes": { "paired": rt.nodes.paired(), "discovered": rt.nodes.discovered() },
+        "problem_counts": rt.diagnostics.counts_by_code(),
+        "recent_problems": rt.diagnostics.recent(100),
+    }))
 }

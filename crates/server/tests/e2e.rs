@@ -118,8 +118,10 @@ struct Env {
 enum Mode {
     /// 用 sh 脚本冒充 codex
     Codex,
-    /// codex 不可用；coding 首选一个启动即崩溃的 ACP agent，应自动换用假 ACP agent
+    /// codex 不可用；coding 执行组明确指定为模拟 ACP agent
     Acp,
+    /// coding 执行组指定为一个启动即崩溃的 ACP agent：应如实报错，不能换给别的 agent
+    AcpBroken,
 }
 
 async fn setup(mode: Mode) -> Env {
@@ -152,13 +154,14 @@ timeout_secs = 60
         ws = tmp.join("files").display(),
         code = code_dir.display(),
     );
-    let config_toml = if mode == Mode::Acp {
-        // codex 命令改成不存在的；broken 握手前就退出，用来验证自动换用
+    let config_toml = if mode != Mode::Codex {
+        // codex 命令改成不存在的；broken 握手前就退出
+        let assign = if mode == Mode::Acp { "mock" } else { "broken" };
         config_toml.replace("command = \"sh\"", "command = \"no-such-codex-cmd\"")
             + &format!(
                 r#"
-[agents.prefer]
-coding = "broken"
+[agents.assign]
+coding = "{assign}"
 
 [acp]
 auto_detect = false
@@ -294,8 +297,7 @@ async fn full_flow() {
     assert_eq!(logs.as_array().unwrap().len(), 7);
 }
 
-/// ACP 接入：首选 agent 启动失败 → 自动换用假 ACP agent → 权限请求 → 写文件 → git diff 证据 → 审查 → 完成；
-/// 以及 ACP 任务执行中取消。
+/// ACP 接入：模拟 ACP agent → 权限请求 → 写文件 → git diff 证据 → 审查 → 完成；以及执行中取消。
 #[tokio::test]
 async fn acp_flow() {
     let env = setup(Mode::Acp).await;
@@ -318,16 +320,15 @@ async fn acp_flow() {
     let result = &d["task"]["result"];
     assert_eq!(result["summary"], "已创建 hello.txt（来自模拟 ACP agent）");
     let ev = |kind: &str| result["evidence"].as_array().unwrap().iter().find(|e| e["kind"] == kind).map(|e| e["content"].as_str().unwrap().to_string());
-    assert_eq!(ev("executed_by").unwrap(), "Mock ACP（acp）");
+    assert_eq!(ev("executed_by").unwrap(), "Mock ACP（acp，本机）");
     assert!(ev("permissions").unwrap().contains("允许"));
     assert_eq!(ev("acp_stop_reason").unwrap(), "正常结束");
     assert!(ev("git_diff_stat").unwrap().contains("hello.txt"));
     assert!(env.code_dir.join("hello.txt").exists());
     assert_eq!(d["task"]["review"]["verdict"], "pass");
-    // 事件里能看到自动换用
     let msgs: Vec<String> = d["events"].as_array().unwrap().iter().map(|e| e["message"].as_str().unwrap().to_string()).collect();
-    assert!(msgs.iter().any(|m| m.contains("尝试下一个 agent")), "{msgs:?}");
     assert!(msgs.iter().any(|m| m.contains("权限请求")), "{msgs:?}");
+    assert!(!msgs.iter().any(|m| m.contains("broken")), "不应使用未指定的 agent：{msgs:?}");
 
     // 2. 执行中取消：子进程应被杀掉，状态为 CANCELLED
     let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "改代码，这个会很慢"})).await;
@@ -337,4 +338,199 @@ async fn acp_flow() {
     env.post(&format!("/api/tasks/{tid}/cancel"), json!({})).await;
     let d = env.wait_status(&tid, &["CANCELLED"]).await;
     assert_eq!(d["task"]["status"], "CANCELLED");
+}
+
+/// 执行组指定的 agent 启动失败：如实报错（带错误码），不会悄悄换给别的 agent
+#[tokio::test]
+async fn acp_error_is_reported() {
+    let env = setup(Mode::AcpBroken).await;
+    let conv = env.post("/api/conversations", json!({})).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "帮我改代码"})).await;
+    let tid = out["task"]["id"].as_str().unwrap().to_string();
+    let d = env.wait_status(&tid, &["COMPLETED", "FAILED"]).await;
+    assert_eq!(d["task"]["status"], "FAILED", "{d}");
+    let errors = d["task"]["result"]["errors"].to_string();
+    assert!(errors.contains("E_ACP_HANDSHAKE"), "应带握手失败的错误码：{errors}");
+    assert!(!env.code_dir.join("hello.txt").exists(), "mock 不在执行组里，不能被使用");
+}
+
+// ───────────────────────── 节点 ─────────────────────────
+
+/// 在本进程中启动一个节点（两个同类型的模拟 agent，各自并发 1）
+async fn start_node(workdir: &std::path::Path, state_dir: &std::path::Path) -> (Arc<an_node::Node>, String) {
+    let mock = env!("CARGO_BIN_EXE_an-mock-acp");
+    let cfg: an_node::NodeConfig = toml::from_str(&format!(
+        r#"
+name = "test-node"
+workdir = "{w}"
+state_dir = "{s}"
+advertise = false
+
+[acp]
+auto_detect = false
+
+[[acp.agents]]
+id = "mock"
+command = "{mock}"
+role = "coding"
+
+[[acp.agents]]
+id = "mock2"
+command = "{mock}"
+role = "coding"
+"#,
+        w = workdir.display(),
+        s = state_dir.display()
+    ))
+    .unwrap();
+    let node = an_node::Node::new(&cfg, an_observe::diagnostics_only(), Box::new(|_| {})).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = format!("http://{}", listener.local_addr().unwrap());
+    let router = node.router();
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    (node, addr)
+}
+
+/// 节点：认证、配对、通过节点执行、执行组分担并发与排队、取消后名额归还、解除配对
+#[tokio::test]
+async fn node_flow() {
+    let tmp = std::env::temp_dir().join(an_core::new_id("an-node"));
+    let node_ws = tmp.join("ws");
+    std::fs::create_dir_all(&node_ws).unwrap();
+    let git = |args: &[&str]| std::process::Command::new("git").arg("-C").arg(&node_ws).args(args).output().unwrap();
+    git(&["init", "-q"]);
+    git(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]);
+    let (node, node_addr) = start_node(&node_ws, &tmp.join("state")).await;
+
+    // AgentNexus：coding 执行组 = 节点上的两个同类 agent；本机 codex 不可用
+    let llm_url = start_mock_llm().await;
+    let config: AppConfig = toml::from_str(&format!(
+        r#"
+[llm]
+base_url = "{llm_url}"
+model = "mock"
+
+[agents.general]
+workspace_dir = "{ws}"
+
+[agents.coding]
+command = "no-such-codex-cmd"
+
+[agents.assign]
+coding = ["mock@test-node", "mock2@test-node"]
+
+[acp]
+auto_detect = false
+
+[nodes]
+discovery = false
+"#,
+        ws = tmp.join("files").display()
+    ))
+    .unwrap();
+    let rt = Arc::new(Runtime::new(config, Store::open(std::path::Path::new(":memory:")).unwrap()).unwrap());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, an_server::api(rt)).await.unwrap() });
+    let env = Env { base, http: reqwest::Client::new(), code_dir: node_ws.clone() };
+
+    // 1. 未配对的请求被拒绝
+    let r = env.http.get(format!("{node_addr}/node/agents")).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+    assert_eq!(r.json::<Value>().await.unwrap()["code"], "E_NODE_AUTH");
+
+    // 2. 配对前 coding 没有可用 agent
+    let diag = env.get("/api/diagnostics").await;
+    assert_eq!(diag["groups"]["coding"]["enabled"], false, "{diag}");
+
+    // 3. 错误的配对码被拒绝
+    let r = env.http.post(format!("{}/api/nodes/pair", env.base)).json(&json!({"address": node_addr, "code": "000000x"})).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+    assert!(r.text().await.unwrap().contains("E_NODE_PAIR"));
+
+    // 4. 正确配对
+    let paired = env.post("/api/nodes/pair", json!({"address": node_addr, "code": node.pairing_code()})).await;
+    assert_eq!(paired["name"], "test-node");
+    assert_eq!(paired["online"], true);
+    let diag = env.get("/api/diagnostics").await;
+    assert_eq!(diag["groups"]["coding"]["members"], json!(["mock@test-node", "mock2@test-node"]));
+    assert_eq!(diag["groups"]["coding"]["enabled"], true);
+
+    let conv = env.post("/api/conversations", json!({})).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let send = |text: &'static str| {
+        let env = &env;
+        let cid = cid.clone();
+        async move { env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": text})).await["task"]["id"].as_str().unwrap().to_string() }
+    };
+    let evidence = |d: &Value, kind: &str| {
+        d["task"]["result"]["evidence"].as_array().unwrap().iter().find(|e| e["kind"] == kind).map(|e| e["content"].as_str().unwrap().to_string()).unwrap_or_default()
+    };
+
+    // 5. 通过节点执行：改动发生在节点的工作目录，git diff 在节点上收集
+    let tid = send("帮我改代码").await;
+    let d = env.wait_status(&tid, &["COMPLETED", "FAILED"]).await;
+    assert_eq!(d["task"]["status"], "COMPLETED", "{d}");
+    assert!(evidence(&d, "executed_by").contains("test-node"), "{d}");
+    assert!(evidence(&d, "git_diff_stat").contains("hello.txt"));
+    assert!(node_ws.join("hello.txt").exists());
+
+    // 6. 并发：3 个任务、2 个 agent（各并发 1）→ 两个同时执行，第三个排队，最终全部完成
+    let ids = [send("改代码 稍慢 1").await, send("改代码 稍慢 2").await, send("改代码 稍慢 3").await];
+    let mut used = std::collections::BTreeSet::new();
+    let mut queued = false;
+    for id in &ids {
+        let d = env.wait_status(id, &["COMPLETED", "FAILED"]).await;
+        assert_eq!(d["task"]["status"], "COMPLETED", "{d}");
+        used.insert(evidence(&d, "executed_by"));
+        queued |= d["events"].as_array().unwrap().iter().any(|e| e["message"].as_str().unwrap().contains("排队等待"));
+    }
+    assert_eq!(used.len(), 2, "两个备份都应被用上：{used:?}");
+    assert!(queued, "第三个任务应排队等待");
+
+    // 7. 取消经由节点执行的任务；之后两个 agent 的名额都应归还
+    let tid = send("改代码，这个会很慢").await;
+    env.wait_status(&tid, &["RUNNING"]).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    env.post(&format!("/api/tasks/{tid}/cancel"), json!({})).await;
+    env.wait_status(&tid, &["CANCELLED"]).await;
+    tokio::time::sleep(Duration::from_millis(300)).await; // 等节点检测到断开
+    let ids = [send("改代码 稍慢 a").await, send("改代码 稍慢 b").await];
+    for id in &ids {
+        let d = env.wait_status(id, &["COMPLETED", "FAILED"]).await;
+        assert_eq!(d["task"]["status"], "COMPLETED", "取消后名额应归还：{d}");
+    }
+
+    // 8. 解除配对后，coding 没有可用 agent，路由时如实报告
+    let node_id = paired["node_id"].as_str().unwrap();
+    let r = env.http.delete(format!("{}/api/nodes/{node_id}", env.base)).send().await.unwrap();
+    assert!(r.status().is_success());
+    let out = env.post(&format!("/api/conversations/{cid}/messages"), json!({"text": "帮我改代码"})).await;
+    assert!(out["reply"]["content"].as_str().unwrap().contains("E_ROUTE_NO_AGENT"), "{out}");
+}
+
+/// 局域网发现：节点广播 → AgentNexus 发现。需要支持组播的网络环境，默认不运行：
+/// `cargo test -p an-server --test e2e mdns_discovery -- --ignored`
+#[tokio::test]
+#[ignore]
+async fn mdns_discovery() {
+    let tmp = std::env::temp_dir().join(an_core::new_id("an-mdns"));
+    let (node, addr) = start_node(&tmp.join("ws"), &tmp.join("state")).await;
+    let port: u16 = addr.rsplit(':').next().unwrap().parse().unwrap();
+    let _daemon = node.advertise(port).expect("广播失败");
+
+    let store = Arc::new(Store::open(std::path::Path::new(":memory:")).unwrap());
+    let registry = an_runtime::registry::AgentRegistry::new(Default::default());
+    let mgr = an_runtime::nodes::NodeManager::new(store, registry, "test".into());
+    mgr.start_discovery();
+    for _ in 0..50 {
+        if let Some(found) = mgr.discovered().into_iter().find(|n| n.node_id == node.info.node_id) {
+            assert_eq!(found.name, "test-node");
+            assert!(found.address.ends_with(&format!(":{port}")), "{found:?}");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    panic!("10 秒内没有发现节点");
 }

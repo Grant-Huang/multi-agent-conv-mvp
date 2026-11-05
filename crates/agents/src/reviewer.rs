@@ -47,6 +47,9 @@ impl ReviewerAgent {
         let card = AgentCard {
             id: "reviewer".into(),
             kind: "builtin".into(),
+            agent_type: "reviewer".into(),
+            location: "本机".into(),
+            max_concurrent: 4,
             role: Role::Reviewer,
             name: "Reviewer Agent".into(),
             description: Role::Reviewer.description().into(),
@@ -133,7 +136,7 @@ impl AgentAdapter for ReviewerAgent {
                     errors: vec![],
                 })
             }
-            Err(e) => Ok(TaskResult::failed(format!("审查失败：{e:#}"))),
+            Err(e) => Ok(TaskResult::failed_code(an_core::codes::REVIEW_FAILED, format!("审查失败：{e:#}"))),
         }
     }
 }
