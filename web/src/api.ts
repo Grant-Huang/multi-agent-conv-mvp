@@ -15,11 +15,29 @@ export interface NodesView {
   paired: PairedNode[];
 }
 
+/** 一个后端的健康状况（/api/health 和 /api/diagnostics 都带） */
+export interface BackendStatus {
+  name: string;
+  kind: string;
+  base_url: string;
+  model: string;
+  roles: string[];
+  ok: boolean;
+  server_models: string[];
+  error: string | null;
+  server_error: string | null;
+  slots: { id: number; class: string; holder: string | null; held_ms: number; server_busy: boolean | null; tasks: number | null }[];
+  metrics: { processing: number; queued: number; gen_per_sec: number } | null;
+  scheduler: { inflight: number; max_inflight: number; queue_len: number; paused_ms: number };
+  calls: { total: number; outcomes: Record<string, number>; total_ms_p50: number; total_ms_p95: number; ttft_ms_p50: number; ttft_ms_p95: number };
+}
+
 /** /api/diagnostics 的返回 */
 export interface Diagnostics {
   version: string;
   time: string;
   llm: { ok: boolean; models?: string[]; code?: string; error?: string };
+  backends: BackendStatus[];
   /** 角色 → 执行组 */
   groups: Record<string, { members?: string[]; enabled?: boolean; error?: string }>;
   agents: AgentCard[];
@@ -43,6 +61,7 @@ export interface Health {
     error: string | null;
     structured_mode: string;
   };
+  backends: BackendStatus[];
   agents: AgentCard[];
 }
 

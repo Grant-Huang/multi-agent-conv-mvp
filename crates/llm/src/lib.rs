@@ -12,6 +12,7 @@ mod budget;
 mod error;
 mod policy;
 mod scheduler;
+mod status;
 mod tokens;
 
 pub use backend::{parse_props, Backend, BackendConfig, BackendKind, Priority, ServerProps};
@@ -19,6 +20,7 @@ pub use budget::{clip_middle, fit, ContextBudget, TrimReport};
 pub use error::{is_context_error, parse_retry_after, ErrorKind, LlmError};
 pub use policy::{backoff_delay, jitter01, Breaker, CallRecord, Stats, StatsSummary, Timeouts};
 pub use scheduler::{Lease, SchedSnapshot, Scheduler, SlotInfo, Who};
+pub use status::{parse_metrics, parse_slots, ServerMetrics, ServerSlot, ServerView};
 pub use tokens::{estimate_messages, estimate_tokens};
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -749,18 +751,48 @@ impl LlmClient {
         })
     }
 
-    /// 健康检查：调用 `GET /models`，返回服务端报告的模型列表
+    /// 健康检查：调用 `GET /models`。绑定了后端时结果缓存 8 秒，多个浏览器共用
     pub async fn list_models(&self) -> Result<Vec<String>> {
+        match &self.backend {
+            Some(b) => b.models_cached(self.fetch_models()).await.map_err(anyhow::Error::msg),
+            None => self.fetch_models().await,
+        }
+    }
+
+    async fn fetch_models(&self) -> Result<Vec<String>> {
         let mut req = self.http.get(self.endpoint("models")).timeout(Duration::from_secs(5));
         if !self.cfg.api_key.is_empty() {
             req = req.bearer_auth(&self.cfg.api_key);
         }
         let v: Value = req.send().await?.error_for_status()?.json().await?;
-        Ok(v["data"]
-            .as_array()
-            .map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
-            .unwrap_or_default())
+        Ok(v["data"].as_array().map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect()).unwrap_or_default())
     }
+
+    /// llama-server 的 `/slots` 和 `/metrics`（缓存 8 秒）。不是 `llama_cpp` 后端时返回 None
+    pub async fn server_view(&self) -> Option<std::result::Result<ServerView, String>> {
+        let b = self.backend.clone()?;
+        if b.cfg.kind != BackendKind::LlamaCpp {
+            return None;
+        }
+        let http = self.http.clone();
+        let base = self.cfg.base_url.clone();
+        Some(b.server_cached(async move { fetch_server(&http, &base).await }).await)
+    }
+}
+
+/// 去掉 `/v1` 后的服务根地址（`/slots`、`/metrics`、`/props` 都在根上，不在 `/v1` 下）
+fn service_root(base: &str) -> String {
+    let b = base.trim_end_matches('/');
+    b.strip_suffix("/v1").unwrap_or(b).to_string()
+}
+
+async fn fetch_server(http: &reqwest::Client, base: &str) -> std::result::Result<ServerView, String> {
+    let root = service_root(base);
+    let get = |path: String| http.get(path).timeout(Duration::from_secs(5));
+    let slots_v: Value = get(format!("{root}/slots")).send().await.map_err(|e| format!("读取 /slots 失败：{e}"))?.error_for_status().map_err(|e| format!("/slots 返回错误：{e}"))?.json().await.map_err(|e| format!("/slots 不是 JSON：{e}"))?;
+    let slots = parse_slots(&slots_v).ok_or_else(|| "/slots 的返回不是槽位数组".to_string())?;
+    let text = get(format!("{root}/metrics")).send().await.map_err(|e| format!("读取 /metrics 失败：{e}"))?.error_for_status().map_err(|e| format!("/metrics 返回错误：{e}"))?.text().await.map_err(|e| format!("读取 /metrics 正文失败：{e}"))?;
+    Ok(ServerView { slots, metrics: parse_metrics(&text) })
 }
 
 /// 去掉推理模型输出里的 `<think>…</think>` 段落（Qwen3、DeepSeek-R1 等会输出）

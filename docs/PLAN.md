@@ -23,7 +23,7 @@
 | M0 | 本地部署 + e2e 发现的 5 个问题 + 派发边界规则 | ✅ 完成 |
 | M1 | 派发"越用越聪明"：纠错反馈、相似经验检索、纠错回归 | 待开始 |
 | M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.7 完成，2.8 待定 |
-| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .5 完成，.6 起待做 |
+| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .6 完成，.7 起待做 |
 | 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
 | M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
 | M4 | 多问题消息逐条对应回答 | 待开始 |
@@ -315,7 +315,11 @@ reviewer = "local"
   - 写一个 pi 扩展（`before_provider_request`）：读环境变量 `AN_LLM_SLOT`，写入请求体 `id_slot`；没有该变量时不改
   - coding agent 新增可选项 `backend`：指向 `llama_cpp` 后端时，启动 pi 前向调度器申请后台槽位租约，把槽位号放进环境变量，任务结束归还；pi 用云端模型时不申请租约；`max_concurrent` 限制 ≤ 2
   - 验证：用 `/slots` 确认 pi 的请求确实落在被分配的槽位，且从不落在前台槽位
-- [ ] **pre-M3.6 健康检查**：`list_models` 结果缓存 5~10s，多个浏览器共用；health / 诊断逐个检查实际使用的 base_url，并附 `/slots`、`/metrics` 摘要（见埋点规范）
+- [x] **pre-M3.6 健康检查**（2026-11-05 完成）：`list_models` 与 `/slots`+`/metrics` 都缓存在 `Backend` 上 8 秒（`PROBE_TTL`），并发的健康检查持锁只真正请求一次，多个浏览器共用；`/api/health` 和 `/api/diagnostics` 改为走 `Backends::status()`，按实际使用的（后端名, base_url）逐个检查
+  - 每个后端返回：连通性与模型列表、槽位（调度器占用者 + 服务端 `is_processing`，`tasks` 是 llama.cpp 的 `id_task`——这个版本的 `/slots` 没有"已生成 token 数"）、`/metrics` 摘要（处理中 / 排队 / 生成速度 token/s）、调度器（在途、排队、限速暂停）、最近调用的 P50/P95 与按 outcome 计数
+  - 云端（openai）后端不请求 `/slots`；读 `/slots` 失败记在 `server_error`，不把模型标成未连接
+  - 前端：左下角每个后端一行；诊断页"后端"一节展示槽位、指标和调用统计
+  - 验证：解析单测 2 个；缓存集成（两个客户端并发 `list_models` 只打到服务 1 次，`/slots`+`/metrics` 解析，openai 不读 slots）；e2e 健康检查断言 `backends[0].ok`；对真实 35B 起临时服务核对诊断 JSON，并在浏览器打开诊断页看槽位
 - [ ] **pre-M3.7 H5 前端刷新风暴**
   - 事件刷新统一走一个节流 hook（尾部节流 ~1s）；只刷新当前可见的页签；进度类事件不再触发 `api.tasks`
   - 任务详情用事件本地追加，加载一次后用 `?after=<event_id>` 增量拉取

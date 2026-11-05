@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use an_llm::{Backend, BackendConfig, BackendKind, LlmClient, Priority};
+use an_llm::{Backend, BackendConfig, BackendKind, LlmClient, Priority, ServerMetrics, StatsSummary};
 use anyhow::{bail, Result};
 use serde::Serialize;
 
@@ -58,6 +58,48 @@ pub struct RoleBinding {
     pub model: String,
     pub priority: &'static str,
     pub limits: String,
+}
+
+/// 一个槽位：调度器看到的占用 + 服务端是否正在生成
+#[derive(Debug, Clone, Serialize)]
+pub struct SlotStatus {
+    pub id: u32,
+    /// interactive / background / shared / unused / unknown
+    pub class: String,
+    /// 调度器记录的占用者（角色名）
+    pub holder: Option<String>,
+    pub held_ms: u64,
+    /// 服务端是否正在这个槽位上生成；读不到 `/slots` 时为 None
+    pub server_busy: Option<bool>,
+    /// 该槽位处理过的任务数（llama.cpp 的 `id_task`；这个版本不提供已生成 token 数）
+    pub tasks: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SchedStatus {
+    pub inflight: u32,
+    pub max_inflight: u32,
+    pub queue_len: usize,
+    pub paused_ms: u64,
+}
+
+/// 一个后端的健康状况（`/api/health` 和 `/api/diagnostics` 共用）
+#[derive(Debug, Clone, Serialize)]
+pub struct BackendStatus {
+    pub name: String,
+    pub kind: &'static str,
+    pub base_url: String,
+    pub model: String,
+    pub roles: Vec<&'static str>,
+    pub ok: bool,
+    pub server_models: Vec<String>,
+    pub error: Option<String>,
+    /// 读 `/slots` 或 `/metrics` 失败的原因
+    pub server_error: Option<String>,
+    pub slots: Vec<SlotStatus>,
+    pub metrics: Option<ServerMetrics>,
+    pub scheduler: SchedStatus,
+    pub calls: StatsSummary,
 }
 
 pub struct Backends {
@@ -197,6 +239,61 @@ impl Backends {
 
     pub fn backends(&self) -> impl Iterator<Item = &Arc<Backend>> {
         self.backends.values()
+    }
+
+    /// 每个实际在用的后端的健康状况：连通性（缓存 8 秒）、llama.cpp 的 `/slots` 与 `/metrics`、调度器快照、最近调用的 P50/P95
+    pub async fn status(&self) -> Vec<BackendStatus> {
+        let mut groups: BTreeMap<(String, String), Vec<LlmRole>> = BTreeMap::new();
+        for b in &self.bindings {
+            groups.entry((b.backend.clone(), b.base_url.clone())).or_default().push(b.role);
+        }
+        let mut out = Vec::new();
+        for ((name, url), roles) in groups {
+            let client = self.clients[&roles[0]].clone();
+            let (ok, server_models, error) = match client.list_models().await {
+                Ok(m) => (true, m, None),
+                Err(e) => (false, vec![], Some(format!("{e:#}"))),
+            };
+            let (view, server_error) = match client.server_view().await {
+                None => (None, None),
+                Some(Ok(v)) => (Some(v), None),
+                Some(Err(e)) => (None, Some(e)),
+            };
+            let backend = &self.backends[&name];
+            let snap = backend.sched.snapshot();
+            let mut slots: Vec<SlotStatus> = snap
+                .slots
+                .iter()
+                .map(|s| {
+                    let srv = view.as_ref().and_then(|v| v.slots.iter().find(|x| x.id == s.id));
+                    SlotStatus { id: s.id, class: s.class.to_string(), holder: s.holder.clone(), held_ms: s.held_ms, server_busy: srv.map(|x| x.busy), tasks: srv.map(|x| x.tasks) }
+                })
+                .collect();
+            if let Some(v) = &view {
+                for x in &v.slots {
+                    if !slots.iter().any(|s| s.id == x.id) {
+                        slots.push(SlotStatus { id: x.id, class: "unknown".into(), holder: None, held_ms: 0, server_busy: Some(x.busy), tasks: Some(x.tasks) });
+                    }
+                }
+            }
+            let binding = self.bindings.iter().find(|b| b.backend == name && b.base_url == url);
+            out.push(BackendStatus {
+                name,
+                kind: binding.map(|b| b.kind).unwrap_or("openai"),
+                model: binding.map(|b| b.model.clone()).unwrap_or_default(),
+                roles: roles.iter().map(|r| r.as_str()).collect(),
+                base_url: url,
+                ok,
+                server_models,
+                error,
+                server_error,
+                slots,
+                metrics: view.map(|v| v.metrics),
+                scheduler: SchedStatus { inflight: snap.inflight, max_inflight: snap.max_inflight, queue_len: snap.queue_len, paused_ms: snap.paused_ms },
+                calls: backend.stats.summary(),
+            });
+        }
+        out
     }
 
     /// 给 coding agent（pi 等直连推理服务的外部进程）选定要固定槽位的后端，并校验：

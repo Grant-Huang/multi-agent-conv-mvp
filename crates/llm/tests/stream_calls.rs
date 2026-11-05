@@ -601,3 +601,41 @@ async fn a_429_pauses_the_whole_cloud_backend() {
     on(&m.url, &cloud, "reviewer", Priority::Background).chat(&msgs()).await.unwrap();
     assert!(m.gap(0, 1) >= ms(900), "{:?}", m.gap(0, 1));
 }
+
+#[tokio::test]
+async fn model_list_and_server_status_are_cached_across_callers() {
+    use std::sync::atomic::AtomicUsize;
+    let hits = Arc::new(AtomicUsize::new(0));
+    let h2 = hits.clone();
+    let app = Router::new()
+        .route(
+            "/v1/models",
+            axum::routing::get(move || {
+                let h = h2.clone();
+                async move {
+                    h.fetch_add(1, Ordering::SeqCst);
+                    Json(json!({ "data": [{ "id": "m" }] }))
+                }
+            }),
+        )
+        .route("/slots", axum::routing::get(|| async { Json(json!([{ "id": 0, "is_processing": true, "id_task": 3 }, { "id": 1, "is_processing": false, "id_task": 1 }])) }))
+        .route("/metrics", axum::routing::get(|| async { "llamacpp:requests_processing 1\nllamacpp:requests_deferred 4\nllamacpp:predicted_tokens_seconds 12.5\n" }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/v1", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let backend = llama_backend(&url, &[0], &[1], None);
+    let (c1, c2) = (on(&url, &backend, "conversation", Priority::Interactive), on(&url, &backend, "general", Priority::Background));
+    let (a, b) = tokio::join!(c1.list_models(), c2.list_models());
+    assert_eq!(a.unwrap(), vec!["m".to_string()]);
+    assert_eq!(b.unwrap(), vec!["m".to_string()]);
+    assert_eq!(hits.load(Ordering::SeqCst), 1, "两个客户端应共用后端上的缓存，只请求一次");
+
+    let v = c1.server_view().await.unwrap().unwrap();
+    assert!(v.slots[0].busy && v.slots[0].tasks == 3 && !v.slots[1].busy);
+    assert_eq!((v.metrics.processing, v.metrics.queued), (1, 4));
+    assert!((v.metrics.gen_per_sec - 12.5).abs() < 1e-6);
+    // openai 后端没有槽位，不读 /slots
+    let cloud = Arc::new(Backend::new("cloud", BackendConfig { base_url: url, ..Default::default() }));
+    assert!(on("http://x/v1", &cloud, "general", Priority::Background).server_view().await.is_none());
+}

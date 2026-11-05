@@ -242,6 +242,8 @@ async fn full_flow() {
     // 健康检查
     let h = env.get("/api/health").await;
     assert_eq!(h["llm"]["ok"], true);
+    assert_eq!(h["backends"][0]["ok"], true);
+    assert!(h["backends"][0]["calls"]["total"].as_u64().is_some());
     // 内置 general / reviewer + codex；测试环境不会自动发现预设之外的 agent
     assert!(h["agents"].as_array().unwrap().len() >= 3);
 

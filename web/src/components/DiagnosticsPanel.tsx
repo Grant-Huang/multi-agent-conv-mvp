@@ -36,11 +36,42 @@ export function DiagnosticsPanel({ eventTick }: { eventTick: number }) {
       </div>
 
       <section className="section">
-        <h4>模型</h4>
-        <div className="kv">
-          <span className={`dot ${d.llm.ok ? "ok" : "bad"}`} />
-          {d.llm.ok ? `已连接（${(d.llm.models ?? []).join(", ") || "未报告模型名"}）` : `${d.llm.code}：${d.llm.error}`}
-        </div>
+        <h4>后端</h4>
+        {(d.backends ?? []).map((b) => (
+          <div key={`${b.name}${b.base_url}`} className="task-card log">
+            <div className="kv">
+              <span className={`dot ${b.ok ? "ok" : "bad"}`} />
+              <b>{b.name}</b>（{b.kind}）{b.model}
+              <span className="muted"> · {b.roles.join("、")}</span>
+            </div>
+            <div className="kv muted">{b.base_url}</div>
+            {!b.ok && <div className="kv bad-text">{b.error}</div>}
+            {b.server_error && <div className="kv bad-text">{b.server_error}</div>}
+            {b.metrics && (
+              <div className="kv">
+                处理中 {b.metrics.processing}，排队 {b.metrics.queued}，生成 {b.metrics.gen_per_sec.toFixed(1)} token/s
+              </div>
+            )}
+            {b.slots.map((s) => (
+              <div key={s.id} className="kv">
+                <span className={`dot ${s.server_busy || s.holder ? "bad" : "ok"}`} />
+                槽位 {s.id}（{s.class}）
+                {s.holder ? ` 占用：${s.holder}` : " 空闲"}
+                {s.server_busy ? " · 正在生成" : ""}
+                {s.tasks != null ? ` · 已处理 ${s.tasks} 个任务` : ""}
+              </div>
+            ))}
+            <div className="kv muted">
+              调度：在途 {b.scheduler.inflight}
+              {b.scheduler.max_inflight > 0 ? `/${b.scheduler.max_inflight}` : ""}，排队 {b.scheduler.queue_len}
+              {b.scheduler.paused_ms > 0 ? `，限速暂停 ${Math.ceil(b.scheduler.paused_ms / 1000)}s` : ""}
+            </div>
+            <div className="kv muted">
+              最近 {b.calls.total} 次调用：耗时 P50 {b.calls.total_ms_p50}ms / P95 {b.calls.total_ms_p95}ms，首 token P50 {b.calls.ttft_ms_p50}ms / P95 {b.calls.ttft_ms_p95}ms
+              {Object.keys(b.calls.outcomes).length > 0 ? `（${Object.entries(b.calls.outcomes).map(([k, n]) => `${k} ${n}`).join("，")}）` : ""}
+            </div>
+          </div>
+        ))}
       </section>
 
       <section className="section">

@@ -79,13 +79,18 @@ pub fn api(rt: AppState) -> Router {
 
 async fn health(State(rt): State<AppState>) -> Json<serde_json::Value> {
     let cfg = rt.llm.config();
-    let (llm_ok, models, error) = match rt.llm.list_models().await {
-        Ok(m) => (true, m, None),
-        Err(e) => (false, vec![], Some(format!("{e:#}"))),
-    };
+    let backends = rt.backends.status().await;
+    let conv = backends.iter().find(|b| b.roles.contains(&"conversation"));
     Json(json!({
-        "llm": { "ok": llm_ok, "base_url": cfg.base_url, "model": cfg.model, "server_models": models, "error": error,
-                 "structured_mode": cfg.structured_mode },
+        "llm": {
+            "ok": conv.is_some_and(|b| b.ok),
+            "base_url": conv.map(|b| b.base_url.as_str()).unwrap_or(cfg.base_url.as_str()),
+            "model": conv.map(|b| b.model.as_str()).unwrap_or(cfg.model.as_str()),
+            "server_models": conv.map(|b| b.server_models.clone()).unwrap_or_default(),
+            "error": conv.and_then(|b| b.error.clone()),
+            "structured_mode": cfg.structured_mode,
+        },
+        "backends": backends,
         "agents": rt.registry.cards(),
     }))
 }
@@ -227,14 +232,17 @@ async fn diagnostics(State(rt): State<AppState>) -> Json<serde_json::Value> {
             (r.as_str().to_string(), v)
         })
         .collect();
-    let llm = match rt.llm.list_models().await {
-        Ok(m) => json!({ "ok": true, "models": m }),
-        Err(e) => json!({ "ok": false, "code": an_core::codes::LLM_UNREACHABLE, "error": format!("{e:#}") }),
+    let backends = rt.backends.status().await;
+    let llm = match backends.iter().find(|b| b.roles.contains(&"conversation")) {
+        Some(b) if b.ok => json!({ "ok": true, "models": b.server_models }),
+        Some(b) => json!({ "ok": false, "code": an_core::codes::LLM_UNREACHABLE, "error": b.error }),
+        None => json!({ "ok": false, "code": an_core::codes::LLM_UNREACHABLE, "error": "没有 conversation 后端" }),
     };
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "time": an_core::now(),
         "llm": llm,
+        "backends": backends,
         "groups": groups,
         "agents": rt.registry.cards(),
         "nodes": { "paired": rt.nodes.paired(), "discovered": rt.nodes.discovered() },

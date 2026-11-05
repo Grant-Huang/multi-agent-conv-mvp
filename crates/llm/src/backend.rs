@@ -8,7 +8,9 @@
 use std::collections::BTreeSet;
 
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use tokio::sync::Mutex as AsyncMutex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -223,6 +225,17 @@ pub struct Backend {
     pub sched: Scheduler,
     /// 上下文总量（token）：配置里写了就用配置值，否则等 `probe()` 从服务读取；0 = 未知，不做预算裁剪
     ctx: AtomicU32,
+    /// 健康检查缓存（模型列表、`/slots` + `/metrics`），多个浏览器共用，避免每次刷新都打到推理服务
+    probe_cache: AsyncMutex<ProbeCache>,
+}
+
+/// 健康检查结果缓存多久
+pub const PROBE_TTL: Duration = Duration::from_secs(8);
+
+#[derive(Debug, Default)]
+struct ProbeCache {
+    models: Option<(Instant, std::result::Result<Vec<String>, String>)>,
+    server: Option<(Instant, std::result::Result<crate::status::ServerView, String>)>,
 }
 
 /// llama-server `/props` 里我们关心的字段
@@ -241,7 +254,40 @@ impl Backend {
         let name = name.into();
         let sched = Scheduler::new(&name, &cfg);
         let ctx = AtomicU32::new(cfg.context_tokens);
-        Self { name, cfg, breaker: Breaker::default_policy(), stats: Stats::new(500), sched, ctx }
+        Self { name, cfg, breaker: Breaker::default_policy(), stats: Stats::new(500), sched, ctx, probe_cache: AsyncMutex::new(ProbeCache { models: None, server: None }) }
+    }
+
+    /// 模型列表：缓存未过期就直接返回，否则调用 `fetch` 并记住结果（成功和失败都缓存）。
+    /// 持锁期间完成请求，所以并发的健康检查只会真正请求一次
+    pub async fn models_cached<F>(&self, fetch: F) -> std::result::Result<Vec<String>, String>
+    where
+        F: std::future::Future<Output = anyhow::Result<Vec<String>>>,
+    {
+        let mut g = self.probe_cache.lock().await;
+        if let Some((at, cached)) = &g.models {
+            if at.elapsed() < PROBE_TTL {
+                return cached.clone();
+            }
+        }
+        let r = fetch.await.map_err(|e| format!("{e:#}"));
+        g.models = Some((Instant::now(), r.clone()));
+        r
+    }
+
+    /// `/slots` + `/metrics`：同样缓存。只对 `llama_cpp` 后端有意义
+    pub async fn server_cached<F>(&self, fetch: F) -> std::result::Result<crate::status::ServerView, String>
+    where
+        F: std::future::Future<Output = std::result::Result<crate::status::ServerView, String>>,
+    {
+        let mut g = self.probe_cache.lock().await;
+        if let Some((at, cached)) = &g.server {
+            if at.elapsed() < PROBE_TTL {
+                return cached.clone();
+            }
+        }
+        let r = fetch.await;
+        g.server = Some((Instant::now(), r.clone()));
+        r
     }
 
     /// 给不经过本客户端的外部进程（pi 等直连推理服务的 coding agent）申请一个**后台**租约：

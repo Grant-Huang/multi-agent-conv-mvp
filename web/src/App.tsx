@@ -165,10 +165,20 @@ function HealthBox({ health }: { health: Health | null }) {
   if (!health) return <div className="health"><span className="dot bad" /> 后端未连接</div>;
   return (
     <div className="health" onClick={() => setOpen(!open)} title="点击展开">
-      <div>
-        <span className={`dot ${health.llm.ok ? "ok" : "bad"}`} />
-        LLM {health.llm.ok ? "已连接" : "未连接"}
-      </div>
+      {(health.backends ?? []).length === 0 ? (
+        <div>
+          <span className={`dot ${health.llm.ok ? "ok" : "bad"}`} />
+          LLM {health.llm.ok ? "已连接" : "未连接"}
+        </div>
+      ) : (
+        health.backends.map((b) => (
+          <div key={b.name}>
+            <span className={`dot ${b.ok ? "ok" : "bad"}`} />
+            {b.name} {b.ok ? "已连接" : "未连接"}
+            {b.slots.some((s) => s.server_busy) ? ` · ${b.slots.filter((s) => s.server_busy).length} 个槽位生成中` : ""}
+          </div>
+        ))
+      )}
       {/* 每个 agent 一行：名称 + 角色 + 接入方式；不可用时悬停可看原因 */}
       {health.agents.map((a) => (
         <div key={a.id} title={a.disabled_reason ?? a.description}>
@@ -179,10 +189,13 @@ function HealthBox({ health }: { health: Health | null }) {
       ))}
       {open && (
         <div className="health-detail">
-          <div>{health.llm.base_url}</div>
-          <div>模型：{health.llm.server_models.join(", ") || health.llm.model}</div>
+          {(health.backends ?? []).map((b) => (
+            <div key={b.name}>
+              {b.base_url} · {b.server_models.join(", ") || b.model}
+              {b.error && <div className="bad-text">{b.error}</div>}
+            </div>
+          ))}
           <div>结构化：{health.llm.structured_mode}</div>
-          {health.llm.error && <div className="bad-text">{health.llm.error}</div>}
         </div>
       )}
     </div>

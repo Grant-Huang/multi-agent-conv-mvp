@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use serde::Serialize;
+
 use crate::backend::Priority;
 
 /// 分段超时。`total` 是单次请求的总时长上限；`deadline` 是整个调用（含重试）等待响应开始的预算
@@ -126,7 +128,7 @@ pub struct CallRecord {
     pub completion_tokens: Option<u64>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct StatsSummary {
     pub total: u64,
     pub outcomes: BTreeMap<String, u64>,
