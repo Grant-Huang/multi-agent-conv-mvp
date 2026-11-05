@@ -32,8 +32,10 @@ def provider_names() -> list[str]:
 
 def _register_builtin() -> None:
     from .ddg import DdgProvider
+    from .exa import ExaProvider
 
     register(DdgProvider())
+    register(ExaProvider())
 
 
 _register_builtin()

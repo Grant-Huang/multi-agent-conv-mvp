@@ -240,7 +240,9 @@ def provider_names() -> list[str]: ...
 4. 把 `href/title/body` 映射成 `SearchResult`，跳过没有 URL 的结果，并按 URL 去重。
 5. **重试（实测后新增）**：`ddgs` 的 auto 后端对同一个查询时好时坏，会随机报 "No results found" 或被限流。子进程内对"无结果 / 限流 / 超时"最多重试 3 次（间隔 1s），其他错误不重试；仍无结果时返回空列表，限流则报错。2026-11-05 实测 12 个查询 11 个有结果，平均 3.5s，最慢 8.3s。
 
-M3 的 Exa / Parallel 只需各写一个 provider 文件并注册，`api.py` 和入口层都不用改。
+Exa（`providers/exa.py`）调用托管 MCP `https://mcp.exa.ai/mcp` 的 `web_search_exa`，不需要 key。响应是 SSE，正文按 `Title` / `URL` / `Highlights` 解析成 `SearchResult`。页面正文不使用 Exa 附带的长文，仍走第 3.5 节的抓取管线。
+
+Parallel 仍留到 M3：再写一个 provider 文件并注册，`api.py` 和入口层不用改。
 
 ### 3.5 URL 校验（`url_guard.py`）
 
@@ -312,7 +314,7 @@ def html_to_markdown(html: str, base_url: str) -> tuple[str, str]   # (title, ma
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `WEBSEARCH_PROVIDER` | `ddg` | 默认搜索来源 |
+| `WEBSEARCH_PROVIDER` | `ddg` | 默认搜索来源。已注册 `ddg`、`exa` |
 | `WEBSEARCH_FETCH_ORDER` | `local_first` | `local_first` / `jina_first` / `jina_only` / `local_only` |
 | `WEBSEARCH_EXTRACTOR` | `auto` | `auto` / `lxml` / `trafilatura` |
 | `WEBSEARCH_SEARCH_TIMEOUT` | `30` | 搜索硬超时（秒） |

@@ -22,7 +22,7 @@
 |---|---|---|
 | M0 | 本地部署 + e2e 发现的 5 个问题 + 派发边界规则 | ✅ 完成 |
 | M1 | 派发"越用越聪明"：纠错反馈、相似经验检索、纠错回归 | 待开始 |
-| M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.7 完成，2.8 待定 |
+| M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.8 完成 |
 | pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .10 完成 |
 | 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
 | M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
@@ -100,7 +100,12 @@ M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B �
   - 正文提取对比（`.tmp/ref/cmp_extract.py`，9 个可抓取页面）：大体持平；HN、阮一峰博客我更好（pi 输出被破坏的表格 / 只拿到 105 字），GitHub / Hugging Face 我带少量导航噪声
   - 修复缺陷：无 `<article>/<main>` 的 Sphinx 类文档站只提到一个小节（docs.python.org 9946 字 → 52960 字）：`role="main"`、`itemprop="articleBody"` 也作为语义候选；新增 2 个测试，301 个测试通过，flake8 通过
   - 已确认只用 ddgs，不加 Brave provider；**freshness / region 参数待做**（用户已选，排在 pre-M3 之后）
-- [ ] **2.8 与 pi 原生联网方式的端到端对比**（同一个 35B 模型）：搁置，等用户说明 pi 的免费搜索来源后，用它作基准；脚本见 `.tmp/search_ab/`
+- [x] **2.8 第二个搜索来源：Exa**（2026-11-05）
+  - 你给的 `DDGS` + `r.jina.ai` 写法，包里已经是这条管线：`search` 只拿 URL，`search_and_fetch` 再抓正文（默认本机优先，失败用 Jina，合并调用每页 3000 字）。没有把查询词打到 stdout
+  - Exa 用托管 MCP `https://mcp.exa.ai/mcp` 的 `web_search_exa`，无 key。`ExaProvider` 只解析标题 / URL / Highlights，正文仍走上面的抓取管线。`WEBSEARCH_PROVIDER=exa` 或 `--provider exa`
+  - 实测这次调用返回 200，能解析出 URL。单元测试覆盖解析、截断条数、坏 URL、超时、HTTP 错误、MCP 错误。311 个测试通过，flake8 通过
+  - 豆包搜索不做无 key 来源：火山引擎接口要 `Authorization: Bearer`，每月有免费次数，但是账号密钥。等有 key 再加 provider，密钥只走环境变量
+  - pi 仍没有内置免费搜索（2.7a）。和 DDG 的效果对比留在 M3 的 A/B，不在这一步用 35B 重跑
 
 ## pre-M3 稳定性加固（原 M7，2026-11-05 确认提前到 M3 之前）
 

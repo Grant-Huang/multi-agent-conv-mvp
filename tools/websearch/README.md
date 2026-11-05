@@ -6,7 +6,7 @@
 - **MCP server**：`websearch-mcp`（stdio），支持 MCP 的 agent 直接挂载
 - **Python 函数**：`from agent_websearch import api`
 
-搜索用 DuckDuckGo（无需 API key）；抓取先在本机下载并转成 Markdown，失败再用 [Jina Reader](https://r.jina.ai) 兜底。设计见 [DESIGN.md](DESIGN.md)。
+搜索默认用 DuckDuckGo，也可以换成 Exa 托管搜索（`WEBSEARCH_PROVIDER=exa` 或 `--provider exa`），两者都不需要 API key。抓取先在本机下载并转成 Markdown，失败再用 [Jina Reader](https://r.jina.ai) 兜底。设计见 [DESIGN.md](DESIGN.md)。
 
 ## 安装
 
@@ -73,6 +73,7 @@ pi --skill ./tools/websearch/skills/websearch -p "..."
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
+| `WEBSEARCH_PROVIDER` | `ddg` | `ddg` 或 `exa`。Exa 走托管接口，不需要 key |
 | `WEBSEARCH_FETCH_ORDER` | `local_first` | `local_first` / `jina_first` / `jina_only` / `local_only`（不能把 URL 发给第三方时用 `local_only`） |
 | `WEBSEARCH_EXTRACTOR` | `auto` | `auto` / `lxml` / `trafilatura` |
 | `WEBSEARCH_SEARCH_TIMEOUT` | `30` | 搜索硬超时（秒） |
