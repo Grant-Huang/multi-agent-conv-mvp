@@ -227,6 +227,18 @@ async fn extra_body_is_merged_but_cannot_override_core_fields() {
     assert_eq!(body["stream"], true);
 }
 
+#[tokio::test]
+async fn structured_thinking_can_be_disabled_without_affecting_plain_chat() {
+    let m = start(|_, _| json_cfg_reply("{\"a\":1}", "stop")).await;
+    let c = plain(&m.url, 0, timeouts(2000, 2000, 5000)).disable_structured_thinking();
+    ask(&c).await.unwrap();
+    assert_eq!(m.body(0)["chat_template_kwargs"]["enable_thinking"], false);
+    let m = start(|_, _| ok_reply(&["好"])).await;
+    let c = plain(&m.url, 0, timeouts(2000, 2000, 5000)).disable_structured_thinking();
+    c.chat(&msgs()).await.unwrap();
+    assert!(m.body(0).get("chat_template_kwargs").is_none());
+}
+
 // ───────────────────────── 超时与重试 ─────────────────────────
 
 #[tokio::test]

@@ -200,6 +200,9 @@ impl Backends {
             if let Some(m) = model {
                 client = client.with_model(m);
             }
+            if matches!(role, LlmRole::Conversation | LlmRole::Router) && spec.front_structured_thinking == Some(false) {
+                client = client.disable_structured_thinking();
+            }
             bindings.push(RoleBinding {
                 role,
                 backend: name.clone(),
@@ -414,6 +417,18 @@ mod tests {
         assert_eq!(b.bindings().len(), 5);
         assert_eq!(b.client(LlmRole::General).priority(), Priority::Background);
         assert_eq!(b.client(LlmRole::Router).priority(), Priority::Interactive);
+    }
+
+    #[test]
+    fn front_structured_thinking_off_only_applies_to_conversation_and_router() {
+        let src = "[backends.local]\nkind = \"llama_cpp\"\nbase_url = \"http://x/v1\"\nslots = 4\nfront_structured_thinking = false\n\
+            [routing]\nconversation = \"local\"\nrouter = \"local\"\ngeneral = \"local\"\nreviewer = \"local\"\n";
+        let b = build(src).unwrap();
+        assert!(b.client(LlmRole::Conversation).structured_thinking_disabled());
+        assert!(b.client(LlmRole::Router).structured_thinking_disabled());
+        assert!(!b.client(LlmRole::Reply).structured_thinking_disabled());
+        assert!(!b.client(LlmRole::General).structured_thinking_disabled());
+        assert!(!b.client(LlmRole::Reviewer).structured_thinking_disabled());
     }
 
     #[test]

@@ -23,7 +23,7 @@
 | M0 | 本地部署 + e2e 发现的 5 个问题 + 派发边界规则 | ✅ 完成 |
 | M1 | 派发"越用越聪明"：纠错反馈、相似经验检索、纠错回归 | 待开始 |
 | M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.7 完成，2.8 待定 |
-| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .8 完成，.9 起待做 |
+| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .9 完成，.10 起待做 |
 | 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
 | M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
 | M4 | 多问题消息逐条对应回答 | 待开始 |
@@ -345,10 +345,13 @@ reviewer = "local"
   - coding agent 逐行进度事件节流合并（≥200ms 或 N 行一条）；`events` 表加保留策略
   - 埋点：`store.event_batch`、`store.read_slow`
   - 验收：读延迟 P95 不随写入量线性增长；事件顺序不乱；退出时写完缓冲
-- [ ] **pre-M3.9 Server 侧调优（逐项基准，一次只改一个，用探测脚本和评测集对比）**
-  - 已做：Q4 KV + Flash Attention、`--cache-ram`、`--metrics`、5 槽位共享池
-  - 待基准：`-b / -ub` 批大小、`--cache-reuse`、前台结构化调用关闭思考（请求里加 `chat_template_kwargs: {"enable_thinking": false}`，预期显著降低判断延迟，需用评测集确认准确率不降）、`--reasoning-budget`
-  - 每项记录：首 token 延迟、生成速度、内存、评测通过率；结论写回本节
+- [x] **pre-M3.9 Server 侧调优**（2026-11-05 完成）
+  - 服务端标志保持现有默认：`-b 2048 -ub 512`、`--cache-reuse 0`、`--reasoning-budget -1`。探测是单次样本（`scripts/probe_llama_tune.py`，流式、temperature 0、槽位 0），只用来排除明显变差的项
+  - `-b 4096 -ub 1024`：冷启动首 token 1482ms，前缀复用 167ms，系统头变化 1517ms，解码 39.1 token/s，RSS 23191 MiB。和另外两次同量级，不改默认
+  - `--cache-reuse 256`：冷启动首 token 5091ms（更差），系统头变化 1671ms（没有变快），前缀复用 165ms，解码 39.0 token/s。不启用。前缀缓存在默认值下已经生效
+  - `--reasoning-budget 0`：结构化请求不再思考（冷启动 1785ms、14 token），但普通解码掉到 15.2 token/s（5487ms，另外两次约 2300ms）。不能加在全局启动参数上
+  - 前台结构化关闭思考：同一 95 条 `evals/routing.jsonl`、temperature 0、审查模式 reviewer。思考开着：整体 85.3%（81/95），动作 93.7%，角色 96.4%，类别 80.8%，工具 88.9%，风险 90.6%；判断 P50/P95 3540/11180ms，路由 4534/12612ms，整轮 797s。只给 conversation / router 的结构化请求加 `enable_thinking=false`：整体 76.8%（73/95），动作 91.6%，角色 90.9%，类别 76.9%，工具 88.9%，风险 84.8%；判断 P50/P95 1006/2295ms，路由 1103/1829ms，整轮 207s。准确率下降，**不采用**。开关留在配置里，默认不写
+  - 代码：`BackendConfig.front_structured_thinking`。只有 `Some(false)` 时，conversation 和 router 的结构化请求才带 `chat_template_kwargs.enable_thinking=false`；直接回答和后台任务不变。`scripts/llama_server_35b.sh` 可用环境变量试 `BATCH` / `UBATCH` / `CACHE_REUSE` / `REASONING_BUDGET`，空着就不改启动参数
 - [ ] **pre-M3.10 验收**：并发 10 会话（其中 3 个后台任务在跑）压测：
   - 前台判断延迟 P95 ≤ 30s；日志中无"超时后立即重复请求"；`/slots` 抽查无僵尸生成；前台槽位（0~1）上没有后台请求；前端请求数和渲染次数在上限内
   - 所有 `llm.call` 的 `outcome` 分布可从诊断页看到，失败都带错误码
@@ -421,7 +424,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 5. ~~M7 是否排在 M3 之前 / 统一流式 / 槽位数~~（已确认：提前并改名 pre-M3；统一流式；35B 槽位 5→6 见第 6 项；9B 下线）
 6. ~~前台借用后台槽位~~（已确认 2026-11-05：**不借用**，改为 6 槽位 = 前台 2 + 后台 4；`borrow_idle` 默认 false）
 7. ~~pre-M3.5 怎样固定 pi 的槽位~~（已确认 2026-11-05：选 A，pi 扩展 + 环境变量 `AN_LLM_SLOT`；其他 coding agent 以后各自适配，通用代理方案 C 留到连接器设计评审时再议）
-8. ~~pre-M3.9 关闭思考对比实验~~（已确认 2026-11-05：前台结构化调用 `enable_thinking=false`，**必须用评测集确认准确率不降**才采用）
+8. ~~pre-M3.9 关闭思考对比实验~~（已确认 2026-11-05：前台结构化调用 `enable_thinking=false`，**必须用评测集确认准确率不降**才采用。同日结果：95 条从 85.3% 降到 76.8%，不采用，开关默认关闭）
 9. ~~pre-M3.1 配置设计~~（已确认 2026-11-05：`[backends.<名>]` + `[routing]`、`kind = llama_cpp | openai`、密钥只读环境变量、无 `[backends]` 沿用 `[llm]`；`router` 归前台）
 10. ~~部署 B 的云端边界~~（已确认 2026-11-05，并补充了能力扩展要求，见 pre-M3"能力扩展约束"）
 

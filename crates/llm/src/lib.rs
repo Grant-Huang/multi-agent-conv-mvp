@@ -164,6 +164,8 @@ pub struct LlmClient {
     role: String,
     priority: Priority,
     timeouts: Timeouts,
+    /// 为 true 时，带 `response_format` 的请求关闭思考。直接回答（没有 response_format）不受影响。
+    disable_structured_thinking: bool,
 }
 
 /// 一次调用的请求内容（`messages` 之外的参数）
@@ -246,7 +248,7 @@ impl LlmClient {
         // 没绑定后端的客户端不设调用期限（和以前一致）
         let timeouts = Timeouts::defaults(cfg.timeout_secs, Priority::Background);
         let http = build_http(timeouts.connect)?;
-        Ok(Self { http, cfg, backend: None, role: String::new(), priority: Priority::Interactive, timeouts })
+        Ok(Self { http, cfg, backend: None, role: String::new(), priority: Priority::Interactive, timeouts, disable_structured_thinking: false })
     }
 
     /// 复制一个使用其他分段超时的客户端
@@ -286,6 +288,17 @@ impl LlmClient {
 
     pub fn backend(&self) -> Option<&Arc<Backend>> {
         self.backend.as_ref()
+    }
+
+    /// 结构化请求（前台判断 / 路由）不再思考。普通对话请求不带这个字段。
+    pub fn disable_structured_thinking(&self) -> Self {
+        let mut c = self.clone();
+        c.disable_structured_thinking = true;
+        c
+    }
+
+    pub fn structured_thinking_disabled(&self) -> bool {
+        self.disable_structured_thinking
     }
 
     pub fn role(&self) -> &str {
@@ -346,6 +359,12 @@ impl LlmClient {
                 if !matches!(k.as_str(), "model" | "messages" | "stream") {
                     body[k] = v.clone();
                 }
+            }
+        }
+        if self.disable_structured_thinking && req.response_format.is_some() {
+            let kwargs = body.as_object_mut().expect("请求体是对象").entry("chat_template_kwargs").or_insert_with(|| json!({}));
+            if let Some(map) = kwargs.as_object_mut() {
+                map.entry("enable_thinking").or_insert(json!(false));
             }
         }
         body

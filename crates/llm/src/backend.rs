@@ -108,9 +108,14 @@ pub struct BackendConfig {
     /// 不写则用 `[llm].structured_mode`
     #[serde(default)]
     pub structured_mode: Option<StructuredMode>,
-    /// 附加到每个请求体的字段，例如 `{ chat_template_kwargs = { enable_thinking = false } }`
+    /// 附加到每个请求体的字段，例如 `{ chat_template_kwargs = { enable_thinking = false } }`。
+    /// 这会作用到该后端的每一次调用。只想关掉前台判断的思考时，用 `front_structured_thinking`。
     #[serde(default)]
     pub extra_body: Map<String, Value>,
+    /// 前台结构化调用（conversation / router）是否思考。不写则不改请求，沿用模型默认。
+    /// `false` 只给这两个角色的结构化请求加上 `enable_thinking=false`，直接回答和后台任务不变。
+    #[serde(default)]
+    pub front_structured_thinking: Option<bool>,
     #[serde(default)]
     pub connect_secs: Option<u64>,
     #[serde(default)]

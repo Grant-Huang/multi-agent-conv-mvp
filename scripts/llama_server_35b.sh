@@ -21,6 +21,11 @@ SLOTS="${SLOTS:-6}"
 CTX="${CTX:-262144}"
 CACHE_RAM="${CACHE_RAM:-8192}"
 KV_TYPE="${KV_TYPE:-q4_0}"
+# 下面几项留空就用 llama-server 的默认值。pre-M3.9 逐项对比时只设其中一项。
+BATCH="${BATCH:-}"
+UBATCH="${UBATCH:-}"
+CACHE_REUSE="${CACHE_REUSE:-}"
+REASONING_BUDGET="${REASONING_BUDGET:-}"
 
 if [ ! -x "$LLAMA_BIN" ]; then
     echo "找不到 llama-server：$LLAMA_BIN" >&2
@@ -42,6 +47,10 @@ ARGS=(
     --cache-ram "$CACHE_RAM"
     --metrics
 )
+if [ -n "$BATCH" ]; then ARGS+=(-b "$BATCH"); fi
+if [ -n "$UBATCH" ]; then ARGS+=(-ub "$UBATCH"); fi
+if [ -n "$CACHE_REUSE" ]; then ARGS+=(--cache-reuse "$CACHE_REUSE"); fi
+if [ -n "$REASONING_BUDGET" ]; then ARGS+=(--reasoning-budget "$REASONING_BUDGET"); fi
 
 if [ -n "$LLAMA_LOG" ]; then
     exec "$LLAMA_BIN" "${ARGS[@]}" >> "$LLAMA_LOG" 2>&1
