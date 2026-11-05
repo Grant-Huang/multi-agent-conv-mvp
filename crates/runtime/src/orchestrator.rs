@@ -135,7 +135,8 @@ impl Orchestrator {
 
     /// 启动后台执行（持有锁时 spawn，保证 abort handle 一定先登记，再被执行完的任务移除）
     fn start(self: &Arc<Self>, task: TaskRecord) {
-        self.set_status(&task, TaskStatus::Queued, "排队中");
+        let ahead = self.store.count_role_status(task.role.as_str(), TaskStatus::Queued).unwrap_or(0);
+        self.set_status(&task, TaskStatus::Queued, format!("排队中（第 {} 位）", ahead + 1));
         let mut running = self.running.lock().unwrap();
         let this = self.clone();
         let id = task.id.clone();

@@ -6,7 +6,7 @@
 //! 3. Turn Controller（LLM 结构化输出）：respond / clarify / delegate / follow_up。
 //!    **只输出动作，不写回答内容**——输出很短，判断很快；
 //! 4. respond → 单独生成回答，边生成边推送到界面（流式）；
-//!    delegate → Router → Orchestrator，立即回复"已开始处理"，结果稍后通过事件交付；
+//!    delegate → Router → Orchestrator，立即回复已理解的意图，结果稍后通过事件交付；
 //! 5. 记录路由日志（用于调试和积累评测集）。
 //!
 //! 提示词集中在 [`crate::prompts`]。
@@ -281,7 +281,8 @@ impl ConversationRuntime {
                 let task = self.orchestrator.submit(&conversation_id, goal, ctx, route.decision.clone(), route.policy.clone())?;
                 log.task_id = Some(task.id.clone());
                 let reply = if route.policy.auto_execute {
-                    format!("收到，已交给 {} 处理（{}）。完成后我会在这里给你结果。", task.role.as_str(), route.decision.reason)
+                    let intent = goal.split_whitespace().collect::<Vec<_>>().join(" ");
+                    format!("明白，我来根据您的要求做：{}", truncate_chars(&intent, 80))
                 } else {
                     format!(
                         "这个任务被判定为需要人工审批（{}）。请在任务面板中确认后我再开始执行。",

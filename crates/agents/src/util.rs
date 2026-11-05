@@ -119,7 +119,31 @@ pub async fn collect_git_changes(workdir: &Path, baseline: Option<&str>) -> (Vec
     if let Some(diff) = diff.filter(|d| !d.trim().is_empty()) {
         artifacts.push(Artifact { kind: "diff".into(), name: "git diff".into(), content: truncate_chars(&diff, 20000) });
     }
+    let names = match (baseline, after.as_deref()) {
+        (Some(before), Some(after)) => git(workdir, &["diff", "--name-only", "--diff-filter=ACMR", before, after]).await,
+        _ => git(workdir, &["diff", "--name-only", "--diff-filter=ACMR"]).await,
+    };
+    if let Some(names) = names {
+        for rel in names.lines().map(str::trim).filter(|s| !s.is_empty()).take(20) {
+            if let Some(file) = read_text_file(workdir, rel).await {
+                artifacts.push(file);
+            }
+        }
+    }
     (evidence, artifacts)
+}
+
+/// 把任务改过的文本文件收成可下载的产物。二进制和超过 512KB 的文件不内联。
+async fn read_text_file(workdir: &Path, rel: &str) -> Option<Artifact> {
+    if rel.split(['/', '\\']).any(|p| p.is_empty() || p == "." || p == "..") {
+        return None;
+    }
+    let bytes = tokio::fs::read(workdir.join(rel)).await.ok()?;
+    if bytes.contains(&0) || bytes.len() > 512 * 1024 {
+        return None;
+    }
+    let content = String::from_utf8(bytes).ok()?;
+    Some(Artifact { kind: "file".into(), name: rel.into(), content })
 }
 
 #[cfg(test)]
@@ -166,6 +190,8 @@ mod tests {
         let stat = &evidence.iter().find(|e| e.kind == "git_diff_stat").unwrap().content;
         assert!(stat.contains("new_file.py") && !stat.contains("old_untracked.py"), "{stat}");
         assert_eq!(std::fs::read(dir.join(".git/index")).unwrap(), index_before, "不应改动用户仓库的暂存区");
+        let file = artifacts.iter().find(|a| a.kind == "file" && a.name == "new_file.py").expect("新建文件应能下载");
+        assert_eq!(file.content, "print('new')\n");
     }
 
     #[tokio::test]

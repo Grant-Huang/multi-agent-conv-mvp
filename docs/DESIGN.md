@@ -249,7 +249,7 @@ sequenceDiagram
             C-->>U: "暂时无法派发：……"
         else 通过
             R->>O: 创建任务
-            C-->>U: "已交给 X 处理，完成后告诉你"
+            C-->>U: "明白，我来根据您的要求做……"
             O->>G: 要一个 agent
             Note over G: 有空闲的立即给；都在忙就排队
             G-->>O: agent

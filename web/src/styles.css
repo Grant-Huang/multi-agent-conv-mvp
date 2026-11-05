@@ -127,6 +127,30 @@ pre {
 .bubble.md th { background: var(--code-bg); }
 .bubble.md a { color: var(--accent); }
 .msg-task { margin-top: 6px; font-size: 11px; color: var(--muted); }
+.task-live { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.task-status { font-size: 12px; font-weight: 600; }
+.task-status.s-completed { color: var(--ok); }
+.task-status.s-failed { color: var(--bad); }
+.task-status.s-running, .task-status.s-verifying { color: var(--accent); }
+.marquee {
+  overflow: hidden; height: 28px; line-height: 28px; border-radius: 6px;
+  background: var(--code-bg); color: var(--muted); font-size: 12px;
+}
+.marquee span {
+  display: inline-block; padding-left: 100%; white-space: nowrap;
+  animation: task-marquee 18s linear infinite;
+}
+.marquee:hover span { animation-play-state: paused; }
+@keyframes task-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee span { animation: none; padding-left: 8px; }
+}
+.artifacts { display: flex; flex-direction: column; gap: 4px; }
+.artifact-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.artifact-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty { margin: auto; color: var(--muted); max-width: 460px; }
 .empty h2 { font-size: 15px; color: var(--text); }
 .composer { display: flex; gap: 10px; padding: 12px 24px 18px; border-top: 1px solid var(--border); background: var(--panel); }

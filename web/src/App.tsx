@@ -26,6 +26,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   // 正在流式生成的回答：id 等于最终消息的 id，最终消息到达后自动隐藏
   const [streaming, setStreaming] = useState<{ id: string; text: string } | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const noted = useRef(new Set<string>());
 
   // 健康检查：启动时 + 每 10 秒（节点配对、上线、离线后左下角能及时更新）
   useEffect(() => {
@@ -78,8 +80,8 @@ export default function App() {
       intervalMs: REFRESH_INTERVAL_MS,
       onTasks: () => {
         const cid = currentRef.current;
-        // 只有任务页签可见时才拉列表；进度事件不会走到这里
-        if (cid && sideRef.current === "tasks") api.tasks(cid).then(setTasks).catch(() => {});
+        // 对话里的状态和产物也要这份列表，不能只在任务页签打开时拉
+        if (cid) api.tasks(cid).then(setTasks).catch(() => {});
       },
       onMessages: () => {
         const cid = currentRef.current;
@@ -88,7 +90,18 @@ export default function App() {
       onPanels: () => {
         if (sideRef.current === "diag" || sideRef.current === "logs") setPanelTick((n) => n + 1);
       },
-      onLive: (ev) => setIncoming(ev),
+      onLive: (ev) => {
+        setIncoming(ev);
+        if (ev.task_id && ev.message.trim() && ev.kind !== "assistant_message") {
+          const id = ev.task_id;
+          setNotes((n) => ({ ...n, [id]: ev.message }));
+        }
+        if (ev.kind === "status_changed" && ev.task_id && ev.status) {
+          const id = ev.task_id;
+          const status = ev.status;
+          setTasks((list) => list.map((t) => (t.id === id ? { ...t, status } : t)));
+        }
+      },
       // 增量拉取在展开的任务卡片里，按它自己的游标节流；这里不再发第二次请求
       onDetail: () => {},
       onDelta: (piece, id) => {
@@ -102,7 +115,26 @@ export default function App() {
     });
   }, [current, refreshConversation]);
 
-  // 切回任务页签时拉一次列表（看别的页签时状态变化不会打 /api/tasks）
+  // 已经结束的任务不会再推事件：打开会话时用最后一条事件当作走马灯
+  useEffect(() => {
+    noted.current = new Set();
+    setNotes({});
+  }, [current]);
+
+  useEffect(() => {
+    const ids = [...new Set(messages.map((m) => m.task_id).filter((id): id is string => !!id))];
+    for (const id of ids) {
+      if (noted.current.has(id)) continue;
+      noted.current.add(id);
+      api.task(id).then((d) => {
+        const last = [...d.events].reverse().find((e) => e.kind !== "assistant_message" && e.message.trim());
+        if (!last) return;
+        setNotes((n) => (n[id] ? n : { ...n, [id]: last.message }));
+      }).catch(() => {});
+    }
+  }, [messages]);
+
+  // 切回任务页签时补一次列表（对话里的状态由事件到达时刷新）
   useEffect(() => {
     if (sideTab === "tasks" && current) api.tasks(current).then(setTasks).catch(() => {});
   }, [sideTab, current]);
@@ -164,7 +196,7 @@ export default function App() {
 
       <main className="main">
         {error && <div className="error-bar" onClick={() => setError(null)}>{error}（点击关闭）</div>}
-        <ChatView messages={messages} onSend={send} streaming={streaming} />
+        <ChatView messages={messages} tasks={tasks} notes={notes} onSend={send} streaming={streaming} />
       </main>
 
       <aside className="side">

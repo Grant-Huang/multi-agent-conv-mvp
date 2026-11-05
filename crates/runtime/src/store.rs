@@ -468,6 +468,16 @@ impl Store {
         rows.into_iter().collect()
     }
 
+    /// 某个角色、某个状态的任务数。排队名次用它：调用时本任务还没写成 QUEUED，所以名次是这个数 + 1
+    pub fn count_role_status(&self, role: &str, status: TaskStatus) -> Result<i64> {
+        let _timer = ReadTimer::new("count_role_status");
+        Ok(self.read().query_row(
+            "SELECT COUNT(*) FROM tasks WHERE role = ?1 AND status = ?2",
+            params![role, status.as_str()],
+            |r| r.get(0),
+        )?)
+    }
+
     /// 会话中尚未结束的任务（给 Turn Controller 判断 follow_up 用）
     pub fn active_tasks(&self, conversation_id: &str) -> Result<Vec<TaskRecord>> {
         Ok(self.list_tasks(Some(conversation_id))?.into_iter().filter(|t| !t.status.is_terminal()).collect())

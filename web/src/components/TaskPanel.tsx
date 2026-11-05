@@ -5,6 +5,7 @@ import type { TaskEvent } from "../bindings/TaskEvent";
 import type { TaskRecord } from "../bindings/TaskRecord";
 import type { TaskStatus } from "../bindings/TaskStatus";
 import { useIncomingDetail } from "../refresh";
+import { ArtifactList } from "./ArtifactList";
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
   CREATED: "已创建",
@@ -109,12 +110,7 @@ function TaskCard(props: { task: TaskRecord; open: boolean; onToggle: () => void
           {d.result && (
             <Section title={`执行结果（${d.result.status === "succeeded" ? "进程成功" : "进程失败"}）`}>
               <pre>{d.result.summary}</pre>
-              {d.result.artifacts.map((a, i) => (
-                <details key={i}>
-                  <summary>产物 [{a.kind}] {a.name}</summary>
-                  <pre>{a.content}</pre>
-                </details>
-              ))}
+              <ArtifactList artifacts={d.result.artifacts} summary={d.result.summary} />
               {d.result.evidence.length > 0 && (
                 <details>
                   <summary>证据（{d.result.evidence.length} 条）</summary>
