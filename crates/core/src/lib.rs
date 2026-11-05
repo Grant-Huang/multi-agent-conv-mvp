@@ -478,6 +478,13 @@ pub mod codes {
     pub const LLM_HTTP: &str = "E_LLM_HTTP";
     pub const LLM_FORMAT: &str = "E_LLM_FORMAT";
     pub const LLM_FORMAT_RETRY: &str = "W_LLM_FORMAT_RETRY";
+    pub const LLM_TIMEOUT: &str = "E_LLM_TIMEOUT";
+    pub const LLM_CONTEXT: &str = "E_LLM_CONTEXT";
+    pub const LLM_RATE_LIMITED: &str = "W_LLM_RATE_LIMITED";
+    pub const LLM_TRUNCATED: &str = "E_LLM_TRUNCATED";
+    pub const LLM_STREAM: &str = "E_LLM_STREAM";
+    pub const LLM_BREAKER: &str = "E_LLM_BREAKER";
+    pub const LLM_RETRY: &str = "W_LLM_RETRY";
     // 路由与执行组
     pub const ROUTE_NO_AGENT: &str = "E_ROUTE_NO_AGENT";
     pub const POOL_CONFIG: &str = "E_POOL_CONFIG";

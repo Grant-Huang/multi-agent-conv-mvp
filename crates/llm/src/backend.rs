@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::policy::{Breaker, Stats};
 use crate::StructuredMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -47,10 +48,6 @@ impl Priority {
     }
 }
 
-fn d_true() -> bool {
-    true
-}
-
 /// `[backends.<名字>]`
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BackendConfig {
@@ -75,8 +72,8 @@ pub struct BackendConfig {
     /// 后台只能使用的槽位；留空（且前台列表有内容）表示该后端不接后台角色
     #[serde(default)]
     pub background_slots: Vec<u32>,
-    /// 前台槽位全忙时，是否可以借用空闲的后台槽位（后台永远不借用前台槽位）
-    #[serde(default = "d_true")]
+    /// 前台槽位全忙时，是否可以借用空闲的后台槽位（后台永远不借用前台槽位）；默认不借用
+    #[serde(default)]
     pub borrow_idle: bool,
 
     // ── openai：并发与速率 ──
@@ -111,6 +108,9 @@ pub struct BackendConfig {
     pub idle_secs: Option<u64>,
     #[serde(default)]
     pub total_secs: Option<u64>,
+    /// 前台调用（含重试）的期限，0 = 不限；不写：前台 60 秒、后台不限
+    #[serde(default)]
+    pub deadline_secs: Option<u64>,
 }
 
 impl BackendConfig {
@@ -200,11 +200,19 @@ impl BackendConfig {
     }
 }
 
-/// 运行时的后端：名字 + 配置（调度状态在 `scheduler.rs`）
-#[derive(Debug, Clone)]
+/// 运行时的后端：名字 + 配置 + 同一后端所有客户端共享的熔断器和调用统计（槽位调度在 pre-M3.3 加入）
+#[derive(Debug)]
 pub struct Backend {
     pub name: String,
     pub cfg: BackendConfig,
+    pub breaker: Breaker,
+    pub stats: Stats,
+}
+
+impl Backend {
+    pub fn new(name: impl Into<String>, cfg: BackendConfig) -> Self {
+        Self { name: name.into(), cfg, breaker: Breaker::default_policy(), stats: Stats::new(500) }
+    }
 }
 
 #[cfg(test)]

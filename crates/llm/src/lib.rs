@@ -8,17 +8,31 @@
 //!    （借鉴 Pydantic AI 的"结构化输出 + 闭环重试"）。
 
 mod backend;
+mod error;
+mod policy;
 
 pub use backend::{Backend, BackendConfig, BackendKind, Priority};
+pub use error::{is_context_error, parse_retry_after, ErrorKind, LlmError};
+pub use policy::{backoff_delay, jitter01, Breaker, CallRecord, Stats, StatsSummary, Timeouts};
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use an_core::codes;
 use serde_json::{json, Value};
+use tokio::time::{timeout_at, Instant as TokioInstant};
+
+/// 输出被截断时，`max_tokens` 最多放大到这个值
+const MAX_TOKENS_CAP: u32 = 16384;
+
+fn next_req_id() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
 
 /// 结构化输出的实现方式。不同推理服务支持程度不同，所以做成可配置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -114,6 +128,8 @@ pub struct Structured<T> {
 #[derive(Debug)]
 pub struct StructuredError {
     pub message: String,
+    /// 错误码（`an_core::codes`）：格式问题是 `E_LLM_FORMAT`，其余按模型调用错误分类
+    pub code: &'static str,
     pub raw_outputs: Vec<String>,
     pub attempts: u32,
     pub latency_ms: u64,
@@ -135,20 +151,118 @@ pub struct LlmClient {
     /// 角色名（conversation / reply / router / general / reviewer），埋点用
     role: String,
     priority: Priority,
+    timeouts: Timeouts,
+}
+
+/// 一次调用的请求内容（`messages` 之外的参数）
+struct CallReq<'a> {
+    messages: &'a [ChatMessage],
+    response_format: Option<Value>,
+    max_tokens: Option<u32>,
+    /// 结构化输出的 schema 名（普通对话为空），日志用
+    schema: &'a str,
+    req_id: u64,
+    /// 第几次格式重试（普通对话恒为 1）
+    format_attempt: u32,
+    /// 调用方是否在消费增量文本；是的话，已经推送过文本就不能再重试（否则用户会看到重复内容）
+    streaming: bool,
+}
+
+/// 日志 / 统计用的调用标识
+struct CallInfo<'a> {
+    req_id: u64,
+    schema: &'a str,
+    format_attempt: u32,
+    /// 第几次网络重试（0 = 首次）
+    retry: u32,
+}
+
+/// 一次成功收到完整流的结果
+#[derive(Debug, Default)]
+struct Attempt {
+    /// 模型输出的原文（内联的 `<think>` 段落未去掉）
+    text: String,
+    finish_reason: Option<String>,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+    ttft_ms: Option<u64>,
+    total_ms: u64,
+}
+
+/// 整个调用（含重试）的期限
+struct Deadline {
+    start: Instant,
+    budget: Option<Duration>,
+}
+
+impl Deadline {
+    fn new(budget: Option<Duration>) -> Self {
+        Self { start: Instant::now(), budget }
+    }
+
+    fn remaining(&self) -> Option<Duration> {
+        self.budget.map(|b| b.saturating_sub(self.start.elapsed()))
+    }
+}
+
+/// 调用方中途放弃（future 被丢弃）时，记一条 `cancelled`；连接随之关闭，推理服务会停止生成
+struct CancelGuard<'a> {
+    client: &'a LlmClient,
+    info: &'a CallInfo<'a>,
+    started: Instant,
+    done: bool,
+}
+
+impl Drop for CancelGuard<'_> {
+    fn drop(&mut self) {
+        if !self.done {
+            self.client.emit(self.info, "cancelled", self.started.elapsed().as_millis() as u64, None, None);
+        }
+    }
+}
+
+fn build_http(connect: Duration) -> Result<reqwest::Client> {
+    // 不设整体超时：流式响应的各段超时由 `stream_once` 自己控制
+    reqwest::Client::builder().connect_timeout(connect).build().context("创建 HTTP 客户端失败")
 }
 
 impl LlmClient {
     pub fn new(cfg: LlmConfig) -> Result<Self> {
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(cfg.timeout_secs))
-            .build()
-            .context("创建 HTTP 客户端失败")?;
-        Ok(Self { http, cfg, backend: None, role: String::new(), priority: Priority::Interactive })
+        // 没绑定后端的客户端不设调用期限（和以前一致）
+        let timeouts = Timeouts::defaults(cfg.timeout_secs, Priority::Background);
+        let http = build_http(timeouts.connect)?;
+        Ok(Self { http, cfg, backend: None, role: String::new(), priority: Priority::Interactive, timeouts })
     }
 
-    /// 复制一个绑定到某个后端、角色和优先级的客户端
-    pub fn with_backend(&self, backend: Arc<Backend>, role: &str, priority: Priority) -> Self {
+    /// 复制一个使用其他分段超时的客户端
+    pub fn with_timeouts(&self, timeouts: Timeouts) -> Self {
         let mut c = self.clone();
+        if timeouts.connect != self.timeouts.connect {
+            if let Ok(h) = build_http(timeouts.connect) {
+                c.http = h;
+            }
+        }
+        c.timeouts = timeouts;
+        c
+    }
+
+    pub fn timeouts(&self) -> &Timeouts {
+        &self.timeouts
+    }
+
+    /// 复制一个绑定到某个后端、角色和优先级的客户端；超时按优先级取默认值，再用后端配置覆盖
+    pub fn with_backend(&self, backend: Arc<Backend>, role: &str, priority: Priority) -> Self {
+        let b = &backend.cfg;
+        let mut t = Timeouts::defaults(self.cfg.timeout_secs, priority);
+        let secs = Duration::from_secs;
+        t.connect = b.connect_secs.map_or(t.connect, secs);
+        t.first_token = b.first_token_secs.map_or(t.first_token, secs);
+        t.idle = b.idle_secs.map_or(t.idle, secs);
+        t.total = b.total_secs.map_or(t.total, secs);
+        if let Some(d) = b.deadline_secs {
+            t.deadline = (d > 0).then(|| secs(d));
+        }
+        let mut c = self.with_timeouts(t);
         c.backend = Some(backend);
         c.role = role.to_string();
         c.priority = priority;
@@ -193,80 +307,105 @@ impl LlmClient {
         format!("{}/{}", self.cfg.base_url.trim_end_matches('/'), path.trim_start_matches('/'))
     }
 
-    /// 发送一次 chat completion 请求，返回 assistant 文本（已去掉 think 段落）
-    async fn complete(&self, messages: &[ChatMessage], response_format: Option<Value>) -> Result<String> {
+    /// 请求体：所有调用统一走流式（断开即取消生成），并要求服务端在最后附带 token 用量
+    fn request_body(&self, req: &CallReq<'_>) -> Value {
         let mut body = json!({
             "model": self.cfg.model,
-            "messages": messages,
-            "temperature": self.cfg.temperature,
-            "stream": false,
-        });
-        if let Some(mt) = self.cfg.max_tokens {
-            body["max_tokens"] = json!(mt);
-        }
-        if let Some(rf) = response_format {
-            body["response_format"] = rf;
-        }
-
-        let mut req = self.http.post(self.endpoint("chat/completions")).json(&body);
-        if !self.cfg.api_key.is_empty() {
-            req = req.bearer_auth(&self.cfg.api_key);
-        }
-        let resp = req.send().await.with_context(|| format!("无法连接 LLM 服务 {}", self.cfg.base_url))?;
-        let status = resp.status();
-        let text = resp.text().await.context("读取 LLM 响应失败")?;
-        if !status.is_success() {
-            bail!("LLM 返回 HTTP {status}: {}", truncate(&text, 500));
-        }
-        let v: Value = serde_json::from_str(&text).with_context(|| format!("LLM 响应不是 JSON: {}", truncate(&text, 300)))?;
-        let content = v["choices"][0]["message"]["content"]
-            .as_str()
-            .ok_or_else(|| anyhow!("LLM 响应缺少 choices[0].message.content: {}", truncate(&text, 300)))?;
-        Ok(strip_think(content))
-    }
-
-    /// 普通文本对话
-    pub async fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
-        self.complete(messages, None).await
-    }
-
-    /// 流式对话：每收到一段**可见**文本（已过滤思考段落）就调用 `on_delta`，最后返回完整回答。
-    /// 推理服务不支持流式时返回错误，调用方可以退回到 [`chat`](Self::chat)。
-    pub async fn chat_stream(&self, messages: &[ChatMessage], mut on_delta: impl FnMut(&str)) -> Result<String> {
-        use futures::StreamExt;
-        let mut body = json!({
-            "model": self.cfg.model,
-            "messages": messages,
+            "messages": req.messages,
             "temperature": self.cfg.temperature,
             "stream": true,
+            "stream_options": { "include_usage": true },
         });
-        if let Some(mt) = self.cfg.max_tokens {
+        if let Some(mt) = req.max_tokens {
             body["max_tokens"] = json!(mt);
         }
-        let mut req = self.http.post(self.endpoint("chat/completions")).json(&body);
-        if !self.cfg.api_key.is_empty() {
-            req = req.bearer_auth(&self.cfg.api_key);
+        if let Some(rf) = &req.response_format {
+            body["response_format"] = rf.clone();
         }
-        let resp = req.send().await.with_context(|| format!("无法连接 LLM 服务 {}", self.cfg.base_url))?;
+        if let Some(b) = &self.backend {
+            for (k, v) in &b.cfg.extra_body {
+                if !matches!(k.as_str(), "model" | "messages" | "stream") {
+                    body[k] = v.clone();
+                }
+            }
+        }
+        body
+    }
+
+    /// 发一次流式请求并累积结果。超时分三段：等响应 / 首 token 之前受 `first_token` 限制，
+    /// 开始生成后每个 token 间隔受 `idle` 限制，整次请求受 `total` 限制。
+    async fn stream_once<F: FnMut(&str)>(&self, req: &CallReq<'_>, remaining: Option<Duration>, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
+        use futures::StreamExt;
+        let t = &self.timeouts;
+        let start = TokioInstant::now();
+        let first_budget = remaining.map_or(t.first_token, |r| t.first_token.min(r));
+        let first_deadline = start + first_budget;
+        let total_deadline = start + t.total;
+        let limit_for = |first_pending: bool| -> (TokioInstant, ErrorKind) {
+            let (mut limit, mut kind) = if first_pending { (first_deadline, ErrorKind::TimeoutFirstToken) } else { (TokioInstant::now() + t.idle, ErrorKind::TimeoutIdle) };
+            if total_deadline <= limit {
+                (limit, kind) = (total_deadline, ErrorKind::TimeoutTotal);
+            }
+            (limit, kind)
+        };
+        let timeout_error = |kind: ErrorKind| {
+            let msg = match kind {
+                ErrorKind::TimeoutFirstToken => format!("等待 {} 秒仍未收到第一个 token（排队或提示词预填充过久）", first_budget.as_secs()),
+                ErrorKind::TimeoutIdle => format!("生成过程中 {} 秒没有新的 token", t.idle.as_secs()),
+                _ => format!("单次请求超过总时长上限 {} 秒", t.total.as_secs()),
+            };
+            LlmError::new(kind, msg)
+        };
+
+        let mut http_req = self.http.post(self.endpoint("chat/completions")).json(&self.request_body(req));
+        if !self.cfg.api_key.is_empty() {
+            http_req = http_req.bearer_auth(&self.cfg.api_key);
+        }
+        let (limit, kind) = limit_for(true);
+        let resp = match timeout_at(limit, http_req.send()).await {
+            Err(_) => return Err(timeout_error(kind)),
+            Ok(Err(e)) => return Err(LlmError::new(ErrorKind::Unreachable, format!("无法连接 LLM 服务 {}：{e}", self.cfg.base_url))),
+            Ok(Ok(r)) => r,
+        };
         let status = resp.status();
         if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            bail!("LLM 返回 HTTP {status}: {}", truncate(&text, 500));
+            let retry_after = resp.headers().get(reqwest::header::RETRY_AFTER).and_then(|v| v.to_str().ok()).and_then(parse_retry_after);
+            let body = tokio::time::timeout(Duration::from_secs(10), resp.text()).await.ok().and_then(|r| r.ok()).unwrap_or_default();
+            return Err(LlmError::from_http(status.as_u16(), &body, retry_after));
         }
 
-        // SSE：每行 `data: {json}`，最后一行 `data: [DONE]`
-        let (mut full, mut sent, mut buf) = (String::new(), String::new(), String::new());
+        // SSE：每行 `data: {json}`，最后一行 `data: [DONE]`。按字节切行，避免多字节字符被分包截断
         let mut stream = resp.bytes_stream();
-        'outer: while let Some(chunk) = stream.next().await {
-            buf.push_str(&String::from_utf8_lossy(&chunk.context("读取流式响应失败")?));
-            while let Some(pos) = buf.find('\n') {
-                let line: String = buf.drain(..=pos).collect();
+        let (mut full, mut sent, mut buf) = (String::new(), String::new(), Vec::<u8>::new());
+        let (mut first_seen, mut done) = (false, false);
+        let mut a = Attempt::default();
+        'outer: loop {
+            let (limit, kind) = limit_for(!first_seen);
+            let Some(chunk) = timeout_at(limit, stream.next()).await.map_err(|_| timeout_error(kind))? else { break };
+            buf.extend_from_slice(&chunk.map_err(|e| LlmError::new(ErrorKind::StreamCut, format!("读取流式响应失败：{e}")))?);
+            while let Some(pos) = buf.iter().position(|b| *b == b'\n') {
+                let line_bytes: Vec<u8> = buf.drain(..=pos).collect();
+                let line = String::from_utf8_lossy(&line_bytes);
                 let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else { continue };
                 if data == "[DONE]" {
+                    done = true;
                     break 'outer;
                 }
                 let Ok(v) = serde_json::from_str::<Value>(data) else { continue };
-                if let Some(piece) = v["choices"][0]["delta"]["content"].as_str() {
+                if let Some(err) = v.get("error") {
+                    let code = err["code"].as_u64().unwrap_or(500) as u16;
+                    return Err(LlmError::from_http(code, &err.to_string(), None));
+                }
+                let choice = &v["choices"][0];
+                let delta = &choice["delta"];
+                let piece = delta["content"].as_str().unwrap_or("");
+                // 推理内容（reasoning_content）不展示，但说明模型还在生成，用于"卡住"判断和首 token 计时
+                let thinking = delta["reasoning_content"].as_str().or_else(|| delta["reasoning"].as_str()).unwrap_or("");
+                if !first_seen && !(piece.is_empty() && thinking.is_empty()) {
+                    first_seen = true;
+                    a.ttft_ms = Some(start.elapsed().as_millis() as u64);
+                }
+                if !piece.is_empty() {
                     full.push_str(piece);
                     // 只推送新增的可见部分
                     let visible = visible_text(&full);
@@ -275,12 +414,130 @@ impl LlmClient {
                         sent = visible;
                     }
                 }
+                if let Some(fr) = choice["finish_reason"].as_str() {
+                    a.finish_reason = Some(fr.to_string());
+                }
+                if let Some(u) = v.get("usage").filter(|u| u.is_object()) {
+                    a.prompt_tokens = u["prompt_tokens"].as_u64();
+                    a.completion_tokens = u["completion_tokens"].as_u64();
+                }
             }
         }
-        if full.trim().is_empty() {
-            bail!("LLM 流式响应为空");
+        if !done && a.finish_reason.is_none() {
+            return Err(LlmError::new(ErrorKind::StreamCut, format!("流式响应在结束标记之前中断（已收到 {} 个字符）", full.chars().count())));
         }
-        Ok(strip_think(&full))
+        a.text = full;
+        a.total_ms = start.elapsed().as_millis() as u64;
+        Ok(a)
+    }
+
+    /// 记录一次尝试：调用统计、`llm.call` 日志
+    fn emit(&self, info: &CallInfo<'_>, outcome: &'static str, total_ms: u64, a: Option<&Attempt>, err: Option<&LlmError>) {
+        let backend = self.backend.as_ref().map(|b| b.name.as_str()).unwrap_or("-");
+        let (ttft, pt, ct) = a.map(|a| (a.ttft_ms, a.prompt_tokens, a.completion_tokens)).unwrap_or((None, None, None));
+        let finish = a.and_then(|a| a.finish_reason.as_deref());
+        if let Some(b) = &self.backend {
+            b.stats.record(CallRecord { role: self.role.clone(), priority: self.priority, outcome, attempt: info.format_attempt, queue_wait_ms: 0, ttft_ms: ttft, total_ms, prompt_tokens: pt, completion_tokens: ct });
+        }
+        if err.is_some() || outcome == "truncated" {
+            let code = err.map(|e| e.kind.code()).unwrap_or(codes::LLM_TRUNCATED);
+            let msg = err.map(|e| e.message.clone()).unwrap_or_default();
+            tracing::warn!(event = "llm.call", code, req_id = info.req_id, role = %self.role, priority = self.priority.as_str(), schema = info.schema, backend, model = %self.cfg.model, base_url = %self.cfg.base_url, attempt = info.format_attempt, retry = info.retry, ttft_ms = ttft, total_ms, prompt_tokens = pt, completion_tokens = ct, finish_reason = finish, outcome, error = %msg, "模型调用未成功");
+        } else {
+            tracing::info!(event = "llm.call", req_id = info.req_id, role = %self.role, priority = self.priority.as_str(), schema = info.schema, backend, model = %self.cfg.model, base_url = %self.cfg.base_url, attempt = info.format_attempt, retry = info.retry, ttft_ms = ttft, total_ms, prompt_tokens = pt, completion_tokens = ct, finish_reason = finish, outcome);
+        }
+    }
+
+    /// 一次尝试：熔断检查 → 流式请求 → 统计 / 日志 / 熔断计数。调用方中途丢弃（取消）时记为 `cancelled`
+    async fn call_once<F: FnMut(&str)>(&self, req: &CallReq<'_>, retry: u32, deadline: &Deadline, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
+        let info = CallInfo { req_id: req.req_id, schema: req.schema, format_attempt: req.format_attempt, retry };
+        if let Some(b) = &self.backend {
+            if let Err(left) = b.breaker.check() {
+                let e = LlmError::new(ErrorKind::BreakerOpen, format!("后端 {} 连续失败，已熔断，约 {} 秒后自动试探恢复", b.name, left.as_secs() + 1));
+                self.emit(&info, e.kind.outcome(), 0, None, Some(&e));
+                return Err(e);
+            }
+        }
+        let started = Instant::now();
+        let mut guard = CancelGuard { client: self, info: &info, started, done: false };
+        let result = self.stream_once(req, deadline.remaining(), on_delta).await;
+        guard.done = true;
+        let total_ms = started.elapsed().as_millis() as u64;
+        match &result {
+            Ok(a) => {
+                let outcome = if a.finish_reason.as_deref() == Some("length") { "truncated" } else { "ok" };
+                self.emit(&info, outcome, total_ms, Some(a), None);
+                if let Some(b) = &self.backend {
+                    if b.breaker.record_success() {
+                        tracing::info!(event = "llm.breaker", state = "closed", backend = %b.name, "后端恢复正常");
+                    }
+                }
+            }
+            Err(e) => {
+                self.emit(&info, e.kind.outcome(), total_ms, None, Some(e));
+                if let (Some(b), true) = (&self.backend, e.kind.trips_breaker()) {
+                    if b.breaker.record_failure() {
+                        tracing::error!(event = "llm.breaker", code = codes::LLM_BREAKER, state = "open", backend = %b.name, last_outcome = e.kind.outcome(), "后端连续失败，熔断 10 秒");
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// 带退避的调用：连接失败 / 超时 / 429 / 5xx / 流中断才重试，最多 `max_transient` 次
+    /// （前台最多 1 次、后台用 `max_retries`），每次重试前按指数退避 + 抖动等待，且受调用期限约束；
+    /// 已经向用户推送了部分文本时不再重试（否则会重复输出）
+    async fn run<F: FnMut(&str)>(&self, req: &CallReq<'_>, deadline: &Deadline, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
+        let max_transient = if self.priority == Priority::Interactive { self.cfg.max_retries.min(1) } else { self.cfg.max_retries };
+        let emitted = AtomicBool::new(false);
+        let mut n = 0u32;
+        loop {
+            let mut forward = |d: &str| {
+                if req.streaming {
+                    emitted.store(true, Ordering::Relaxed);
+                }
+                on_delta(d);
+            };
+            let e = match self.call_once(req, n, deadline, &mut forward).await {
+                Ok(a) => return Ok(a),
+                Err(e) => e,
+            };
+            if !e.is_retryable() || n >= max_transient || emitted.load(Ordering::Relaxed) {
+                return Err(e);
+            }
+            n += 1;
+            let delay = backoff_delay(n, jitter01(), e.retry_after);
+            if deadline.remaining().is_some_and(|r| r < delay + Duration::from_secs(1)) {
+                return Err(e);
+            }
+            tracing::warn!(event = "llm.retry", code = codes::LLM_RETRY, req_id = req.req_id, role = %self.role, attempt = n, reason = e.kind.outcome(), backoff_ms = delay.as_millis() as u64, "模型调用失败，退避后重试");
+            tokio::time::sleep(delay).await;
+        }
+    }
+
+    fn new_req<'a>(&self, messages: &'a [ChatMessage], schema: &'a str) -> CallReq<'a> {
+        CallReq { messages, response_format: None, max_tokens: self.cfg.max_tokens, schema, req_id: next_req_id(), format_attempt: 1, streaming: false }
+    }
+
+    /// 普通文本对话
+    pub async fn chat(&self, messages: &[ChatMessage]) -> Result<String> {
+        let deadline = Deadline::new(self.timeouts.deadline);
+        // 输出被 max_tokens 截断时仍返回已有文本（回复被截短好过没有回复），只在日志里记 truncated
+        let a = self.run(&self.new_req(messages, ""), &deadline, &mut |_: &str| {}).await?;
+        Ok(strip_think(&a.text))
+    }
+
+    /// 流式对话：每收到一段**可见**文本（已过滤思考段落）就调用 `on_delta`，最后返回完整回答。
+    /// 调用失败时返回错误，调用方可以退回到 [`chat`](Self::chat)。
+    pub async fn chat_stream(&self, messages: &[ChatMessage], mut on_delta: impl FnMut(&str)) -> Result<String> {
+        let deadline = Deadline::new(self.timeouts.deadline);
+        let req = CallReq { streaming: true, ..self.new_req(messages, "") };
+        let a = self.run(&req, &deadline, &mut on_delta).await?;
+        if a.text.trim().is_empty() {
+            return Err(LlmError::new(ErrorKind::Empty, "LLM 流式响应为空").into());
+        }
+        Ok(strip_think(&a.text))
     }
 
     /// 结构化输出：返回反序列化后的 `T`。
@@ -288,6 +545,9 @@ impl LlmClient {
     /// - `schema_name`：schema 名字（也会出现在请求里，方便在 llama.cpp 日志里辨认）
     /// - `schema`：JSON Schema（建议手写成扁平结构，小模型更容易遵守）
     /// - `validate`：业务校验，返回 Err(说明) 时会把说明反馈给模型重试
+    ///
+    /// 重试规则：网络 / 超时 / 429 / 5xx 由 `run` 按退避重试（不占格式重试次数）；格式不合格才把原因反馈给模型再试；
+    /// 超上下文、4xx 等重试没用的错误直接返回；输出被截断时不把半截内容反馈给模型，而是放大一次 `max_tokens` 重试。
     pub async fn chat_json<T, F>(
         &self,
         messages: &[ChatMessage],
@@ -323,18 +583,36 @@ impl LlmClient {
         let mut raw_outputs = Vec::new();
         let mut last_err = String::new();
         let max_attempts = self.cfg.max_retries + 1;
+        let deadline = Deadline::new(self.timeouts.deadline);
+        let req_id = next_req_id();
+        let mut max_tokens = self.cfg.max_tokens;
+        let mut escalated = false;
+        let mut attempt = 0;
+        let fail = |e: &LlmError, raw_outputs: Vec<String>, attempts: u32| {
+            tracing::error!(event = "llm.structured_failed", code = e.kind.code(), req_id, schema = schema_name, model = %self.cfg.model, attempts, outcome = e.kind.outcome(), error = %e.message, "模型调用最终失败");
+            StructuredError { message: e.to_string(), code: e.kind.code(), raw_outputs, attempts, latency_ms: started.elapsed().as_millis() as u64 }
+        };
 
-        for attempt in 1..=max_attempts {
-            let raw = match self.complete(&msgs, response_format.clone()).await {
-                Ok(r) => r,
-                Err(e) => {
-                    // 网络/HTTP 错误：不反馈给模型，直接重试
-                    last_err = format!("{e:#}");
-                    let code = if last_err.contains("无法连接") { codes::LLM_UNREACHABLE } else { codes::LLM_HTTP };
-                    tracing::warn!(event = "llm.request_failed", code, schema = schema_name, model = %self.cfg.model, attempt, error = %last_err, "LLM 请求失败");
+        while attempt < max_attempts {
+            attempt += 1;
+            let req = CallReq { messages: &msgs, response_format: response_format.clone(), max_tokens, schema: schema_name, req_id, format_attempt: attempt, streaming: false };
+            let a = match self.run(&req, &deadline, &mut |_: &str| {}).await {
+                Ok(a) => a,
+                Err(e) => return Err(fail(&e, raw_outputs, attempt)),
+            };
+            if a.finish_reason.as_deref() == Some("length") {
+                // 截断：半截 JSON 不当格式错误反馈给模型；放大一次 max_tokens 再试，仍不行就报"输出过长"
+                if let (false, Some(mt)) = (escalated, max_tokens.filter(|m| *m < MAX_TOKENS_CAP)) {
+                    escalated = true;
+                    max_tokens = Some((mt * 2).min(MAX_TOKENS_CAP));
+                    attempt -= 1;
+                    tracing::warn!(event = "llm.truncated_retry", code = codes::LLM_TRUNCATED, req_id, schema = schema_name, from = mt, to = max_tokens, "输出被截断，放大 max_tokens 重试一次");
                     continue;
                 }
-            };
+                let e = LlmError::new(ErrorKind::Truncated, format!("输出被 max_tokens（{}）截断，放大后仍不够；请调大 [llm].max_tokens 或缩短要求输出的内容", max_tokens.map_or("未限制".to_string(), |m| m.to_string())));
+                return Err(fail(&e, raw_outputs, attempt));
+            }
+            let raw = strip_think(&a.text);
             raw_outputs.push(raw.clone());
 
             // 解析 + 校验
@@ -351,7 +629,7 @@ impl LlmClient {
                         raw_outputs,
                         attempts: attempt,
                         latency_ms: started.elapsed().as_millis() as u64,
-                    })
+                    });
                 }
                 Err(e) => {
                     tracing::warn!(event = "llm.format_retry", code = codes::LLM_FORMAT_RETRY, schema = schema_name, model = %self.cfg.model, attempt, error = %e, raw = %truncate(&raw, 300), "结构化输出不合格，准备重试");
@@ -368,6 +646,7 @@ impl LlmClient {
         tracing::error!(event = "llm.structured_failed", code = codes::LLM_FORMAT, schema = schema_name, model = %self.cfg.model, attempts = max_attempts, error = %last_err, "结构化输出最终失败");
         Err(StructuredError {
             message: format!("[{}] 结构化输出失败: {last_err}", codes::LLM_FORMAT),
+            code: codes::LLM_FORMAT,
             raw_outputs,
             attempts: max_attempts,
             latency_ms: started.elapsed().as_millis() as u64,

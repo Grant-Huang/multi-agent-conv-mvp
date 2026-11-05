@@ -1,6 +1,6 @@
 # AgentNexus MVP 开发计划与 TodoList
 
-> 最后更新：2026-11-05（pre-M3 方案确认、35B 5 槽位、9B 下线）
+> 最后更新：2026-11-05（pre-M3 方案确认、35B 改 6 槽位 = 前台 2 + 后台 4、不借用、9B 下线）
 > 规则：按里程碑逐步推进；每完成一步更新本文件（勾选进度、做必要的最小调整），用户确认后再进入下一步。
 > 新功能先写测试（TDD），测试冻结后只改业务代码；Python 部分覆盖率 ≥ 80%，通过 flake8。
 
@@ -8,7 +8,7 @@
 
 | 项目 | 配置 |
 |---|---|
-| 所有 LLM 角色（前台判断 / 回复 / 汇总、路由、General、审查） | llama.cpp `127.0.0.1:8200`，Qwen3.8-35B-A3B Q4_K_M；**5 个槽位**共享 262144 上下文池（`--kv-unified`），K/V 缓存 `q4_0` + `-fa on`；计划：前台用 slot 0，后台用 slot 1~4（pre-M3.3） |
+| 所有 LLM 角色（前台判断 / 回复 / 汇总、路由、General、审查） | llama.cpp `127.0.0.1:8200`，Qwen3.8-35B-A3B Q4_K_M；**6 个槽位**（目标；现在运行的进程还是 5 个，pre-M3.3 开始前重启）共享 262144 上下文池（`--kv-unified`，多开槽位不增加 KV 内存），K/V 缓存 `q4_0` + `-fa on`；计划：前台用 slot 0~1，后台用 slot 2~5，互不借用（pre-M3.3） |
 | coding agent | pi（`~/.npm-global/bin/pi`），只用 8200 上的 35B；pi 的 `contextWindow` 已同步为 262144 |
 | 9B（Qwen3.8-9B Q5_K_M） | **已下线**（2026-11-05，释放内存）；需要时通过 llama.cpp router 按请求唤起，不常驻 |
 | 启动方式 | 8200 是手动启动的独立进程（不是 launchd）：`scripts/llama_server_35b.sh`（环境变量可覆盖参数，`LLAMA_LOG` 指定日志文件）；日志 `~/models/llama_8200.log` |
@@ -23,7 +23,8 @@
 | M0 | 本地部署 + e2e 发现的 5 个问题 + 派发边界规则 | ✅ 完成 |
 | M1 | 派发"越用越聪明"：纠错反馈、相似经验检索、纠错回归 | 待开始 |
 | M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.7 完成，2.8 待定 |
-| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 完成，其余待做 |
+| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .2 完成，.3 起待做 |
+| 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
 | M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
 | M4 | 多问题消息逐条对应回答 | 待开始 |
 | M5 | 9B vs 35B A/B（路由判断 + 最终回答） | 暂停：9B 已下线（2026-11-05），初步结果留档 |
@@ -109,9 +110,9 @@ M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B �
 ### 已确认的决定（2026-11-05）
 1. 提前到 M3 之前，命名 pre-M3。
 2. **所有 LLM 调用统一用流式**（SSE）；**Server 侧（推理服务）和 Client 侧（AgentNexus）优化都要做**；**每一步都加埋点**，方便排查。
-3. **35B 开 5 个槽位；9B 不再部署**（释放内存，需要时通过 router 按请求唤起）。
-   前台 Conversation 固定用 slot 0；后台 Task Agent 用 slot 1~4。
-4. 同第 3 条：前台判断 / 回复 / 汇总都回到 35B 的 slot 0，不再用 9B。
+3. **35B 开槽位；9B 不再部署**（释放内存，需要时通过 router 按请求唤起）。
+   ~~5 个槽位：前台 slot 0、后台 slot 1~4~~ → **2026-11-05 改为 6 个槽位：前台 slot 0~1、后台 slot 2~5**，前台和后台互不借用（`borrow_idle = false`，用户要求"尽量不要借用"）。
+4. 同第 3 条：前台判断 / 回复 / 汇总都回到 35B 的前台槽位（0~1），不再用 9B。
 5. **后端与路由做成配置项**：以后任务 agent 可能用云端模型，本地模型只开 2~4 个槽位专门做 conversation；槽位、并发、限速、角色路由都由配置决定（设计见下文"后端与调度配置化"）。
 
 ### 实测事实（用 `scripts/probe_llama_slots.py`、`scripts/probe_llama_cancel.py` 可复测）
@@ -119,9 +120,9 @@ M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B �
 - **断连取消**（llama.cpp `0.6.0-dev` commit `23b0202`）：流式断开后 0.2~0.3s 槽位空闲；**非流式断开后继续生成**（20s 内 129→607、14→569、107→627 个 token）。→ 必须统一流式。
 - **指定槽位**：
   - 请求参数名是 **`id_slot`**，不是 `slot_id`（`slot_id` 被忽略）。`id_slot=0/3/4` 都精确落到对应槽位。
-  - **不指定时落到哪个槽位无法保证**（6 次都落到槽位 4）；槽位忙时也可能落到 slot 0。所以"后台传 None"**不能**保护 slot 0，后台请求也必须显式指定 1~4。
+  - **不指定时落到哪个槽位无法保证**（6 次都落到槽位 4）；槽位忙时也可能落到 slot 0。所以"后台传 None"**不能**保护前台槽位，后台请求也必须显式指定后台槽位。
   - **指定的槽位被占时，请求会一直排队**，即使别的槽位空闲（`id_slot=0` 被占时短请求 15s 内无首 token；`id_slot=1` 只要 0.43s）。
-    → "slot 0 绝不排队"只在同一时刻只有一个前台请求时成立；多用户同时对话会在 slot 0 上串行。需要调度器处理（见 pre-M3.3）。
+    → "前台槽位绝不排队"只在同时的前台请求数不超过前台槽位数时成立；超过就必须由客户端调度器分配空闲槽位或排队（见 pre-M3.3）。前台开 2 个槽位，可同时处理 2 个用户的判断 / 回复。
 - **pi 可以固定槽位**：pi 有 `before_provider_request` 扩展钩子，可以改请求体；AgentNexus 启动 pi 时通过环境变量传槽位，扩展把它写进 `id_slot`。
 - **SQLite**：单条 `INSERT` `synchronous=FULL` 0.040ms（约 2.5 万条/s）、`NORMAL` 0.016ms、批量 100 条 0.003ms，写入本身不是瓶颈。
 - **9B**（已下线，留档）：生成约 23 token/s，低于 35B-A3B（MoE 只激活约 3B）。
@@ -155,7 +156,7 @@ M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B �
 
 | 部署方式 | 前台（conversation / reply / router / 汇总） | 任务（general / reviewer / coding） |
 |---|---|---|
-| A 全本地（现状） | 本地 35B，slot 0（`interactive_slots=[0]`） | 本地 35B，slot 1~4 |
+| A 全本地（现状） | 本地 35B，slot 0~1（`interactive_slots=[0,1]`） | 本地 35B，slot 2~5（`background_slots=[2,3,4,5]`），前后台互不借用 |
 | B 本地前台 + 云端任务 | 本地模型开 2~4 个槽位，**全部**给前台（`interactive_slots` 取全部槽位，没有后台槽位） | 云端模型，用并发上限 + 速率限制，没有槽位概念 |
 | C 混合 | 本地 | 部分角色云端、部分本地（如 coding 用本地 pi，general 用云端） |
 
@@ -168,10 +169,10 @@ M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B �
 kind = "llama_cpp"                 # llama_cpp：有槽位，支持 /slots、/metrics、id_slot；openai：通用 OpenAI 兼容接口（云端）
 base_url = "http://127.0.0.1:8200/v1"
 model = "./qwen3.8-35b-a3b/Qwen3.8-35B-A3B-Q4_K_M.gguf"
-slots = 5                          # llama_cpp 才有：槽位编号 0..slots-1，必须和 llama-server 的 -np 一致（启动时用 /props 校验）
-interactive_slots = [0]            # 前台优先使用的槽位
-background_slots = [1, 2, 3, 4]    # 后台只能用这些槽位；部署 B 里写 []，表示这个后端不接后台角色
-borrow_idle = true                 # 前台在 interactive_slots 全忙时，可借用空闲的后台槽位（后台永远不借用前台槽位）
+slots = 6                          # llama_cpp 才有：槽位编号 0..slots-1，必须和 llama-server 的 -np 一致（启动时用 /props 校验）
+interactive_slots = [0, 1]         # 前台使用的槽位
+background_slots = [2, 3, 4, 5]    # 后台只能用这些槽位；部署 B 里写 []，表示这个后端不接后台角色
+borrow_idle = false                # 默认不借用；设为 true 时前台槽位全忙可借用空闲的后台槽位（后台永远不借用前台槽位）
 context_tokens = 0                 # 0 = 启动时从 /props 读取；云端写模型的上限
 structured_mode = "json_schema"
 extra_body = {}                    # 附加到每个请求体的字段，例如 {chat_template_kwargs = {enable_thinking = false}}
@@ -210,6 +211,21 @@ reviewer = "local"
 - **本地服务端配合**：部署 B 时 `scripts/llama_server_35b.sh` 用 `SLOTS=2~4`、较小的 `CTX`（例如 `CTX=65536~131072`）启动，可以省出大量 KV 内存；`slots` 配置必须同步修改。
 - **暂不做**（需要时再加）：云端不可用时自动回退到本地（`fallback`）、按成本自动选后端。
 
+### 能力扩展约束（2026-11-05 用户补充；pre-M3 各步骤设计时要留好口子，不在 pre-M3 里实现）
+
+**部署 B 的边界（已确认）**
+- `general` / `reviewer` = 本项目自带的"LLM + harness"执行者，走 AgentNexus 的 `[backends]`（可以是云端 `openai` 后端）。
+- `coding` = 外部 coding agent（pi-dev / opencode / zcode / codex 等），通过连接器（现有 `AcpAgent` / `CodingAgent` 适配）接入；它们用哪个云端模型由它们自己的配置决定（如 pi 的 `models.json`），AgentNexus 只做并发限制（租约），不接管模型。
+
+**未来要接入的能力**：会话、OCR、做 PPT / 文档、画图等。pre-M3 要避免把它们堵死：
+1. **调度按后端、不按角色**：`BackendScheduler` / 租约 / 熔断 / 统计都以 `Backend` 为单位，角色只是"路由到哪个后端"的一层映射。新增能力（如 `ocr`、`image`）只是新增后端 + 路由项，不改调度器。
+2. **角色集合目前是封闭枚举（`LlmRole`）**：能力扩展时改成"能力名（字符串）→ 后端"，`[routing]` 允许任意能力名；`Priority` 由能力卡片声明，不写死在枚举里（到那时再改，现在不动）。
+3. **能力卡片（Capability Card，后续设计）**：每个 agent / tool 声明 `id`、`kind`（llm_agent / external_agent / tool）、输入输出类型（文本 / 图片 / 文件）、风险等级、优先级、并发上限、产物类型；`router` 的候选列表、`conversation` 的工具清单都从卡片生成，而不是写在 prompt 里。现有 `AgentCard` 和 `ToolRegistry::infos()` 是雏形，后续统一。
+4. **conversation / router 能力扩展**：Turn 决策 schema 里的动作和 `required_tools` 来自卡片；新增能力不改 prompt 模板、不改 schema 结构，只加卡片。M4 改 Turn schema 时一并考虑。
+5. 多模态后端（OCR / 画图）的调用形态与 chat completion 不同（图片输入输出、异步任务），所以 `LlmClient` 只管文本对话；其他能力用各自的客户端，但共用 `BackendScheduler`（槽位 / 并发 / 限速）与埋点规范。
+
+→ 在 pre-M3 之后、M3 之前增加一个"能力卡片与路由扩展"的**设计评审**（只出设计文档、等你确认，不写代码）。
+
 ### 步骤（每步独立可验收，TDD；先止血、再限流、最后前端）
 
 - [x] **pre-M3.0 基础设施调整**（2026-11-05 完成）
@@ -229,7 +245,16 @@ reviewer = "local"
   - 启动校验（错误信息要说明改哪一项）：路由引用不存在的后端、槽位越界 / 重复、后台角色指向没有后台槽位的后端、环境变量缺失；`llama_cpp` 后端启动时用 `/props` 校验 `slots`
   - 埋点：启动时一条 `config.backends` 事件，列出每个角色 → 后端 / 模型 / 限流方式（不含密钥）
   - 测试：解析、旧配置兼容（现有示例与 e2e 配置不变）、三种部署示例（A / B / C）各一份 fixture 能解析、非法组合报错、环境变量缺失、示例配置无未知字段
-- [ ] **pre-M3.2 H3：流式统一 + 超时 / 重试重构（先做，它放大其它问题）**
+- [x] **pre-M3.2 H3：流式统一 + 超时 / 重试重构（先做，它放大其它问题）**（2026-11-05 完成）
+  - 实现：`crates/llm/src/error.rs`（错误分类 `ErrorKind` / `LlmError`、上下文错误识别、`Retry-After`）、`policy.rs`（`Timeouts`、`backoff_delay`、`Breaker`、`Stats` 环形缓冲）、`lib.rs`（`stream_once` / `call_once` / `run`、`chat` / `chat_stream` / `chat_json` 全部走流式）；`Backend` 带共享的熔断器和统计；新增错误码 `E_LLM_TIMEOUT / CONTEXT / TRUNCATED / STREAM / BREAKER`、`W_LLM_RATE_LIMITED / RETRY`（已写入 DESIGN.md 错误码表）
+  - 默认值：连接 5s、首 token 120s、token 间隔 60s、总时长 `[llm].timeout_secs`；前台调用期限 60s（含重试，只约束"等响应开始"，不截断正在生成的长回复），后台不限；均可在 `[backends.*]` 覆盖（`connect_secs / first_token_secs / idle_secs / total_secs / deadline_secs`）
+  - 重试：只对连接失败 / 超时 / 429 / 5xx / 流中断重试；前台最多 1 次、后台 `max_retries` 次；指数退避 0.5s→8s ±25% 抖动，遵守 `Retry-After`；已向用户推送过文本的流式调用不再重试；网络重试**不再占用格式重试次数**（最坏耗时从 3×180s 降到前台 ≤ 60s 期限内）
+  - 截断：`finish_reason=length` 不当格式错误、不把半截内容拼回；`chat_json` 放大一次 `max_tokens`（×2，上限 16384），仍不行返回 `E_LLM_TRUNCATED`；普通对话保留已生成文本
+  - 熔断：连续 3 次后端故障（连接 / 超时 / 5xx / 流中断）熔断 10s，期间快速失败 `E_LLM_BREAKER`；到期放行试探
+  - 其他：SSE 按字节切行（修复多字节字符被分包截断）；`reasoning_content` 计入"仍在生成"；请求带 `stream_options.include_usage` 取 token 用量；`extra_body` 合并进请求体（不能覆盖 model / messages / stream）；`StructuredError` 新增 `code`，`general` 失败码不再固定为 `E_LLM_FORMAT`
+  - 埋点：`llm.call`（含 `req_id / role / priority / schema / backend / model / attempt / retry / ttft_ms / total_ms / prompt_tokens / completion_tokens / finish_reason / outcome`；放弃的调用记 `cancelled`）、`llm.retry`、`llm.breaker`、`llm.truncated_retry`；`slot_id` / `queue_wait_ms` 在 pre-M3.3 加入
+  - 验证：`an-llm` 单元 22 + mock 服务集成测试 20（卡死 / 慢首 token / idle 卡住 / 429 / 400 超上下文 / 5xx / 流中断 / 总时长 / 期限 / 取消后服务端看到断开 / 熔断 / 截断 / 格式反馈）；真实 35B 上 `an-eval --limit 12` 全部通过（P50 约 1.2s）；真实 SSE 形态已核对（`reasoning_content`、末尾 `usage`）
+  - 原计划条目（供对照）：
   - `complete()` 与 `chat_json` 内部统一走流式（SSE 累积）：断开即取消；超时拆成**连接 5s、首 token 等待（排队）、token 间隔 60s**，另设总时长上限
   - 读取 `finish_reason`：`length` 不当格式错误，不把截断内容拼回；最多放大一次 `max_tokens`，仍不行报"输出过长"
   - 错误分类：超上下文（400）→ 不盲重试（交给 pre-M3.4 缩减后重试 1 次）；超时 / 429 / 5xx / 连接拒绝 → 指数退避 + 抖动，交互类最多重试 1 次；格式错误 → 保持现有反馈重试
@@ -238,12 +263,12 @@ reviewer = "local"
   - 测试（mock 服务）：卡死 / 慢首 token / 429 / 400 / 截断输出 / 断开后服务端看到取消；断言"超时后不会立即再发请求"、总耗时 ≤ 期限
 - [ ] **pre-M3.3 H1：后端调度器 `BackendScheduler`（放 `an-llm`，所有调用统一经过它；按后端配置做槽位 / 并发 / 限速）**
   - 每个后端一个调度器，策略由后端 `kind` 决定：`llama_cpp` → 槽位调度（请求体带 `id_slot`）；`openai` → `max_inflight` + `reserved_interactive` + `rpm/tpm` 令牌桶，429 按 `Retry-After` 退避，不发 `id_slot`
-  - 前台（conversation / reply / router / 汇总）：优先用 `interactive_slots`；全忙且 `borrow_idle = true` 时**借用空闲的后台槽位**（实测指定槽位被占会死等，所以必须由客户端选空闲槽位）；仍全忙则排队，谁先空闲用谁，排队有期限，超时返回明确的"忙"
+  - 前台（conversation / reply / router / 汇总）：只用 `interactive_slots`（默认 [0,1]），由客户端选**空闲**槽位（实测指定槽位被占会死等）；全忙则排队，谁先空闲用谁，排队有期限，超时返回明确的"忙"。`borrow_idle` 默认 **false**（用户要求尽量不借用），保留为可选项：设为 true 才会借用空闲的后台槽位
   - 后台（general / reviewer / pi）：只用 `background_slots`，绝不用前台槽位；**不允许不指定槽位**；后端没有后台槽位（部署 B）时，后台角色路由到它会在启动校验时报错
   - 同一会话同一时刻只处理一条消息（会话级锁）
   - 租约（lease）用 RAII：请求结束或被取消时自动归还槽位；调度器记录每个槽位的持有者和持有时长
   - 埋点：`llm.slot_acquire` / `llm.slot_release`；诊断页显示各槽位当前占用
-  - 测试：前台优先前台槽位、前台槽位忙时借用后台槽位、后台永不拿前台槽位、归还、排队超时、并发 10 个前台请求的分配；云端后端：`max_inflight`、预留许可、`rpm` 令牌桶、429 的 `Retry-After`；三种部署示例各跑一遍
+  - 测试：前台只拿前台槽位（默认不借用）、`borrow_idle = true` 时才借用、后台永不拿前台槽位、归还、排队超时、并发 10 个前台请求在 2 个槽位上的分配；云端后端：`max_inflight`、预留许可、`rpm` 令牌桶、429 的 `Retry-After`；三种部署示例各跑一遍
 - [ ] **pre-M3.4 H2：上下文预算 `ContextBudget`（放 `an-llm`）**
   - 估算 token（中文约 1 字 1 token，其它约 3.5 字符 1 token，偏保守）；预算按**后端**分别计算：`context_tokens`（`llama_cpp` 默认启动时读 `/props`，云端写模型上限）÷ 预计并发 − `max_tokens` − 余量
   - 裁剪顺序：系统提示 + 最新用户消息保底 → 从最旧历史开始丢 → 单条超长消息保留头尾并注明"已截断 N 字"（数据库里仍存全文）
@@ -251,7 +276,13 @@ reviewer = "local"
   - 400 超上下文：缩减后重试 1 次，仍失败则明确报错
   - 埋点：`llm.context_trim`
   - 测试：预算计算、裁剪顺序、保底消息不丢、头尾保留、400 缩减重试
-- [ ] **pre-M3.5 pi 固定槽位**
+- [ ] **pre-M3.5 pi 固定槽位**（做法待用户确认，见"待用户确认"第 7 项）
+  - **为什么要固定**：pi 自己直连 llama.cpp，AgentNexus 管不到它的请求；不指定 `id_slot` 时请求会落到哪个槽位无法保证（实测可能落到前台槽位），前台槽位被 pi 占住，前台对话就会排队。固定槽位 = 把 pi 圈在后台槽位里，前台永远有空位。
+  - **做法选项**：
+    - A（推荐）pi 扩展：在 `~/.pi/agent/extensions/` 放一个很小的扩展（约 20 行，属于 pi 的用户配置，不进本仓库），在 `before_provider_request` 里读环境变量 `AN_LLM_SLOT` 写进 `id_slot`；AgentNexus 启动 pi 时按租约设置该变量。只影响 pi，没有该变量时 pi 行为不变；缺点：每个外部 coding agent 要各写一份适配（pi / opencode / codex 的扩展机制不同）。
+    - B 不固定，只限制 pi 并发 ≤ 后台槽位数：零适配，但 pi 的请求仍可能落到前台槽位，只能降低概率，不能保证。
+    - C 本机反向代理：AgentNexus 起一个本机代理，coding agent 的 `base_url` 指向代理，代理按租约注入 `id_slot`、统一做并发限制和埋点；对 pi / opencode / zcode / codex 一视同仁，符合"多种 coding agent 连接器"的方向；缺点：要改各 agent 自己的 provider 配置指向代理，代码量最大。
+  - 下面按 A 写；若选 C，则本步改为"实现代理 + 租约注入"，其余验收不变。
   - 写一个 pi 扩展（`before_provider_request`）：读环境变量 `AN_LLM_SLOT`，写入请求体 `id_slot`；没有该变量时不改
   - coding agent 新增可选项 `backend`：指向 `llama_cpp` 后端时，启动 pi 前向调度器申请后台槽位租约，把槽位号放进环境变量，任务结束归还；pi 用云端模型时不申请租约；`max_concurrent` 限制 ≤ 2
   - 验证：用 `/slots` 确认 pi 的请求确实落在被分配的槽位，且从不落在前台槽位
@@ -273,7 +304,7 @@ reviewer = "local"
   - 待基准：`-b / -ub` 批大小、`--cache-reuse`、前台结构化调用关闭思考（请求里加 `chat_template_kwargs: {"enable_thinking": false}`，预期显著降低判断延迟，需用评测集确认准确率不降）、`--reasoning-budget`
   - 每项记录：首 token 延迟、生成速度、内存、评测通过率；结论写回本节
 - [ ] **pre-M3.10 验收**：并发 10 会话（其中 3 个后台任务在跑）压测：
-  - 前台判断延迟 P95 ≤ 30s；日志中无"超时后立即重复请求"；`/slots` 抽查无僵尸生成；slot 0 上没有后台请求；前端请求数和渲染次数在上限内
+  - 前台判断延迟 P95 ≤ 30s；日志中无"超时后立即重复请求"；`/slots` 抽查无僵尸生成；前台槽位（0~1）上没有后台请求；前端请求数和渲染次数在上限内
   - 所有 `llm.call` 的 `outcome` 分布可从诊断页看到，失败都带错误码
 
 建议顺序：pre-M3.1（配置化）→ .2（流式 + 超时重试）→ .3（调度）→ .4（上下文预算）→ .5（pi 槽位）→ .6（健康检查）→ .7（前端，可与后端并行）→ .8（存储）→ .9（Server 调优）→ .10（验收）。
@@ -341,12 +372,12 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 2. M6 的压测门槛和话题集
 3. 用 35B 作评委打分是否可接受（会占用 8200 槽位）
 4. M4.3 改 Turn 输出 schema 的设计（开始前单独确认）
-5. ~~M7 是否排在 M3 之前 / 统一流式 / 槽位数~~（已确认：提前并改名 pre-M3；统一流式；35B 5 槽位，slot 0 前台、1~4 后台；9B 下线）
-6. pre-M3.3：前台在 slot 0 被占时借用空闲后台槽位（实测指定槽位被占会死等，所以必须这样做），是否同意
-7. pre-M3.5：用 pi 扩展 + 环境变量固定 pi 的槽位，是否同意（扩展放 `~/.pi/agent/extensions/`，属于 pi 的用户配置）
-8. pre-M3.9：前台结构化调用关闭思考（`enable_thinking=false`）做对比实验，是否同意
-9. pre-M3.1 配置设计：`[backends.<名>]` + `[routing]`、`kind = llama_cpp | openai`、密钥只读环境变量（`api_key_env`）、没有 `[backends]` 时沿用 `[llm]`，是否同意；`router` 角色归"前台（交互）"类，是否同意
-10. 部署 B（本地前台 + 云端任务）里，云端任务 agent 的 `general` / `reviewer` 走 AgentNexus 的 `openai` 后端；coding（pi）的云端模型仍在 pi 自己的 `models.json` 里配置，AgentNexus 只限制并发，是否同意
+5. ~~M7 是否排在 M3 之前 / 统一流式 / 槽位数~~（已确认：提前并改名 pre-M3；统一流式；35B 槽位 5→6 见第 6 项；9B 下线）
+6. ~~前台借用后台槽位~~（已确认 2026-11-05：**不借用**，改为 6 槽位 = 前台 2 + 后台 4；`borrow_idle` 默认 false）
+7. pre-M3.5：怎样固定 pi 的槽位（**待确认**，选项和目的见 pre-M3.5 步骤说明：A 用 pi 扩展 + 环境变量；B 不固定、改调小 pi 并发；C 本机反向代理注入 `id_slot`）
+8. ~~pre-M3.9 关闭思考对比实验~~（已确认 2026-11-05：前台结构化调用 `enable_thinking=false`，**必须用评测集确认准确率不降**才采用）
+9. ~~pre-M3.1 配置设计~~（已确认 2026-11-05：`[backends.<名>]` + `[routing]`、`kind = llama_cpp | openai`、密钥只读环境变量、无 `[backends]` 沿用 `[llm]`；`router` 归前台）
+10. ~~部署 B 的云端边界~~（已确认 2026-11-05，并补充了能力扩展要求，见 pre-M3"能力扩展约束"）
 
 ## 已知问题
 

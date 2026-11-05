@@ -108,11 +108,13 @@ version = "0.1.0"
 dependencies = [
  "an-core",
  "anyhow",
+ "axum",
  "futures",
  "reqwest",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-stream",
  "tracing",
 ]
 

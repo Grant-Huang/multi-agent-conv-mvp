@@ -667,6 +667,13 @@ General Agent 没有用推理服务自带的"函数调用"功能（不同小模�
 | `E_LLM_HTTP` | 模型服务返回错误 | 常见于不支持当前的 `structured_mode`，换一种试试 |
 | `E_LLM_FORMAT` | 重试后格式仍不合格 | 换更大的模型，或改用 `json_schema` 模式；看路由日志里的原始输出 |
 | `W_LLM_FORMAT_RETRY` | 格式不合格，已自动重试 | 偶尔出现正常；频繁出现说明模型偏小 |
+| `E_LLM_TIMEOUT` | 等模型超时（连接 / 首 token / token 间隔 / 总时长） | 看 `llm.call` 的 `outcome`：`timeout_first_token` 多半是排队或提示词太长，`timeout_idle` 是生成中途卡住 |
+| `E_LLM_CONTEXT` | 请求超过模型上下文 | 提示词太长；上下文预算（pre-M3.4）会自动裁剪，仍出现请检查 `context_tokens` 配置 |
+| `W_LLM_RATE_LIMITED` | 云端返回 429，按 `Retry-After` 退避重试 | 调低 `rpm` / `max_inflight` |
+| `E_LLM_TRUNCATED` | 输出被 `max_tokens` 截断，放大一次仍不够 | 调大 `[llm].max_tokens`，或缩短要求输出的内容 |
+| `E_LLM_STREAM` | 流式响应中途断开 | 服务端崩溃或网络中断；会自动重试 |
+| `E_LLM_BREAKER` | 后端连续失败，熔断中，快速失败 | 先看前面几条失败原因；熔断 10 秒后自动试探恢复 |
+| `W_LLM_RETRY` | 模型调用失败，已按退避重试 | 偶尔出现正常；频繁出现看 `llm.call` 的 `outcome` |
 | `E_ROUTE_NO_AGENT` | 这类工作没有可用的 agent | 看错误信息里每个成员的原因：未安装、节点离线…… |
 | `E_POOL_CONFIG` | 执行组配置错误 | 成员类型或角色不一致；或 `[agents.assign]` 角色名写错 |
 | `W_POOL_WAIT` | 执行组都在忙，任务排队 | 经常出现说明需要加备份或调大并发 |

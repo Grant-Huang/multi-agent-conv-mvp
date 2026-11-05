@@ -119,7 +119,7 @@ impl AgentAdapter for GeneralAgent {
                 .await
             {
                 Ok(s) => s.value,
-                Err(e) => return Ok(TaskResult { evidence, artifacts, ..TaskResult::failed_code(an_core::codes::LLM_FORMAT, e) }),
+                Err(e) => return Ok(TaskResult { evidence, artifacts, ..TaskResult::failed_code(e.code, e) }),
             };
 
             // 把模型这一步的输出加回对话历史

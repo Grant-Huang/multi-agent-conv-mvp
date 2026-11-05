@@ -111,7 +111,7 @@ impl Backends {
                     _ => bail!("[backends.{name}] api_key_env：环境变量 {var} 未设置或为空（密钥不要写进配置文件，请在启动前 export {var}=...）"),
                 }
             }
-            let backend = Arc::new(Backend { name: name.clone(), cfg: spec.clone() });
+            let backend = Arc::new(Backend::new(name.clone(), spec.clone()));
             backends.insert(name.clone(), backend);
             base_clients.insert(name.clone(), LlmClient::new(llm)?);
         }

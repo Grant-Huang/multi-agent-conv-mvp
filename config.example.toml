@@ -44,14 +44,14 @@ max_retries = 2                    # 输出不合格时把错误反馈给模型�
 # 写了 [backends] 就不能再用 [models.base_urls]（旧写法）；[models] 里的模型名仍然可以覆盖。
 # 密钥只能从环境变量读取（api_key_env 写变量名，不要把密钥写进这个文件）。
 #
-# 方案 A：全本地。35B 开 5 个槽位（llama-server -np 5），槽位 0 专给前台对话，1-4 给后台任务
+# 方案 A：全本地。35B 开 6 个槽位（llama-server -np 6），槽位 0-1 给前台对话，2-5 给后台任务
 # [backends.local]
 # kind = "llama_cpp"
 # base_url = "http://127.0.0.1:8200/v1"
-# slots = 5                          # 必须和 llama-server 的 -np 一致
-# interactive_slots = [0]            # 前台优先用这些槽位；不写则 slots=1 时共用 0，否则前台 [0]、后台其余
-# background_slots = [1, 2, 3, 4]    # 后台任务只能用这些槽位；写 [] 表示这个后端不接后台角色
-# borrow_idle = true                 # 前台槽位忙时，可以借用空闲的后台槽位（后台不会借前台槽位）
+# slots = 6                          # 必须和 llama-server 的 -np 一致
+# interactive_slots = [0, 1]         # 前台使用的槽位；不写则 slots=1 时共用 0，否则前台 [0]、后台其余
+# background_slots = [2, 3, 4, 5]    # 后台任务只能用这些槽位；写 [] 表示这个后端不接后台角色
+# borrow_idle = false                # 默认不借用；true = 前台槽位全忙时可借用空闲的后台槽位（后台不会借前台槽位）
 # [routing]
 # conversation = "local"
 # router = "local"
