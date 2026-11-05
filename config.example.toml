@@ -119,6 +119,12 @@ timeout_secs = 900
 # agent_type = "pi"
 # command = "~/.npm-global/bin/pi"
 # args = ["-p", "--no-session", "{prompt}"]
+# pi 直连本地 llama.cpp 时，让它只用后台槽位、不占前台：填上面 [backends.<名>] 的名字。
+# 每个任务启动前先向调度器申请一个后台槽位，槽位号通过环境变量 AN_LLM_SLOT 交给 pi；
+# 还需要在 pi 里装一个很小的扩展把它写进请求的 id_slot（见 docs/PLAN.md 的 pre-M3.5）。
+# max_concurrent 不能超过该后端的后台槽位数，建议 ≤ 2（给 general / reviewer 留槽位）。pi 用云端模型时不要写 backend。
+# backend = "local"
+# max_concurrent = 2
 
 # ───── 执行组：每个角色由哪些 agent 来做（可选）─────
 # 不配置时，每个角色用它第一个可用的 agent（顺序：内置 → Codex → 本机 ACP → 节点）。

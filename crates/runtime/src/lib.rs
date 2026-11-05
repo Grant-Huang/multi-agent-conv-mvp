@@ -100,7 +100,11 @@ impl Runtime {
             registry.register(r.clone());
         }
         if a.coding.enabled {
-            let coding = CodingAgent::new(a.coding.cfg.clone());
+            let mut coding = CodingAgent::new(a.coding.cfg.clone());
+            // 直连本地推理服务的 coding agent（pi）：每个任务先申请后台槽位，再通过 AN_LLM_SLOT 交给子进程
+            if let Some(name) = &a.coding.cfg.backend {
+                coding = coding.with_slot_backend(backends.slot_backend(name, a.coding.cfg.max_concurrent)?);
+            }
             let card = an_core::AgentAdapter::card(&coding);
             if let Some(reason) = &card.disabled_reason {
                 tracing::warn!(event = "agent.not_installed", code = an_core::codes::AGENT_NOT_INSTALLED, agent_id = %card.id, "{} 不可用：{reason}", card.name);

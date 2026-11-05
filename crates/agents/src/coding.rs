@@ -13,10 +13,12 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use an_core::{truncate_chars, codes, AgentAdapter, AgentCard, AgentError, EventSink, Evidence, Role, TaskResult, TaskSpec, WorkerStatus};
 
+use an_llm::Backend;
 use crate::util::{collect_git_changes, expand_tilde, resolve_command, snapshot_worktree};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -50,7 +52,16 @@ pub struct CodingConfig {
     /// agent 类型（执行组只允许同类型互为备份），默认 `codex`
     #[serde(default = "default_id")]
     pub agent_type: String,
+    /// 本地推理后端名（`[backends.<名>]`，必须是 `llama_cpp`）：agent 直连这个后端时填写。
+    /// 每个任务启动前先向调度器申请一个后台槽位，槽位号通过环境变量 `AN_LLM_SLOT` 交给子进程，
+    /// 由 agent 侧（pi 的扩展）写进请求的 `id_slot`，保证它的请求只落在后台槽位、不占前台。
+    /// agent 用云端模型时不要配置
+    #[serde(default)]
+    pub backend: Option<String>,
 }
+
+/// 子进程里携带槽位号的环境变量名（agent 侧的适配读取它）
+pub const SLOT_ENV: &str = "AN_LLM_SLOT";
 
 fn default_concurrency() -> u32 {
     1
@@ -98,6 +109,7 @@ impl Default for CodingConfig {
             id: default_id(),
             name: default_name(),
             agent_type: default_id(),
+            backend: None,
         }
     }
 }
@@ -105,6 +117,8 @@ impl Default for CodingConfig {
 pub struct CodingAgent {
     cfg: CodingConfig,
     card: AgentCard,
+    /// 固定槽位用的后端（`cfg.backend` 解析后由运行时注入）
+    slot_backend: Option<Arc<Backend>>,
 }
 
 /// 保留的输出行数（用于摘要和证据）
@@ -135,7 +149,13 @@ impl CodingAgent {
             enabled,
             disabled_reason,
         };
-        Self { cfg, card }
+        Self { cfg, card, slot_backend: None }
+    }
+
+    /// 注入固定槽位用的后端：之后每个任务先申请后台槽位租约，再启动子进程
+    pub fn with_slot_backend(mut self, backend: Arc<Backend>) -> Self {
+        self.slot_backend = Some(backend);
+        self
     }
 
     /// 替换参数模板中的占位符
@@ -185,8 +205,27 @@ impl AgentAdapter for CodingAgent {
         let baseline = snapshot_worktree(&workdir).await;
         events.progress(format!("启动 {}（工作目录 {}）", self.cfg.command, workdir.display()));
 
-        // 2. 启动子进程
-        let mut child = Command::new(&self.cfg.command)
+        // 2. 固定槽位：先拿后台槽位租约（排队有期限，超时 E_LLM_BUSY），任务结束或被取消时随 `lease` 一起归还
+        let lease = match &self.slot_backend {
+            Some(b) => match b.lease_background("coding").await {
+                Ok(l) => Some(l),
+                Err(e) => return Ok(TaskResult::failed(e.to_string())), // 消息自带 `[E_LLM_BUSY]` 前缀
+            },
+            None => None,
+        };
+        let slot = lease.as_ref().and_then(|l| l.slot());
+        if let Some(s) = slot {
+            events.progress(format!("已分配本地模型槽位 {s}"));
+        }
+
+        // 3. 启动子进程
+        let mut cmd = Command::new(&self.cfg.command);
+        // 没有租约时也清掉继承来的值，避免旧值把请求钉到别人的槽位上
+        match slot {
+            Some(s) => cmd.env(SLOT_ENV, s.to_string()),
+            None => cmd.env_remove(SLOT_ENV),
+        };
+        let mut child = cmd
             .args(&args)
             .current_dir(&workdir)
             .stdin(Stdio::null())
@@ -207,7 +246,7 @@ impl AgentAdapter for CodingAgent {
             q.push_back(l);
         };
 
-        // 3. 一边读输出（推送进度），一边等待进程结束，整体受超时控制
+        // 4. 一边读输出（推送进度），一边等待进程结束，整体受超时控制
         let run = async {
             let (mut out_done, mut err_done) = (false, false);
             while !(out_done && err_done) {
@@ -230,7 +269,7 @@ impl AgentAdapter for CodingAgent {
             Err(_) => return Ok(TaskResult::failed_code(codes::AGENT_TIMEOUT, format!("{} 超时（{} 秒）", self.card.name, self.cfg.timeout_secs))),
         };
 
-        // 4. 收集结果与证据
+        // 5. 收集结果与证据
         let mut evidence = vec![Evidence { kind: "exit_code".into(), content: format!("{exit}") }];
         let stdout_tail = out_tail.iter().cloned().collect::<Vec<_>>().join("\n");
         evidence.push(Evidence { kind: "stdout_tail".into(), content: truncate_chars(&stdout_tail, 3000) });
@@ -285,6 +324,91 @@ mod tests {
         let card = agent.card();
         assert_eq!((card.id.as_str(), card.agent_type.as_str(), card.name.as_str()), ("pi", "pi", "pi（本地模型）"));
         assert_eq!(card.role, Role::Coding);
+    }
+
+    // ───── 固定槽位：子进程拿到租约分配的槽位号 ─────
+
+    struct NullPublisher;
+    impl an_core::EventPublisher for NullPublisher {
+        fn publish(&self, _: an_core::TaskEvent) {}
+    }
+
+    fn spec(id: &str) -> TaskSpec {
+        use an_core::{Risk, RouteDecision, TaskClass};
+        TaskSpec {
+            task_id: id.into(),
+            conversation_id: "c".into(),
+            goal: "g".into(),
+            context: String::new(),
+            route: RouteDecision { task_class: TaskClass::L3, execution_role: Role::Coding, required_tools: vec![], risk_level: Risk::Low, reason: String::new() },
+        }
+    }
+
+    /// 子进程把收到的槽位环境变量打印出来
+    fn echo_agent(tag: &str, sleep_secs: &str) -> CodingAgent {
+        let dir = std::env::temp_dir().join(an_core::new_id(&format!("an-coding-{tag}")));
+        let cfg: CodingConfig = serde_json::from_value(serde_json::json!({
+            "command": "sh",
+            "args": ["-c", format!("echo slot=[$AN_LLM_SLOT]; sleep {sleep_secs}")],
+            "workdir": dir,
+        }))
+        .unwrap();
+        CodingAgent::new(cfg)
+    }
+
+    fn sink() -> EventSink {
+        EventSink::new(Arc::new(NullPublisher), "c", "t")
+    }
+
+    fn llama(front: &[u32], back: &[u32], queue_secs: Option<u64>) -> Arc<Backend> {
+        use an_llm::{BackendConfig, BackendKind};
+        Arc::new(Backend::new(
+            "local",
+            BackendConfig { kind: BackendKind::LlamaCpp, base_url: "http://x/v1".into(), slots: 6, interactive_slots: front.to_vec(), background_slots: back.to_vec(), queue_secs, ..Default::default() },
+        ))
+    }
+
+    #[tokio::test]
+    async fn child_gets_a_background_slot_via_env_and_it_is_returned_afterwards() {
+        let b = llama(&[0, 1], &[2, 3, 4, 5], None);
+        let agent = echo_agent("env", "0").with_slot_backend(b.clone());
+        let r = agent.run(spec("t1"), sink()).await.unwrap();
+        assert_eq!(r.status, WorkerStatus::Succeeded, "{r:?}");
+        assert!(r.summary.contains("slot=[2]"), "应拿到第一个后台槽位：{}", r.summary);
+        assert!(b.sched.snapshot().slots.iter().all(|s| s.holder.is_none()), "任务结束后槽位应已归还");
+    }
+
+    #[tokio::test]
+    async fn without_a_backend_the_slot_variable_is_not_set_even_if_inherited() {
+        std::env::set_var(SLOT_ENV, "1");
+        let r = echo_agent("none", "0").run(spec("t2"), sink()).await.unwrap();
+        std::env::remove_var(SLOT_ENV);
+        assert!(r.summary.contains("slot=[]"), "{}", r.summary);
+    }
+
+    #[tokio::test]
+    async fn concurrent_tasks_never_share_a_slot_and_extra_ones_wait_for_the_lease() {
+        let b = llama(&[0], &[1, 2], Some(1));
+        let agents: Vec<_> = (0..3).map(|i| Arc::new(echo_agent(&format!("c{i}"), "2").with_slot_backend(b.clone()))).collect();
+        let runs: Vec<_> = agents.iter().enumerate().map(|(i, a)| {
+            let a = a.clone();
+            tokio::spawn(async move { a.run(spec(&format!("c{i}")), sink()).await.unwrap() })
+        }).collect();
+        let mut slots = vec![];
+        let mut busy = 0;
+        for h in runs {
+            let r = h.await.unwrap();
+            match r.summary.split(['[', ']']).nth(1).and_then(|s| s.parse::<u32>().ok()) {
+                Some(s) => slots.push(s),
+                None => {
+                    busy += 1;
+                    assert!(r.errors.iter().any(|e| e.contains("E_LLM_BUSY")) || r.summary.contains("E_LLM_BUSY"), "{r:?}");
+                }
+            }
+        }
+        slots.sort_unstable();
+        assert_eq!(slots, vec![1, 2], "两个后台槽位各被一个任务占用，且不会落到前台槽位 0");
+        assert_eq!(busy, 1, "第三个任务等不到槽位，应明确报忙");
     }
 
     #[test]

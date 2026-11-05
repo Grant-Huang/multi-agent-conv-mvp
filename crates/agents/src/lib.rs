@@ -17,7 +17,7 @@ pub mod tools;
 pub mod util;
 
 pub use acp::{AcpAgent, AcpConfig, PermissionMode};
-pub use coding::{CodingAgent, CodingConfig};
+pub use coding::{CodingAgent, CodingConfig, SLOT_ENV};
 pub use general::GeneralAgent;
 pub use remote::{NodeClient, NodeConn, RemoteAgent};
 pub use reviewer::ReviewerAgent;

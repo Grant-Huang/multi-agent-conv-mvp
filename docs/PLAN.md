@@ -23,7 +23,7 @@
 | M0 | 本地部署 + e2e 发现的 5 个问题 + 派发边界规则 | ✅ 完成 |
 | M1 | 派发"越用越聪明"：纠错反馈、相似经验检索、纠错回归 | 待开始 |
 | M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.7 完成，2.8 待定 |
-| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .4 完成，.5 起待做 |
+| pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .5 完成，.6 起待做 |
 | 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
 | M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
 | M4 | 多问题消息逐条对应回答 | 待开始 |
@@ -290,7 +290,22 @@ reviewer = "local"
   - 400 超上下文：缩减后重试 1 次，仍失败则明确报错
   - 埋点：`llm.context_trim`
   - 测试：预算计算、裁剪顺序、保底消息不丢、头尾保留、400 缩减重试
-- [ ] **pre-M3.5 pi 固定槽位**（做法已确认选 A，见"待用户确认"第 7 项）
+- [x] **pre-M3.5 pi 固定槽位**（做法已确认选 A，见"待用户确认"第 7 项）（2026-11-05 完成）
+  - 实现：`[agents.coding]` 新增 `backend = "<llama_cpp 后端名>"`；运行时启动时用 `Backends::slot_backend()` 校验（后端存在、`kind = llama_cpp`、有后台槽位、`max_concurrent` ≤ 后台槽位数，否则启动报错并说明原因）；`CodingAgent::with_slot_backend()` 注入后端；每个任务启动子进程前调用 `Backend::lease_background("coding")`（等待受 `queue_secs` 约束，超时返回 `E_LLM_BUSY`，任务失败而不是死等），把槽位号放进子进程环境变量 `AN_LLM_SLOT`，租约在任务结束 / 超时 / 被取消时随函数退出归还；没有配置 backend 时会清除继承来的 `AN_LLM_SLOT`，避免旧值钉到别人的槽位
+  - pi 侧扩展（**不在仓库里**，属于 pi 的用户配置）：`~/.pi/agent/extensions/an-slot.ts`，内容如下，没有 `AN_LLM_SLOT` 时不改请求：
+    ```ts
+    import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+    export default function (pi: ExtensionAPI) {
+      pi.on("before_provider_request", (event) => {
+        const raw = process.env.AN_LLM_SLOT;
+        if (!raw || !/^\d+$/.test(raw)) return undefined;
+        return { ...(event.payload as Record<string, unknown>), id_slot: Number(raw) };
+      });
+    }
+    ```
+  - 验证（真实 35B，`-np 6`，轮询 `/slots`）：`AN_LLM_SLOT=3` → 只有槽位 3 忙；`AN_LLM_SLOT=5` → 只有槽位 5 忙；**不设变量时 pi 的请求落到了槽位 5**（llama.cpp 按缓存相似度挑槽位，印证了必须固定）。自动化测试：子进程拿到后台槽位且结束后归还、无 backend 时不带该变量、3 个并发任务 2 个后台槽位 → 各占一个且不会用前台槽位、第 3 个报忙；`slot_backend` 校验 2 个
+  - 观察：pi 退出时偶发 `@arvoretech/pi-slack-bridge` 的 `slack_socket_mode_no_reply_received_error` 导致退出码 1（输出已完整）。这是 slack 扩展的问题（你说暂不关闭），但会让 coding 任务被判失败；若频繁出现，需要在 pi 调用参数里禁用该扩展或让它不随 `-p` 模式启动
+  - 本机启用方法：`config.toml` 的 `[agents.coding]` 里改成 pi 的命令 / 参数并加 `backend = "local"`、`max_concurrent = 2`（见 `config.example.toml`）；本机 `config.toml` 目前仍是原来的 coding 配置，没有改动
   - **为什么要固定**：pi 自己直连 llama.cpp，AgentNexus 管不到它的请求；不指定 `id_slot` 时请求会落到哪个槽位无法保证（实测可能落到前台槽位），前台槽位被 pi 占住，前台对话就会排队。固定槽位 = 把 pi 圈在后台槽位里，前台永远有空位。
   - **做法选项**：
     - A（推荐）pi 扩展：在 `~/.pi/agent/extensions/` 放一个很小的扩展（约 20 行，属于 pi 的用户配置，不进本仓库），在 `before_provider_request` 里读环境变量 `AN_LLM_SLOT` 写进 `id_slot`；AgentNexus 启动 pi 时按租约设置该变量。只影响 pi，没有该变量时 pi 行为不变；缺点：每个外部 coding agent 要各写一份适配（pi / opencode / codex 的扩展机制不同）。

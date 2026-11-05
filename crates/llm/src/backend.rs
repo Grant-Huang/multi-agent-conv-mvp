@@ -13,8 +13,9 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::error::LlmError;
 use crate::policy::{Breaker, Stats};
-use crate::scheduler::Scheduler;
+use crate::scheduler::{Lease, Scheduler, Who};
 use crate::StructuredMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -241,6 +242,15 @@ impl Backend {
         let sched = Scheduler::new(&name, &cfg);
         let ctx = AtomicU32::new(cfg.context_tokens);
         Self { name, cfg, breaker: Breaker::default_policy(), stats: Stats::new(500), sched, ctx }
+    }
+
+    /// 给不经过本客户端的外部进程（pi 等直连推理服务的 coding agent）申请一个**后台**租约：
+    /// 租约持有期间槽位归它，调用方把 `lease.slot()` 告诉外部进程（环境变量 `AN_LLM_SLOT`），结束时丢弃租约即归还。
+    /// 排队有期限（`queue_secs`，默认 600 秒），超时返回 `E_LLM_BUSY`
+    pub async fn lease_background(&self, role: &str) -> Result<Lease, LlmError> {
+        let who = Who { role, priority: Priority::Background, req_id: crate::next_req_id() };
+        let wait = Duration::from_secs(self.cfg.queue_secs.unwrap_or(600));
+        self.sched.acquire(&who, 0, wait).await
     }
 
     pub fn context_tokens(&self) -> u32 {

@@ -199,6 +199,25 @@ impl Backends {
         self.backends.values()
     }
 
+    /// 给 coding agent（pi 等直连推理服务的外部进程）选定要固定槽位的后端，并校验：
+    /// 必须是 `llama_cpp` 后端、有后台槽位、`max_concurrent` 不超过后台槽位数（否则多出来的任务只会在租约上排队）
+    pub fn slot_backend(&self, name: &str, max_concurrent: u32) -> Result<Arc<Backend>> {
+        let Some(b) = self.backends.get(name) else {
+            bail!("[agents.coding] backend = \"{name}\"：没有这个后端（已定义：{}）", self.backends.keys().cloned().collect::<Vec<_>>().join("、"));
+        };
+        if b.cfg.kind != BackendKind::LlamaCpp {
+            bail!("[agents.coding] backend = \"{name}\"：只有 kind = \"llama_cpp\" 的后端有槽位可以固定；云端模型请不要配置 backend");
+        }
+        let background = b.cfg.effective_slots().1.len() as u32;
+        if background == 0 {
+            bail!("[agents.coding] backend = \"{name}\"：这个后端没有后台槽位（background_slots），coding 任务无处可放");
+        }
+        if max_concurrent > background {
+            bail!("[agents.coding] max_concurrent = {max_concurrent} 超过后端 \"{name}\" 的后台槽位数 {background}，请调小 max_concurrent（建议 ≤ 2，给 general / reviewer 留槽位）");
+        }
+        Ok(b.clone())
+    }
+
     /// 在后台探测每个本地推理服务（`/props`）：读取上下文总量用于预算裁剪，并核对槽位数。
     /// 服务还没起来时每 5 秒重试，最多 6 次；之后靠健康检查提示。需在 tokio 运行时中调用。
     pub fn spawn_probes(&self) {
@@ -256,6 +275,33 @@ mod tests {
         [routing]\nconversation = \"local\"\nrouter = \"local\"\ngeneral = \"local\"\nreviewer = \"local\"\n";
 
     const CLOUD: &str = "[backends.cloud]\nkind = \"openai\"\nbase_url = \"https://cloud/v1\"\nmodel = \"cloud-model\"\napi_key_env = \"CLOUD_KEY\"\nmax_inflight = 8\nreserved_interactive = 1\nrpm = 60\n";
+
+    #[test]
+    fn coding_backend_must_be_a_llama_cpp_backend_with_enough_background_slots() {
+        let b = build(PROFILE_A).unwrap();
+        assert_eq!(b.slot_backend("local", 2).unwrap().name, "local");
+        assert_eq!(b.slot_backend("local", 4).unwrap().name, "local");
+        let e = b.slot_backend("local", 5).unwrap_err().to_string();
+        assert!(e.contains("max_concurrent") && e.contains('4'), "{e}");
+        let e = b.slot_backend("nope", 1).unwrap_err().to_string();
+        assert!(e.contains("nope") && e.contains("local"), "{e}");
+
+        // 云端后端没有槽位可固定
+        let both = format!("{PROFILE_A}{CLOUD}");
+        let b = Backends::build_with_env(&cfg(&both), &|k: &str| (k == "CLOUD_KEY").then(|| "x".to_string())).unwrap();
+        let e = b.slot_backend("cloud", 1).unwrap_err().to_string();
+        assert!(e.contains("llama_cpp"), "{e}");
+    }
+
+    #[test]
+    fn coding_backend_without_background_slots_is_rejected() {
+        let front_only = "[backends.local]\nkind = \"llama_cpp\"\nbase_url = \"http://x/v1\"\nslots = 2\ninteractive_slots = [0, 1]\nbackground_slots = []\n\
+            [backends.other]\nbase_url = \"https://o/v1\"\n\
+            [routing]\nconversation = \"local\"\nrouter = \"local\"\ngeneral = \"other\"\nreviewer = \"other\"\n";
+        let b = build(front_only).unwrap();
+        let e = b.slot_backend("local", 1).unwrap_err().to_string();
+        assert!(e.contains("后台槽位"), "{e}");
+    }
 
     #[test]
     fn legacy_config_synthesizes_default_backend() {
