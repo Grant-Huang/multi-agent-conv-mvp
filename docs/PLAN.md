@@ -25,12 +25,12 @@
 | M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.8 完成 |
 | pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .10 完成 |
 | 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
-| M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
+| M3 | 搜索接入 General agent + 多方案 A/B | 3.1~3.4 完成 |
 | M4 | 多问题消息逐条对应回答 | 待开始 |
 | M5 | 9B vs 35B A/B（路由判断 + 最终回答） | 暂停：9B 已下线（2026-11-05），初步结果留档 |
 | M6 | 复杂话题 e2e 综合评估 + 10 用户压测 | 待开始 |
 
-顺序：M2 → **pre-M3** → M3 → M4 → M6，M1 可与 M2 并行（互不依赖）。
+顺序：M2 → **pre-M3** → M3 → M4 → M6，M1 可与 M2 并行（互不依赖）。Skill 与 M3 并行，不挡住搜索接入。
 M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B 复测。
 
 ---
@@ -102,7 +102,7 @@ M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B �
   - 已确认只用 ddgs，不加 Brave provider；**freshness / region 参数待做**（用户已选，排在 pre-M3 之后）
 - [x] **2.8 第二个搜索来源：Exa**（2026-11-05）
   - 你给的 `DDGS` + `r.jina.ai` 写法，包里已经是这条管线：`search` 只拿 URL，`search_and_fetch` 再抓正文（默认本机优先，失败用 Jina，合并调用每页 3000 字）。没有把查询词打到 stdout
-  - Exa 用托管 MCP `https://mcp.exa.ai/mcp` 的 `web_search_exa`，无 key。`ExaProvider` 只解析标题 / URL / Highlights，正文仍走上面的抓取管线。`WEBSEARCH_PROVIDER=exa` 或 `--provider exa`
+  - Exa 用托管 MCP `https://mcp.exa.ai/mcp` 的 `web_search_exa`，无 key。`ExaProvider` 只解析标题 / URL / Highlights，正文仍走上面的抓取管线。默认就是 Exa；`WEBSEARCH_PROVIDER=ddg` 或 `--provider ddg` 改回 DuckDuckGo。Exa 失败不自动换源。请求带上托管接口要求的 `objective`（与 query 相同）
   - 实测这次调用返回 200，能解析出 URL。单元测试覆盖解析、截断条数、坏 URL、超时、HTTP 错误、MCP 错误。311 个测试通过，flake8 通过
   - 豆包搜索不做无 key 来源：火山引擎接口要 `Authorization: Bearer`，每月有免费次数，但是账号密钥。等有 key 再加 provider，密钥只走环境变量
   - pi 仍没有内置免费搜索（2.7a）。和 DDG 的效果对比留在 M3 的 A/B，不在这一步用 35B 重跑
@@ -370,19 +370,38 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 
 ---
 
+## Skill（给不走内置工具的 agent，与 M3 并行）
+
+现状：`tools/websearch/skills/websearch/SKILL.md` 教 pi 用 bash 调 `websearch`。General 不读这个文件，M3.1 走 `Tool` 接口。不自动改写技能正文（不做「用模型优化 skill 文本」）。
+
+- [x] **S.1 与当前命令对齐**（2026-11-05，`tools/websearch/skills/websearch/SKILL.md`）
+  - 默认搜索是 Exa，skill 不要求加 `--provider`；需要 DuckDuckGo 时才写 `--provider ddg`
+  - 问「最近、今天、近 24 小时」时，关键词里写上日期
+  - 结果为空就换一次说法再搜，最多 3 次；`status=error` 读 `message`，不自动换搜索源
+  - 只根据返回内容回答，末尾列出实际用到的 `url`；不要写 Python
+- [ ] **S.2 安装方式写进 `tools/websearch/README.md`**：pi 要把该目录放到它的 skill 路径下才生效。不改用户本机的 pi 配置
+- [ ] **S.3 用固定问题核对 skill 文本**：空结果、过期资料、编造来源这三类用法都在文中被禁止。不引入自动改写
+
 ## M3 接入 General agent + 搜索方案 A/B
 
-- [ ] **3.1 接入**：在 `crates/agents/src/tools.rs` 按现有 `Tool` 接口实现 `web_search` / `web_fetch`，内部调用 M2 的 CLI `websearch search-fetch`（JSON 输出），不在 Rust 里重复实现搜索逻辑
-  - 配置项：CLI 路径、超时；未安装时工具不注册，前台能力清单自动不显示联网
-  - 测试：CLI 缺失、超时、正常 JSON 解析
-- [ ] **3.2 三个方案作为 provider 接入**（同一接口，配置切换）
-  - A：DuckDuckGo + 本地抓取 + Jina 兜底
-  - B：Exa 托管 MCP（`web_search_exa`，无 key）
-  - C：Parallel 托管 MCP（`web_search`）
-- [ ] **3.3 A/B 评测**：固定话题集（见 M6.1），每个方案跑同一批查询
-  - 指标：成功率、结果数、正文字数、中文站点可用率、延迟 P50/P95、答案质量评分（见 M6.2）
-  - 预调研数据：DDG+Jina 中文站抓取 5/12 成功；Exa 4/4，约 2 万字，0.4~1.9s；Parallel 4/4，约 2.6 万字，约 1s
-- [ ] **3.4 结论**：选默认方案，其余保留为备选 provider
+- [x] **3.1 接入**（2026-11-05）：`web_search` / `web_fetch` 调用 `websearch` CLI，不在 Rust 里重写搜索
+  - 配置：`agents.general.websearch_command`（默认 `websearch`）、`websearch_timeout_secs`（默认 45）。命令不在 PATH 上或留空时不注册，前台能力清单里就没有联网
+  - 测试：命令缺失不注册、成功 JSON、超时。`an-agents` 工具测试与 `an-runtime` 配置测试通过
+- [x] **3.2 三个方案作为 provider 接入**（2026-11-05）
+  - A：DuckDuckGo + 本地抓取 + Jina 兜底（`--provider ddg`）
+  - B：Exa 托管 MCP（`web_search_exa`，无 key，当前默认）
+  - C：Parallel 托管 MCP（`https://search.parallel.ai/mcp` 的 `web_search`，无 key）。只取标题、URL、摘录，正文仍走同一条抓取管线
+  - General 的 `web_search` 接受可选参数 `provider`（`exa` / `ddg` / `parallel`），不填就用 CLI 默认的 Exa。失败不自动换源
+- [x] **3.3 A/B 评测**（2026-11-05，`scripts/ab_m3_3.py`，原始结果 `.tmp/ab_m3_3.json`）
+  - M6.1 的话题集还没定稿，这次用 6 条固定查询：3 条中文（11 月 5 日 agent 架构、上海 2026 人工智能政策、Qwen 工具调用）、3 条英文（llama.cpp 槽位、agents as tools / handoff、ACP v2）
+  - 每个来源 `search_and_fetch`，最多 3 条、每页 1500 字。没有调用 35B。质量分是按标题和正文是否对题手打的 1~5 分，不是 M6.2 的模型评委
+  - 有结果的查询：DuckDuckGo 4/6，Exa 6/6，Parallel 6/6。都没有抛错。DuckDuckGo 的两条英文架构查询返回空列表
+  - 平均结果数：2.0 / 3.0 / 3.0。截断前正文字数合计：9.6 万 / 60.4 万 / 53.1 万。正文字数受协议长页影响，不作为选型依据
+  - 延迟 P50 / P95：DuckDuckGo 7.3s / 16.3s，Exa 1.6s / 12.1s，Parallel 2.0s / 17.7s
+  - 三条中文查询抓到的页面里，正文含足够汉字的比例：DuckDuckGo 9/9，Exa 8/8，Parallel 7/9
+  - 手打对题均分：DuckDuckGo 3.3，Exa 4.7，Parallel 3.7。Exa 命中当天架构讨论和 ACP v2 原文；Parallel 的中文新闻偏标签页，编排结果是同一篇文档的三个链接；DuckDuckGo 的政策页和 KV 教程好，但两条英文查询是空的
+  - 35B 评委（2026-11-05，`scripts/judge_m3_3.py`，槽位 5，这次请求关闭思考以便输出 JSON，不改服务器默认；逐条分在 `.tmp/ab_m3_3_judge.json`）。五项均分：DuckDuckGo 3.03，Exa 4.10，Parallel 3.63。Exa 的相关性 4.67、引用 4.33；DuckDuckGo 被两条空结果拉到准确性 2.83；Parallel 的覆盖 3.17（重复链接、中文新闻偏题）
+- [x] **3.4 结论**（2026-11-05）：默认保持 Exa。35B 评分和手打排序一致。DuckDuckGo 与 Parallel 留作 `--provider` 备选，失败不自动换源
 
 ## M4 多问题消息逐条对应回答
 

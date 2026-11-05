@@ -94,7 +94,8 @@ def _clean(root) -> None:
         if _is_hidden(el) or _is_junk_by_class(el) or _is_page_chrome(el):
             el.drop_tree()
     for comment in list(root.xpath("//comment()")):
-        comment.drop_tree()
+        if comment.getparent() is not None:
+            comment.drop_tree()
 
 
 def _is_hidden(el) -> bool:

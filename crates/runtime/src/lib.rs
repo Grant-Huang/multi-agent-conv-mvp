@@ -90,7 +90,11 @@ impl Runtime {
         // 工具清单也要给 Turn Controller 看，否则它不知道"现在几点"可以交给 current_time
         let mut tool_listing = "  （General 未启用，没有可用工具）".to_string();
         if a.general.enabled {
-            let tools = ToolRegistry::with_builtin(&a.general.workspace_dir)?;
+            let mut tools = ToolRegistry::with_builtin(&a.general.workspace_dir)?;
+            let timeout = std::time::Duration::from_secs(a.general.websearch_timeout_secs);
+            if !tools.register_websearch(&a.general.websearch_command, timeout) {
+                tracing::info!("未注册联网工具：{} 不可用", a.general.websearch_command);
+            }
             tool_names = tools.names();
             tool_listing = tools.infos().iter().map(|t| format!("  - {}：{}", t.name, t.description)).collect::<Vec<_>>().join("\n");
             registry.register(Arc::new(GeneralAgent::new(llm_for(LlmRole::General), tools, a.general.max_steps, a.general.max_concurrent)));

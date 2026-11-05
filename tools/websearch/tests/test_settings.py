@@ -7,7 +7,7 @@ from agent_websearch.settings import FETCH_ORDERS, Settings
 
 def test_defaults(clean_env):
     s = Settings.from_env()
-    assert s.provider == "ddg"
+    assert s.provider == "exa"
     assert s.fetch_order == "local_first"
     assert s.extractor == "auto"
     assert s.search_timeout == 30
@@ -22,7 +22,7 @@ def test_defaults(clean_env):
 
 
 def test_reads_environment(clean_env):
-    clean_env.setenv("WEBSEARCH_PROVIDER", "exa")
+    clean_env.setenv("WEBSEARCH_PROVIDER", "ddg")
     clean_env.setenv("WEBSEARCH_FETCH_ORDER", "jina_first")
     clean_env.setenv("WEBSEARCH_EXTRACTOR", "lxml")
     clean_env.setenv("WEBSEARCH_SEARCH_TIMEOUT", "5.5")
@@ -34,7 +34,7 @@ def test_reads_environment(clean_env):
     clean_env.setenv("WEBSEARCH_LOG_LEVEL", "debug")
     clean_env.setenv("JINA_API_KEY", "jina_secret")
     s = Settings.from_env()
-    assert s.provider == "exa"
+    assert s.provider == "ddg"
     assert s.fetch_order == "jina_first"
     assert s.extractor == "lxml"
     assert s.search_timeout == 5.5
@@ -66,7 +66,7 @@ def test_accepts_explicit_mapping_instead_of_os_environ(clean_env):
         ("WEBSEARCH_MIN_CHARS", "-5", "min_chars", 200),
         ("WEBSEARCH_ALLOW_PRIVATE", "maybe", "allow_private", False),
         ("WEBSEARCH_LOG_LEVEL", "LOUD", "log_level", "WARNING"),
-        ("WEBSEARCH_PROVIDER", "  ", "provider", "ddg"),
+        ("WEBSEARCH_PROVIDER", "  ", "provider", "exa"),
     ],
 )
 def test_invalid_values_fall_back_to_default_with_warning(key, value, field, default, caplog):

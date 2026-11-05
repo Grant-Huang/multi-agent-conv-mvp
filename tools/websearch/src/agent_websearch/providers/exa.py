@@ -30,7 +30,7 @@ class ExaProvider:
             "method": "tools/call",
             "params": {
                 "name": "web_search_exa",
-                "arguments": {"query": query, "numResults": max_results},
+                "arguments": {"query": query, "numResults": max_results, "objective": query},
             },
         }
         try:

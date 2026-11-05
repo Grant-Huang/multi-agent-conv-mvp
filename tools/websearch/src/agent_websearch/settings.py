@@ -23,7 +23,7 @@ _FALSE = {"0", "false", "no", "off"}
 
 @dataclass(frozen=True)
 class Settings:
-    provider: str = "ddg"
+    provider: str = "exa"
     fetch_order: str = "local_first"
     extractor: str = "auto"
     search_timeout: float = 30

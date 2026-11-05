@@ -9,6 +9,7 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use an_core::{Artifact, ToolInfo};
 use anyhow::{anyhow, bail, Context, Result};
@@ -85,6 +86,58 @@ impl ToolRegistry {
         r.register(Arc::new(WriteFile { root }));
         Ok(r)
     }
+
+    /// 命令存在时注册 `web_search` 和 `web_fetch`。不存在或命令为空则什么都不做。
+    pub fn register_websearch(&mut self, command: &str, timeout: Duration) -> bool {
+        if command.is_empty() || !command_exists(command) {
+            return false;
+        }
+        let cmd = WebCmd { command: command.to_string(), timeout };
+        self.register(Arc::new(WebSearch { cmd: cmd.clone() }));
+        self.register(Arc::new(WebFetch { cmd }));
+        true
+    }
+}
+
+fn command_exists(command: &str) -> bool {
+    let path = Path::new(command);
+    if command.contains('/') || command.contains('\\') {
+        return path.is_file();
+    }
+    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(command).is_file()))
+}
+
+#[derive(Clone)]
+struct WebCmd {
+    command: String,
+    timeout: Duration,
+}
+
+async fn run_websearch(cmd: &WebCmd, args: &[&str]) -> Result<String> {
+    let child = tokio::process::Command::new(&cmd.command)
+        .args(args)
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .stdin(std::process::Stdio::null())
+        .spawn()
+        .with_context(|| format!("无法启动 {}", cmd.command))?;
+    let out = match tokio::time::timeout(cmd.timeout, child.wait_with_output()).await {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => return Err(e).with_context(|| format!("{} 执行失败", cmd.command)),
+        Err(_) => bail!("{} 超时（{} 秒）", cmd.command, cmd.timeout.as_secs()),
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if stdout.is_empty() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        bail!("{} 没有输出：{}", cmd.command, err.trim());
+    }
+    let value: Value = serde_json::from_str(&stdout).context("搜索命令没有返回 JSON")?;
+    if value.get("status").and_then(|s| s.as_str()) != Some("success") {
+        let message = value.get("message").and_then(|m| m.as_str()).unwrap_or("搜索失败");
+        bail!("{message}");
+    }
+    Ok(an_core::truncate_chars(&stdout, READ_LIMIT))
 }
 
 /// 读取字符串参数
@@ -340,6 +393,58 @@ impl Tool for WriteFile {
     }
 }
 
+struct WebSearch {
+    cmd: WebCmd,
+}
+
+#[async_trait::async_trait]
+impl Tool for WebSearch {
+    fn name(&self) -> &str {
+        "web_search"
+    }
+    fn description(&self) -> &str {
+        "联网搜索并读取前几条网页正文。需要最新资料、外部事实或用户要求搜索时使用"
+    }
+    fn args_hint(&self) -> &str {
+        r#"{"query": "2026-11-05 AI agent 架构", "max_results": 3, "provider": "exa"}"#
+    }
+    async fn call(&self, args: &Value) -> Result<ToolOutput> {
+        let query = arg_str(args, "query")?;
+        let n = args.get("max_results").and_then(|v| v.as_u64()).unwrap_or(3).clamp(1, 8);
+        let n = n.to_string();
+        let mut argv = vec!["search-fetch".to_string(), query.to_string(), "-n".into(), n, "--max-chars".into(), "3000".into()];
+        if let Some(provider) = args.get("provider").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+            argv.push("--provider".into());
+            argv.push(provider.to_string());
+        }
+        let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
+        let text = run_websearch(&self.cmd, &refs).await?;
+        Ok(ToolOutput::text(text))
+    }
+}
+
+struct WebFetch {
+    cmd: WebCmd,
+}
+
+#[async_trait::async_trait]
+impl Tool for WebFetch {
+    fn name(&self) -> &str {
+        "web_fetch"
+    }
+    fn description(&self) -> &str {
+        "抓取一个 http(s) 网页的正文"
+    }
+    fn args_hint(&self) -> &str {
+        r#"{"url": "https://example.com/page"}"#
+    }
+    async fn call(&self, args: &Value) -> Result<ToolOutput> {
+        let url = arg_str(args, "url")?;
+        let text = run_websearch(&self.cmd, &["fetch", url, "--max-chars", "8000"]).await?;
+        Ok(ToolOutput::text(text))
+    }
+}
+
 /// 工具参数的 JSON Schema：任意对象（具体参数由 args_hint 引导）
 pub fn args_schema() -> Value {
     json!({ "type": "object" })
@@ -356,6 +461,79 @@ mod tests {
         assert_eq!(calc::eval("-3 + 10 % 4").unwrap(), -1.0);
         assert!(calc::eval("1/0").is_err());
         assert!(calc::eval("2 +").is_err());
+    }
+
+    fn write_script(dir: &Path, body: &str) -> PathBuf {
+        let path = dir.join("websearch");
+        std::fs::write(&path, body).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perm = std::fs::metadata(&path).unwrap().permissions();
+            perm.set_mode(0o755);
+            std::fs::set_permissions(&path, perm).unwrap();
+        }
+        path
+    }
+
+    #[tokio::test]
+    async fn websearch_missing_command_is_not_registered() {
+        let dir = std::env::temp_dir().join(format!("an-websearch-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut tools = ToolRegistry::with_builtin(&dir).unwrap();
+        assert!(!tools.register_websearch("/no/such/websearch", Duration::from_secs(1)));
+        assert!(!tools.names().iter().any(|n| n == "web_search"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn websearch_parses_success_json() {
+        let dir = std::env::temp_dir().join(format!("an-websearch-ok-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = write_script(
+            &dir,
+            "#!/bin/sh\nprintf '%s' '{\"status\":\"success\",\"data\":{\"pages\":[{\"url\":\"https://example.com\",\"content\":\"正文\"}]},\"message\":\"\"}'\n",
+        );
+        let mut tools = ToolRegistry::with_builtin(&dir).unwrap();
+        assert!(tools.register_websearch(script.to_str().unwrap(), Duration::from_secs(2)));
+        let out = tools.get("web_search").unwrap().call(&json!({"query": "q"})).await.unwrap();
+        assert!(out.text.contains("正文"));
+        assert!(out.text.contains("https://example.com"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn websearch_passes_provider() {
+        let dir = std::env::temp_dir().join(format!("an-websearch-provider-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = write_script(
+            &dir,
+            "#!/bin/sh\ncase \"$*\" in *'--provider parallel'*) printf '%s' '{\"status\":\"success\",\"data\":{\"provider\":\"parallel\"},\"message\":\"\"}' ;; *) printf '%s' '{\"status\":\"error\",\"data\":{},\"message\":\"missing\"}' ;; esac\n",
+        );
+        let mut tools = ToolRegistry::with_builtin(&dir).unwrap();
+        assert!(tools.register_websearch(script.to_str().unwrap(), Duration::from_secs(2)));
+        let out = tools.get("web_search").unwrap().call(&json!({"query": "q", "provider": "parallel"})).await.unwrap();
+        assert!(out.text.contains("parallel"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn websearch_timeout() {
+        let dir = std::env::temp_dir().join(format!("an-websearch-slow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = write_script(&dir, "#!/bin/sh\nsleep 5\n");
+        let mut tools = ToolRegistry::with_builtin(&dir).unwrap();
+        assert!(tools.register_websearch(script.to_str().unwrap(), Duration::from_millis(200)));
+        let message = match tools.get("web_fetch").unwrap().call(&json!({"url": "https://example.com"})).await {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("应当超时"),
+        };
+        assert!(message.contains("超时"), "{message}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

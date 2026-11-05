@@ -102,6 +102,8 @@ enabled = true
 max_steps = 6                      # 工具循环最大步数
 max_concurrent = 4                 # 同时最多执行几个任务（受本地模型并发能力限制）
 workspace_dir = "workspace/files"  # 文件工具只能读写这个目录
+websearch_command = "websearch"    # 不在 PATH 上时不注册联网工具
+websearch_timeout_secs = 45
 
 [agents.reviewer]
 enabled = true

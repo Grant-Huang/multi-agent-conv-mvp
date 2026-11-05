@@ -33,9 +33,11 @@ def provider_names() -> list[str]:
 def _register_builtin() -> None:
     from .ddg import DdgProvider
     from .exa import ExaProvider
+    from .parallel import ParallelProvider
 
     register(DdgProvider())
     register(ExaProvider())
+    register(ParallelProvider())
 
 
 _register_builtin()

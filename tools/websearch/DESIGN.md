@@ -10,7 +10,7 @@
 | 项 | 决策 |
 |---|---|
 | 形态 | 独立 Python 包，同时提供 **Python 函数**、**CLI**、**MCP server** 三种入口 |
-| 搜索 | DuckDuckGo（`ddgs`，无需 API key） |
+| 搜索 | 默认 Exa（托管 MCP，无需 API key）；DuckDuckGo 与 Parallel 为显式备选 |
 | 主要用法 | `search_and_fetch`：一次调用完成搜索 + 并发抓取前几条结果的正文（对应最初的 `agent_search_and_scrape`） |
 | 抓取顺序 | 可配置：`local_first`（默认）/ `jina_first` / `jina_only` / `local_only`；M3 时 A/B 对比 |
 | 依赖 | 核心只依赖 `ddgs` + `httpx`（加上 ddgs 自带的 `lxml`）；`trafilatura`、`mcp` 为可选安装 |
@@ -242,7 +242,7 @@ def provider_names() -> list[str]: ...
 
 Exa（`providers/exa.py`）调用托管 MCP `https://mcp.exa.ai/mcp` 的 `web_search_exa`，不需要 key。响应是 SSE，正文按 `Title` / `URL` / `Highlights` 解析成 `SearchResult`。页面正文不使用 Exa 附带的长文，仍走第 3.5 节的抓取管线。
 
-Parallel 仍留到 M3：再写一个 provider 文件并注册，`api.py` 和入口层不用改。
+Parallel（`providers/parallel.py`）调用 `https://search.parallel.ai/mcp` 的 `web_search`，不需要 key。参数是 `objective` 和 `search_queries`（都用同一条查询）。响应 JSON 里的 `results` 取 `title`、`url`、`excerpts`。页面正文仍走第 3.5 节的抓取管线。`--provider parallel` 或 `WEBSEARCH_PROVIDER=parallel` 切换，失败不自动换源。
 
 ### 3.5 URL 校验（`url_guard.py`）
 
@@ -314,7 +314,7 @@ def html_to_markdown(html: str, base_url: str) -> tuple[str, str]   # (title, ma
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `WEBSEARCH_PROVIDER` | `ddg` | 默认搜索来源。已注册 `ddg`、`exa` |
+| `WEBSEARCH_PROVIDER` | `exa` | 默认搜索来源。已注册 `exa`、`ddg`、`parallel`。失败不自动换源 |
 | `WEBSEARCH_FETCH_ORDER` | `local_first` | `local_first` / `jina_first` / `jina_only` / `local_only` |
 | `WEBSEARCH_EXTRACTOR` | `auto` | `auto` / `lxml` / `trafilatura` |
 | `WEBSEARCH_SEARCH_TIMEOUT` | `30` | 搜索硬超时（秒） |
