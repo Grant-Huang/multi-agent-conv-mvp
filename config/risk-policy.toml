@@ -103,7 +103,6 @@ paths = [
   "crates/agents/src/reviewer.rs",
   "crates/agents/src/lib.rs",
   "crates/observe/src/**",
-  "crates/server/src/bin/**",
   "web/**",
   "tools/websearch/**",
   "scripts/**",
