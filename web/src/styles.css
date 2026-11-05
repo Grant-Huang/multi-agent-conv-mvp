@@ -74,6 +74,8 @@ pre {
 .btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn.small { padding: 3px 10px; font-size: 12px; }
+.misroute { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.misroute select, .misroute input { background: var(--bg); color: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
 
 .conv-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .conv-item {

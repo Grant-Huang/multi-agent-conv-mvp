@@ -22,7 +22,7 @@ export function StatusBadge({ status }: { status: TaskStatus }) {
   return <span className={`badge s-${status.toLowerCase()}`}>{STATUS_LABEL[status]}</span>;
 }
 
-export function TaskPanel({ tasks, incoming, onChanged }: { tasks: TaskRecord[]; incoming: TaskEvent | null; onChanged: () => void }) {
+export function TaskPanel({ tasks, incoming, onChanged, messageIds }: { tasks: TaskRecord[]; incoming: TaskEvent | null; onChanged: () => void; messageIds?: Record<string, string> }) {
   const [openId, setOpenId] = useState<string | null>(null);
   if (tasks.length === 0) return <div className="panel-empty">还没有任务。需要后台执行的请求会出现在这里。</div>;
   return (
@@ -35,14 +35,15 @@ export function TaskPanel({ tasks, incoming, onChanged }: { tasks: TaskRecord[];
           onToggle={() => setOpenId(openId === t.id ? null : t.id)}
           incoming={incoming}
           onChanged={onChanged}
+          messageId={messageIds?.[t.id] ?? null}
         />
       ))}
     </div>
   );
 }
 
-function TaskCard(props: { task: TaskRecord; open: boolean; onToggle: () => void; incoming: TaskEvent | null; onChanged: () => void }) {
-  const { task, open, onToggle, incoming, onChanged } = props;
+function TaskCard(props: { task: TaskRecord; open: boolean; onToggle: () => void; incoming: TaskEvent | null; onChanged: () => void; messageId: string | null }) {
+  const { task, open, onToggle, incoming, onChanged, messageId } = props;
   const detail = useIncomingDetail(open, task.id, incoming);
   const [busy, setBusy] = useState(false);
 
@@ -79,6 +80,7 @@ function TaskCard(props: { task: TaskRecord; open: boolean; onToggle: () => void
             {running && (
               <button className="btn small" disabled={busy} onClick={() => act(() => api.cancel(task.id))}>取消</button>
             )}
+            {messageId && <MisrouteForm messageId={messageId} role={task.role} busy={busy} />}
           </div>
 
           <Section title="路由">
@@ -133,6 +135,58 @@ function TaskCard(props: { task: TaskRecord; open: boolean; onToggle: () => void
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+const ACTIONS = [
+  ["respond", "直接回答"],
+  ["clarify", "先追问"],
+  ["delegate", "交给后台"],
+  ["follow_up", "改进行中的任务"],
+] as const;
+
+function MisrouteForm({ messageId, role, busy }: { messageId: string; role: string; busy: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [action, setAction] = useState("respond");
+  const [correctRole, setCorrectRole] = useState(role);
+  const [note, setNote] = useState("");
+  const [done, setDone] = useState(false);
+  if (done) return <span className="kv">已记下</span>;
+  if (!open) {
+    return <button className="btn small" disabled={busy} onClick={() => setOpen(true)}>派错了</button>;
+  }
+  const save = async () => {
+    await api.feedback({
+      message_id: messageId,
+      original_action: "delegate",
+      original_role: role,
+      correct_action: action,
+      correct_role: action === "delegate" ? correctRole : "",
+      note,
+    });
+    setDone(true);
+  };
+  return (
+    <div className="misroute">
+      <label>
+        正确动作
+        <select value={action} onChange={(e) => setAction(e.target.value)}>
+          {ACTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+      {action === "delegate" && (
+        <label>
+          正确角色
+          <select value={correctRole} onChange={(e) => setCorrectRole(e.target.value)}>
+            <option value="general">general</option>
+            <option value="coding">coding</option>
+            <option value="reviewer">reviewer</option>
+          </select>
+        </label>
+      )}
+      <input value={note} placeholder="一句说明" onChange={(e) => setNote(e.target.value)} />
+      <button className="btn small" disabled={busy} onClick={() => save().catch((e) => alert(String(e)))}>保存</button>
     </div>
   );
 }

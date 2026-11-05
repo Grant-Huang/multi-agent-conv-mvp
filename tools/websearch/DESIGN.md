@@ -12,9 +12,9 @@
 | 形态 | 独立 Python 包，同时提供 **Python 函数**、**CLI**、**MCP server** 三种入口 |
 | 搜索 | 默认 Exa（托管 MCP，无需 API key）；DuckDuckGo 与 Parallel 为显式备选 |
 | 主要用法 | `search_and_fetch`：一次调用完成搜索 + 并发抓取前几条结果的正文（对应最初的 `agent_search_and_scrape`） |
-| 抓取顺序 | 可配置：`local_first`（默认）/ `jina_first` / `jina_only` / `local_only`；M3 时 A/B 对比 |
+| 抓取顺序 | `local_first`（默认）。M3 没有改这个顺序 |
 | 依赖 | 核心只依赖 `ddgs` + `httpx`（加上 ddgs 自带的 `lxml`）；`trafilatura`、`mcp` 为可选安装 |
-| 扩展 | 搜索来源可插拔，M3 再接入 Exa / Parallel 做 A/B |
+| 扩展 | 已注册 `exa`（默认）、`ddg`、`parallel`。M3.4 决定不合并来源 |
 | 环境 | Python 3.13.2，uv 管理 venv，不污染系统 Python |
 | 质量 | TDD，pytest 覆盖率 ≥ 80%，flake8 通过 |
 
@@ -46,7 +46,7 @@
 
 ### 1.4 不做（v1 范围外）
 
-- 结果缓存、多来源合并排序：放到 M3 视 A/B 结果再定。
+- 结果缓存、多来源合并排序：M3.4 决定不做。三个来源各自调用，失败不换源。
 - 需要执行 JavaScript 才能显示内容的网页（如 SPA）、PDF 本地解析：交给 Jina 处理。
 
 ### 1.5 实测依据
@@ -56,7 +56,7 @@
 | 测试 | 结果 |
 |---|---|
 | DDG 搜索 + 只用 Jina 抓取 | 中文站点 5/12 成功，其余 Jina 超时（10s） |
-| 本机直接抓取 | gov.cn 正常；CSDN 返回 521（样本少，证据不足，所以抓取顺序做成可配置，留给 M3 对比） |
+| 本机直接抓取 | gov.cn 正常；CSDN 返回 521。抓取顺序保持可配置，M3 之后默认仍是 `local_first` |
 | Exa 托管 MCP | 4/4 成功，约 2 万字，0.4~1.9s |
 | Parallel 托管 MCP | 4/4 成功，约 2.6 万字，约 1s |
 
@@ -81,9 +81,9 @@
                      ▼                          ▼
      ┌── 搜索 providers ──┐        ┌──────── 抓取管线 ────────┐
      │ registry           │        │ url_guard (SSRF)         │
-     │  └ ddg (子进程)    │        │ 顺序：local / jina 可配置│
-     │  └ exa / parallel  │        │ local: httpx + extract   │
-     │    （M3 预留）     │        │   extract: trafilatura   │
+     │  exa（默认）       │        │ 顺序：local / jina 可配置│
+     │  ddg / parallel    │        │ local: httpx + extract   │
+     │  失败不换源        │        │   extract: trafilatura   │
      └────────────────────┘        │   (若已安装) 否则 lxml   │
                                    │ jina: r.jina.ai          │
                                    └──────────────────────────┘
@@ -297,7 +297,7 @@ def html_to_markdown(html: str, base_url: str) -> tuple[str, str]   # (title, ma
      - `a` 转为 `[文字](绝对 URL)`；`pre/code` 转为代码块；`table` 转为简单的 Markdown 表格；`br` 转为换行；
      - 合并多余空白。
   4. 标题取 `<title>`，没有时取第一个 `h1`。
-- 内置实现的目标是"够用"。正文质量不够时，再安装 `[extract]` 或依靠 Jina，M3 时会对比效果。
+- 内置实现的目标是够用。正文质量不够时，再安装 `[extract]`，或由现有顺序落到 Jina。M3 没有改这个顺序。
 
 **Jina**（`fetch_jina.py`）：
 - 请求 `GET https://r.jina.ai/{url}`，超时默认 20s。
@@ -450,7 +450,7 @@ uv tool install "./tools/websearch[mcp,extract]"  # 全部功能
 2. **依赖**：
    - 核心只有 `ddgs` + `httpx`（加上随 ddgs 安装的 `lxml`），正文提取用内置的 lxml 实现；
    - `trafilatura` 为可选 `[extract]`，`mcp` 为可选 `[mcp]`。
-3. **抓取顺序**：可配置，默认 `local_first`，M3 时对比 `jina_first` 和 `local_first`。
+3. **抓取顺序**：可配置，默认 `local_first`。M3.4 之后不改这个默认。
 4. **一次调用**：新增 `search_and_fetch`（MCP 工具 `web_search_and_fetch`），作为 agent 的首选工具：
    - 默认取 3 条结果，每页 3000 字；
    - 并发抓取，失败的页面跳过但列出原因。

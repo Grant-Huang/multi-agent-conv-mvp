@@ -403,10 +403,10 @@ impl Tool for WebSearch {
         "web_search"
     }
     fn description(&self) -> &str {
-        "联网搜索并读取前几条网页正文。需要最新资料、外部事实或用户要求搜索时使用"
+        "联网搜索并读取前几条网页正文。默认用 Exa。需要最新资料、外部事实或用户要求搜索时使用"
     }
     fn args_hint(&self) -> &str {
-        r#"{"query": "2026-11-05 AI agent 架构", "max_results": 3, "provider": "exa"}"#
+        r#"{"query": "2026-11-05 AI agent 架构", "max_results": 3}"#
     }
     async fn call(&self, args: &Value) -> Result<ToolOutput> {
         let query = arg_str(args, "query")?;

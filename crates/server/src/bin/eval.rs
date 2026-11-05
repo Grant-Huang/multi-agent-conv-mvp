@@ -3,6 +3,7 @@
 //! 用法：
 //! ```text
 //! cargo run --release --bin an-eval -- [config.toml] [evals/routing.jsonl] [选项]
+//! cargo run --bin an-eval -- --export-feedback data/agentnexus.db .tmp/feedback-draft.jsonl
 //!   --review-mode reviewer|direct|auto   覆盖配置中的审查模式
 //!   --tag 标签                           只跑带这个标签的样本（可重复）
 //!   --limit N                            只跑前 N 条
@@ -222,6 +223,28 @@ struct Args {
     label: Option<String>,
 }
 
+fn export_feedback_draft() -> Result<bool> {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() != Some("--export-feedback") {
+        return Ok(false);
+    }
+    let db = args.next().context("--export-feedback 需要数据库路径和草稿路径")?;
+    let out = args.next().context("--export-feedback 需要草稿输出路径")?;
+    let out_path = PathBuf::from(&out);
+    if out_path.file_name().and_then(|n| n.to_str()) == Some("routing.jsonl") {
+        bail!("不能写入 routing.jsonl。草稿确认后应改 evals/make_dataset.py");
+    }
+    let store = Store::open(std::path::Path::new(&db))?;
+    if let Some(dir) = out_path.parent() {
+        if !dir.as_os_str().is_empty() {
+            std::fs::create_dir_all(dir)?;
+        }
+    }
+    std::fs::write(&out_path, store.feedback_draft_jsonl()?)?;
+    println!("已写入草稿 {}", out_path.display());
+    Ok(true)
+}
+
 fn parse_args() -> Result<Args> {
     let mut pos = vec![];
     let mut a = Args { config: "config.toml".into(), dataset: "evals/routing.jsonl".into(), review_mode: None, tags: vec![], limit: None, label: None };
@@ -251,6 +274,9 @@ fn parse_args() -> Result<Args> {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "error".into())).init();
+    if export_feedback_draft()? {
+        return Ok(());
+    }
     let args = parse_args()?;
     let mut config = AppConfig::load(&args.config)?;
     if let Some(m) = args.review_mode {
@@ -306,7 +332,8 @@ async fn main() -> Result<()> {
                         r.got_task_goal = Some(task_goal.clone());
                         r.calls += 1;
                         let t1 = Instant::now();
-                        match rt.router.route(task_goal, "").await {
+                        let examples = rt.store.similar_feedback(task_goal, 5).unwrap_or_default();
+                        match rt.router.route(task_goal, "", &examples).await {
                             Ok(route) => {
                                 r.attempts += route.attempts;
                                 r.raw_outputs.extend(route.raw_outputs);

@@ -634,3 +634,47 @@ workspace_dir = "{ws}"
     assert_eq!(d["task"]["result"]["summary"], "CONTEXT_OK", "{d}");
     assert!(rt_b.store.get_task_context(&tid).unwrap().unwrap_or_default().contains("删除旧数据"));
 }
+
+#[tokio::test]
+async fn feedback_api_saves_and_rejects() {
+    let config: AppConfig = toml::from_str("[llm]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\n").unwrap();
+    let rt = Arc::new(Runtime::new(config, Store::open(std::path::Path::new(":memory:")).unwrap()).unwrap());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let rt_keep = rt.clone();
+    tokio::spawn(async move { axum::serve(listener, an_server::api(rt)).await.unwrap() });
+    let http = reqwest::Client::new();
+    let base = format!("http://{addr}");
+
+    let bad = http
+        .post(format!("{base}/api/feedback"))
+        .json(&json!({"message_id":"m1","original_action":"delegate","correct_action":"guess"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 400);
+    let body: Value = bad.json().await.unwrap();
+    assert_eq!(body["status"], "error");
+    assert!(body["message"].as_str().unwrap_or("").contains("动作"));
+
+    let ok = http
+        .post(format!("{base}/api/feedback"))
+        .json(&json!({
+            "message_id": "m1",
+            "original_action": "delegate",
+            "original_role": "coding",
+            "correct_action": "respond",
+            "note": "只是在问概念"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert!(ok.status().is_success());
+    let body: Value = ok.json().await.unwrap();
+    assert_eq!(body["status"], "success");
+    let saved = rt_keep.store.list_feedback().unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].message_id, "m1");
+    assert_eq!(saved[0].correct_action, "respond");
+    assert!(saved[0].correct_role.is_none());
+}

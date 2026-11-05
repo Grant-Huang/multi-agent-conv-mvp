@@ -67,7 +67,7 @@ websearch fetch https://example.com --max-chars 8000 # 抓取单个网页
 pi --skill ./tools/websearch/skills/websearch -p "..."
 ```
 
-**AgentNexus**：计划在 M3 通过 CLI 接入（见 `docs/PLAN.md`）。
+**AgentNexus**：General 的 `web_search` / `web_fetch` 调用这个 CLI。不填 `provider` 时用 Exa。见 `docs/PLAN.md` 的 M3.4。
 
 ## 配置（环境变量）
 

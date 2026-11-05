@@ -39,6 +39,41 @@ impl ReviewMode {
     }
 }
 
+/// 一条和当前消息相似的纠错，用来放进提示词。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorrectionExample {
+    pub user_text: String,
+    pub correct_action: String,
+    pub correct_role: Option<String>,
+    pub note: String,
+}
+
+const MAX_CORRECTIONS: usize = 5;
+const MAX_EXAMPLE_CHARS: usize = 80;
+const MAX_NOTE_CHARS: usize = 40;
+
+/// 有纠正时追加一节；没有时返回空串，调用方拼上去后提示词不变。
+/// 最多 5 条。用户原文和说明分别截断，条数再多、单条再长，这一节也不会变长。
+pub fn correction_section(examples: &[CorrectionExample]) -> String {
+    let shown: Vec<_> = examples.iter().take(MAX_CORRECTIONS).collect();
+    if shown.is_empty() {
+        return String::new();
+    }
+    let lines = shown
+        .iter()
+        .map(|e| {
+            let action = match e.correct_role.as_deref() {
+                Some(role) if !role.is_empty() => format!("{} / {role}", e.correct_action),
+                _ => e.correct_action.clone(),
+            };
+            let note = if e.note.is_empty() { String::new() } else { format!(" {}", truncate_chars(&e.note, MAX_NOTE_CHARS)) };
+            format!("- 用户：{}。正确做法：{action}。{note}", truncate_chars(&e.user_text, MAX_EXAMPLE_CHARS))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("\n\n## 以往纠正（类似消息应按这里做）\n{lines}")
+}
+
 /// 生成 Turn Controller 提示词需要的信息
 #[derive(Debug, Clone)]
 pub struct TurnPromptInfo {
@@ -54,7 +89,7 @@ pub struct TurnPromptInfo {
 /// - 把工具清单告诉 Turn Controller，否则它不知道"现在几点"可以交给 current_time；
 /// - 明确系统有默认工作目录和代码仓库，避免为路径、测试命令等可自行确定的细节追问；
 /// - 这一步**不生成回答内容**，只输出动作，回答在下一步单独生成（降低延迟）。
-pub fn turn_system_prompt(info: &TurnPromptInfo, active: &[TaskRecord]) -> String {
+pub fn turn_system_prompt(info: &TurnPromptInfo, active: &[TaskRecord], examples: &[CorrectionExample]) -> String {
     let tasks = if active.is_empty() {
         "无".to_string()
     } else {
@@ -120,8 +155,9 @@ pub fn turn_system_prompt(info: &TurnPromptInfo, active: &[TaskRecord]) -> Strin
          - follow_up：填写 task_id、follow_up_kind（supplement 或 cancel），补充要求写在 change。\n\
          - 不适用的字段填空字符串。\n\
          \n\
-         ## 进行中的任务\n{tasks}",
+         ## 进行中的任务\n{tasks}{corrections}",
         tools = info.tools,
+        corrections = correction_section(examples),
     )
 }
 
@@ -164,25 +200,62 @@ mod tests {
 
     #[test]
     fn prompt_includes_tools_and_mode_specific_rules() {
-        let p = turn_system_prompt(&info(ReviewMode::Reviewer), &[]);
+        let p = turn_system_prompt(&info(ReviewMode::Reviewer), &[], &[]);
         assert!(p.contains("current_time") && p.contains("calculator"));
         assert!(p.contains("交给独立审查（前台不自己审查）"));
         assert!(p.contains("不必追问仓库路径"));
 
-        let p = turn_system_prompt(&info(ReviewMode::Direct), &[]);
+        let p = turn_system_prompt(&info(ReviewMode::Direct), &[], &[]);
         assert!(!p.contains("交给独立审查（前台不自己审查）"));
         assert!(p.contains("由你直接给出审查意见"));
 
-        let p = turn_system_prompt(&info(ReviewMode::Auto), &[]);
+        let p = turn_system_prompt(&info(ReviewMode::Auto), &[], &[]);
         assert!(p.contains("超过约 30 行"));
     }
 
     #[test]
     fn turn_prompt_separates_code_artifacts_from_documents() {
-        let p = turn_system_prompt(&info(ReviewMode::Reviewer), &[]);
+        let p = turn_system_prompt(&info(ReviewMode::Reviewer), &[], &[]);
         assert!(p.contains("网页（HTML/CSS/JS）"), "生成网页等代码产物应归入代码开发：{p}");
         assert!(p.contains("Markdown 或纯文本"), "文档应限定为 Markdown 或纯文本：{p}");
         assert!(p.contains("不要自行指定保存位置"), "改写任务描述时不应替执行者决定保存位置：{p}");
+    }
+
+    #[test]
+    fn empty_corrections_leave_the_prompt_unchanged() {
+        let bare = turn_system_prompt(&info(ReviewMode::Reviewer), &[], &[]);
+        assert!(!bare.contains("以往纠正"));
+        let with = turn_system_prompt(
+            &info(ReviewMode::Reviewer),
+            &[],
+            &[CorrectionExample {
+                user_text: "斐波那契是什么".into(),
+                correct_action: "respond".into(),
+                correct_role: None,
+                note: "只是在问概念".into(),
+            }],
+        );
+        assert!(with.starts_with(&bare));
+        assert!(with.contains("斐波那契是什么"));
+        assert!(with.contains("respond"));
+    }
+
+    #[test]
+    fn correction_section_does_not_grow_with_table_size() {
+        let long = "字".repeat(2000);
+        let many: Vec<_> = (0..30)
+            .map(|_| CorrectionExample {
+                user_text: long.clone(),
+                correct_action: "delegate".into(),
+                correct_role: Some("coding".into()),
+                note: long.clone(),
+            })
+            .collect();
+        let section = correction_section(&many);
+        let lines = section.lines().filter(|l| l.starts_with("- 用户：")).count();
+        assert_eq!(lines, 5);
+        assert!(section.chars().count() < 900, "纠正一节应有固定上限，实际 {} 字", section.chars().count());
+        assert!(section.contains('…'));
     }
 
     #[test]

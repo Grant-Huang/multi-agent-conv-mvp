@@ -209,7 +209,12 @@ export default function App() {
           <button className={sideTab === "logs" ? "active" : ""} onClick={() => setSideTab("logs")}>路由日志</button>
         </div>
         {sideTab === "tasks" && (
-          <TaskPanel tasks={tasks} incoming={incoming} onChanged={() => current && refreshConversation(current)} />
+          <TaskPanel
+            tasks={tasks}
+            incoming={incoming}
+            messageIds={Object.fromEntries(messages.filter((m) => m.role === "user" && m.task_id).map((m) => [m.task_id as string, m.id]))}
+            onChanged={() => current && refreshConversation(current)}
+          />
         )}
         {sideTab === "nodes" && <NodesPanel />}
         {sideTab === "diag" && <DiagnosticsPanel refreshTick={panelTick} />}

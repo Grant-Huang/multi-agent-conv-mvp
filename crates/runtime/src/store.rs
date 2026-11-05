@@ -88,6 +88,17 @@ CREATE TABLE IF NOT EXISTS events (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, created_at);
+CREATE TABLE IF NOT EXISTS routing_feedback (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL,
+    original_action TEXT NOT NULL,
+    original_role TEXT,
+    correct_action TEXT NOT NULL,
+    correct_role TEXT,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_message ON routing_feedback(message_id, created_at);
 CREATE TABLE IF NOT EXISTS nodes (
     node_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -614,6 +625,155 @@ fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Result<TaskRecord>> {
     })())
 }
 
+const ACTIONS: &[&str] = &["respond", "clarify", "delegate", "follow_up"];
+
+/// 用户指出的一次派发纠错。角色只在动作是 delegate 时有意义。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutingFeedback {
+    pub id: String,
+    pub message_id: String,
+    pub original_action: String,
+    pub original_role: Option<String>,
+    pub correct_action: String,
+    pub correct_role: Option<String>,
+    pub note: String,
+    pub created_at: String,
+}
+
+impl Store {
+    /// 记下一次派发纠错。动作和角色不合法时拒绝，不写库。
+    pub fn insert_feedback(&self, feedback: &RoutingFeedback) -> Result<()> {
+        check_feedback(feedback)?;
+        self.write().execute(
+            "INSERT INTO routing_feedback (id, message_id, original_action, original_role, correct_action, correct_role, note, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                feedback.id, feedback.message_id, feedback.original_action, feedback.original_role,
+                feedback.correct_action, feedback.correct_role, feedback.note, feedback.created_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// 按字符二元组重合度取出最相似的纠正，最多 `limit` 条。没有重合的不返回。
+    pub fn similar_feedback(&self, text: &str, limit: usize) -> Result<Vec<crate::prompts::CorrectionExample>> {
+        let mine = char_grams(text);
+        let conn = self.read();
+        let mut stmt = conn.prepare(
+            "SELECT substr(m.content, 1, 200), f.correct_action, f.correct_role, substr(f.note, 1, 200)
+             FROM routing_feedback f JOIN messages m ON m.id = f.message_id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?, row.get::<_, String>(3)?))
+        })?;
+        let mut scored = Vec::new();
+        for row in rows {
+            let (content, action, role, note) = row?;
+            let score = dice(&mine, &char_grams(&content));
+            if score > 0.0 {
+                scored.push((score, crate::prompts::CorrectionExample { user_text: content, correct_action: action, correct_role: role, note }));
+            }
+        }
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit.min(5));
+        Ok(scored.into_iter().map(|(_, e)| e).collect())
+    }
+
+    /// 纠错草稿，格式与 `evals/routing.jsonl` 的一行相同。不写评测集文件。
+    pub fn feedback_draft_jsonl(&self) -> Result<String> {
+        let conn = self.read();
+        let mut stmt = conn.prepare(
+            "SELECT f.id, m.content, f.original_action, f.original_role, f.correct_action, f.correct_role, f.note
+             FROM routing_feedback f JOIN messages m ON m.id = f.message_id
+             ORDER BY f.created_at",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, String>(6)?,
+            ))
+        })?;
+        let mut out = String::from("// 纠错草稿。确认后把样本抄进 evals/make_dataset.py，再生成 evals/routing.jsonl。不要直接把本文件并进去。\n");
+        for row in rows {
+            let (id, text, original_action, original_role, correct_action, correct_role, note) = row?;
+            let was = match original_role.as_deref() {
+                Some(role) if !role.is_empty() => format!("{original_action} / {role}"),
+                _ => original_action,
+            };
+            let mut line = serde_json::json!({
+                "id": id,
+                "text": text,
+                "tags": ["feedback"],
+                "expect_action": correct_action,
+                "note": format!("原判断 {was}。{note}"),
+            });
+            if let Some(role) = correct_role {
+                line["expect_role"] = serde_json::Value::String(role);
+            }
+            out.push_str(&line.to_string());
+            out.push('\n');
+        }
+        Ok(out)
+    }
+
+    pub fn list_feedback(&self) -> Result<Vec<RoutingFeedback>> {
+        let conn = self.read();
+        let mut stmt = conn.prepare(
+            "SELECT id, message_id, original_action, original_role, correct_action, correct_role, note, created_at
+             FROM routing_feedback ORDER BY created_at",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(RoutingFeedback {
+                id: row.get(0)?,
+                message_id: row.get(1)?,
+                original_action: row.get(2)?,
+                original_role: row.get(3)?,
+                correct_action: row.get(4)?,
+                correct_role: row.get(5)?,
+                note: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+}
+
+fn char_grams(text: &str) -> std::collections::HashSet<String> {
+    let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
+    if chars.len() < 2 {
+        return chars.into_iter().map(|c| c.to_string()).collect();
+    }
+    chars.windows(2).map(|w| w.iter().collect()).collect()
+}
+
+fn dice(a: &std::collections::HashSet<String>, b: &std::collections::HashSet<String>) -> f64 {
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    let hit = a.intersection(b).count() as f64;
+    2.0 * hit / (a.len() + b.len()) as f64
+}
+
+fn check_feedback(feedback: &RoutingFeedback) -> Result<()> {
+    if feedback.message_id.trim().is_empty() {
+        anyhow::bail!("message_id 不能为空");
+    }
+    if !ACTIONS.contains(&feedback.original_action.as_str()) || !ACTIONS.contains(&feedback.correct_action.as_str()) {
+        anyhow::bail!("动作只能是 respond、clarify、delegate、follow_up");
+    }
+    for role in [feedback.original_role.as_deref(), feedback.correct_role.as_deref()].into_iter().flatten() {
+        if an_core::Role::parse(role).is_none() {
+            anyhow::bail!("未知角色 {role}");
+        }
+    }
+    Ok(())
+}
+
 /// 数据库中保存的节点
 #[derive(Debug, Clone)]
 pub struct StoredNode {
@@ -830,5 +990,80 @@ mod tests {
         assert!(big < limit, "写入量 ×10 后读 P95 从 {small:?} 涨到 {big:?}，超过了 {limit:?}");
         drop(store);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn sample_feedback() -> RoutingFeedback {
+        RoutingFeedback {
+            id: "fb-1".into(),
+            message_id: "msg-1".into(),
+            original_action: "delegate".into(),
+            original_role: Some("coding".into()),
+            correct_action: "respond".into(),
+            correct_role: None,
+            note: "只是在问概念".into(),
+            created_at: "2026-11-05T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn feedback_roundtrip() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        store.insert_feedback(&sample_feedback()).unwrap();
+        assert_eq!(store.list_feedback().unwrap(), vec![sample_feedback()]);
+    }
+
+    #[test]
+    fn feedback_rejects_unknown_action_and_role() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let mut bad = sample_feedback();
+        bad.correct_action = "guess".into();
+        assert!(store.insert_feedback(&bad).is_err());
+        bad = sample_feedback();
+        bad.correct_role = Some("artist".into());
+        assert!(store.insert_feedback(&bad).is_err());
+        assert!(store.list_feedback().unwrap().is_empty());
+    }
+
+    #[test]
+    fn similar_feedback_ranks_by_overlap() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let conv = store.create_conversation("t").unwrap();
+        let code = store.add_message(&conv.id, "user", "在仓库里写一个 Python 斐波那契函数", None).unwrap();
+        let hello = store.add_message(&conv.id, "user", "写一个 Python 的当前时间脚本", None).unwrap();
+        let mut code_fb = sample_feedback();
+        code_fb.id = "fb-code".into();
+        code_fb.message_id = code.id;
+        code_fb.correct_action = "delegate".into();
+        code_fb.correct_role = Some("coding".into());
+        let mut hello_fb = sample_feedback();
+        hello_fb.id = "fb-hello".into();
+        hello_fb.message_id = hello.id;
+        hello_fb.correct_action = "respond".into();
+        store.insert_feedback(&code_fb).unwrap();
+        store.insert_feedback(&hello_fb).unwrap();
+
+        let ranked = store.similar_feedback("请写一个 Python 斐波那契函数并附测试", 5).unwrap();
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].correct_role.as_deref(), Some("coding"));
+        assert_eq!(ranked[1].correct_action, "respond");
+        assert!(store.similar_feedback("zzzz", 5).unwrap().is_empty());
+    }
+
+    #[test]
+    fn feedback_draft_is_jsonl_and_does_not_touch_the_dataset() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let conv = store.create_conversation("t").unwrap();
+        let msg = store.add_message(&conv.id, "user", "斐波那契是什么", None).unwrap();
+        let mut fb = sample_feedback();
+        fb.message_id = msg.id;
+        store.insert_feedback(&fb).unwrap();
+        let draft = store.feedback_draft_jsonl().unwrap();
+        let line = draft.lines().find(|l| !l.starts_with("//")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(line).unwrap();
+        assert_eq!(v["text"], "斐波那契是什么");
+        assert_eq!(v["expect_action"], "respond");
+        assert!(v.get("expect_role").is_none());
+        assert!(v["note"].as_str().unwrap().contains("delegate / coding"));
+        assert!(draft.starts_with("// 纠错草稿"));
     }
 }
