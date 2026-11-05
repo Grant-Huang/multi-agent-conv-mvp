@@ -500,7 +500,7 @@ mod tests {
 
     #[test]
     fn unknown_backend_in_routing_names_role_and_choices() {
-        let e = err(&format!("{PROFILE_A}").replace("router = \"local\"", "router = \"loca1\""));
+        let e = err(&PROFILE_A.replace("router = \"local\"", "router = \"loca1\""));
         assert!(e.contains("router") && e.contains("loca1") && e.contains("local"), "{e}");
     }
 

@@ -1,0 +1,140 @@
+# 风险分级策略（由 tools/ci/risk_classify.py 读取）
+#
+# 规则：
+# - 每个改动文件取所有匹配规则中"最高"的等级；没有任何规则匹配时使用 default_level。
+# - 整个 PR 的等级 = 所有文件中的最高等级。
+# - [[signals]] 是内容信号：在匹配路径的"新增行"中搜索正则，命中则把该文件至少提到 signal.level。
+# - 路径用仓库风格的 glob：`**` 跨目录，`*` 不跨 `/`。
+#
+# 等级含义与审批要求见 [approvals]。这些要求只能由人工审批（CODEOWNERS / 分支保护）强制，
+# 脚本只负责计算等级并输出说明。
+
+default_level = "L2"
+
+[approvals]
+L0 = "自动合并允许（仍需通过 CI）"
+L1 = "1 位审查人批准"
+L2 = "1 位审查人批准，且审查人不是作者"
+L3 = "需要模块负责人（CODEOWNERS）批准；修改本策略文件或 CI 的 PR 必须由人工确认"
+
+# ---------- L3：治理、安全、节点与权限 ----------
+[[rules]]
+level = "L3"
+reason = "治理文件与 CI/策略本身：改坏会让后续所有门禁失效"
+paths = [
+  ".github/**",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "config/**",
+  "tools/ci/**",
+]
+
+[[rules]]
+level = "L3"
+reason = "权限策略（Policy）：决定哪些操作需要审批"
+paths = [
+  "crates/runtime/src/policy.rs",
+  "crates/llm/src/policy.rs",
+]
+
+[[rules]]
+level = "L3"
+reason = "节点与远程 agent：跨机器执行与配对（当前为明文 HTTP）"
+paths = [
+  "crates/node/**",
+  "crates/agents/src/remote.rs",
+  "crates/runtime/src/nodes.rs",
+]
+
+# ---------- L2：核心状态机、持久化、子进程、公共接口 ----------
+[[rules]]
+level = "L2"
+reason = "任务状态机、执行组、持久化（AGENTS.md 列为高风险，修改前需先给方案）"
+paths = [
+  "crates/runtime/src/orchestrator.rs",
+  "crates/runtime/src/store.rs",
+  "crates/runtime/src/registry.rs",
+  "crates/runtime/src/conv_lock.rs",
+]
+
+[[rules]]
+level = "L2"
+reason = "子进程与 git 操作（AGENTS.md 列为高风险）"
+paths = [
+  "crates/agents/src/acp.rs",
+  "crates/agents/src/util.rs",
+]
+
+[[rules]]
+level = "L2"
+reason = "Agent 执行体、工具、对话控制与后端配置"
+paths = [
+  "crates/agents/src/coding.rs",
+  "crates/agents/src/general.rs",
+  "crates/agents/src/tools.rs",
+  "crates/runtime/src/conversation.rs",
+  "crates/runtime/src/backends.rs",
+  "crates/runtime/src/config.rs",
+  "crates/llm/src/**",
+]
+
+[[rules]]
+level = "L2"
+reason = "公共接口：核心类型、HTTP API、配置文件字段、Cargo 依赖"
+paths = [
+  "crates/core/src/**",
+  "crates/server/src/**",
+  "config.example.toml",
+  "Cargo.toml",
+  "**/Cargo.toml",
+  "Cargo.lock",
+]
+
+# ---------- L1：普通业务代码 ----------
+[[rules]]
+level = "L1"
+reason = "路由、组装、提示词、事件总线等业务逻辑"
+paths = [
+  "crates/runtime/src/router.rs",
+  "crates/runtime/src/composer.rs",
+  "crates/runtime/src/prompts.rs",
+  "crates/runtime/src/bus.rs",
+  "crates/runtime/src/lib.rs",
+  "crates/agents/src/reviewer.rs",
+  "crates/agents/src/lib.rs",
+  "crates/observe/src/**",
+  "crates/server/src/bin/**",
+  "web/**",
+  "tools/websearch/**",
+  "scripts/**",
+]
+
+# ---------- L0：文档与评测数据 ----------
+[[rules]]
+level = "L0"
+reason = "文档与评测数据（不影响运行时行为）"
+paths = [
+  "docs/**",
+  "evals/**",
+  "**/*.md",
+  ".gitignore",
+]
+
+# ---------- 内容信号：只看新增行，命中后至少为 level ----------
+[[signals]]
+name = "数据库结构变更"
+level = "L2"
+paths = ["crates/runtime/src/store.rs"]
+pattern = '(?i)\b(CREATE|ALTER|DROP)\s+TABLE\b|\bADD\s+COLUMN\b'
+
+[[signals]]
+name = "公共接口变更"
+level = "L2"
+paths = ["crates/core/src/**", "crates/server/src/**", "crates/agents/src/lib.rs"]
+pattern = '\.route\(|pub\s+(async\s+)?(fn|struct|enum|trait|type)\s'
+
+[[signals]]
+name = "并发或子进程"
+level = "L2"
+paths = ["crates/agents/src/**", "crates/runtime/src/**", "crates/node/**"]
+pattern = 'tokio::spawn|std::thread::spawn|Command::new|std::process::|\.kill\(|\bMutex\b|\bRwLock\b|\bSemaphore\b'
