@@ -71,6 +71,18 @@ impl Engine {
         let mut next = self.state.clone();
         let mut emissions = vec![];
         let result = f(&mut next, &mut emissions)?;
+        // Every persistent state change must advance the compare-and-swap token,
+        // including clock-only transactions and recovery metadata.
+        if emissions.is_empty() && serde_json::to_vec(&next)? != serde_json::to_vec(&self.state)? {
+            emissions.push((
+                "__runtime".into(),
+                "RuntimeStateChanged".into(),
+                json!({"now":next.now}),
+                next.now,
+                0,
+            ));
+        }
+
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -276,7 +288,7 @@ impl Engine {
             if scope=="production" {
                 ensure!(!resources_busy,"resources reserved by another case");
                 ensure!(c.world["resources_available"]==true&&c.world["certified"]==true&&c.world["tool_available"]==true&&c.world["resource_conflict"]!=true,"resources unavailable");
-                charge(c,3)?;
+                charge_tools(c,3)?;
                 c.world["reservations"]["tool-32"]=json!(c.id);c.world["reservations"]["XY-XZ"]=json!(c.id);
                 for tool in ["mro.transfer","eam.maintenance","mes.reschedule"] {
                     let key=format!("{group}:{tool}");let failed=tool=="mes.reschedule"&&c.world["dispatch_failure"]==true;
@@ -285,7 +297,7 @@ impl Engine {
                 c.stage=if c.world["dispatch_failure"]==true {c.world["reservations"]=json!({});"PARTIAL"}else{"VERIFYING"}.into();
                 if c.stage=="PARTIAL"{emit(c,"CompensationRequired",json!({"released":"reservations","irreversible":"accepted maintenance and transfer need operator review"}),events);}
             }else {
-                charge(c,1)?;
+                charge_tools(c,1)?;
                 let report=if scope=="initial_response"{c.initial_report.clone()}else{c.eight_d.clone()}.context("report missing")?;
                 let key=format!("{group}:customer.send");
                 c.actions.insert(key.clone(),Action{key:key.clone(),tool:"customer.send".into(),state:"ACCEPTED".into(),accepted_at:s.now,complete_at:s.now+1,receipt:format!("mock-op:{key}"),verification:None});
@@ -623,11 +635,13 @@ fn emit(c: &mut Case, kind: &str, payload: Value, events: &mut Emissions) {
     events.push((c.id.clone(), kind.into(), payload, c.updated_at, c.revision));
 }
 fn charge(c: &mut Case, n: u32) -> Result<()> {
-    ensure!(
-        c.budget_remaining >= n && c.tool_calls + n <= 40,
-        "budget exhausted"
-    );
+    ensure!(c.budget_remaining >= n, "budget exhausted");
     c.budget_remaining -= n;
+    Ok(())
+}
+fn charge_tools(c: &mut Case, n: u32) -> Result<()> {
+    ensure!(c.tool_calls + n <= 40, "tool call budget exhausted");
+    charge(c, n)?;
     c.tool_calls += n;
     Ok(())
 }
@@ -794,7 +808,7 @@ fn pump(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
         )
         .collect();
     for id in ready {
-        if charge(c, 1).is_err() {
+        if charge_tools(c, 1).is_err() {
             c.stage = "BUDGET_EXHAUSTED".into();
             emit(c, "BudgetExhausted", json!({}), events);
             break;

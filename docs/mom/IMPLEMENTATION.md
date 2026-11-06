@@ -78,3 +78,5 @@ python3 tools/mom/smoke.py --report .tmp/mom/smoke-report.json
 最后一条需先启动服务。报告包含运行 ID、HEAD、模板、seed、时区、检查结果和 mock_ids。测试中的临时数据库位于系统临时目录；手动演示数据库保留于指定路径，不自动删除用户数据。
 
 SQLite 初始化通过事务创建独立 v1 表并记录 user_version；未来结构升级必须增加迁移，不支持高版本时拒绝启动。事件和状态事务提交，outbox 可补拉/标记已发布，订阅游标可持久确认；当前网页使用显式刷新和命令回执，不提供后台 SSE。未实现内容与生产替换仅以 MOCK_REGISTER 为准。
+
+最终运行记录与已知差距见 [RESULTS.md](RESULTS.md)。已将 MOM 登记到 `docs/testing/features.json`，真实 Chromium 用例见 `web/e2e/mom.spec.ts`，通过 `cd web && npm run verify` 一并运行。MOM harness 自行构建二进制、使用专用 loopback 18790 与临时数据库，结束后停止自己的服务并保存日志。

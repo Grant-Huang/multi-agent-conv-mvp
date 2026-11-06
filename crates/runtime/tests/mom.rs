@@ -573,3 +573,26 @@ fn stale_plan_can_be_refreshed_with_bounded_replanning() {
     e.execute(&id, "production").unwrap();
     assert!(e.refresh_plan(&id).is_err());
 }
+
+#[test]
+fn model_and_child_reservations_do_not_inflate_tool_call_counts() {
+    let mut e = s1();
+    let id = ready(&mut e);
+    let count = e.case(&id).unwrap().tool_calls;
+    e.reserve_model(&id).unwrap();
+    e.delegate(&id, "equipment_investigation", 0).unwrap();
+    assert_eq!(e.case(&id).unwrap().tool_calls, count);
+    assert_eq!(e.case(&id).unwrap().model_calls, 1);
+}
+
+#[test]
+fn clock_only_transactions_are_protected_against_stale_writers() {
+    let path = std::env::temp_dir().join(format!("mom-{}.db", an_core::new_id("clock-race")));
+    let mut a = Engine::open(&path).unwrap();
+    let mut b = Engine::open(&path).unwrap();
+    a.advance(1).unwrap();
+    assert!(b.advance(2).is_err());
+    drop(a);
+    drop(b);
+    std::fs::remove_file(path).unwrap();
+}

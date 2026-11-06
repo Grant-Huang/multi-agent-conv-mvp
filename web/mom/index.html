@@ -24,6 +24,7 @@ if(mode==='agent'){const p=el('pre','读取中…','card');root.append(p);api('/
 const grid=el('div',undefined,'grid');grid.append(card('硬约束',current.constraints),card('预算与 SLA',{budget:current.budget,deadlines:current.deadlines,alerts:current.alerts,breaches:current.breaches}));root.append(grid);
 const decisions=card('主管决策 / 测试身份');decisions.append(el('p','批准仅适用于当前方案及资源条件，默认有效 5 仿真分钟。','warning'));
 for(const scope of (current.scenario==='s1'?['production']:['initial_response','eight_d'])){const row=el('div',undefined,'toolbar');row.append(el('span',scope),button('批准',()=>command({command:'approve',scope,actor:'supervisor',plan_revision:current.plan_revision}),'primary'),button('执行已批准动作',()=>command({command:'execute',scope})));decisions.append(row)}
+decisions.append(el('h3','当前审批记录'),el('pre',pretty(current.decision_inbox)));
 decisions.append(button('核验并关闭案例',()=>command({command:'close'})));root.append(decisions);
 const dag=card('DAG / 任务与并行调查');for(const [id,n]of Object.entries(current.dag)){dag.append(el('div',id+' · '+n.status+' · '+n.tool+'\n依赖：'+(n.deps.join(', ')||'无'),'node'))}dag.append(el('pre',pretty(current.children)));root.append(dag);
 if(current.proposal)root.append(card('排产方案与影响',current.proposal));if(current.initial_report)root.append(card('初复草稿 / 已知与未知',current.initial_report));if(current.eight_d)root.append(card('8D 进展与验证状态',current.eight_d));root.append(card('处置回执与模拟发件箱',{actions:current.actions,outbox:current.outbox}));
