@@ -114,6 +114,17 @@ def test_real_policy_file_loads():
     assert policy["default_level"] == "L2"
 
 
+def test_real_policy_review_rules_need_owner_but_reports_stay_l0():
+    # REVIEW.md 约束评审 agent 的行为：改它必须由负责人审批（L3），
+    # 不能因为匹配 **/*.md 而被当成普通文档自动合并。
+    # 评审 agent 每天产出的报告和台账（docs/review/ 下）仍是 L0。
+    policy = rc.load_policy(REAL_POLICY)
+    rules, default = policy["rules"], policy["default_level"]
+    assert rc.classify_path("REVIEW.md", rules, default).level == "L3"
+    assert rc.classify_path("docs/review/2026-11-07.md", rules, default).level == "L0"
+    assert rc.classify_path("docs/review/findings.jsonl", rules, default).level == "L0"
+
+
 def test_end_to_end_on_real_repo(repo):
     # 在真实 git 仓库中运行 CLI：新增一个 store.rs 并写入建表语句。
     (repo / "store.rs").write_text("CREATE TABLE t (id INT);\n", encoding="utf-8")

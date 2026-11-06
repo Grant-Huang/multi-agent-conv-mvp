@@ -25,6 +25,9 @@ paths = [
   ".github/**",
   "AGENTS.md",
   "CLAUDE.md",
+  # 评审 agent 的规则：它只能在 docs/review/ 下提交报告和台账（L0，可自动合并），
+  # 改评审规则本身必须由人审批，防止评审 agent 自己改规则后自动合并。
+  "REVIEW.md",
   "config/**",
   "tools/ci/**",
 ]
