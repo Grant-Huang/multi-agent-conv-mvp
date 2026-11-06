@@ -1,11 +1,135 @@
 [
- {"id":"conversation","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/App.tsx","web/src/components/ChatView.tsx","crates/runtime/src/conversation.rs"],"coverage":"browser","cases":["E2E-CONV","E2E-MOBILE"]},
- {"id":"tasks","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/components/TaskPanel.tsx","web/src/components/TaskTicker.tsx","web/src/components/ChatView.tsx","web/src/artifacts.ts","crates/runtime/src/orchestrator.rs","crates/agents/src/general.rs"],"coverage":"browser","cases":["E2E-FILE","E2E-TICKER"]},
- {"id":"approval","document":"docs/testing/FEATURE_MAP.md","sources":["crates/runtime/src/policy.rs","web/src/components/ChatView.tsx"],"coverage":"browser","cases":["E2E-APPROVE"]},
- {"id":"cancellation","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/components/ConfirmButton.tsx","crates/runtime/src/orchestrator.rs"],"coverage":"browser","cases":["E2E-CANCEL"]},
- {"id":"observability","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/components/DiagnosticsPanel.tsx","web/src/components/RouteLogPanel.tsx"],"coverage":"browser","cases":["E2E-DIAG"]},
- {"id":"nodes","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/components/NodesPanel.tsx","crates/server/tests/e2e.rs"],"coverage":"backend","cases":[]},
- {"id":"feedback","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/misroute.test.tsx","crates/runtime/src/store.rs"],"coverage":"backend","cases":[]},
- {"id":"tools-evals","document":"docs/testing/FEATURE_MAP.md","sources":["tools/websearch/README.md","crates/server/src/bin/eval.rs"],"coverage":"backend","cases":[]},
- {"id":"templates","document":"docs/testing/FEATURE_MAP.md","sources":["crates/runtime/src/template.rs","crates/llm/src/backend.rs"],"coverage":"backend","cases":[],"runtime_cases":["RT-TPL-01","RT-TPL-02","RT-TPL-03","RT-TPL-04","RT-TPL-05","RT-TPL-06","RT-TPL-07","RT-TPL-08","RT-TPL-09","RT-TPL-10"]}
+  {
+    "id": "conversation",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "web/src/App.tsx",
+      "web/src/components/ChatView.tsx",
+      "crates/runtime/src/conversation.rs"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-CONV",
+      "E2E-MOBILE"
+    ]
+  },
+  {
+    "id": "tasks",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "web/src/components/TaskPanel.tsx",
+      "web/src/components/TaskTicker.tsx",
+      "web/src/components/ChatView.tsx",
+      "web/src/artifacts.ts",
+      "crates/runtime/src/orchestrator.rs",
+      "crates/agents/src/general.rs"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-FILE",
+      "E2E-TICKER"
+    ]
+  },
+  {
+    "id": "approval",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/policy.rs",
+      "web/src/components/ChatView.tsx"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-APPROVE"
+    ]
+  },
+  {
+    "id": "cancellation",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "web/src/components/ConfirmButton.tsx",
+      "crates/runtime/src/orchestrator.rs"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-CANCEL"
+    ]
+  },
+  {
+    "id": "observability",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "web/src/components/DiagnosticsPanel.tsx",
+      "web/src/components/RouteLogPanel.tsx"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-DIAG"
+    ]
+  },
+  {
+    "id": "nodes",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "web/src/components/NodesPanel.tsx",
+      "crates/server/tests/e2e.rs"
+    ],
+    "coverage": "backend",
+    "cases": []
+  },
+  {
+    "id": "feedback",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "web/src/misroute.test.tsx",
+      "crates/runtime/src/store.rs"
+    ],
+    "coverage": "backend",
+    "cases": []
+  },
+  {
+    "id": "tools-evals",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "tools/websearch/README.md",
+      "crates/server/src/bin/eval.rs"
+    ],
+    "coverage": "backend",
+    "cases": []
+  },
+  {
+    "id": "templates",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/template.rs",
+      "crates/llm/src/backend.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-TPL-01",
+      "RT-TPL-02",
+      "RT-TPL-03",
+      "RT-TPL-04",
+      "RT-TPL-05",
+      "RT-TPL-06",
+      "RT-TPL-07",
+      "RT-TPL-08",
+      "RT-TPL-09",
+      "RT-TPL-10"
+    ]
+  },
+  {
+    "id": "mom",
+    "document": "docs/mom/IMPLEMENTATION.md",
+    "sources": [
+      "crates/runtime/src/mom/engine.rs",
+      "crates/server/src/mom.rs",
+      "web/mom/index.html"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-MOM",
+      "E2E-COMPLAINT"
+    ]
+  }
 ]

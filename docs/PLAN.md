@@ -484,6 +484,10 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 - Codex / opencode 的 GLM 额度在 2026-11-06 17:15 重置前会返回 429
 - `~/.config/opencode/opencode.json` 有明文 Slack token 和 DeepSeek key，建议改成环境变量
 
+## MOM 独立模拟流程
+
+按用户授权新增主 Agent、公告板双视图、S1 多扰动生产和 S2 客诉 Mock 流程；不替代上面的通用代理里程碑。实施、运行及测试见 [MOM 实施说明](mom/IMPLEMENTATION.md)，真实能力缺口统一见 [Mock 清单](mom/MOCK_REGISTER.md)。
+
 ## 工程验证体系
 
 基于远端 929301a 审查 Feature Map 与端到端验证方案，设计见 `docs/testing/DESIGN.md`，实施步骤见 `docs/testing/PLAN.md`，先定义用例再实现验证基础设施。本次不包含 M4.3 或 MOM 开发；实际结果见 `docs/testing/RESULTS.md`。

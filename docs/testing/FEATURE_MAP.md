@@ -17,10 +17,16 @@
 
 应用为单页布局，网页没有 /tasks、/settings 或 /templates/run 路径。API 以 crates/server/src/lib.rs 为准；状态和中文文案见 web/src/labels.ts。
 
-当前不是已实现功能：M4.3 的模板并行执行与 Composer 汇合回复（校验部分见 templates 行）、MOM 主控/黑板、知识库、Benny 自动修复、多用户登录、通用动态 DAG、执行中断续跑。它们在其他设计中出现不代表当前代码存在。
+当前不是已实现功能：M4.3 的模板并行执行与 Composer 汇合回复（校验部分见 templates 行）、生产级 MOM 连接器、知识库、Benny 自动修复、多用户登录、通用动态 DAG、执行中断续跑。它们在其他设计中出现不代表当前代码存在。
 
 ## 操作定位与维护
 
 优先使用 role/name、aria-label、placeholder，并在 main、会话列表、任务与状态区域限定作用域；重复的下载/取消按钮不要全局盲点。开发者模式默认为关，切换状态保存在浏览器 localStorage，测试使用全新 context。
 
 每次变更功能，先更新 CASES.md 与可执行 E2E，再实现；同步 features.json 的源文件和测试引用。浏览器测试不 mock 应用 API；新增功能应先见到业务断言 Red，既有功能基线不可追称测试先行。节点、搜索、模型真实质量不能由本次六条用例推定通过。
+
+## MOM 模拟功能
+
+| Feature | 用户目标与真实入口 | 驱动方法/判据 | 测试与边界 |
+|---|---|---|---|
+| mom | 独立 an-mom 人类看板与 Agent 机器视图 | S1 审批后下发、核验再关闭；S2 初复独立，缺证据不能关闭8D | E2E-MOM/E2E-COMPLAINT；业务系统、主模型及审批身份仍为替代件，见 MOM Mock 清单 |

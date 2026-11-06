@@ -1,6 +1,6 @@
 # MOM 第一轮测试与实施契约
 
-状态：测试设计，未编写测试或运行。依赖 [DESIGN.md](DESIGN.md)，所有替代件统一登记于 [MOCK_REGISTER.md](MOCK_REGISTER.md)。
+状态：A 层运行时、HTTP 与页面测试已实现，真实模型/工业连接器测试仍待接入。依赖 [DESIGN.md](DESIGN.md)，所有替代件统一登记于 [MOCK_REGISTER.md](MOCK_REGISTER.md)。
 
 ## 1. 分层验证与首个切片
 
@@ -11,9 +11,9 @@ D 层：经业务批准的有限写入试点，逐项关闭 Mock 缺口。不得
 
 首个可执行切片：S1 三事件 → 案例聚合 → 结构化命中模板 → 并行只读工具 → 请求批准 → 批准前零高风险写调用 → 批准后重新校验 → 幂等模拟下发。先写断言，再实现；不需要真实模型或客户凭证。
 
-## 2. 场景夹具规范（拟议目录）
+## 2. 场景夹具规范（已实现目录）
 
-`fixtures/mom/s1/`、`fixtures/mom/s2/`：world.json（实体/资源/规则）、events.jsonl（event_id、时间、来源、实体、载荷）、tools.json（响应契约与故障注入）、expected.json（业务断言）、seed.json（虚拟时钟与确定性随机种子）。这些文件本轮尚未创建。
+`fixtures/mom/s1/`、`fixtures/mom/s2/`：world.json（实体/资源/规则）、events.jsonl（event_id、时间、来源、实体、载荷）、tools.json（响应契约与故障注入）、expected.json（业务断言）、seed.json（虚拟时钟与确定性随机种子）。这些文件已创建；事件和预期由回放测试读取，world/tools 由运行时读取，seed 固定仿真元数据。
 
 时间推进必须驱动到期和事件队列，不使用真实 sleep；同一时间的并发结果允许多种合法顺序，断言因果偏序而非强制完整日志字符串相等。MockWorld 也必须校验请求参数与授权，不能无条件返回期望结果。
 
@@ -77,3 +77,11 @@ D 层：经业务批准的有限写入试点，逐项关闭 Mock 缺口。不得
 每次报告带 run_id、提交版本、模板/契约版本、seed、mock_ids、时区、执行/跳过/失败数、关键断言、逻辑时间线、模型与工具成本、未验证能力。A层不得使用“已验证轴承诊断/排产能力/客户交付”措辞，只能说 Mock 场景控制链通过。
 
 实施顺序：先 S1 控制链，再子 Agent 变体，再 S2/SLA，最后真实模型和只读系统替换。各阶段完成后报告证据并再确定下一阶段范围，不改动现有 M1 里程碑进度。
+
+## 10. 实际执行入口
+
+- `cargo test -p an-runtime --test mom`：状态机、DAG、故障、两视图、重启、租约、审批与资源竞争。
+- `cargo test -p an-server --test mom`：真实本机 HTTP 端到端流程与错误输入。
+- `cd web && npm test`：包括实际 MOM HTML 的交互与不可信证据文本渲染测试。
+- 启动 `an-mom` 后运行 `python3 tools/mom/smoke.py`：两场景 13 个功能断言，生成 `.tmp/mom/smoke-report.json`。
+- 模板选择当前为结构化确定性基线；第 8 节三种匹配方式的模型对比实验尚未执行。

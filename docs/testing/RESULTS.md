@@ -77,6 +77,10 @@ Tests  17 passed (17)
 
 提交前发现远端又新增 5 个提交，已将本次分支 rebase 到 `20c0153`，无冲突。再次运行全仓 Rust：212 passed、0 failed、2 ignored；严格 Clippy `-D warnings` 与 cargo fmt --check 均退出 0。前端 17 项、地图 6 项与浏览器 6 项再次通过（浏览器实际输出 `6 passed (6.2s)`）。以上初次基线记录保留为历史证据，本节是推送版本的复验结果。
 
+## MOM 后续实现与验证
+
+后续按用户授权完成独立 MOM A 层模拟实现，已不属于“未实现”功能。地图增加 mom、浏览器增加 E2E-MOM/E2E-COMPLAINT；全量 `npm run verify` 8 项通过。模型与工业系统仍为替代件，详见 [MOM 验证记录](../mom/RESULTS.md)。原验证记录保留为历史，不将本次 Mock 结果解读为真实生产能力。
+
 ## M4.3 运行时用例（RT-TPL-01 ~ RT-TPL-10）
 
 ### 诚实说明
