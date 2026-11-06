@@ -10,7 +10,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use an_llm::{Backend, BackendConfig, BackendKind, LlmClient, Priority, ServerMetrics, StatsSummary};
+use an_llm::{
+    Backend, BackendConfig, BackendKind, LlmClient, Priority, ServerMetrics, StatsSummary,
+};
 use anyhow::{bail, Result};
 use serde::Serialize;
 
@@ -27,7 +29,13 @@ pub enum LlmRole {
 }
 
 impl LlmRole {
-    pub const ALL: [LlmRole; 5] = [LlmRole::Conversation, LlmRole::Reply, LlmRole::Router, LlmRole::General, LlmRole::Reviewer];
+    pub const ALL: [LlmRole; 5] = [
+        LlmRole::Conversation,
+        LlmRole::Reply,
+        LlmRole::Router,
+        LlmRole::General,
+        LlmRole::Reviewer,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -118,7 +126,15 @@ impl Backends {
     /// `env` 用来读取 `api_key_env` 指向的环境变量（测试里可以注入）
     pub fn build_with_env(cfg: &AppConfig, env: EnvFn) -> Result<Self> {
         let legacy_urls = &cfg.models.base_urls;
-        let has_legacy_urls = [&legacy_urls.conversation, &legacy_urls.reply, &legacy_urls.router, &legacy_urls.general, &legacy_urls.reviewer].iter().any(|u| u.is_some());
+        let has_legacy_urls = [
+            &legacy_urls.conversation,
+            &legacy_urls.reply,
+            &legacy_urls.router,
+            &legacy_urls.general,
+            &legacy_urls.reviewer,
+        ]
+        .iter()
+        .any(|u| u.is_some());
         if !cfg.backends.is_empty() && has_legacy_urls {
             bail!("[models.base_urls] 是旧写法，不能和 [backends] 同时使用；请改用 [backends.<名字>] 和 [routing]");
         }
@@ -126,7 +142,13 @@ impl Backends {
         // 1. 后端：没写就用 [llm] 合成 default
         let mut specs: BTreeMap<String, BackendConfig> = cfg.backends.clone();
         if specs.is_empty() {
-            specs.insert("default".into(), BackendConfig { base_url: cfg.llm.base_url.clone(), ..Default::default() });
+            specs.insert(
+                "default".into(),
+                BackendConfig {
+                    base_url: cfg.llm.base_url.clone(),
+                    ..Default::default()
+                },
+            );
         }
         for (name, spec) in &specs {
             spec.validate(name).map_err(anyhow::Error::msg)?;
@@ -175,24 +197,42 @@ impl Backends {
             let name = match route_of(role).and_then(|o| o.as_deref()) {
                 Some(n) => n.to_string(),
                 // reply 没写时跟 conversation 一致
-                None if role == LlmRole::Reply && r.conversation.is_some() => r.conversation.clone().unwrap_or_default(),
+                None if role == LlmRole::Reply && r.conversation.is_some() => {
+                    r.conversation.clone().unwrap_or_default()
+                }
                 None => Self::default_backend(&specs, role)?,
             };
             let Some(spec) = specs.get(&name) else {
                 let known = specs.keys().cloned().collect::<Vec<_>>().join(", ");
-                bail!("[routing] {} = \"{name}\"：没有这个后端（已定义：{known}）", role.as_str());
+                bail!(
+                    "[routing] {} = \"{name}\"：没有这个后端（已定义：{known}）",
+                    role.as_str()
+                );
             };
             if role.priority() == Priority::Background && !spec.accepts_background() {
                 bail!("[routing] {} = \"{name}\"：这个后端没有后台容量（后台槽位 / 并发许可都被前台占满），请换一个后端或修改 [backends.{name}]", role.as_str());
             }
-            let mut client = base_clients[&name].with_backend(backends[&name].clone(), role.as_str(), role.priority());
+            let mut client = base_clients[&name].with_backend(
+                backends[&name].clone(),
+                role.as_str(),
+                role.priority(),
+            );
             // 旧写法：[models] 覆盖模型名；[models.base_urls] 覆盖地址（只在没有 [backends] 时有效）
             let (model, url) = match role {
                 LlmRole::Reply => cfg.models.reply_target(),
-                LlmRole::Conversation => (cfg.models.conversation.as_deref(), legacy_urls.conversation.as_deref()),
+                LlmRole::Conversation => (
+                    cfg.models.conversation.as_deref(),
+                    legacy_urls.conversation.as_deref(),
+                ),
                 LlmRole::Router => (cfg.models.router.as_deref(), legacy_urls.router.as_deref()),
-                LlmRole::General => (cfg.models.general.as_deref(), legacy_urls.general.as_deref()),
-                LlmRole::Reviewer => (cfg.models.reviewer.as_deref(), legacy_urls.reviewer.as_deref()),
+                LlmRole::General => (
+                    cfg.models.general.as_deref(),
+                    legacy_urls.general.as_deref(),
+                ),
+                LlmRole::Reviewer => (
+                    cfg.models.reviewer.as_deref(),
+                    legacy_urls.reviewer.as_deref(),
+                ),
             };
             if let Some(u) = url {
                 client = client.with_base_url(u);
@@ -200,7 +240,9 @@ impl Backends {
             if let Some(m) = model {
                 client = client.with_model(m);
             }
-            if matches!(role, LlmRole::Conversation | LlmRole::Router) && spec.front_structured_thinking == Some(false) {
+            if matches!(role, LlmRole::Conversation | LlmRole::Router)
+                && spec.front_structured_thinking == Some(false)
+            {
                 client = client.disable_structured_thinking();
             }
             bindings.push(RoleBinding {
@@ -214,7 +256,11 @@ impl Backends {
             });
             clients.insert(role, client);
         }
-        Ok(Self { backends, clients, bindings })
+        Ok(Self {
+            backends,
+            clients,
+            bindings,
+        })
     }
 
     fn default_backend(specs: &BTreeMap<String, BackendConfig>, role: LlmRole) -> Result<String> {
@@ -248,7 +294,10 @@ impl Backends {
     pub async fn status(&self) -> Vec<BackendStatus> {
         let mut groups: BTreeMap<(String, String), Vec<LlmRole>> = BTreeMap::new();
         for b in &self.bindings {
-            groups.entry((b.backend.clone(), b.base_url.clone())).or_default().push(b.role);
+            groups
+                .entry((b.backend.clone(), b.base_url.clone()))
+                .or_default()
+                .push(b.role);
         }
         let mut out = Vec::new();
         for ((name, url), roles) in groups {
@@ -268,18 +317,37 @@ impl Backends {
                 .slots
                 .iter()
                 .map(|s| {
-                    let srv = view.as_ref().and_then(|v| v.slots.iter().find(|x| x.id == s.id));
-                    SlotStatus { id: s.id, class: s.class.to_string(), holder: s.holder.clone(), held_ms: s.held_ms, server_busy: srv.map(|x| x.busy), tasks: srv.map(|x| x.tasks) }
+                    let srv = view
+                        .as_ref()
+                        .and_then(|v| v.slots.iter().find(|x| x.id == s.id));
+                    SlotStatus {
+                        id: s.id,
+                        class: s.class.to_string(),
+                        holder: s.holder.clone(),
+                        held_ms: s.held_ms,
+                        server_busy: srv.map(|x| x.busy),
+                        tasks: srv.map(|x| x.tasks),
+                    }
                 })
                 .collect();
             if let Some(v) = &view {
                 for x in &v.slots {
                     if !slots.iter().any(|s| s.id == x.id) {
-                        slots.push(SlotStatus { id: x.id, class: "unknown".into(), holder: None, held_ms: 0, server_busy: Some(x.busy), tasks: Some(x.tasks) });
+                        slots.push(SlotStatus {
+                            id: x.id,
+                            class: "unknown".into(),
+                            holder: None,
+                            held_ms: 0,
+                            server_busy: Some(x.busy),
+                            tasks: Some(x.tasks),
+                        });
                     }
                 }
             }
-            let binding = self.bindings.iter().find(|b| b.backend == name && b.base_url == url);
+            let binding = self
+                .bindings
+                .iter()
+                .find(|b| b.backend == name && b.base_url == url);
             out.push(BackendStatus {
                 name,
                 kind: binding.map(|b| b.kind).unwrap_or("openai"),
@@ -292,7 +360,12 @@ impl Backends {
                 server_error,
                 slots,
                 metrics: view.map(|v| v.metrics),
-                scheduler: SchedStatus { inflight: snap.inflight, max_inflight: snap.max_inflight, queue_len: snap.queue_len, paused_ms: snap.paused_ms },
+                scheduler: SchedStatus {
+                    inflight: snap.inflight,
+                    max_inflight: snap.max_inflight,
+                    queue_len: snap.queue_len,
+                    paused_ms: snap.paused_ms,
+                },
                 calls: backend.stats.summary(),
             });
         }
@@ -303,7 +376,10 @@ impl Backends {
     /// 必须是 `llama_cpp` 后端、有后台槽位、`max_concurrent` 不超过后台槽位数（否则多出来的任务只会在租约上排队）
     pub fn slot_backend(&self, name: &str, max_concurrent: u32) -> Result<Arc<Backend>> {
         let Some(b) = self.backends.get(name) else {
-            bail!("[agents.coding] backend = \"{name}\"：没有这个后端（已定义：{}）", self.backends.keys().cloned().collect::<Vec<_>>().join("、"));
+            bail!(
+                "[agents.coding] backend = \"{name}\"：没有这个后端（已定义：{}）",
+                self.backends.keys().cloned().collect::<Vec<_>>().join("、")
+            );
         };
         if b.cfg.kind != BackendKind::LlamaCpp {
             bail!("[agents.coding] backend = \"{name}\"：只有 kind = \"llama_cpp\" 的后端有槽位可以固定；云端模型请不要配置 backend");
@@ -321,13 +397,19 @@ impl Backends {
     /// 在后台探测每个本地推理服务（`/props`）：读取上下文总量用于预算裁剪，并核对槽位数。
     /// 服务还没起来时每 5 秒重试，最多 6 次；之后靠健康检查提示。需在 tokio 运行时中调用。
     pub fn spawn_probes(&self) {
-        for b in self.backends.values().filter(|b| b.cfg.kind == BackendKind::LlamaCpp) {
+        for b in self
+            .backends
+            .values()
+            .filter(|b| b.cfg.kind == BackendKind::LlamaCpp)
+        {
             let b = b.clone();
             tokio::spawn(async move {
                 for attempt in 1..=6 {
                     match b.probe().await {
                         Ok(_) => return,
-                        Err(e) if attempt == 6 => tracing::warn!(event = "llm.backend_probe_failed", code = an_core::codes::LLM_UNREACHABLE, backend = %b.name, error = %format!("{e:#}"), "无法读取后端 /props，上下文预算裁剪暂不生效（超长时仍会由服务端报错后缩减重试）"),
+                        Err(e) if attempt == 6 => {
+                            tracing::warn!(event = "llm.backend_probe_failed", code = an_core::codes::LLM_UNREACHABLE, backend = %b.name, error = %format!("{e:#}"), "无法读取后端 /props，上下文预算裁剪暂不生效（超长时仍会由服务端报错后缩减重试）")
+                        }
                         Err(_) => tokio::time::sleep(std::time::Duration::from_secs(5)).await,
                     }
                 }
@@ -347,7 +429,8 @@ impl Backends {
 mod tests {
     use super::*;
 
-    const LLM: &str = "[llm]\nbase_url = \"http://legacy/v1\"\nmodel = \"legacy-model\"\ntemperature = 0.3\n";
+    const LLM: &str =
+        "[llm]\nbase_url = \"http://legacy/v1\"\nmodel = \"legacy-model\"\ntemperature = 0.3\n";
 
     fn cfg(extra: &str) -> AppConfig {
         let (c, unknown) = AppConfig::parse(&format!("{LLM}{extra}")).unwrap();
@@ -388,7 +471,10 @@ mod tests {
 
         // 云端后端没有槽位可固定
         let both = format!("{PROFILE_A}{CLOUD}");
-        let b = Backends::build_with_env(&cfg(&both), &|k: &str| (k == "CLOUD_KEY").then(|| "x".to_string())).unwrap();
+        let b = Backends::build_with_env(&cfg(&both), &|k: &str| {
+            (k == "CLOUD_KEY").then(|| "x".to_string())
+        })
+        .unwrap();
         let e = b.slot_backend("cloud", 1).unwrap_err().to_string();
         assert!(e.contains("llama_cpp"), "{e}");
     }
@@ -424,7 +510,9 @@ mod tests {
         let src = "[backends.local]\nkind = \"llama_cpp\"\nbase_url = \"http://x/v1\"\nslots = 4\nfront_structured_thinking = false\n\
             [routing]\nconversation = \"local\"\nrouter = \"local\"\ngeneral = \"local\"\nreviewer = \"local\"\n";
         let b = build(src).unwrap();
-        assert!(b.client(LlmRole::Conversation).structured_thinking_disabled());
+        assert!(b
+            .client(LlmRole::Conversation)
+            .structured_thinking_disabled());
         assert!(b.client(LlmRole::Router).structured_thinking_disabled());
         assert!(!b.client(LlmRole::Reply).structured_thinking_disabled());
         assert!(!b.client(LlmRole::General).structured_thinking_disabled());
@@ -442,14 +530,25 @@ mod tests {
     #[test]
     fn legacy_base_urls_still_work_without_backends() {
         let b = build("[models]\nconversation = \"m\"\n[models.base_urls]\nconversation = \"http://other/v1\"\n").unwrap();
-        assert_eq!(b.client(LlmRole::Conversation).config().base_url, "http://other/v1");
-        assert_eq!(b.client(LlmRole::Reply).config().base_url, "http://other/v1");
-        assert_eq!(b.client(LlmRole::General).config().base_url, "http://legacy/v1");
+        assert_eq!(
+            b.client(LlmRole::Conversation).config().base_url,
+            "http://other/v1"
+        );
+        assert_eq!(
+            b.client(LlmRole::Reply).config().base_url,
+            "http://other/v1"
+        );
+        assert_eq!(
+            b.client(LlmRole::General).config().base_url,
+            "http://legacy/v1"
+        );
     }
 
     #[test]
     fn base_urls_and_backends_cannot_be_mixed() {
-        let e = err(&format!("{PROFILE_A}[models.base_urls]\nconversation = \"http://x/v1\"\n"));
+        let e = err(&format!(
+            "{PROFILE_A}[models.base_urls]\nconversation = \"http://x/v1\"\n"
+        ));
         assert!(e.contains("旧写法"), "{e}");
     }
 
@@ -463,7 +562,11 @@ mod tests {
             assert_eq!(c.model(), "big");
         }
         // reply 没写路由，跟 conversation
-        let reply = b.bindings().iter().find(|x| x.role == LlmRole::Reply).unwrap();
+        let reply = b
+            .bindings()
+            .iter()
+            .find(|x| x.role == LlmRole::Reply)
+            .unwrap();
         assert_eq!(reply.backend, "local");
         assert!(reply.limits.contains("槽位 5 个"), "{}", reply.limits);
     }
@@ -482,7 +585,10 @@ mod tests {
         assert_eq!(g.config().base_url, "https://cloud/v1");
         assert_eq!(g.model(), "cloud-model");
         assert_eq!(g.config().api_key, "secret-value");
-        assert_eq!(b.client(LlmRole::Conversation).config().base_url, "http://127.0.0.1:8200/v1");
+        assert_eq!(
+            b.client(LlmRole::Conversation).config().base_url,
+            "http://127.0.0.1:8200/v1"
+        );
         assert_eq!(b.client(LlmRole::Conversation).config().api_key, "");
         // 绑定描述里不能出现密钥
         let dump = serde_json::to_string(b.bindings()).unwrap();
@@ -491,7 +597,8 @@ mod tests {
 
     #[test]
     fn profile_c_mixed_roles() {
-        let extra = format!("{PROFILE_A}{CLOUD}").replace("general = \"local\"", "general = \"cloud\"");
+        let extra =
+            format!("{PROFILE_A}{CLOUD}").replace("general = \"local\"", "general = \"cloud\"");
         let env = |_: &str| Some("k".to_string());
         let b = Backends::build_with_env(&cfg(&extra), &env).unwrap();
         assert_eq!(b.client(LlmRole::General).backend().unwrap().name, "cloud");
@@ -500,8 +607,11 @@ mod tests {
 
     #[test]
     fn unknown_backend_in_routing_names_role_and_choices() {
-        let e = err(&PROFILE_A.to_string().replace("router = \"local\"", "router = \"loca1\""));
-        assert!(e.contains("router") && e.contains("loca1") && e.contains("local"), "{e}");
+        let e = err(&PROFILE_A.replace("router = \"local\"", "router = \"loca1\""));
+        assert!(
+            e.contains("router") && e.contains("loca1") && e.contains("local"),
+            "{e}"
+        );
     }
 
     #[test]
@@ -521,7 +631,10 @@ mod tests {
     #[test]
     fn invalid_slots_are_reported_with_backend_name() {
         let e = err("[backends.local]\nkind = \"llama_cpp\"\nbase_url = \"http://x/v1\"\nslots = 3\ninteractive_slots = [0]\nbackground_slots = [1, 3]\n");
-        assert!(e.contains("[backends.local]") && e.contains("超出范围"), "{e}");
+        assert!(
+            e.contains("[backends.local]") && e.contains("超出范围"),
+            "{e}"
+        );
     }
 
     #[test]
@@ -533,17 +646,26 @@ mod tests {
         // 两个后端、没有 default、也没写路由：报错并说明该怎么写
         let env = |_: &str| Some("k".to_string());
         let two = format!("{one}{CLOUD}");
-        let e = Backends::build_with_env(&cfg(&two), &env).err().map(|e| e.to_string()).unwrap();
+        let e = Backends::build_with_env(&cfg(&two), &env)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap();
         assert!(e.contains("conversation") && e.contains("后端名"), "{e}");
         // 有 default：未写的角色用它
         let with_default = two.replace("[backends.only]", "[backends.default]");
         let b = Backends::build_with_env(&cfg(&with_default), &env).unwrap();
-        assert_eq!(b.client(LlmRole::Reviewer).backend().unwrap().name, "default");
+        assert_eq!(
+            b.client(LlmRole::Reviewer).backend().unwrap().name,
+            "default"
+        );
     }
 
     #[test]
     fn unknown_fields_inside_backends_are_reported() {
-        let (_, unknown) = AppConfig::parse(&format!("{LLM}[backends.local]\nbase_url = \"x\"\nslotz = 3\n[routing]\nconvo = \"local\"\n")).unwrap();
+        let (_, unknown) = AppConfig::parse(&format!(
+            "{LLM}[backends.local]\nbase_url = \"x\"\nslotz = 3\n[routing]\nconvo = \"local\"\n"
+        ))
+        .unwrap();
         assert_eq!(unknown, ["backends.local.slotz", "routing.convo"]);
     }
 
@@ -554,7 +676,10 @@ mod tests {
         let c = b.client(LlmRole::Router);
         assert_eq!(c.config().timeout_secs, 33);
         assert_eq!(c.model(), "bm");
-        assert_eq!(c.config().structured_mode, an_llm::StructuredMode::PromptOnly);
+        assert_eq!(
+            c.config().structured_mode,
+            an_llm::StructuredMode::PromptOnly
+        );
         assert_eq!(c.config().temperature, 0.3); // 其余沿用 [llm]
     }
 }

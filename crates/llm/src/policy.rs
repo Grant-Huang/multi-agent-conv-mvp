@@ -38,7 +38,9 @@ impl Timeouts {
 /// 第 `attempt` 次失败后的退避时间（attempt 从 1 开始）：0.5s、1s、2s… 最长 8s，带 ±25% 抖动。
 /// `jitter` 取 0..1；`retry_after` 是服务端要求的等待，取两者较大者
 pub fn backoff_delay(attempt: u32, jitter: f64, retry_after: Option<Duration>) -> Duration {
-    let base = 500u64.saturating_mul(1u64 << attempt.saturating_sub(1).min(5)).min(8000);
+    let base = 500u64
+        .saturating_mul(1u64 << attempt.saturating_sub(1).min(5))
+        .min(8000);
     let factor = 0.75 + 0.5 * jitter.clamp(0.0, 1.0);
     let d = Duration::from_millis((base as f64 * factor) as u64);
     retry_after.map_or(d, |r| d.max(r))
@@ -48,7 +50,10 @@ pub fn backoff_delay(attempt: u32, jitter: f64, retry_after: Option<Duration>) -
 pub fn jitter01() -> f64 {
     static COUNTER: AtomicU64 = AtomicU64::new(0x9E37_79B9);
     let n = COUNTER.fetch_add(0x9E37_79B9_7F4A_7C15, Ordering::Relaxed);
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos() as u64).unwrap_or(0);
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0);
     let mut x = n ^ t.rotate_left(17);
     x ^= x >> 33;
     x = x.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
@@ -72,7 +77,11 @@ struct BreakerState {
 
 impl Breaker {
     pub fn new(threshold: u32, open_for: Duration) -> Self {
-        Self { threshold: threshold.max(1), open_for, state: Mutex::new(BreakerState::default()) }
+        Self {
+            threshold: threshold.max(1),
+            open_for,
+            state: Mutex::new(BreakerState::default()),
+        }
     }
 
     pub fn default_policy() -> Self {
@@ -147,7 +156,10 @@ pub struct Stats {
 
 impl Stats {
     pub fn new(cap: usize) -> Self {
-        Self { cap: cap.max(1), ring: Mutex::new(VecDeque::new()) }
+        Self {
+            cap: cap.max(1),
+            ring: Mutex::new(VecDeque::new()),
+        }
     }
 
     pub fn record(&self, r: CallRecord) {
@@ -159,16 +171,28 @@ impl Stats {
     }
 
     pub fn recent(&self) -> Vec<CallRecord> {
-        self.ring.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect()
+        self.ring
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect()
     }
 
     pub fn summary(&self) -> StatsSummary {
         let recs = self.recent();
-        let mut s = StatsSummary { total: recs.len() as u64, ..Default::default() };
+        let mut s = StatsSummary {
+            total: recs.len() as u64,
+            ..Default::default()
+        };
         for r in &recs {
             *s.outcomes.entry(r.outcome.to_string()).or_default() += 1;
         }
-        let ok_total: Vec<u64> = recs.iter().filter(|r| r.outcome == "ok").map(|r| r.total_ms).collect();
+        let ok_total: Vec<u64> = recs
+            .iter()
+            .filter(|r| r.outcome == "ok")
+            .map(|r| r.total_ms)
+            .collect();
         let ttft: Vec<u64> = recs.iter().filter_map(|r| r.ttft_ms).collect();
         (s.total_ms_p50, s.total_ms_p95) = (percentile(&ok_total, 50), percentile(&ok_total, 95));
         (s.ttft_ms_p50, s.ttft_ms_p95) = (percentile(&ttft, 50), percentile(&ttft, 95));
@@ -204,8 +228,14 @@ mod tests {
 
     #[test]
     fn retry_after_wins_when_longer() {
-        assert_eq!(backoff_delay(1, 0.5, Some(Duration::from_secs(3))), Duration::from_secs(3));
-        assert_eq!(backoff_delay(3, 0.5, Some(Duration::from_millis(100))), Duration::from_millis(2000));
+        assert_eq!(
+            backoff_delay(1, 0.5, Some(Duration::from_secs(3))),
+            Duration::from_secs(3)
+        );
+        assert_eq!(
+            backoff_delay(3, 0.5, Some(Duration::from_millis(100))),
+            Duration::from_millis(2000)
+        );
     }
 
     #[test]
@@ -219,7 +249,15 @@ mod tests {
     #[test]
     fn default_timeouts_follow_priority() {
         let i = Timeouts::defaults(180, Priority::Interactive);
-        assert_eq!((i.connect.as_secs(), i.first_token.as_secs(), i.idle.as_secs(), i.total.as_secs()), (5, 120, 60, 180));
+        assert_eq!(
+            (
+                i.connect.as_secs(),
+                i.first_token.as_secs(),
+                i.idle.as_secs(),
+                i.total.as_secs()
+            ),
+            (5, 120, 60, 180)
+        );
         assert_eq!(i.deadline, Some(Duration::from_secs(60)));
         assert_eq!(Timeouts::defaults(180, Priority::Background).deadline, None);
     }
@@ -254,7 +292,18 @@ mod tests {
     }
 
     fn rec(outcome: &'static str, total_ms: u64, ttft: Option<u64>) -> CallRecord {
-        CallRecord { role: "router".into(), priority: Priority::Interactive, outcome, attempt: 1, slot: None, queue_wait_ms: 0, ttft_ms: ttft, total_ms, prompt_tokens: None, completion_tokens: None }
+        CallRecord {
+            role: "router".into(),
+            priority: Priority::Interactive,
+            outcome,
+            attempt: 1,
+            slot: None,
+            queue_wait_ms: 0,
+            ttft_ms: ttft,
+            total_ms,
+            prompt_tokens: None,
+            completion_tokens: None,
+        }
     }
 
     #[test]

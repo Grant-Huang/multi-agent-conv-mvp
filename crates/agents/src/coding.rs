@@ -17,11 +17,14 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use an_core::{truncate_chars, codes, AgentAdapter, AgentCard, AgentError, EventSink, Evidence, Role, TaskResult, TaskSpec, WorkerStatus};
+use an_core::{
+    codes, truncate_chars, AgentAdapter, AgentCard, AgentError, EventSink, Evidence, Role,
+    TaskResult, TaskSpec, WorkerStatus,
+};
 
-use an_llm::Backend;
 use crate::proc_group::{self, GroupChild};
 use crate::util::{collect_git_changes, expand_tilde, resolve_command, snapshot_worktree};
+use an_llm::Backend;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -151,7 +154,11 @@ impl CodingAgent {
             enabled,
             disabled_reason,
         };
-        Self { cfg, card, slot_backend: None }
+        Self {
+            cfg,
+            card,
+            slot_backend: None,
+        }
     }
 
     /// 注入固定槽位用的后端：之后每个任务先申请后台槽位租约，再启动子进程
@@ -165,7 +172,11 @@ impl CodingAgent {
         self.cfg
             .args
             .iter()
-            .map(|a| a.replace("{prompt}", prompt).replace("{workdir}", workdir).replace("{last_message_file}", last_msg))
+            .map(|a| {
+                a.replace("{prompt}", prompt)
+                    .replace("{workdir}", workdir)
+                    .replace("{last_message_file}", last_msg)
+            })
             .collect()
     }
 
@@ -173,8 +184,14 @@ impl CodingAgent {
     /// 如果是 JSON（例如 codex 的 --json 模式），尽量提取类型和文本。
     fn describe_line(line: &str) -> String {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-            let ty = v["type"].as_str().or_else(|| v["msg"]["type"].as_str()).unwrap_or("event");
-            let text = v["text"].as_str().or_else(|| v["msg"]["message"].as_str()).unwrap_or("");
+            let ty = v["type"]
+                .as_str()
+                .or_else(|| v["msg"]["type"].as_str())
+                .unwrap_or("event");
+            let text = v["text"]
+                .as_str()
+                .or_else(|| v["msg"]["message"].as_str())
+                .unwrap_or("");
             return truncate_chars(&format!("[{ty}] {text}"), 300);
         }
         truncate_chars(line, 300)
@@ -192,7 +209,10 @@ struct ProgressBuf {
 
 impl ProgressBuf {
     fn new() -> Self {
-        Self { lines: Vec::new(), since: tokio::time::Instant::now() }
+        Self {
+            lines: Vec::new(),
+            since: tokio::time::Instant::now(),
+        }
     }
 
     fn pending(&self) -> bool {
@@ -231,11 +251,17 @@ impl AgentAdapter for CodingAgent {
 
     async fn run(&self, task: TaskSpec, events: EventSink) -> Result<TaskResult> {
         if !self.card.enabled {
-            return Err(AgentError::new(codes::AGENT_NOT_INSTALLED, self.card.disabled_reason.clone().unwrap_or_default()).into());
+            return Err(AgentError::new(
+                codes::AGENT_NOT_INSTALLED,
+                self.card.disabled_reason.clone().unwrap_or_default(),
+            )
+            .into());
         }
 
         // 1. 准备工作目录和输出文件
-        tokio::fs::create_dir_all(&self.cfg.workdir).await.context("创建代码工作目录失败")?;
+        tokio::fs::create_dir_all(&self.cfg.workdir)
+            .await
+            .context("创建代码工作目录失败")?;
         let workdir = self.cfg.workdir.canonicalize()?;
         let last_msg_file = std::env::temp_dir().join(format!("an-codex-{}.txt", task.task_id));
         let _ = tokio::fs::remove_file(&last_msg_file).await;
@@ -245,9 +271,17 @@ impl AgentAdapter for CodingAgent {
         } else {
             format!("{}\n\n## 背景信息\n{}", task.goal, task.context)
         };
-        let args = self.render_args(&prompt, &workdir.to_string_lossy(), &last_msg_file.to_string_lossy());
+        let args = self.render_args(
+            &prompt,
+            &workdir.to_string_lossy(),
+            &last_msg_file.to_string_lossy(),
+        );
         let baseline = snapshot_worktree(&workdir).await;
-        events.progress(format!("启动 {}（工作目录 {}）", self.cfg.command, workdir.display()));
+        events.progress(format!(
+            "启动 {}（工作目录 {}）",
+            self.cfg.command,
+            workdir.display()
+        ));
 
         // 2. 固定槽位：先拿后台槽位租约（排队有期限，超时 E_LLM_BUSY），任务结束或被取消时随 `lease` 一起归还
         let lease = match &self.slot_backend {
@@ -269,14 +303,24 @@ impl AgentAdapter for CodingAgent {
             Some(s) => cmd.env(SLOT_ENV, s.to_string()),
             None => cmd.env_remove(SLOT_ENV),
         };
-        cmd.args(&args).current_dir(&workdir).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.args(&args)
+            .current_dir(&workdir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         // 新进程组：取消 / 超时 / 结束时连同孙进程一起清理（见 proc_group）
         proc_group::configure(&mut cmd);
-        let mut child = GroupChild::spawn(&mut cmd, &task.task_id)
-            .map_err(|e| AgentError::new(codes::AGENT_SPAWN, format!("无法启动 {}：{e}", self.cfg.command)))?;
+        let mut child = GroupChild::spawn(&mut cmd, &task.task_id).map_err(|e| {
+            AgentError::new(
+                codes::AGENT_SPAWN,
+                format!("无法启动 {}：{e}", self.cfg.command),
+            )
+        })?;
 
-        let mut stdout = BufReader::new(child.child_mut().stdout.take().expect("stdout piped")).lines();
-        let mut stderr = BufReader::new(child.child_mut().stderr.take().expect("stderr piped")).lines();
+        let mut stdout =
+            BufReader::new(child.child_mut().stdout.take().expect("stdout piped")).lines();
+        let mut stderr =
+            BufReader::new(child.child_mut().stderr.take().expect("stderr piped")).lines();
         let mut out_tail: VecDeque<String> = VecDeque::new();
         let mut err_tail: VecDeque<String> = VecDeque::new();
         let push = |q: &mut VecDeque<String>, l: String| {
@@ -338,17 +382,29 @@ impl AgentAdapter for CodingAgent {
             // 超时：先 SIGTERM 整个进程组，等一会儿再 SIGKILL
             Err(_) => {
                 child.terminate("timeout").await;
-                return Ok(TaskResult::failed_code(codes::AGENT_TIMEOUT, format!("{} 超时（{} 秒）", self.card.name, self.cfg.timeout_secs)));
+                return Ok(TaskResult::failed_code(
+                    codes::AGENT_TIMEOUT,
+                    format!("{} 超时（{} 秒）", self.card.name, self.cfg.timeout_secs),
+                ));
             }
         };
 
         // 5. 收集结果与证据
-        let mut evidence = vec![Evidence { kind: "exit_code".into(), content: format!("{exit}") }];
+        let mut evidence = vec![Evidence {
+            kind: "exit_code".into(),
+            content: format!("{exit}"),
+        }];
         let stdout_tail = out_tail.iter().cloned().collect::<Vec<_>>().join("\n");
-        evidence.push(Evidence { kind: "stdout_tail".into(), content: truncate_chars(&stdout_tail, 3000) });
+        evidence.push(Evidence {
+            kind: "stdout_tail".into(),
+            content: truncate_chars(&stdout_tail, 3000),
+        });
         if !exit.success() && !err_tail.is_empty() {
             let s = err_tail.iter().cloned().collect::<Vec<_>>().join("\n");
-            evidence.push(Evidence { kind: "stderr_tail".into(), content: truncate_chars(&s, 3000) });
+            evidence.push(Evidence {
+                kind: "stderr_tail".into(),
+                content: truncate_chars(&s, 3000),
+            });
         }
 
         let (git_evidence, artifacts) = collect_git_changes(&workdir, baseline.as_deref()).await;
@@ -362,11 +418,19 @@ impl AgentAdapter for CodingAgent {
         let _ = tokio::fs::remove_file(&last_msg_file).await;
 
         Ok(TaskResult {
-            status: if exit.success() { WorkerStatus::Succeeded } else { WorkerStatus::Failed },
+            status: if exit.success() {
+                WorkerStatus::Succeeded
+            } else {
+                WorkerStatus::Failed
+            },
             summary,
             artifacts,
             evidence,
-            errors: if exit.success() { vec![] } else { vec![format!("[{}] 进程退出：{exit}", codes::AGENT_RUNTIME)] },
+            errors: if exit.success() {
+                vec![]
+            } else {
+                vec![format!("[{}] 进程退出：{exit}", codes::AGENT_RUNTIME)]
+            },
         })
     }
 }
@@ -377,10 +441,18 @@ mod tests {
 
     #[test]
     fn default_card_is_codex() {
-        let cfg: CodingConfig = serde_json::from_value(serde_json::json!({ "command": "sh" })).unwrap();
+        let cfg: CodingConfig =
+            serde_json::from_value(serde_json::json!({ "command": "sh" })).unwrap();
         let agent = CodingAgent::new(cfg);
         let card = agent.card();
-        assert_eq!((card.id.as_str(), card.agent_type.as_str(), card.name.as_str()), ("codex", "codex", "Codex CLI"));
+        assert_eq!(
+            (
+                card.id.as_str(),
+                card.agent_type.as_str(),
+                card.name.as_str()
+            ),
+            ("codex", "codex", "Codex CLI")
+        );
         assert!(card.enabled);
     }
 
@@ -395,7 +467,14 @@ mod tests {
         .unwrap();
         let agent = CodingAgent::new(cfg);
         let card = agent.card();
-        assert_eq!((card.id.as_str(), card.agent_type.as_str(), card.name.as_str()), ("pi", "pi", "pi（本地模型）"));
+        assert_eq!(
+            (
+                card.id.as_str(),
+                card.agent_type.as_str(),
+                card.name.as_str()
+            ),
+            ("pi", "pi", "pi（本地模型）")
+        );
         assert_eq!(card.role, Role::Coding);
     }
 
@@ -413,7 +492,13 @@ mod tests {
             conversation_id: "c".into(),
             goal: "g".into(),
             context: String::new(),
-            route: RouteDecision { task_class: TaskClass::L3, execution_role: Role::Coding, required_tools: vec![], risk_level: Risk::Low, reason: String::new() },
+            route: RouteDecision {
+                task_class: TaskClass::L3,
+                execution_role: Role::Coding,
+                required_tools: vec![],
+                risk_level: Risk::Low,
+                reason: String::new(),
+            },
         }
     }
 
@@ -437,7 +522,15 @@ mod tests {
         use an_llm::{BackendConfig, BackendKind};
         Arc::new(Backend::new(
             "local",
-            BackendConfig { kind: BackendKind::LlamaCpp, base_url: "http://x/v1".into(), slots: 6, interactive_slots: front.to_vec(), background_slots: back.to_vec(), queue_secs, ..Default::default() },
+            BackendConfig {
+                kind: BackendKind::LlamaCpp,
+                base_url: "http://x/v1".into(),
+                slots: 6,
+                interactive_slots: front.to_vec(),
+                background_slots: back.to_vec(),
+                queue_secs,
+                ..Default::default()
+            },
         ))
     }
 
@@ -447,14 +540,24 @@ mod tests {
         let agent = echo_agent("env", "0").with_slot_backend(b.clone());
         let r = agent.run(spec("t1"), sink()).await.unwrap();
         assert_eq!(r.status, WorkerStatus::Succeeded, "{r:?}");
-        assert!(r.summary.contains("slot=[2]"), "应拿到第一个后台槽位：{}", r.summary);
-        assert!(b.sched.snapshot().slots.iter().all(|s| s.holder.is_none()), "任务结束后槽位应已归还");
+        assert!(
+            r.summary.contains("slot=[2]"),
+            "应拿到第一个后台槽位：{}",
+            r.summary
+        );
+        assert!(
+            b.sched.snapshot().slots.iter().all(|s| s.holder.is_none()),
+            "任务结束后槽位应已归还"
+        );
     }
 
     #[tokio::test]
     async fn without_a_backend_the_slot_variable_is_not_set_even_if_inherited() {
         std::env::set_var(SLOT_ENV, "1");
-        let r = echo_agent("none", "0").run(spec("t2"), sink()).await.unwrap();
+        let r = echo_agent("none", "0")
+            .run(spec("t2"), sink())
+            .await
+            .unwrap();
         std::env::remove_var(SLOT_ENV);
         assert!(r.summary.contains("slot=[]"), "{}", r.summary);
     }
@@ -462,25 +565,44 @@ mod tests {
     #[tokio::test]
     async fn concurrent_tasks_never_share_a_slot_and_extra_ones_wait_for_the_lease() {
         let b = llama(&[0], &[1, 2], Some(1));
-        let agents: Vec<_> = (0..3).map(|i| Arc::new(echo_agent(&format!("c{i}"), "2").with_slot_backend(b.clone()))).collect();
-        let runs: Vec<_> = agents.iter().enumerate().map(|(i, a)| {
-            let a = a.clone();
-            tokio::spawn(async move { a.run(spec(&format!("c{i}")), sink()).await.unwrap() })
-        }).collect();
+        let agents: Vec<_> = (0..3)
+            .map(|i| Arc::new(echo_agent(&format!("c{i}"), "2").with_slot_backend(b.clone())))
+            .collect();
+        let runs: Vec<_> = agents
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                let a = a.clone();
+                tokio::spawn(async move { a.run(spec(&format!("c{i}")), sink()).await.unwrap() })
+            })
+            .collect();
         let mut slots = vec![];
         let mut busy = 0;
         for h in runs {
             let r = h.await.unwrap();
-            match r.summary.split(['[', ']']).nth(1).and_then(|s| s.parse::<u32>().ok()) {
+            match r
+                .summary
+                .split(['[', ']'])
+                .nth(1)
+                .and_then(|s| s.parse::<u32>().ok())
+            {
                 Some(s) => slots.push(s),
                 None => {
                     busy += 1;
-                    assert!(r.errors.iter().any(|e| e.contains("E_LLM_BUSY")) || r.summary.contains("E_LLM_BUSY"), "{r:?}");
+                    assert!(
+                        r.errors.iter().any(|e| e.contains("E_LLM_BUSY"))
+                            || r.summary.contains("E_LLM_BUSY"),
+                        "{r:?}"
+                    );
                 }
             }
         }
         slots.sort_unstable();
-        assert_eq!(slots, vec![1, 2], "两个后台槽位各被一个任务占用，且不会落到前台槽位 0");
+        assert_eq!(
+            slots,
+            vec![1, 2],
+            "两个后台槽位各被一个任务占用，且不会落到前台槽位 0"
+        );
         assert_eq!(busy, 1, "第三个任务等不到槽位，应明确报忙");
     }
 
@@ -559,7 +681,10 @@ mod tests {
         let pid = read_pid(&dir.join("gc.pid"), 2);
         let dead = wait_dead(pid, 5);
         force_kill(pid);
-        assert!(elapsed < Duration::from_secs(5), "子进程退出后任务应尽快结束，实际用了 {elapsed:?}");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "子进程退出后任务应尽快结束，实际用了 {elapsed:?}"
+        );
         assert_eq!(r.status, WorkerStatus::Succeeded, "{r:?}");
         assert!(r.summary.contains("done"), "{}", r.summary);
         assert!(dead, "正常结束后残留的孙进程 {pid} 应被清理");
@@ -567,7 +692,9 @@ mod tests {
 
     #[test]
     fn missing_command_keeps_configured_id() {
-        let cfg: CodingConfig = serde_json::from_value(serde_json::json!({ "command": "no-such-cmd-xyz", "id": "pi" })).unwrap();
+        let cfg: CodingConfig =
+            serde_json::from_value(serde_json::json!({ "command": "no-such-cmd-xyz", "id": "pi" }))
+                .unwrap();
         let card = CodingAgent::new(cfg).card().clone();
         assert_eq!(card.id, "pi");
         assert!(!card.enabled && card.disabled_reason.unwrap().contains("no-such-cmd-xyz"));

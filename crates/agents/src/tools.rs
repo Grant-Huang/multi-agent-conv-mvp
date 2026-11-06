@@ -27,7 +27,10 @@ pub struct ToolOutput {
 
 impl ToolOutput {
     fn text(t: impl Into<String>) -> Self {
-        Self { text: t.into(), artifact: None }
+        Self {
+            text: t.into(),
+            artifact: None,
+        }
     }
 }
 
@@ -62,7 +65,10 @@ impl ToolRegistry {
     pub fn infos(&self) -> Vec<ToolInfo> {
         self.tools
             .values()
-            .map(|t| ToolInfo { name: t.name().into(), description: t.description().into() })
+            .map(|t| ToolInfo {
+                name: t.name().into(),
+                description: t.description().into(),
+            })
             .collect()
     }
 
@@ -70,7 +76,14 @@ impl ToolRegistry {
     pub fn prompt_listing(&self) -> String {
         self.tools
             .values()
-            .map(|t| format!("- {}：{}。参数示例：{}", t.name(), t.description(), t.args_hint()))
+            .map(|t| {
+                format!(
+                    "- {}：{}。参数示例：{}",
+                    t.name(),
+                    t.description(),
+                    t.args_hint()
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -94,7 +107,10 @@ impl ToolRegistry {
         if command.is_empty() || !command_exists(command) {
             return false;
         }
-        let cmd = WebCmd { command: command.to_string(), timeout };
+        let cmd = WebCmd {
+            command: command.to_string(),
+            timeout,
+        };
         self.register(Arc::new(WebSearch { cmd: cmd.clone() }));
         self.register(Arc::new(WebFetch { cmd }));
         true
@@ -106,7 +122,8 @@ fn command_exists(command: &str) -> bool {
     if command.contains('/') || command.contains('\\') {
         return path.is_file();
     }
-    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(command).is_file()))
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(command).is_file()))
 }
 
 #[derive(Clone)]
@@ -128,11 +145,24 @@ async fn run_collect(cmd: &WebCmd, args: &[&str]) -> Result<Collected> {
     use tokio::io::AsyncReadExt;
 
     let mut command = tokio::process::Command::new(&cmd.command);
-    command.args(args).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).stdin(std::process::Stdio::null());
+    command
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .stdin(std::process::Stdio::null());
     proc_group::configure(&mut command);
-    let mut child = GroupChild::spawn(&mut command, "").with_context(|| format!("无法启动 {}", cmd.command))?;
-    let mut out_pipe = child.child_mut().stdout.take().context("没有拿到标准输出")?;
-    let mut err_pipe = child.child_mut().stderr.take().context("没有拿到标准错误")?;
+    let mut child =
+        GroupChild::spawn(&mut command, "").with_context(|| format!("无法启动 {}", cmd.command))?;
+    let mut out_pipe = child
+        .child_mut()
+        .stdout
+        .take()
+        .context("没有拿到标准输出")?;
+    let mut err_pipe = child
+        .child_mut()
+        .stderr
+        .take()
+        .context("没有拿到标准错误")?;
 
     let collect = async {
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
@@ -188,7 +218,10 @@ async fn run_websearch(cmd: &WebCmd, args: &[&str]) -> Result<String> {
     }
     let value: Value = serde_json::from_str(&stdout).context("搜索命令没有返回 JSON")?;
     if value.get("status").and_then(|s| s.as_str()) != Some("success") {
-        let message = value.get("message").and_then(|m| m.as_str()).unwrap_or("搜索失败");
+        let message = value
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("搜索失败");
         bail!("{message}");
     }
     Ok(an_core::truncate_chars(&stdout, READ_LIMIT))
@@ -196,7 +229,9 @@ async fn run_websearch(cmd: &WebCmd, args: &[&str]) -> Result<String> {
 
 /// 读取字符串参数
 fn arg_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
-    args.get(key).and_then(|v| v.as_str()).ok_or_else(|| anyhow!("缺少字符串参数 `{key}`"))
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("缺少字符串参数 `{key}`"))
 }
 
 /// 把用户给的相对路径解析到工作目录内；越界则报错。
@@ -238,7 +273,11 @@ impl Tool for CurrentTime {
         "{}"
     }
     async fn call(&self, _args: &Value) -> Result<ToolOutput> {
-        Ok(ToolOutput::text(chrono::Local::now().format("%Y-%m-%d %H:%M:%S %:z（%A）").to_string()))
+        Ok(ToolOutput::text(
+            chrono::Local::now()
+                .format("%Y-%m-%d %H:%M:%S %:z（%A）")
+                .to_string(),
+        ))
     }
 }
 
@@ -381,13 +420,23 @@ impl Tool for ListFiles {
         let rel = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
         let dir = resolve_in_root(&self.root, rel)?;
         let mut entries = vec![];
-        let mut rd = tokio::fs::read_dir(&dir).await.with_context(|| format!("无法读取目录 {rel}"))?;
+        let mut rd = tokio::fs::read_dir(&dir)
+            .await
+            .with_context(|| format!("无法读取目录 {rel}"))?;
         while let Some(e) = rd.next_entry().await? {
             let is_dir = e.file_type().await?.is_dir();
-            entries.push(format!("{}{}", e.file_name().to_string_lossy(), if is_dir { "/" } else { "" }));
+            entries.push(format!(
+                "{}{}",
+                e.file_name().to_string_lossy(),
+                if is_dir { "/" } else { "" }
+            ));
         }
         entries.sort();
-        Ok(ToolOutput::text(if entries.is_empty() { "（空目录）".into() } else { entries.join("\n") }))
+        Ok(ToolOutput::text(if entries.is_empty() {
+            "（空目录）".into()
+        } else {
+            entries.join("\n")
+        }))
     }
 }
 
@@ -412,7 +461,9 @@ impl Tool for ReadFile {
     async fn call(&self, args: &Value) -> Result<ToolOutput> {
         let rel = arg_str(args, "path")?;
         let p = resolve_in_root(&self.root, rel)?;
-        let text = tokio::fs::read_to_string(&p).await.with_context(|| format!("无法读取文件 {rel}"))?;
+        let text = tokio::fs::read_to_string(&p)
+            .await
+            .with_context(|| format!("无法读取文件 {rel}"))?;
         Ok(ToolOutput::text(an_core::truncate_chars(&text, READ_LIMIT)))
     }
 }
@@ -439,10 +490,16 @@ impl Tool for WriteFile {
         if let Some(parent) = p.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
-        tokio::fs::write(&p, content).await.with_context(|| format!("无法写入文件 {rel}"))?;
+        tokio::fs::write(&p, content)
+            .await
+            .with_context(|| format!("无法写入文件 {rel}"))?;
         Ok(ToolOutput {
             text: format!("已写入 {rel}（{} 字符）", content.chars().count()),
-            artifact: Some(Artifact { kind: "file".into(), name: rel.into(), content: content.into() }),
+            artifact: Some(Artifact {
+                kind: "file".into(),
+                name: rel.into(),
+                content: content.into(),
+            }),
         })
     }
 }
@@ -464,10 +521,25 @@ impl Tool for WebSearch {
     }
     async fn call(&self, args: &Value) -> Result<ToolOutput> {
         let query = arg_str(args, "query")?;
-        let n = args.get("max_results").and_then(|v| v.as_u64()).unwrap_or(3).clamp(1, 8);
+        let n = args
+            .get("max_results")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(3)
+            .clamp(1, 8);
         let n = n.to_string();
-        let mut argv = vec!["search-fetch".to_string(), query.to_string(), "-n".into(), n, "--max-chars".into(), "3000".into()];
-        if let Some(provider) = args.get("provider").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        let mut argv = vec![
+            "search-fetch".to_string(),
+            query.to_string(),
+            "-n".into(),
+            n,
+            "--max-chars".into(),
+            "3000".into(),
+        ];
+        if let Some(provider) = args
+            .get("provider")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
             argv.push("--provider".into());
             argv.push(provider.to_string());
         }
@@ -552,7 +624,12 @@ mod tests {
         );
         let mut tools = ToolRegistry::with_builtin(&dir).unwrap();
         assert!(tools.register_websearch(script.to_str().unwrap(), Duration::from_secs(2)));
-        let out = tools.get("web_search").unwrap().call(&json!({"query": "q"})).await.unwrap();
+        let out = tools
+            .get("web_search")
+            .unwrap()
+            .call(&json!({"query": "q"}))
+            .await
+            .unwrap();
         assert!(out.text.contains("正文"));
         assert!(out.text.contains("https://example.com"));
         let _ = std::fs::remove_dir_all(&dir);
@@ -560,7 +637,8 @@ mod tests {
 
     #[tokio::test]
     async fn websearch_passes_provider() {
-        let dir = std::env::temp_dir().join(format!("an-websearch-provider-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("an-websearch-provider-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let script = write_script(
@@ -569,7 +647,12 @@ mod tests {
         );
         let mut tools = ToolRegistry::with_builtin(&dir).unwrap();
         assert!(tools.register_websearch(script.to_str().unwrap(), Duration::from_secs(2)));
-        let out = tools.get("web_search").unwrap().call(&json!({"query": "q", "provider": "parallel"})).await.unwrap();
+        let out = tools
+            .get("web_search")
+            .unwrap()
+            .call(&json!({"query": "q", "provider": "parallel"}))
+            .await
+            .unwrap();
         assert!(out.text.contains("parallel"));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -582,7 +665,12 @@ mod tests {
         let script = write_script(&dir, "#!/bin/sh\nsleep 5\n");
         let mut tools = ToolRegistry::with_builtin(&dir).unwrap();
         assert!(tools.register_websearch(script.to_str().unwrap(), Duration::from_millis(200)));
-        let message = match tools.get("web_fetch").unwrap().call(&json!({"url": "https://example.com"})).await {
+        let message = match tools
+            .get("web_fetch")
+            .unwrap()
+            .call(&json!({"url": "https://example.com"}))
+            .await
+        {
             Err(e) => e.to_string(),
             Ok(_) => panic!("应当超时"),
         };
@@ -598,9 +686,21 @@ mod tests {
         let dir = std::env::temp_dir().join(an_core::new_id("an-websearch-group"));
         std::fs::create_dir_all(&dir).unwrap();
         let pid_file = dir.join("gc.pid");
-        let script = write_script(&dir, &format!("#!/bin/sh\nsleep 300 &\necho $! > {}\nwait\n", pid_file.display()));
-        let cmd = WebCmd { command: script.to_string_lossy().into_owned(), timeout: Duration::from_millis(500) };
-        let err = run_websearch(&cmd, &["search", "q"]).await.unwrap_err().to_string();
+        let script = write_script(
+            &dir,
+            &format!(
+                "#!/bin/sh\nsleep 300 &\necho $! > {}\nwait\n",
+                pid_file.display()
+            ),
+        );
+        let cmd = WebCmd {
+            command: script.to_string_lossy().into_owned(),
+            timeout: Duration::from_millis(500),
+        };
+        let err = run_websearch(&cmd, &["search", "q"])
+            .await
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("超时"), "{err}");
         let pid = read_pid(&pid_file, 2);
         let dead = wait_dead(pid, 5);
@@ -621,7 +721,10 @@ mod tests {
             &dir,
             &format!("#!/bin/sh\nsleep 300 &\necho $! > {}\nprintf '%s' '{{\"status\":\"success\",\"data\":{{}},\"message\":\"\"}}'\n", pid_file.display()),
         );
-        let cmd = WebCmd { command: script.to_string_lossy().into_owned(), timeout: Duration::from_secs(10) };
+        let cmd = WebCmd {
+            command: script.to_string_lossy().into_owned(),
+            timeout: Duration::from_secs(10),
+        };
         let started = std::time::Instant::now();
         let out = run_websearch(&cmd, &["search", "q"]).await;
         let elapsed = started.elapsed();
@@ -630,15 +733,24 @@ mod tests {
         force_kill(pid);
         let _ = std::fs::remove_dir_all(&dir);
         assert!(out.unwrap().contains("success"));
-        assert!(elapsed < Duration::from_secs(5), "命令退出后应尽快返回，实际用了 {elapsed:?}");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "命令退出后应尽快返回，实际用了 {elapsed:?}"
+        );
         assert!(dead, "残留的孙进程 {pid} 应被清理");
     }
 
     #[test]
     fn path_guard() {
         let root = Path::new("/tmp/ws");
-        assert_eq!(resolve_in_root(root, "a/b.md").unwrap(), Path::new("/tmp/ws/a/b.md"));
-        assert_eq!(resolve_in_root(root, "a/../b.md").unwrap(), Path::new("/tmp/ws/b.md"));
+        assert_eq!(
+            resolve_in_root(root, "a/b.md").unwrap(),
+            Path::new("/tmp/ws/a/b.md")
+        );
+        assert_eq!(
+            resolve_in_root(root, "a/../b.md").unwrap(),
+            Path::new("/tmp/ws/b.md")
+        );
         assert!(resolve_in_root(root, "../etc/passwd").is_err());
         assert!(resolve_in_root(root, "/etc/passwd").is_err());
     }

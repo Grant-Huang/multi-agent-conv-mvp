@@ -1,0 +1,19 @@
+# 代码负责人（CODEOWNERS）。L3 路径需要负责人批准，见 config/risk-policy.toml。
+# 暂时全部由仓库所有者负责；如有其他审查人，请在这里按路径补充。
+# 注意：负责人必须对仓库有写权限，GitHub 才会把其作为有效审查人。
+
+*                               @Grant-Huang
+
+# L3：治理与 CI 策略（改坏会让门禁失效）
+/.github/                       @Grant-Huang
+/AGENTS.md                      @Grant-Huang
+/CLAUDE.md                      @Grant-Huang
+/config/                        @Grant-Huang
+/tools/ci/                      @Grant-Huang
+
+# L3：权限策略、节点与远程 agent
+/crates/runtime/src/policy.rs   @Grant-Huang
+/crates/llm/src/policy.rs       @Grant-Huang
+/crates/node/                   @Grant-Huang
+/crates/agents/src/remote.rs    @Grant-Huang
+/crates/runtime/src/nodes.rs    @Grant-Huang

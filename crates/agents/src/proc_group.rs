@@ -43,8 +43,17 @@ impl GroupChild {
     /// 启动子进程。调用前需要先 [`configure`]
     pub fn spawn(cmd: &mut Command, task_id: &str) -> std::io::Result<Self> {
         let child = cmd.spawn()?;
-        let pgid = if cfg!(unix) { child.id().and_then(|p| i32::try_from(p).ok()) } else { None };
-        Ok(Self { child, pgid, cleaned: false, task_id: task_id.to_string() })
+        let pgid = if cfg!(unix) {
+            child.id().and_then(|p| i32::try_from(p).ok())
+        } else {
+            None
+        };
+        Ok(Self {
+            child,
+            pgid,
+            cleaned: false,
+            task_id: task_id.to_string(),
+        })
     }
 
     pub fn child_mut(&mut self) -> &mut Child {

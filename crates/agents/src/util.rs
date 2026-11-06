@@ -38,16 +38,24 @@ pub fn resolve_command(cmd: &str) -> Option<PathBuf> {
         let p = PathBuf::from(&expanded);
         return is_executable(&p).then_some(p);
     }
-    let path_dirs = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).unwrap_or_default();
+    let path_dirs = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
+        .unwrap_or_default();
     let extra = EXTRA_DIRS.iter().map(|d| PathBuf::from(expand_tilde(d)));
-    path_dirs.into_iter().chain(extra).map(|d| d.join(&expanded)).find(|p| is_executable(p))
+    path_dirs
+        .into_iter()
+        .chain(extra)
+        .map(|d| d.join(&expanded))
+        .find(|p| is_executable(p))
 }
 
 fn is_executable(p: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        p.metadata().map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0).unwrap_or(false)
+        p.metadata()
+            .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
     }
     #[cfg(not(unix))]
     {
@@ -68,7 +76,9 @@ async fn git_with_index(workdir: &Path, index: Option<&Path>, args: &[&str]) -> 
         cmd.env("GIT_INDEX_FILE", index);
     }
     let out = cmd.output().await.ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).to_string())
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).to_string())
 }
 
 /// 给工作区（含未跟踪文件，遵守 .gitignore）拍快照，返回 git 树对象的哈希。
@@ -83,7 +93,9 @@ pub async fn snapshot_worktree(workdir: &Path) -> Option<String> {
         let _ = tokio::fs::copy(&real_index, &tmp_index).await;
     }
     let tree = match git_with_index(workdir, Some(&tmp_index), &["add", "-A"]).await {
-        Some(_) => git_with_index(workdir, Some(&tmp_index), &["write-tree"]).await.map(|s| s.trim().to_string()),
+        Some(_) => git_with_index(workdir, Some(&tmp_index), &["write-tree"])
+            .await
+            .map(|s| s.trim().to_string()),
         None => None,
     };
     let _ = tokio::fs::remove_file(&tmp_index).await;
@@ -94,11 +106,20 @@ pub async fn snapshot_worktree(workdir: &Path) -> Option<String> {
 /// "Agent 说改好了"不等于"改对了"，审查要看证据。
 /// `baseline` 为任务开始前 [`snapshot_worktree`] 的结果：有它时只包含任务期间的改动，
 /// 没有时退回到与 HEAD 比较（会包含任务开始前就存在的未提交改动）。
-pub async fn collect_git_changes(workdir: &Path, baseline: Option<&str>) -> (Vec<Evidence>, Vec<Artifact>) {
+pub async fn collect_git_changes(
+    workdir: &Path,
+    baseline: Option<&str>,
+) -> (Vec<Evidence>, Vec<Artifact>) {
     let mut evidence = vec![];
     let mut artifacts = vec![];
-    if git(workdir, &["rev-parse", "--is-inside-work-tree"]).await.is_none() {
-        evidence.push(Evidence { kind: "git_diff_stat".into(), content: "工作目录不是 git 仓库，无法收集代码改动".into() });
+    if git(workdir, &["rev-parse", "--is-inside-work-tree"])
+        .await
+        .is_none()
+    {
+        evidence.push(Evidence {
+            kind: "git_diff_stat".into(),
+            content: "工作目录不是 git 仓库，无法收集代码改动".into(),
+        });
         return (evidence, artifacts);
     }
     let after = match baseline {
@@ -106,25 +127,53 @@ pub async fn collect_git_changes(workdir: &Path, baseline: Option<&str>) -> (Vec
         None => None,
     };
     let (stat, diff) = match (baseline, after.as_deref()) {
-        (Some(before), Some(after)) => (git(workdir, &["diff", "--stat", before, after]).await, git(workdir, &["diff", before, after]).await),
+        (Some(before), Some(after)) => (
+            git(workdir, &["diff", "--stat", before, after]).await,
+            git(workdir, &["diff", before, after]).await,
+        ),
         _ => {
             // intent-to-add：让新建的未跟踪文件也出现在 diff 里（不会真正暂存内容）
             let _ = git(workdir, &["add", "-N", "."]).await;
-            (git(workdir, &["diff", "--stat"]).await, git(workdir, &["diff"]).await)
+            (
+                git(workdir, &["diff", "--stat"]).await,
+                git(workdir, &["diff"]).await,
+            )
         }
     };
     if let Some(stat) = stat {
-        evidence.push(Evidence { kind: "git_diff_stat".into(), content: if stat.trim().is_empty() { "无改动".into() } else { stat } });
+        evidence.push(Evidence {
+            kind: "git_diff_stat".into(),
+            content: if stat.trim().is_empty() {
+                "无改动".into()
+            } else {
+                stat
+            },
+        });
     }
     if let Some(diff) = diff.filter(|d| !d.trim().is_empty()) {
-        artifacts.push(Artifact { kind: "diff".into(), name: "git diff".into(), content: truncate_chars(&diff, 20000) });
+        artifacts.push(Artifact {
+            kind: "diff".into(),
+            name: "git diff".into(),
+            content: truncate_chars(&diff, 20000),
+        });
     }
     let names = match (baseline, after.as_deref()) {
-        (Some(before), Some(after)) => git(workdir, &["diff", "--name-only", "--diff-filter=ACMR", before, after]).await,
+        (Some(before), Some(after)) => {
+            git(
+                workdir,
+                &["diff", "--name-only", "--diff-filter=ACMR", before, after],
+            )
+            .await
+        }
         _ => git(workdir, &["diff", "--name-only", "--diff-filter=ACMR"]).await,
     };
     if let Some(names) = names {
-        for rel in names.lines().map(str::trim).filter(|s| !s.is_empty()).take(20) {
+        for rel in names
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .take(20)
+        {
             if let Some(file) = read_text_file(workdir, rel).await {
                 artifacts.push(file);
             }
@@ -135,7 +184,10 @@ pub async fn collect_git_changes(workdir: &Path, baseline: Option<&str>) -> (Vec
 
 /// 把任务改过的文本文件收成可下载的产物。二进制和超过 512KB 的文件不内联。
 async fn read_text_file(workdir: &Path, rel: &str) -> Option<Artifact> {
-    if rel.split(['/', '\\']).any(|p| p.is_empty() || p == "." || p == "..") {
+    if rel
+        .split(['/', '\\'])
+        .any(|p| p.is_empty() || p == "." || p == "..")
+    {
         return None;
     }
     let bytes = tokio::fs::read(workdir.join(rel)).await.ok()?;
@@ -143,7 +195,11 @@ async fn read_text_file(workdir: &Path, rel: &str) -> Option<Artifact> {
         return None;
     }
     let content = String::from_utf8(bytes).ok()?;
-    Some(Artifact { kind: "file".into(), name: rel.into(), content })
+    Some(Artifact {
+        kind: "file".into(),
+        name: rel.into(),
+        content,
+    })
 }
 
 #[cfg(test)]
@@ -161,11 +217,27 @@ mod tests {
     fn temp_repo() -> PathBuf {
         let dir = std::env::temp_dir().join(an_core::new_id("an-util-git"));
         std::fs::create_dir_all(&dir).unwrap();
-        let git = |args: &[&str]| std::process::Command::new("git").arg("-C").arg(&dir).args(args).output().unwrap();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .args(args)
+                .output()
+                .unwrap()
+        };
         git(&["init", "-q"]);
         std::fs::write(dir.join("tracked.txt"), "v1\n").unwrap();
         git(&["add", "tracked.txt"]);
-        git(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]);
+        git(&[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ]);
         dir
     }
 
@@ -185,12 +257,32 @@ mod tests {
 
         let (evidence, artifacts) = collect_git_changes(&dir, baseline.as_deref()).await;
         let diff = &artifacts[0].content;
-        assert!(diff.contains("new_file.py") && diff.contains("tracked.txt"), "{diff}");
-        assert!(!diff.contains("old_untracked.py"), "任务开始前已有的改动不应计入：{diff}");
-        let stat = &evidence.iter().find(|e| e.kind == "git_diff_stat").unwrap().content;
-        assert!(stat.contains("new_file.py") && !stat.contains("old_untracked.py"), "{stat}");
-        assert_eq!(std::fs::read(dir.join(".git/index")).unwrap(), index_before, "不应改动用户仓库的暂存区");
-        let file = artifacts.iter().find(|a| a.kind == "file" && a.name == "new_file.py").expect("新建文件应能下载");
+        assert!(
+            diff.contains("new_file.py") && diff.contains("tracked.txt"),
+            "{diff}"
+        );
+        assert!(
+            !diff.contains("old_untracked.py"),
+            "任务开始前已有的改动不应计入：{diff}"
+        );
+        let stat = &evidence
+            .iter()
+            .find(|e| e.kind == "git_diff_stat")
+            .unwrap()
+            .content;
+        assert!(
+            stat.contains("new_file.py") && !stat.contains("old_untracked.py"),
+            "{stat}"
+        );
+        assert_eq!(
+            std::fs::read(dir.join(".git/index")).unwrap(),
+            index_before,
+            "不应改动用户仓库的暂存区"
+        );
+        let file = artifacts
+            .iter()
+            .find(|a| a.kind == "file" && a.name == "new_file.py")
+            .expect("新建文件应能下载");
         assert_eq!(file.content, "print('new')\n");
     }
 
@@ -201,7 +293,14 @@ mod tests {
         let baseline = snapshot_worktree(&dir).await;
         let (evidence, artifacts) = collect_git_changes(&dir, baseline.as_deref()).await;
         assert!(artifacts.is_empty(), "没有新改动时不应有 diff 产物");
-        assert_eq!(evidence.iter().find(|e| e.kind == "git_diff_stat").unwrap().content, "无改动");
+        assert_eq!(
+            evidence
+                .iter()
+                .find(|e| e.kind == "git_diff_stat")
+                .unwrap()
+                .content,
+            "无改动"
+        );
     }
 
     #[tokio::test]

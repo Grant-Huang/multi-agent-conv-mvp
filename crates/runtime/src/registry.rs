@@ -63,7 +63,13 @@ impl Drop for Lease {
 
 impl AgentRegistry {
     pub fn new(assign: BTreeMap<String, Vec<String>>) -> Arc<Self> {
-        Arc::new(Self { inner: Mutex::new(Inner { agents: vec![], assign }), changed: Notify::new() })
+        Arc::new(Self {
+            inner: Mutex::new(Inner {
+                agents: vec![],
+                assign,
+            }),
+            changed: Notify::new(),
+        })
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -73,10 +79,18 @@ impl AgentRegistry {
     /// 注册本机 agent；id 重复时忽略后注册的（自定义配置优先于预设）
     pub fn register(&self, agent: Arc<dyn AgentAdapter>) -> bool {
         let mut inner = self.lock();
-        if inner.agents.iter().any(|e| e.agent.card().id == agent.card().id) {
+        if inner
+            .agents
+            .iter()
+            .any(|e| e.agent.card().id == agent.card().id)
+        {
             return false;
         }
-        inner.agents.push(Entry { agent, busy: 0, node_id: None });
+        inner.agents.push(Entry {
+            agent,
+            busy: 0,
+            node_id: None,
+        });
         true
     }
 
@@ -91,10 +105,16 @@ impl AgentRegistry {
                 .filter(|e| e.node_id.as_deref() == Some(node_id))
                 .map(|e| (e.agent.card().id.clone(), e.busy))
                 .collect();
-            inner.agents.retain(|e| e.node_id.as_deref() != Some(node_id));
+            inner
+                .agents
+                .retain(|e| e.node_id.as_deref() != Some(node_id));
             for agent in agents {
                 let busy = old_busy.get(&agent.card().id).copied().unwrap_or(0);
-                inner.agents.push(Entry { agent, busy, node_id: Some(node_id.to_string()) });
+                inner.agents.push(Entry {
+                    agent,
+                    busy,
+                    node_id: Some(node_id.to_string()),
+                });
             }
         }
         self.changed.notify_waiters();
@@ -110,7 +130,10 @@ impl AgentRegistry {
         let Some(ids) = inner.assign.get(role.as_str()) else {
             // 没有配置执行组：第一个可用的；都不可用时返回第一个（用于给出原因）
             let of_role = inner.agents.iter().filter(|e| e.agent.card().role == role);
-            let first = of_role.clone().find(|e| e.agent.card().enabled).or_else(|| of_role.clone().next());
+            let first = of_role
+                .clone()
+                .find(|e| e.agent.card().enabled)
+                .or_else(|| of_role.clone().next());
             return Ok(first.into_iter().collect());
         };
         let mut members = vec![];
@@ -118,14 +141,21 @@ impl AgentRegistry {
             match inner.agents.iter().find(|e| &e.agent.card().id == id) {
                 Some(e) => members.push(e),
                 // 可能是还没连上的节点上的 agent，跳过但留下记录
-                None => tracing::debug!(event = "pool.member_missing", code = codes::POOL_MEMBER_MISSING, role = role.as_str(), agent_id = %id),
+                None => {
+                    tracing::debug!(event = "pool.member_missing", code = codes::POOL_MEMBER_MISSING, role = role.as_str(), agent_id = %id)
+                }
             }
         }
         // 校验：角色一致、类型一致
         if let Some(bad) = members.iter().find(|e| e.agent.card().role != role) {
             return Err(AgentError::new(
                 codes::POOL_CONFIG,
-                format!("执行组 {} 中的 {} 角色是 {}，不能放进这个组", role.as_str(), bad.agent.card().id, bad.agent.card().role.as_str()),
+                format!(
+                    "执行组 {} 中的 {} 角色是 {}，不能放进这个组",
+                    role.as_str(),
+                    bad.agent.card().id,
+                    bad.agent.card().role.as_str()
+                ),
             ));
         }
         if let Some(first) = members.first() {
@@ -156,17 +186,26 @@ impl AgentRegistry {
     /// 某角色当前是否有可用的 agent
     pub fn is_enabled(&self, role: Role) -> bool {
         let inner = self.lock();
-        Self::group(&inner, role).map(|g| g.iter().any(|e| e.agent.card().enabled)).unwrap_or(false)
+        Self::group(&inner, role)
+            .map(|g| g.iter().any(|e| e.agent.card().enabled))
+            .unwrap_or(false)
     }
 
     /// 有可用 agent 的角色
     pub fn enabled_roles(&self) -> Vec<Role> {
-        Role::ALL.into_iter().filter(|r| self.is_enabled(*r)).collect()
+        Role::ALL
+            .into_iter()
+            .filter(|r| self.is_enabled(*r))
+            .collect()
     }
 
     /// 所有 agent 的能力卡片（包括不可用的，前端展示用）
     pub fn cards(&self) -> Vec<AgentCard> {
-        self.lock().agents.iter().map(|e| e.agent.card().clone()).collect()
+        self.lock()
+            .agents
+            .iter()
+            .map(|e| e.agent.card().clone())
+            .collect()
     }
 
     /// 某角色不可用的原因（Policy 拒绝路由时告诉用户）
@@ -177,13 +216,27 @@ impl AgentRegistry {
             Ok(g) if g.is_empty() => vec![format!("没有 {} 角色的 agent", role.as_str())],
             Ok(g) => g
                 .iter()
-                .map(|e| format!("{}：{}", e.agent.card().name, e.agent.card().disabled_reason.clone().unwrap_or_else(|| "不可用".into())))
+                .map(|e| {
+                    format!(
+                        "{}：{}",
+                        e.agent.card().name,
+                        e.agent
+                            .card()
+                            .disabled_reason
+                            .clone()
+                            .unwrap_or_else(|| "不可用".into())
+                    )
+                })
                 .collect(),
         }
     }
 
     /// 为某角色分配一个 agent。组内有空闲的立即返回；都在忙就排队等待（`on_wait` 只在第一次排队时调用）。
-    pub async fn acquire(self: &Arc<Self>, role: Role, on_wait: impl Fn(String)) -> Result<Lease, AgentError> {
+    pub async fn acquire(
+        self: &Arc<Self>,
+        role: Role,
+        on_wait: impl Fn(String),
+    ) -> Result<Lease, AgentError> {
         let mut waited = false;
         loop {
             // 先登记通知再检查，避免"检查完、开始等之前"刚好有 agent 空出来而错过通知
@@ -192,24 +245,52 @@ impl AgentRegistry {
             notified.as_mut().enable();
             {
                 let mut inner = self.lock();
-                let ids: Vec<String> = Self::group(&inner, role)?.iter().filter(|e| e.agent.card().enabled).map(|e| e.agent.card().id.clone()).collect();
+                let ids: Vec<String> = Self::group(&inner, role)?
+                    .iter()
+                    .filter(|e| e.agent.card().enabled)
+                    .map(|e| e.agent.card().id.clone())
+                    .collect();
                 if ids.is_empty() {
                     drop(inner);
-                    return Err(AgentError::new(codes::ROUTE_NO_AGENT, format!("没有可用的 {} agent：{}", role.as_str(), self.unavailable_reasons(role).join("；"))));
+                    return Err(AgentError::new(
+                        codes::ROUTE_NO_AGENT,
+                        format!(
+                            "没有可用的 {} agent：{}",
+                            role.as_str(),
+                            self.unavailable_reasons(role).join("；")
+                        ),
+                    ));
                 }
                 let total = ids.len();
                 // 按组内顺序找第一个有空闲名额的
                 for id in &ids {
-                    let e = inner.agents.iter_mut().find(|e| &e.agent.card().id == id).expect("刚解析出的成员");
+                    let e = inner
+                        .agents
+                        .iter_mut()
+                        .find(|e| &e.agent.card().id == id)
+                        .expect("刚解析出的成员");
                     if e.busy < e.agent.card().max_concurrent {
                         e.busy += 1;
-                        return Ok(Lease { registry: self.clone(), agent: e.agent.clone() });
+                        return Ok(Lease {
+                            registry: self.clone(),
+                            agent: e.agent.clone(),
+                        });
                     }
                 }
                 if !waited {
                     waited = true;
-                    tracing::warn!(event = "pool.wait", code = codes::POOL_WAIT, role = role.as_str(), members = total, "执行组的 agent 都在忙，任务排队等待");
-                    on_wait(format!("{} 个 {} agent 都在忙，排队等待空闲", total, role.as_str()));
+                    tracing::warn!(
+                        event = "pool.wait",
+                        code = codes::POOL_WAIT,
+                        role = role.as_str(),
+                        members = total,
+                        "执行组的 agent 都在忙，任务排队等待"
+                    );
+                    on_wait(format!(
+                        "{} 个 {} agent 都在忙，排队等待空闲",
+                        total,
+                        role.as_str()
+                    ));
                 }
             }
             // 有 agent 空闲或列表变化时醒来；另外每 5 秒兜底检查一次（例如节点重新上线）
@@ -249,7 +330,11 @@ mod tests {
         }))
     }
     fn assign(role: &str, ids: &[&str]) -> BTreeMap<String, Vec<String>> {
-        [(role.to_string(), ids.iter().map(|s| s.to_string()).collect())].into()
+        [(
+            role.to_string(),
+            ids.iter().map(|s| s.to_string()).collect(),
+        )]
+        .into()
     }
 
     #[test]
@@ -257,7 +342,10 @@ mod tests {
         let r = AgentRegistry::new(BTreeMap::new());
         r.register(fake("codex", "codex", Role::Coding, false, 1));
         r.register(fake("opencode", "opencode", Role::Coding, true, 1));
-        assert!(!r.register(fake("codex", "codex", Role::Coding, true, 1)), "重复 id 应被忽略");
+        assert!(
+            !r.register(fake("codex", "codex", Role::Coding, true, 1)),
+            "重复 id 应被忽略"
+        );
         assert_eq!(r.group_ids(Role::Coding).unwrap(), ["opencode"]);
         assert!(!r.is_enabled(Role::Reviewer));
     }
@@ -276,7 +364,10 @@ mod tests {
     fn group_rejects_wrong_role() {
         let r = AgentRegistry::new(assign("coding", &["hermes"]));
         r.register(fake("hermes", "hermes", Role::General, true, 1));
-        assert_eq!(r.group_ids(Role::Coding).unwrap_err().code, codes::POOL_CONFIG);
+        assert_eq!(
+            r.group_ids(Role::Coding).unwrap_err().code,
+            codes::POOL_CONFIG
+        );
     }
 
     #[tokio::test]
@@ -293,28 +384,52 @@ mod tests {
         // 第三个任务应排队，直到有人释放
         let waits = Arc::new(Mutex::new(vec![]));
         let (r2, w2) = (r.clone(), waits.clone());
-        let third = tokio::spawn(async move { r2.acquire(Role::General, move |m| w2.lock().unwrap().push(m)).await.unwrap().agent.card().id.clone() });
+        let third = tokio::spawn(async move {
+            r2.acquire(Role::General, move |m| w2.lock().unwrap().push(m))
+                .await
+                .unwrap()
+                .agent
+                .card()
+                .id
+                .clone()
+        });
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!third.is_finished(), "都在忙时应排队");
         assert_eq!(waits.lock().unwrap().len(), 1);
         drop(l1);
-        assert_eq!(third.await.unwrap(), "hermes@a", "释放后排队的任务拿到空出的 agent");
+        assert_eq!(
+            third.await.unwrap(),
+            "hermes@a",
+            "释放后排队的任务拿到空出的 agent"
+        );
     }
 
     #[tokio::test]
     async fn node_agents_replace_keeps_busy() {
         let r = AgentRegistry::new(assign("general", &["hermes@a"]));
-        r.replace_node_agents("node-a", vec![fake("hermes@a", "hermes", Role::General, true, 1)]);
+        r.replace_node_agents(
+            "node-a",
+            vec![fake("hermes@a", "hermes", Role::General, true, 1)],
+        );
         let lease = r.acquire(Role::General, |_| {}).await.unwrap();
         // 心跳刷新不影响正在执行的任务计数
-        r.replace_node_agents("node-a", vec![fake("hermes@a", "hermes", Role::General, true, 1)]);
-        let waiting = { let r = r.clone(); tokio::spawn(async move { r.acquire(Role::General, |_| {}).await.is_ok() }) };
+        r.replace_node_agents(
+            "node-a",
+            vec![fake("hermes@a", "hermes", Role::General, true, 1)],
+        );
+        let waiting = {
+            let r = r.clone();
+            tokio::spawn(async move { r.acquire(Role::General, |_| {}).await.is_ok() })
+        };
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!waiting.is_finished(), "名额仍被占用");
         drop(lease);
         assert!(waiting.await.unwrap());
         // 节点解除配对后没有可用 agent
         r.remove_node("node-a");
-        assert_eq!(r.acquire(Role::General, |_| {}).await.err().unwrap().code, codes::ROUTE_NO_AGENT);
+        assert_eq!(
+            r.acquire(Role::General, |_| {}).await.err().unwrap().code,
+            codes::ROUTE_NO_AGENT
+        );
     }
 }

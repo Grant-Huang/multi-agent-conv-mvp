@@ -1,6 +1,7 @@
 // 节点页：局域网发现的节点（输入配对码即可配对）、按地址手动添加、已配对节点的状态。
 import { useEffect, useState } from "react";
 import { api, type NodesView } from "../api";
+import { ConfirmButton } from "./ConfirmButton";
 
 export function NodesPanel() {
   const [view, setView] = useState<NodesView>({ discovered: [], paired: [] });
@@ -27,8 +28,8 @@ export function NodesPanel() {
     }
   };
 
-  const unpair = async (id: string, name: string) => {
-    if (!confirm(`解除与「${name}」的配对？它上面的 agent 将不再可用。`)) return;
+  // 解除配对由 ConfirmButton 的两步确认保护，这里不再弹出 confirm()
+  const unpair = async (id: string) => {
     await api.unpairNode(id).catch((e) => setError(String(e)));
     await load();
   };
@@ -48,7 +49,9 @@ export function NodesPanel() {
               <span className={`dot ${n.online ? "ok" : "bad"}`} />
               <b>{n.name}</b>
               <span className="kv muted">{n.address}</span>
-              <button className="btn small push-right" onClick={() => unpair(n.node_id, n.name)}>解除配对</button>
+              <span className="push-right">
+                <ConfirmButton label="解除配对" confirmLabel="确认解除" onConfirm={() => unpair(n.node_id)} />
+              </span>
             </div>
             <div className="kv">agent：{n.agents.length > 0 ? n.agents.join("、") : "无"}</div>
             {!n.online && n.last_error && <div className="kv bad-text">{n.last_error}</div>}

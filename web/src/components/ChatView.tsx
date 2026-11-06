@@ -1,25 +1,72 @@
 // 对话区：消息列表 + 输入框（Enter 发送，Shift+Enter 换行）
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message } from "../bindings/Message";
 import type { TaskRecord } from "../bindings/TaskRecord";
+import { taskStatusLine } from "../labels";
 import { ArtifactList } from "./ArtifactList";
+import { ConfirmButton } from "./ConfirmButton";
+import { TaskTicker } from "./TaskTicker";
+
+/** 对话里可以直接对任务做的操作（批准 / 取消），由 App 执行并负责刷新 */
+export type TaskActionKind = "approve" | "cancel";
+
+const EMPTY_LINES: string[] = [];
+
+/** 空会话时的示例：点击后填入输入框，而不是只当作说明文字 */
+const EXAMPLES = [
+  "你好，介绍一下你能做什么",
+  "帮我算一下 (1280 * 0.85 + 36) / 12",
+  "写一份关于本地小模型选型的简短报告，保存成 Markdown",
+  "在代码目录里写一个 Python 的斐波那契函数并附带测试",
+];
 
 /** 助手回复按 Markdown 渲染（react-markdown 默认不渲染原始 HTML） */
-const MessageRow = memo(function MessageRow({ m, task, rank, note }: { m: Message; task: TaskRecord | null; rank: number | null; note: string }) {
+const MessageRow = memo(function MessageRow(props: {
+  m: Message;
+  task: TaskRecord | null;
+  rank: number | null;
+  lines: string[];
+  busy: boolean;
+  onAct?: (kind: TaskActionKind, taskId: string) => void;
+}) {
+  const { m, task, rank, lines, busy, onAct } = props;
   return (
     <div className={`msg ${m.role}`}>
       <div className={m.role === "user" ? "bubble" : "bubble md"}>
         {m.role === "user" ? m.content : <MarkdownText text={m.content} />}
         {task && (
           <div className="task-live">
-            <div className={`task-status s-${task.status.toLowerCase()}`}>{statusLine(task, rank)}</div>
-            {note && (
-              <div className="marquee" title={note}>
-                <span>{note}</span>
+            <div className={`task-status s-${task.status.toLowerCase()}`}>{taskStatusLine(task, rank)}</div>
+            {/* 等待批准：直接在对话里给出操作，不需要去右侧面板找 */}
+            {task.status === "NEEDS_HUMAN" && !task.result && onAct && (
+              <div className="task-actions">
+                <button type="button" className="btn primary small" disabled={busy} onClick={() => onAct("approve", task.id)}>
+                  批准执行
+                </button>
+                <ConfirmButton
+                  label="取消"
+                  confirmLabel="确认取消"
+                  disabled={busy}
+                  onConfirm={() => onAct("cancel", task.id)}
+                />
               </div>
             )}
+            {isRunning(task) && onAct && (
+              <div className="task-actions">
+                <ConfirmButton
+                  label="取消任务"
+                  confirmLabel="确认取消"
+                  disabled={busy}
+                  onConfirm={() => onAct("cancel", task.id)}
+                />
+              </div>
+            )}
+            <TaskTicker lines={lines} failed={task.status === "FAILED"} />
+            {task.status === "FAILED" && task.result?.errors.length ? (
+              <div className="task-reason">{task.result.errors.join("；")}</div>
+            ) : null}
             {task.result && <ArtifactList artifacts={task.result.artifacts} summary={task.result.summary} />}
           </div>
         )}
@@ -27,12 +74,18 @@ const MessageRow = memo(function MessageRow({ m, task, rank, note }: { m: Messag
     </div>
   );
 }, (a, b) => a.m.id === b.m.id && a.m.content === b.m.content && a.m.role === b.m.role
-  && a.task?.status === b.task?.status && a.rank === b.rank && a.note === b.note
+  && a.task?.status === b.task?.status && a.rank === b.rank && a.lines === b.lines && a.busy === b.busy
+  && a.onAct === b.onAct
   && artifactStamp(a.task) === artifactStamp(b.task));
+
+/** 运行中（可取消）：待批准的任务不算运行中，它的取消按钮已由"待批准"分支提供，避免重复 */
+function isRunning(task: TaskRecord): boolean {
+  return !["COMPLETED", "FAILED", "CANCELLED", "NEEDS_HUMAN"].includes(task.status);
+}
 
 function artifactStamp(task: TaskRecord | null): string {
   if (!task?.result) return "";
-  return `${task.result.summary.length}|${task.result.artifacts.map((a) => `${a.kind}:${a.name}:${a.content.length}`).join("|")}`;
+  return `${task.result.summary.length}|${task.result.errors.length}|${task.result.artifacts.map((a) => `${a.kind}:${a.name}:${a.content.length}`).join("|")}`;
 }
 
 function queueRank(task: TaskRecord, tasks: TaskRecord[]): number | null {
@@ -42,27 +95,6 @@ function queueRank(task: TaskRecord, tasks: TaskRecord[]): number | null {
     .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
   const i = queued.findIndex((t) => t.id === task.id);
   return i < 0 ? null : i + 1;
-}
-
-function statusLine(task: TaskRecord, rank: number | null): string {
-  switch (task.status) {
-    case "QUEUED":
-      return rank ? `排队中（第 ${rank} 位）` : "排队中";
-    case "RUNNING":
-      return `${task.role} 执行中`;
-    case "VERIFYING":
-      return "审查中";
-    case "COMPLETED":
-      return "执行成功";
-    case "FAILED":
-      return "执行失败";
-    case "NEEDS_HUMAN":
-      return "待确认";
-    case "CANCELLED":
-      return "已取消";
-    default:
-      return "已接收";
-  }
 }
 
 function MarkdownText(props: { text: string }) {
@@ -78,14 +110,32 @@ function MarkdownText(props: { text: string }) {
   );
 }
 
+/** 等待回复时显示已等待的秒数；等待较久时提示可能在排队，避免用户以为卡死 */
+function Thinking() {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const t = setInterval(() => setSecs(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="bubble thinking" role="status">
+      正在等待回复…（已等 {secs} 秒）
+      {secs >= 20 && <div className="thinking-hint">模型可能正在处理其他请求，请稍候。</div>}
+    </div>
+  );
+}
+
 export function ChatView(props: {
   messages: Message[];
   onSend: (text: string) => Promise<void>;
   /** 正在流式生成的回答（最终消息到达后不再显示） */
   streaming: { id: string; text: string } | null;
   tasks?: TaskRecord[];
-  /** 每个任务最新一条事件原文，用来做走马灯 */
-  notes?: Record<string, string>;
+  /** 每个任务的进度历史（按时间顺序），用来做进度条和展开查看 */
+  notes?: Record<string, string[]>;
+  /** 批准 / 取消任务；由 App 调用接口并刷新 */
+  onTaskAction?: (kind: TaskActionKind, taskId: string) => Promise<void>;
 }) {
   const { messages, onSend } = props;
   const tasks = props.tasks ?? [];
@@ -93,7 +143,9 @@ export function ChatView(props: {
   const streaming = props.streaming && !messages.some((m) => m.id === props.streaming!.id) ? props.streaming : null;
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [busyTask, setBusyTask] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // 有新消息时滚动到底部
   useEffect(() => {
@@ -112,40 +164,64 @@ export function ChatView(props: {
     }
   };
 
+  // 通过 ref 读取最新的回调，使 act 的引用保持稳定，memo 才能跳过无关行的重渲染
+  const actionRef = useRef(props.onTaskAction);
+  actionRef.current = props.onTaskAction;
+  const act = useCallback(async (kind: TaskActionKind, taskId: string) => {
+    if (!actionRef.current) return;
+    setBusyTask(taskId);
+    try {
+      await actionRef.current(kind, taskId);
+    } finally {
+      setBusyTask(null);
+    }
+  }, []);
+
+  // 同一个任务只在它的最后一条消息旁显示状态，避免重复
+  const latest = new Map<string, string>();
+  for (const m of messages) if (m.task_id) latest.set(m.task_id, m.id);
+
   return (
     <div className="chat">
       <div className="messages">
         {messages.length === 0 && (
           <div className="empty">
             <h2>试试这些</h2>
-            <ul>
-              <li>你好，介绍一下你能做什么</li>
-              <li>帮我算一下 (1280 * 0.85 + 36) / 12</li>
-              <li>写一份关于本地小模型选型的简短报告，保存成 Markdown</li>
-              <li>在代码目录里写一个 Python 的斐波那契函数并附带测试</li>
+            <ul className="examples">
+              {EXAMPLES.map((ex) => (
+                <li key={ex}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setText(ex);
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    {ex}
+                  </button>
+                </li>
+              ))}
             </ul>
           </div>
         )}
-        {(() => {
-          const latest = new Map<string, string>();
-          for (const m of messages) if (m.task_id) latest.set(m.task_id, m.id);
-          return messages.map((m) => {
-            const task = m.task_id && latest.get(m.task_id) === m.id ? tasks.find((t) => t.id === m.task_id) ?? null : null;
-            return (
-              <MessageRow
-                key={m.id}
-                m={m}
-                task={task}
-                rank={task ? queueRank(task, tasks) : null}
-                note={task && m.task_id ? notes[m.task_id] ?? "" : ""}
-              />
-            );
-          });
-        })()}
+        {messages.map((m) => {
+          const task = m.task_id && latest.get(m.task_id) === m.id ? tasks.find((t) => t.id === m.task_id) ?? null : null;
+          return (
+            <MessageRow
+              key={m.id}
+              m={m}
+              task={task}
+              rank={task ? queueRank(task, tasks) : null}
+              lines={task && m.task_id ? notes[m.task_id] ?? EMPTY_LINES : EMPTY_LINES}
+              busy={!!task && busyTask === task.id}
+              onAct={props.onTaskAction ? act : undefined}
+            />
+          );
+        })}
         {streaming && (
           <div className="msg assistant">
             <div className="bubble md">
-              {/* 流式过程中用纯文本，避免每个片段都重新解析 Markdown；结束后由消息列表完整渲染 */}
+              {/* 流式过程中用纯文本（保留换行），避免每个片段都重新解析 Markdown；结束后由消息列表完整渲染 */}
               <span className="stream-plain">{streaming.text}</span>
               <span className="cursor">▍</span>
             </div>
@@ -153,14 +229,16 @@ export function ChatView(props: {
         )}
         {sending && !streaming && (
           <div className="msg assistant">
-            <div className="bubble thinking">思考中…</div>
+            <Thinking />
           </div>
         )}
         <div ref={bottomRef} />
       </div>
       <div className="composer">
         <textarea
+          ref={inputRef}
           value={text}
+          aria-label="输入消息"
           placeholder="输入消息，Enter 发送，Shift+Enter 换行"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {

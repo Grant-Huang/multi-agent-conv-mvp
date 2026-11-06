@@ -17,7 +17,10 @@ pub fn estimate_tokens(text: &str) -> u32 {
 
 /// 一组消息的估算 token 数（每条消息额外算 4 个 token 的角色 / 分隔开销）
 pub fn estimate_messages(messages: &[ChatMessage]) -> u32 {
-    messages.iter().map(|m| estimate_tokens(&m.content) + 4).sum()
+    messages
+        .iter()
+        .map(|m| estimate_tokens(&m.content) + 4)
+        .sum()
 }
 
 fn is_cjk(c: char) -> bool {

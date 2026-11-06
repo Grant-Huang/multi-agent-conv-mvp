@@ -15,8 +15,13 @@ use std::time::{Duration, Instant};
 
 use an_agents::util::expand_tilde;
 use an_agents::{acp, AcpAgent, AcpConfig};
-use an_core::node::{NodeError, NodeInfo, PairRequest, PairResponse, Progress, RunRequest, PROTOCOL_VERSION, SERVICE_TYPE};
-use an_core::{codes, AgentAdapter, AgentCard, AgentError, EventKind, EventPublisher, EventSink, TaskEvent};
+use an_core::node::{
+    NodeError, NodeInfo, PairRequest, PairResponse, Progress, RunRequest, PROTOCOL_VERSION,
+    SERVICE_TYPE,
+};
+use an_core::{
+    codes, AgentAdapter, AgentCard, AgentError, EventKind, EventPublisher, EventSink, TaskEvent,
+};
 use anyhow::{Context, Result};
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -76,7 +81,10 @@ pub struct NodeAcp {
 
 impl Default for NodeAcp {
     fn default() -> Self {
-        Self { auto_detect: true, agents: vec![] }
+        Self {
+            auto_detect: true,
+            agents: vec![],
+        }
     }
 }
 
@@ -110,7 +118,8 @@ impl NodeConfig {
     pub fn load(path: Option<&Path>) -> Result<Self> {
         match path {
             Some(p) => {
-                let text = std::fs::read_to_string(p).with_context(|| format!("无法读取节点配置 {}", p.display()))?;
+                let text = std::fs::read_to_string(p)
+                    .with_context(|| format!("无法读取节点配置 {}", p.display()))?;
                 toml::from_str(&text).with_context(|| format!("节点配置格式错误 {}", p.display()))
             }
             None => Ok(Self::default()),
@@ -152,7 +161,10 @@ fn load_or_create_state(dir: &Path) -> Result<Persisted> {
             }
         }
     }
-    let p = Persisted { node_id: an_core::new_id("node"), tokens: vec![] };
+    let p = Persisted {
+        node_id: an_core::new_id("node"),
+        tokens: vec![],
+    };
     save_state(dir, &p)?;
     Ok(p)
 }
@@ -179,7 +191,8 @@ struct Pairing {
 
 /// 生成 6 位数字配对码
 fn new_code() -> String {
-    let n = u32::from_le_bytes(uuid::Uuid::new_v4().as_bytes()[..4].try_into().unwrap()) % 1_000_000;
+    let n =
+        u32::from_le_bytes(uuid::Uuid::new_v4().as_bytes()[..4].try_into().unwrap()) % 1_000_000;
     format!("{n:06}")
 }
 
@@ -198,11 +211,16 @@ pub struct Node {
 
 impl Node {
     /// 创建节点：读取身份、发现本机 agent、生成配对码
-    pub fn new(cfg: &NodeConfig, diagnostics: Arc<an_observe::Diagnostics>, on_new_code: Box<dyn Fn(&str) + Send + Sync>) -> Result<Arc<Self>> {
+    pub fn new(
+        cfg: &NodeConfig,
+        diagnostics: Arc<an_observe::Diagnostics>,
+        on_new_code: Box<dyn Fn(&str) + Send + Sync>,
+    ) -> Result<Arc<Self>> {
         let state_dir = expand(&cfg.state_dir);
         let state = load_or_create_state(&state_dir)?;
         let workdir = expand(&cfg.workdir);
-        std::fs::create_dir_all(&workdir).with_context(|| format!("无法创建工作目录 {}", workdir.display()))?;
+        std::fs::create_dir_all(&workdir)
+            .with_context(|| format!("无法创建工作目录 {}", workdir.display()))?;
         let name = cfg.display_name();
 
         // 先注册自定义 agent，再注册本机已安装的预设（id 相同时自定义优先）
@@ -239,7 +257,11 @@ impl Node {
             busy: Mutex::default(),
             state: Mutex::new(state),
             state_dir,
-            pairing: Mutex::new(Pairing { code: new_code(), expires: Instant::now() + CODE_TTL, failures: 0 }),
+            pairing: Mutex::new(Pairing {
+                code: new_code(),
+                expires: Instant::now() + CODE_TTL,
+                failures: 0,
+            }),
             diagnostics,
             on_new_code,
         });
@@ -279,16 +301,28 @@ impl Node {
     }
 
     fn client_of(&self, headers: &HeaderMap) -> Option<String> {
-        let token = headers.get("authorization")?.to_str().ok()?.strip_prefix("Bearer ")?.trim();
+        let token = headers
+            .get("authorization")?
+            .to_str()
+            .ok()?
+            .strip_prefix("Bearer ")?
+            .trim();
         let st = self.state.lock().unwrap();
-        st.tokens.iter().find(|t| t.token == token).map(|t| t.client_name.clone())
+        st.tokens
+            .iter()
+            .find(|t| t.token == token)
+            .map(|t| t.client_name.clone())
     }
 
     /// 校验令牌，返回调用方名称；失败时记录日志并返回 None（调用方用 [`unauthorized`] 响应）
     fn authorize(&self, headers: &HeaderMap) -> Option<String> {
         let client = self.client_of(headers);
         if client.is_none() {
-            tracing::warn!(event = "node.auth_failed", code = codes::NODE_AUTH, "收到未授权的请求");
+            tracing::warn!(
+                event = "node.auth_failed",
+                code = codes::NODE_AUTH,
+                "收到未授权的请求"
+            );
         }
         client
     }
@@ -296,7 +330,10 @@ impl Node {
     /// 在局域网广播本节点（mDNS）。返回的守护进程需要保持存活
     pub fn advertise(&self, port: u16) -> Result<mdns_sd::ServiceDaemon> {
         let daemon = mdns_sd::ServiceDaemon::new().context("无法启动 mDNS")?;
-        let host = format!("{}.local.", an_agents::remote::node_slug(&an_core::hostname()));
+        let host = format!(
+            "{}.local.",
+            an_agents::remote::node_slug(&an_core::hostname())
+        );
         let props = [
             ("id", self.info.node_id.as_str()),
             ("name", self.info.name.as_str()),
@@ -305,12 +342,21 @@ impl Node {
             ("os", self.info.os.as_str()),
         ];
         // 实例名带上 id 前缀，避免同名机器冲突
-        let instance = format!("{} {}", self.info.name, &self.info.node_id[..13.min(self.info.node_id.len())]);
+        let instance = format!(
+            "{} {}",
+            self.info.name,
+            &self.info.node_id[..13.min(self.info.node_id.len())]
+        );
         let info = mdns_sd::ServiceInfo::new(SERVICE_TYPE, &instance, &host, "", port, &props[..])
             .context("mDNS 服务信息无效")?
             .enable_addr_auto();
         daemon.register(info).context("mDNS 注册失败")?;
-        tracing::info!(event = "node.advertised", service = SERVICE_TYPE, port, "已在局域网广播");
+        tracing::info!(
+            event = "node.advertised",
+            service = SERVICE_TYPE,
+            port,
+            "已在局域网广播"
+        );
         Ok(daemon)
     }
 
@@ -328,12 +374,23 @@ impl Node {
 
 /// 401：未配对或令牌无效
 fn unauthorized() -> Response {
-    err(StatusCode::UNAUTHORIZED, codes::NODE_AUTH, "未配对或令牌无效，请在 AgentNexus 中重新配对")
+    err(
+        StatusCode::UNAUTHORIZED,
+        codes::NODE_AUTH,
+        "未配对或令牌无效，请在 AgentNexus 中重新配对",
+    )
 }
 
 /// 统一的错误响应
 fn err(status: StatusCode, code: &str, message: impl Into<String>) -> Response {
-    (status, Json(NodeError { code: code.into(), message: message.into() })).into_response()
+    (
+        status,
+        Json(NodeError {
+            code: code.into(),
+            message: message.into(),
+        }),
+    )
+        .into_response()
 }
 
 type St = State<Arc<Node>>;
@@ -346,30 +403,55 @@ async fn pair(State(node): St, Json(req): Json<PairRequest>) -> Response {
     let mut p = node.pairing.lock().unwrap();
     if Instant::now() >= p.expires {
         node.rotate_code(&mut p, "配对码已过期，已更换");
-        return err(StatusCode::UNAUTHORIZED, codes::NODE_PAIR, "配对码已过期，请使用节点上显示的新配对码");
+        return err(
+            StatusCode::UNAUTHORIZED,
+            codes::NODE_PAIR,
+            "配对码已过期，请使用节点上显示的新配对码",
+        );
     }
     if req.code.trim() != p.code {
         p.failures += 1;
         tracing::warn!(event = "node.pair_failed", code = codes::NODE_PAIR, client = %req.client_name, failures = p.failures, "配对码错误");
         if p.failures >= MAX_PAIR_FAILURES {
             node.rotate_code(&mut p, "配对码输错次数过多，已更换");
-            return err(StatusCode::UNAUTHORIZED, codes::NODE_PAIR, "配对码输错次数过多，节点已更换配对码");
+            return err(
+                StatusCode::UNAUTHORIZED,
+                codes::NODE_PAIR,
+                "配对码输错次数过多，节点已更换配对码",
+            );
         }
         return err(StatusCode::UNAUTHORIZED, codes::NODE_PAIR, "配对码错误");
     }
     // 配对成功：发放令牌；配对码一次性使用，立即更换
-    let token = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+    let token = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
     {
         let mut st = node.state.lock().unwrap();
-        st.tokens.push(TokenRecord { token: token.clone(), client_name: req.client_name.clone(), created_at: an_core::now() });
+        st.tokens.push(TokenRecord {
+            token: token.clone(),
+            client_name: req.client_name.clone(),
+            created_at: an_core::now(),
+        });
         if let Err(e) = save_state(&node.state_dir, &st) {
             tracing::error!(event = "node.state_save_failed", error = %e);
-            return err(StatusCode::INTERNAL_SERVER_ERROR, codes::NODE_PAIR, format!("保存令牌失败：{e:#}"));
+            return err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                codes::NODE_PAIR,
+                format!("保存令牌失败：{e:#}"),
+            );
         }
     }
     tracing::info!(event = "node.paired", client = %req.client_name, "配对成功");
     node.rotate_code(&mut p, "配对码已使用，已更换");
-    Json(PairResponse { token, node_id: node.info.node_id.clone(), name: node.info.name.clone() }).into_response()
+    Json(PairResponse {
+        token,
+        node_id: node.info.node_id.clone(),
+        name: node.info.name.clone(),
+    })
+    .into_response()
 }
 
 async fn agents(State(node): St, headers: HeaderMap) -> Response {
@@ -399,7 +481,9 @@ struct ChannelPublisher(mpsc::UnboundedSender<Event>);
 impl EventPublisher for ChannelPublisher {
     fn publish(&self, event: TaskEvent) {
         if event.kind == EventKind::Progress {
-            if let Ok(e) = Event::default().event("progress").json_data(Progress { message: event.message }) {
+            if let Ok(e) = Event::default().event("progress").json_data(Progress {
+                message: event.message,
+            }) {
                 let _ = self.0.send(e);
             }
         }
@@ -439,12 +523,25 @@ async fn run(State(node): St, headers: HeaderMap, Json(req): Json<RunRequest>) -
     let Some(client) = node.authorize(&headers) else {
         return unauthorized();
     };
-    let Some(agent) = node.agents.iter().find(|a| a.card().id == req.agent_id).cloned() else {
-        return err(StatusCode::NOT_FOUND, codes::NODE_AGENT_NOT_FOUND, format!("节点上没有 agent `{}`", req.agent_id));
+    let Some(agent) = node
+        .agents
+        .iter()
+        .find(|a| a.card().id == req.agent_id)
+        .cloned()
+    else {
+        return err(
+            StatusCode::NOT_FOUND,
+            codes::NODE_AGENT_NOT_FOUND,
+            format!("节点上没有 agent `{}`", req.agent_id),
+        );
     };
     let card = agent.card().clone();
     if !card.enabled {
-        return err(StatusCode::CONFLICT, codes::AGENT_NOT_INSTALLED, card.disabled_reason.unwrap_or_default());
+        return err(
+            StatusCode::CONFLICT,
+            codes::AGENT_NOT_INSTALLED,
+            card.disabled_reason.unwrap_or_default(),
+        );
     }
     // 并发上限：AgentNexus 侧已经按 max_concurrent 分配，这里再保护一次（例如多个 AgentNexus 共用一个节点）
     {
@@ -452,17 +549,28 @@ async fn run(State(node): St, headers: HeaderMap, Json(req): Json<RunRequest>) -
         let n = busy.entry(card.id.clone()).or_insert(0);
         if *n >= card.max_concurrent {
             tracing::warn!(event = "node.busy", code = codes::NODE_BUSY, agent_id = %card.id, "agent 已达到并发上限");
-            return err(StatusCode::CONFLICT, codes::NODE_BUSY, format!("{} 正在执行 {} 个任务，已达上限", card.name, n));
+            return err(
+                StatusCode::CONFLICT,
+                codes::NODE_BUSY,
+                format!("{} 正在执行 {} 个任务，已达上限", card.name, n),
+            );
         }
         *n += 1;
     }
-    let guard = BusyGuard { node: node.clone(), agent_id: card.id.clone() };
+    let guard = BusyGuard {
+        node: node.clone(),
+        agent_id: card.id.clone(),
+    };
 
     let task = req.task;
     let task_id = task.task_id.clone();
     tracing::info!(event = "node.run_start", task_id = %task_id, agent_id = %card.id, client = %client);
     let (tx, rx) = mpsc::unbounded_channel::<Event>();
-    let sink = EventSink::new(Arc::new(ChannelPublisher(tx.clone())), &task.conversation_id, &task.task_id);
+    let sink = EventSink::new(
+        Arc::new(ChannelPublisher(tx.clone())),
+        &task.conversation_id,
+        &task.task_id,
+    );
     let started = Instant::now();
     let tid = task_id.clone();
     let handle = tokio::spawn(async move {
@@ -477,7 +585,9 @@ async fn run(State(node): St, headers: HeaderMap, Json(req): Json<RunRequest>) -
                     None => (codes::AGENT_RUNTIME.to_string(), format!("{e:#}")),
                 };
                 tracing::error!(event = "node.run_failed", code = %code, task_id = %tid, agent_id = %card.id, error = %message);
-                Event::default().event("error").json_data(NodeError { code, message })
+                Event::default()
+                    .event("error")
+                    .json_data(NodeError { code, message })
             }
         };
         if let Ok(ev) = event {
@@ -490,14 +600,19 @@ async fn run(State(node): St, headers: HeaderMap, Json(req): Json<RunRequest>) -
         let _keep = (&guard, &abort);
         Ok::<_, Infallible>(e)
     });
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))).into_response()
+    Sse::new(stream)
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+        .into_response()
 }
 
 /// 本机在局域网中的 IP（用于显示地址）。通过"连接"一个外部地址让系统选出网卡，不会真的发送数据
 pub fn lan_ip() -> Option<std::net::IpAddr> {
     let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     s.connect("192.0.2.1:9").ok()?; // TEST-NET 地址，不会产生流量
-    s.local_addr().ok().map(|a| a.ip()).filter(|ip| !ip.is_unspecified())
+    s.local_addr()
+        .ok()
+        .map(|a| a.ip())
+        .filter(|ip| !ip.is_unspecified())
 }
 
 #[cfg(test)]

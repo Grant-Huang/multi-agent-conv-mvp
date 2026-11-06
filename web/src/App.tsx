@@ -6,11 +6,43 @@ import { createDeltaBuffer, createEventPump, REFRESH_INTERVAL_MS } from "./refre
 import type { Conversation } from "./bindings/Conversation";
 import type { Message } from "./bindings/Message";
 import type { TaskRecord } from "./bindings/TaskRecord";
-import { ChatView } from "./components/ChatView";
+import { ChatView, type TaskActionKind } from "./components/ChatView";
 import { RouteLogPanel } from "./components/RouteLogPanel";
 import { TaskPanel } from "./components/TaskPanel";
 import { NodesPanel } from "./components/NodesPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+import { roleLabel } from "./labels";
+
+/** 每个任务保留的进度条目数，超过后丢弃最早的 */
+const MAX_PROGRESS_LINES = 30;
+/** 开发者模式的本地开关键（只是界面偏好，不影响数据） */
+const DEV_MODE_KEY = "agentnexus.devMode";
+
+type SideTab = "tasks" | "nodes" | "diag" | "logs";
+
+/** 追加一条进度：与上一条相同则忽略，超出上限丢弃最早的 */
+function appendLine(list: string[], msg: string): string[] {
+  const text = msg.trim();
+  if (!text || list[list.length - 1] === text) return list;
+  return [...list, text].slice(-MAX_PROGRESS_LINES);
+}
+
+/** 读取开发者模式开关；localStorage 不可用时（隐私窗口等）静默退化为关闭 */
+function readDevMode(): boolean {
+  try {
+    return localStorage.getItem(DEV_MODE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeDevMode(on: boolean) {
+  try {
+    localStorage.setItem(DEV_MODE_KEY, on ? "1" : "0");
+  } catch {
+    /* 忽略：只是偏好设置 */
+  }
+}
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -18,7 +50,11 @@ export default function App() {
   const [current, setCurrent] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
-  const [sideTab, setSideTab] = useState<"tasks" | "nodes" | "diag" | "logs">("tasks");
+  const [sideTab, setSideTab] = useState<SideTab>("tasks");
+  // 开发者模式：显示诊断和路由日志页签；默认关闭，面向普通用户
+  const [devMode, setDevMode] = useState<boolean>(readDevMode);
+  // 窄屏下会话列表是抽屉，这里记录是否展开
+  const [navOpen, setNavOpen] = useState(false);
   // 只在状态变化 / 助手消息时递增，而且做了节流；诊断页和路由日志用它刷新
   const [panelTick, setPanelTick] = useState(0);
   // 最新一条任务事件，展开的任务卡片会把它追加到时间线上
@@ -26,7 +62,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   // 正在流式生成的回答：id 等于最终消息的 id，最终消息到达后自动隐藏
   const [streaming, setStreaming] = useState<{ id: string; text: string } | null>(null);
-  const [notes, setNotes] = useState<Record<string, string>>({});
+  // 每个任务的进度历史（时间顺序）：进度条显示最后一条，展开时看全部
+  const [notes, setNotes] = useState<Record<string, string[]>>({});
   const noted = useRef(new Set<string>());
 
   // 健康检查：启动时 + 每 10 秒（节点配对、上线、离线后左下角能及时更新）
@@ -94,7 +131,7 @@ export default function App() {
         setIncoming(ev);
         if (ev.task_id && ev.message.trim() && ev.kind !== "assistant_message") {
           const id = ev.task_id;
-          setNotes((n) => ({ ...n, [id]: ev.message }));
+          setNotes((n) => ({ ...n, [id]: appendLine(n[id] ?? [], ev.message) }));
         }
         if (ev.kind === "status_changed" && ev.task_id && ev.status) {
           const id = ev.task_id;
@@ -115,7 +152,7 @@ export default function App() {
     });
   }, [current, refreshConversation]);
 
-  // 已经结束的任务不会再推事件：打开会话时用最后一条事件当作走马灯
+  // 切换会话时清空进度历史，之后按需重新取回
   useEffect(() => {
     noted.current = new Set();
     setNotes({});
@@ -127,9 +164,12 @@ export default function App() {
       if (noted.current.has(id)) continue;
       noted.current.add(id);
       api.task(id).then((d) => {
-        const last = [...d.events].reverse().find((e) => e.kind !== "assistant_message" && e.message.trim());
-        if (!last) return;
-        setNotes((n) => (n[id] ? n : { ...n, [id]: last.message }));
+        // 已经结束的任务不会再推事件，这里一次性取回全部进度作为历史
+        const lines = d.events
+          .filter((e) => e.kind !== "assistant_message")
+          .reduce<string[]>((list, e) => appendLine(list, e.message), []);
+        if (lines.length === 0) return;
+        setNotes((n) => (n[id] ? n : { ...n, [id]: lines }));
       }).catch(() => {});
     }
   }, [messages]);
@@ -143,6 +183,12 @@ export default function App() {
     const c = await api.createConversation();
     await loadConversations();
     setCurrent(c.id);
+    setNavOpen(false);
+  };
+
+  const selectConversation = (id: string) => {
+    setCurrent(id);
+    setNavOpen(false);
   };
 
   /** 发送消息：先乐观地显示用户消息，等后端返回后再整体刷新 */
@@ -174,9 +220,37 @@ export default function App() {
     }
   };
 
+  /**
+   * 批准 / 取消任务：对话区和任务面板共用这一个入口。
+   * 失败时显示在顶部错误栏（行内），不使用 alert；成功后刷新会话，让两处同时更新。
+   */
+  const taskAction = useCallback(async (kind: TaskActionKind, taskId: string) => {
+    try {
+      if (kind === "approve") await api.approve(taskId);
+      else await api.cancel(taskId);
+      setError(null);
+    } catch (e) {
+      setError(`${kind === "approve" ? "批准" : "取消"}失败：${e}`);
+    }
+    const cid = currentRef.current;
+    if (cid) refreshConversation(cid).catch(() => {});
+  }, [refreshConversation]);
+
+  // 开发者模式关闭时，若停留在诊断 / 路由日志页签，显示任务页签（不改变已保存的选择）
+  const activeTab: SideTab = devMode || (sideTab !== "diag" && sideTab !== "logs") ? sideTab : "tasks";
+  const toggleDevMode = () => {
+    const next = !devMode;
+    setDevMode(next);
+    writeDevMode(next);
+    if (!next) setSideTab("tasks");
+  };
+  const currentTitle = conversations.find((c) => c.id === current)?.title ?? "新会话";
+
   return (
-    <div className="layout">
-      <aside className="sidebar">
+    <div className={`layout ${navOpen ? "nav-open" : ""}`}>
+      {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />}
+
+      <aside className="sidebar" aria-label="会话列表">
         <div className="brand">AgentNexus <span>MVP</span></div>
         <button className="btn primary" onClick={newConversation}>＋ 新会话</button>
         <nav className="conv-list">
@@ -184,7 +258,7 @@ export default function App() {
             <button
               key={c.id}
               className={`conv-item ${c.id === current ? "active" : ""}`}
-              onClick={() => setCurrent(c.id)}
+              onClick={() => selectConversation(c.id)}
               title={c.title}
             >
               {c.title}
@@ -195,30 +269,54 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {error && <div className="error-bar" onClick={() => setError(null)}>{error}（点击关闭）</div>}
-        <ChatView messages={messages} tasks={tasks} notes={notes} onSend={send} streaming={streaming} />
+        {/* 窄屏下左栏变成抽屉，这里提供入口；宽屏下隐藏 */}
+        <header className="mobile-bar">
+          <button type="button" className="btn small" aria-expanded={navOpen} onClick={() => setNavOpen((v) => !v)}>
+            ☰ 会话
+          </button>
+          <span className="mobile-title">{currentTitle}</span>
+        </header>
+        {error && (
+          <div className="error-bar" role="alert" onClick={() => setError(null)}>
+            {error}（点击关闭）
+          </div>
+        )}
+        <ChatView
+          messages={messages}
+          tasks={tasks}
+          notes={notes}
+          onSend={send}
+          onTaskAction={taskAction}
+          streaming={streaming}
+        />
       </main>
 
-      <aside className="side">
-        <div className="tabs">
-          <button className={sideTab === "tasks" ? "active" : ""} onClick={() => setSideTab("tasks")}>
-            任务 {tasks.length > 0 && <span className="count">{tasks.length}</span>}
-          </button>
-          <button className={sideTab === "nodes" ? "active" : ""} onClick={() => setSideTab("nodes")}>节点</button>
-          <button className={sideTab === "diag" ? "active" : ""} onClick={() => setSideTab("diag")}>诊断</button>
-          <button className={sideTab === "logs" ? "active" : ""} onClick={() => setSideTab("logs")}>路由日志</button>
+      <aside className="side" aria-label="任务与状态">
+        <div className="tabs" role="tablist">
+          <TabButton id="tasks" label="任务" active={activeTab} onSelect={setSideTab}>
+            {tasks.length > 0 && <span className="count">{tasks.length}</span>}
+          </TabButton>
+          <TabButton id="nodes" label="节点" active={activeTab} onSelect={setSideTab} />
+          {devMode && <TabButton id="diag" label="诊断" active={activeTab} onSelect={setSideTab} />}
+          {devMode && <TabButton id="logs" label="路由日志" active={activeTab} onSelect={setSideTab} />}
         </div>
-        {sideTab === "tasks" && (
+        {activeTab === "tasks" && (
           <TaskPanel
             tasks={tasks}
             incoming={incoming}
-            messageIds={Object.fromEntries(messages.filter((m) => m.role === "user" && m.task_id).map((m) => [m.task_id as string, m.id]))}
             onChanged={() => current && refreshConversation(current)}
+            onTaskAction={taskAction}
+            messageIds={Object.fromEntries(messages.filter((m) => m.role === "user" && m.task_id).map((m) => [m.task_id as string, m.id]))}
           />
         )}
-        {sideTab === "nodes" && <NodesPanel />}
-        {sideTab === "diag" && <DiagnosticsPanel refreshTick={panelTick} />}
-        {sideTab === "logs" && <RouteLogPanel refreshTick={panelTick} />}
+        {activeTab === "nodes" && <NodesPanel />}
+        {activeTab === "diag" && <DiagnosticsPanel refreshTick={panelTick} />}
+        {activeTab === "logs" && <RouteLogPanel refreshTick={panelTick} />}
+        <div className="side-footer">
+          <button type="button" className="dev-toggle" aria-pressed={devMode} onClick={toggleDevMode}>
+            开发者模式：{devMode ? "开" : "关"}
+          </button>
+        </div>
       </aside>
     </div>
   );
@@ -227,12 +325,12 @@ export default function App() {
 /** 接入方式的显示名 */
 const KIND_LABEL: Record<string, string> = { builtin: "内置", cli: "CLI", acp: "ACP", node: "节点" };
 
-/** 左下角：LLM 连接状态和 Agent 可用状态 */
+/** 左下角：LLM 连接状态和 Agent 可用状态。不可用的原因直接显示，不依赖悬停提示 */
 function HealthBox({ health }: { health: Health | null }) {
   const [open, setOpen] = useState(false);
   if (!health) return <div className="health"><span className="dot bad" /> 后端未连接</div>;
   return (
-    <div className="health" onClick={() => setOpen(!open)} title="点击展开">
+    <div className="health">
       {(health.backends ?? []).length === 0 ? (
         <div>
           <span className={`dot ${health.llm.ok ? "ok" : "bad"}`} />
@@ -247,12 +345,13 @@ function HealthBox({ health }: { health: Health | null }) {
           </div>
         ))
       )}
-      {/* 每个 agent 一行：名称 + 角色 + 接入方式；不可用时悬停可看原因 */}
+      {/* 每个 agent 一行：名称 + 角色 + 接入方式；不可用时直接写出原因 */}
       {health.agents.map((a) => (
-        <div key={a.id} title={a.disabled_reason ?? a.description}>
+        <div key={a.id} className="agent-row">
           <span className={`dot ${a.enabled ? "ok" : "bad"}`} />
           {a.name}
-          <span className="agent-meta">{a.role} · {KIND_LABEL[a.kind] ?? a.kind}</span>
+          <span className="agent-meta">{roleLabel(a.role)} · {KIND_LABEL[a.kind] ?? a.kind}</span>
+          {!a.enabled && a.disabled_reason && <div className="bad-text agent-reason">{a.disabled_reason}</div>}
         </div>
       ))}
       {open && (
@@ -266,6 +365,31 @@ function HealthBox({ health }: { health: Health | null }) {
           <div>结构化：{health.llm.structured_mode}</div>
         </div>
       )}
+      <button type="button" className="health-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {open ? "收起详情 ▴" : "连接详情 ▾"}
+      </button>
     </div>
+  );
+}
+
+/** 右侧页签按钮：统一的 tab 语义，供屏幕阅读器和键盘使用 */
+function TabButton(props: {
+  id: SideTab;
+  label: string;
+  active: SideTab;
+  onSelect: (id: SideTab) => void;
+  children?: React.ReactNode;
+}) {
+  const selected = props.active === props.id;
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      className={selected ? "active" : ""}
+      onClick={() => props.onSelect(props.id)}
+    >
+      {props.label} {props.children}
+    </button>
   );
 }

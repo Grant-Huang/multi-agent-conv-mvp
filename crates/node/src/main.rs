@@ -28,7 +28,9 @@ fn parse_args() -> Result<NodeConfig> {
                 Some(v) => overrides.push((a.trim_start_matches("--").into(), v)),
                 None => bail!("{a} 后面需要一个值"),
             },
-            other if !other.starts_with('-') && config_path.is_none() => config_path = Some(other.into()),
+            other if !other.starts_with('-') && config_path.is_none() => {
+                config_path = Some(other.into())
+            }
             other => bail!("无法识别的参数 {other}，用 --help 查看用法"),
         }
     }
@@ -54,11 +56,24 @@ fn pretty_code(code: &str) -> String {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cfg = parse_args()?;
-    let log_dir = (!cfg.log_dir.is_empty()).then(|| PathBuf::from(an_agents::util::expand_tilde(&cfg.log_dir)));
-    let (diagnostics, _guard) = an_observe::init("an-node", &an_observe::LogConfig { dir: log_dir.clone(), level: "info".into() });
+    let log_dir = (!cfg.log_dir.is_empty())
+        .then(|| PathBuf::from(an_agents::util::expand_tilde(&cfg.log_dir)));
+    let (diagnostics, _guard) = an_observe::init(
+        "an-node",
+        &an_observe::LogConfig {
+            dir: log_dir.clone(),
+            level: "info".into(),
+        },
+    );
 
-    let node = Node::new(&cfg, diagnostics, Box::new(|code| println!("\n新的配对码：{}（10 分钟内有效）\n", pretty_code(code))))?;
-    let listener = tokio::net::TcpListener::bind((cfg.bind.as_str(), cfg.port)).await.map_err(|e| anyhow::anyhow!("无法监听 {}:{}：{e}", cfg.bind, cfg.port))?;
+    let node = Node::new(
+        &cfg,
+        diagnostics,
+        Box::new(|code| println!("\n新的配对码：{}（10 分钟内有效）\n", pretty_code(code))),
+    )?;
+    let listener = tokio::net::TcpListener::bind((cfg.bind.as_str(), cfg.port))
+        .await
+        .map_err(|e| anyhow::anyhow!("无法监听 {}:{}：{e}", cfg.bind, cfg.port))?;
     let port = listener.local_addr()?.port();
 
     // 局域网广播（失败不退出：用户仍可以按地址手动添加）
@@ -86,18 +101,38 @@ async fn main() -> Result<()> {
             None => println!(" 地址：http://<本机 IP>:{port}"),
         }
     }
-    println!(" 局域网自动发现：{}", if _mdns.is_some() { "已开启" } else { "未开启（需在 AgentNexus 中按地址添加）" });
+    println!(
+        " 局域网自动发现：{}",
+        if _mdns.is_some() {
+            "已开启"
+        } else {
+            "未开启（需在 AgentNexus 中按地址添加）"
+        }
+    );
     let cards = node.agents();
     if cards.is_empty() {
         println!(" agent：没有发现。安装 opencode / hermes / pi-acp，或在 node.toml 中添加 [[acp.agents]]");
     } else {
         println!(" agent：");
         for c in &cards {
-            let status = if c.enabled { "✓".to_string() } else { format!("✗ {}", c.disabled_reason.clone().unwrap_or_default()) };
-            println!("   {status} {}（{}，角色 {}，并发 {}）", c.id, c.name, c.role.as_str(), c.max_concurrent);
+            let status = if c.enabled {
+                "✓".to_string()
+            } else {
+                format!("✗ {}", c.disabled_reason.clone().unwrap_or_default())
+            };
+            println!(
+                "   {status} {}（{}，角色 {}，并发 {}）",
+                c.id,
+                c.name,
+                c.role.as_str(),
+                c.max_concurrent
+            );
         }
     }
-    println!(" 配对码：{}（10 分钟内有效，在 AgentNexus 的「节点」页输入）", pretty_code(&node.pairing_code()));
+    println!(
+        " 配对码：{}（10 分钟内有效，在 AgentNexus 的「节点」页输入）",
+        pretty_code(&node.pairing_code())
+    );
     if let Some(d) = &log_dir {
         println!(" 日志：{}", d.display());
     }

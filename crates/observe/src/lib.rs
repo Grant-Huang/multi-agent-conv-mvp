@@ -53,7 +53,10 @@ pub struct Diagnostics {
 
 impl Diagnostics {
     pub fn new(capacity: usize) -> Arc<Self> {
-        Arc::new(Self { buf: Mutex::new(VecDeque::with_capacity(capacity)), capacity })
+        Arc::new(Self {
+            buf: Mutex::new(VecDeque::with_capacity(capacity)),
+            capacity,
+        })
     }
 
     fn push(&self, p: Problem) {
@@ -75,7 +78,8 @@ impl Diagnostics {
         let b = self.buf.lock().unwrap_or_else(|e| e.into_inner());
         let mut m = BTreeMap::new();
         for p in b.iter() {
-            *m.entry(p.code.clone().unwrap_or_else(|| "（无错误码）".into())).or_insert(0) += 1;
+            *m.entry(p.code.clone().unwrap_or_else(|| "（无错误码）".into()))
+                .or_insert(0) += 1;
         }
         m
     }
@@ -93,7 +97,8 @@ impl Visit for FieldCollector {
         if field.name() == "message" {
             self.message = value.to_string();
         } else {
-            self.fields.insert(field.name().to_string(), value.to_string());
+            self.fields
+                .insert(field.name().to_string(), value.to_string());
         }
     }
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
@@ -102,7 +107,8 @@ impl Visit for FieldCollector {
             self.message = v;
         } else {
             // Debug 格式的字符串带引号，去掉
-            self.fields.insert(field.name().to_string(), v.trim_matches('"').to_string());
+            self.fields
+                .insert(field.name().to_string(), v.trim_matches('"').to_string());
         }
     }
 }
@@ -156,23 +162,38 @@ pub fn init(app: &str, cfg: &LogConfig) -> (Arc<Diagnostics>, LogGuard) {
         return (d.clone(), LogGuard { _file: None });
     }
     let diagnostics = GLOBAL.get_or_init(|| Diagnostics::new(500)).clone();
-    let filter = || EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(format!("{},tower_http=warn,mdns_sd=warn", cfg.level)));
+    let filter = || {
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            EnvFilter::new(format!("{},tower_http=warn,mdns_sd=warn", cfg.level))
+        })
+    };
 
-    let console = tracing_subscriber::fmt::layer().with_target(false).with_filter(filter());
+    let console = tracing_subscriber::fmt::layer()
+        .with_target(false)
+        .with_filter(filter());
     let (file_layer, guard) = match &cfg.dir {
         Some(dir) => {
             let _ = std::fs::create_dir_all(dir);
             let appender = tracing_appender::rolling::daily(dir, format!("{app}.jsonl"));
             let (writer, guard) = tracing_appender::non_blocking(appender);
             // flatten_event：字段直接放在顶层，方便 jq / 脚本过滤，例如 jq 'select(.code != null)'
-            let layer = tracing_subscriber::fmt::layer().json().flatten_event(true).with_current_span(false).with_writer(writer).with_filter(filter());
+            let layer = tracing_subscriber::fmt::layer()
+                .json()
+                .flatten_event(true)
+                .with_current_span(false)
+                .with_writer(writer)
+                .with_filter(filter());
             (Some(layer), Some(guard))
         }
         None => (None, None),
     };
 
     // 其他代码（例如测试框架）可能已经设置过全局日志，忽略"已初始化"的错误
-    let _ = tracing_subscriber::registry().with(console).with(file_layer).with(DiagnosticsLayer(diagnostics.clone())).try_init();
+    let _ = tracing_subscriber::registry()
+        .with(console)
+        .with(file_layer)
+        .with(DiagnosticsLayer(diagnostics.clone()))
+        .try_init();
     (diagnostics, LogGuard { _file: guard })
 }
 
@@ -191,15 +212,28 @@ mod tests {
         let sub = tracing_subscriber::registry().with(DiagnosticsLayer(d.clone()));
         tracing::subscriber::with_default(sub, || {
             tracing::info!(event = "x.ok", "不会被记录");
-            tracing::warn!(event = "pool.wait", code = "W_POOL_WAIT", task_id = "t1", "等待空闲 agent");
-            tracing::error!(event = "acp.handshake_failed", code = "E_ACP_HANDSHAKE", agent_id = "mock", "握手失败");
+            tracing::warn!(
+                event = "pool.wait",
+                code = "W_POOL_WAIT",
+                task_id = "t1",
+                "等待空闲 agent"
+            );
+            tracing::error!(
+                event = "acp.handshake_failed",
+                code = "E_ACP_HANDSHAKE",
+                agent_id = "mock",
+                "握手失败"
+            );
             tracing::error!(event = "e3", code = "E_X", "第三条");
         });
         let r = d.recent(10);
         assert_eq!(r.len(), 2, "容量为 2，最旧的被丢弃");
         assert_eq!(r[0].code.as_deref(), Some("E_X"));
         assert_eq!(r[1].event.as_deref(), Some("acp.handshake_failed"));
-        assert_eq!(r[1].fields.get("agent_id").map(String::as_str), Some("mock"));
+        assert_eq!(
+            r[1].fields.get("agent_id").map(String::as_str),
+            Some("mock")
+        );
         assert_eq!(r[1].message, "握手失败");
         assert_eq!(d.counts_by_code().get("E_ACP_HANDSHAKE"), Some(&1));
     }

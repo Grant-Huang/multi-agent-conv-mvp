@@ -34,7 +34,12 @@ impl ConvLocks {
         };
         let started = std::time::Instant::now();
         let guard = entry.lock_owned().await;
-        ConvGuard { locks: self, id: conversation_id.to_string(), guard: Some(guard), waited_ms: started.elapsed().as_millis() as u64 }
+        ConvGuard {
+            locks: self,
+            id: conversation_id.to_string(),
+            guard: Some(guard),
+            waited_ms: started.elapsed().as_millis() as u64,
+        }
     }
 
     /// 当前有锁记录的会话数（测试用，确认不会无限增长）
@@ -85,7 +90,10 @@ mod tests {
         for h in handles {
             waits.push(h.await.unwrap());
         }
-        assert_eq!(*log.lock().unwrap(), ["start0", "end0", "start1", "end1", "start2", "end2"]);
+        assert_eq!(
+            *log.lock().unwrap(),
+            ["start0", "end0", "start1", "end1", "start2", "end2"]
+        );
         assert!(waits.iter().all(|w| *w > 0), "{waits:?}");
     }
 

@@ -33,7 +33,11 @@ pub fn parse_slots(v: &Value) -> Option<Vec<ServerSlot>> {
         v.as_array()?
             .iter()
             .filter_map(|s| {
-                Some(ServerSlot { id: s.get("id")?.as_u64()? as u32, busy: s["is_processing"].as_bool().unwrap_or(false), tasks: s["id_task"].as_u64().unwrap_or(0) })
+                Some(ServerSlot {
+                    id: s.get("id")?.as_u64()? as u32,
+                    busy: s["is_processing"].as_bool().unwrap_or(false),
+                    tasks: s["id_task"].as_u64().unwrap_or(0),
+                })
             })
             .collect(),
     )
@@ -49,7 +53,11 @@ pub fn metric(text: &str, name: &str) -> Option<f64> {
         let mut parts = line.split_whitespace();
         let key = parts.next()?;
         let short = key.rsplit(':').next().unwrap_or(key);
-        if short == name { parts.next()?.parse().ok() } else { None }
+        if short == name {
+            parts.next()?.parse().ok()
+        } else {
+            None
+        }
     })
 }
 
@@ -73,7 +81,21 @@ mod tests {
             {"id": 2, "is_processing": true, "id_task": 7}
         ]);
         let s = parse_slots(&v).unwrap();
-        assert_eq!(s, vec![ServerSlot { id: 0, busy: false, tasks: 4 }, ServerSlot { id: 2, busy: true, tasks: 7 }]);
+        assert_eq!(
+            s,
+            vec![
+                ServerSlot {
+                    id: 0,
+                    busy: false,
+                    tasks: 4
+                },
+                ServerSlot {
+                    id: 2,
+                    busy: true,
+                    tasks: 7
+                }
+            ]
+        );
         assert!(parse_slots(&json!({})).is_none());
     }
 

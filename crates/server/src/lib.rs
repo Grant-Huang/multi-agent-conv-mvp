@@ -63,8 +63,14 @@ pub fn api(rt: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/agents", get(agents))
-        .route("/api/conversations", get(list_conversations).post(create_conversation))
-        .route("/api/conversations/{id}/messages", get(list_messages).post(send_message))
+        .route(
+            "/api/conversations",
+            get(list_conversations).post(create_conversation),
+        )
+        .route(
+            "/api/conversations/{id}/messages",
+            get(list_messages).post(send_message),
+        )
         .route("/api/tasks", get(list_tasks))
         .route("/api/tasks/{id}", get(get_task))
         .route("/api/tasks/{id}/cancel", post(cancel_task))
@@ -106,8 +112,13 @@ struct NewConversation {
     title: Option<String>,
 }
 
-async fn create_conversation(State(rt): State<AppState>, body: Option<Json<NewConversation>>) -> ApiResult<Conversation> {
-    let title = body.and_then(|b| b.0.title).unwrap_or_else(|| "新会话".into());
+async fn create_conversation(
+    State(rt): State<AppState>,
+    body: Option<Json<NewConversation>>,
+) -> ApiResult<Conversation> {
+    let title = body
+        .and_then(|b| b.0.title)
+        .unwrap_or_else(|| "新会话".into());
     Ok(Json(rt.store.create_conversation(&title)?))
 }
 
@@ -115,8 +126,13 @@ async fn list_conversations(State(rt): State<AppState>) -> ApiResult<Vec<Convers
     Ok(Json(rt.store.list_conversations()?))
 }
 
-async fn list_messages(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<Vec<an_core::Message>> {
-    rt.store.get_conversation(&id)?.ok_or_else(|| not_found("会话"))?;
+async fn list_messages(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Vec<an_core::Message>> {
+    rt.store
+        .get_conversation(&id)?
+        .ok_or_else(|| not_found("会话"))?;
     Ok(Json(rt.store.list_messages(&id, None)?))
 }
 
@@ -125,12 +141,22 @@ struct SendMessage {
     text: String,
 }
 
-async fn send_message(State(rt): State<AppState>, Path(id): Path<String>, Json(body): Json<SendMessage>) -> ApiResult<an_runtime::conversation::TurnOutcome> {
+async fn send_message(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<SendMessage>,
+) -> ApiResult<an_runtime::conversation::TurnOutcome> {
     if body.text.trim().is_empty() {
         return Err(AppError(StatusCode::BAD_REQUEST, "消息不能为空".into()));
     }
-    rt.store.get_conversation(&id)?.ok_or_else(|| not_found("会话"))?;
-    Ok(Json(rt.conversation.handle_message(&id, body.text.trim()).await?))
+    rt.store
+        .get_conversation(&id)?
+        .ok_or_else(|| not_found("会话"))?;
+    Ok(Json(
+        rt.conversation
+            .handle_message(&id, body.text.trim())
+            .await?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -138,7 +164,10 @@ struct TaskQuery {
     conversation_id: Option<String>,
 }
 
-async fn list_tasks(State(rt): State<AppState>, Query(q): Query<TaskQuery>) -> ApiResult<Vec<TaskRecord>> {
+async fn list_tasks(
+    State(rt): State<AppState>,
+    Query(q): Query<TaskQuery>,
+) -> ApiResult<Vec<TaskRecord>> {
     Ok(Json(rt.store.list_tasks(q.conversation_id.as_deref())?))
 }
 
@@ -154,14 +183,24 @@ struct AfterQuery {
     after: Option<String>,
 }
 
-async fn get_task(State(rt): State<AppState>, Path(id): Path<String>, Query(q): Query<AfterQuery>) -> ApiResult<TaskDetail> {
+async fn get_task(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Query(q): Query<AfterQuery>,
+) -> ApiResult<TaskDetail> {
     let task = rt.store.get_task(&id)?.ok_or_else(|| not_found("任务"))?;
     // 状态行已经落库，对应的事件可能还在写队列里。先等队列写完，详情里的时间线才完整。
     rt.store.flush_events();
-    Ok(Json(TaskDetail { events: rt.store.list_events_after(&id, q.after.as_deref())?, task }))
+    Ok(Json(TaskDetail {
+        events: rt.store.list_events_after(&id, q.after.as_deref())?,
+        task,
+    }))
 }
 
-async fn cancel_task(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<serde_json::Value> {
+async fn cancel_task(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<serde_json::Value> {
     rt.store.get_task(&id)?.ok_or_else(|| not_found("任务"))?;
     let cancelled = rt.orchestrator.cancel(&id)?;
     Ok(Json(json!({ "cancelled": cancelled })))
@@ -183,7 +222,11 @@ struct FeedbackBody {
 fn blank_to_none(value: Option<String>) -> Option<String> {
     value.and_then(|s| {
         let t = s.trim().to_string();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     })
 }
 
@@ -200,22 +243,38 @@ async fn post_feedback(State(rt): State<AppState>, Json(body): Json<FeedbackBody
         created_at: an_core::now(),
     };
     match rt.store.insert_feedback(&saved) {
-        Ok(()) => (StatusCode::OK, Json(json!({ "status": "success", "data": { "id": saved.id }, "message": "" }))).into_response(),
+        Ok(()) => (
+            StatusCode::OK,
+            Json(json!({ "status": "success", "data": { "id": saved.id }, "message": "" })),
+        )
+            .into_response(),
         Err(e) => {
             let message = e.to_string();
-            let code = if message.contains("不能为空") || message.contains("动作只能") || message.contains("未知角色") {
+            let code = if message.contains("不能为空")
+                || message.contains("动作只能")
+                || message.contains("未知角色")
+            {
                 StatusCode::BAD_REQUEST
             } else {
                 StatusCode::INTERNAL_SERVER_ERROR
             };
-            (code, Json(json!({ "status": "error", "data": null, "message": message }))).into_response()
+            (
+                code,
+                Json(json!({ "status": "error", "data": null, "message": message })),
+            )
+                .into_response()
         }
     }
 }
 
-async fn approve_task(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<serde_json::Value> {
+async fn approve_task(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<serde_json::Value> {
     rt.store.get_task(&id)?.ok_or_else(|| not_found("任务"))?;
-    rt.orchestrator.approve(&id).map_err(|e| AppError(StatusCode::CONFLICT, format!("{e:#}")))?;
+    rt.orchestrator
+        .approve(&id)
+        .map_err(|e| AppError(StatusCode::CONFLICT, format!("{e:#}")))?;
     Ok(Json(json!({ "approved": true })))
 }
 
@@ -224,8 +283,13 @@ struct LimitQuery {
     limit: Option<usize>,
 }
 
-async fn route_logs(State(rt): State<AppState>, Query(q): Query<LimitQuery>) -> ApiResult<Vec<an_core::RouteLog>> {
-    Ok(Json(rt.store.list_route_logs(q.limit.unwrap_or(50).min(500))?))
+async fn route_logs(
+    State(rt): State<AppState>,
+    Query(q): Query<LimitQuery>,
+) -> ApiResult<Vec<an_core::RouteLog>> {
+    Ok(Json(
+        rt.store.list_route_logs(q.limit.unwrap_or(50).min(500))?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -234,14 +298,23 @@ struct EventQuery {
 }
 
 /// SSE：推送任务事件；可按会话过滤
-async fn events(State(rt): State<AppState>, Query(q): Query<EventQuery>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+async fn events(
+    State(rt): State<AppState>,
+    Query(q): Query<EventQuery>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let stream = BroadcastStream::new(rt.bus.subscribe()).filter_map(move |item| {
         // 订阅者落后太多时 broadcast 会返回 Lagged 错误，这里直接跳过
         let ev = item.ok()?;
-        if q.conversation_id.as_ref().is_some_and(|c| *c != ev.conversation_id) {
+        if q.conversation_id
+            .as_ref()
+            .is_some_and(|c| *c != ev.conversation_id)
+        {
             return None;
         }
-        Some(Ok(Event::default().event("task_event").json_data(&ev).unwrap_or_default()))
+        Some(Ok(Event::default()
+            .event("task_event")
+            .json_data(&ev)
+            .unwrap_or_default()))
     });
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }
@@ -258,14 +331,28 @@ struct PairBody {
     code: String,
 }
 
-async fn pair_node(State(rt): State<AppState>, Json(body): Json<PairBody>) -> ApiResult<an_runtime::nodes::PairedNode> {
-    rt.nodes.pair(&body.address, &body.code).await.map(Json).map_err(|e| {
-        let status = if e.code == an_core::codes::NODE_UNREACHABLE { StatusCode::BAD_GATEWAY } else { StatusCode::BAD_REQUEST };
-        AppError(status, e.to_string())
-    })
+async fn pair_node(
+    State(rt): State<AppState>,
+    Json(body): Json<PairBody>,
+) -> ApiResult<an_runtime::nodes::PairedNode> {
+    rt.nodes
+        .pair(&body.address, &body.code)
+        .await
+        .map(Json)
+        .map_err(|e| {
+            let status = if e.code == an_core::codes::NODE_UNREACHABLE {
+                StatusCode::BAD_GATEWAY
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            AppError(status, e.to_string())
+        })
 }
 
-async fn unpair_node(State(rt): State<AppState>, Path(id): Path<String>) -> ApiResult<serde_json::Value> {
+async fn unpair_node(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<serde_json::Value> {
     let removed = rt.nodes.unpair(&id)?;
     if !removed {
         return Err(not_found("节点"));
@@ -291,8 +378,12 @@ async fn diagnostics(State(rt): State<AppState>) -> Json<serde_json::Value> {
     let backends = rt.backends.status().await;
     let llm = match backends.iter().find(|b| b.roles.contains(&"conversation")) {
         Some(b) if b.ok => json!({ "ok": true, "models": b.server_models }),
-        Some(b) => json!({ "ok": false, "code": an_core::codes::LLM_UNREACHABLE, "error": b.error }),
-        None => json!({ "ok": false, "code": an_core::codes::LLM_UNREACHABLE, "error": "没有 conversation 后端" }),
+        Some(b) => {
+            json!({ "ok": false, "code": an_core::codes::LLM_UNREACHABLE, "error": b.error })
+        }
+        None => {
+            json!({ "ok": false, "code": an_core::codes::LLM_UNREACHABLE, "error": "没有 conversation 后端" })
+        }
     };
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
