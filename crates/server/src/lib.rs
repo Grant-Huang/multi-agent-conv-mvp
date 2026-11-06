@@ -157,11 +157,16 @@ async fn send_message(
     rt.store
         .get_conversation(&id)?
         .ok_or_else(|| not_found("会话"))?;
-    Ok(Json(
-        rt.conversation
-            .handle_message(&id, body.text.trim())
-            .await?,
-    ))
+    // 回合放进独立任务执行：刷新页面会断开这次 HTTP 请求，如果回合直接跑在请求的 future 里，
+    // 请求被丢弃时回合也会中途终止（LLM 调用被断开，助手消息不落库）。
+    // 独立任务不受请求生命周期影响，回合会照常完成；请求还连着时仍同步返回结果。
+    let text = body.text.trim().to_string();
+    let turn_rt = rt.clone();
+    let turn = tokio::spawn(async move { turn_rt.conversation.handle_message(&id, &text).await });
+    let outcome = turn
+        .await
+        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("回合执行异常：{e}")))??;
+    Ok(Json(outcome))
 }
 
 #[derive(Deserialize)]

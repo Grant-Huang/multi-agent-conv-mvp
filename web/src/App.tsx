@@ -44,6 +44,24 @@ function writeDevMode(on: boolean) {
   }
 }
 
+/** 记住当前会话，刷新后回到同一个会话（而不是列表第一项）；存储不可用时退化为默认行为 */
+const CURRENT_CONV_KEY = "an.currentConversation";
+function readCurrentConv(): string | null {
+  try {
+    return localStorage.getItem(CURRENT_CONV_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeCurrentConv(id: string | null) {
+  try {
+    if (id) localStorage.setItem(CURRENT_CONV_KEY, id);
+  } catch {
+    /* 忽略：只是便利功能 */
+  }
+}
+
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -80,12 +98,21 @@ export default function App() {
     return list;
   }, []);
 
-  // 首次加载：选中最近的会话
+  // 首次加载：优先回到上次选中的会话（刷新页面后不变）；找不到时选最近的会话
   useEffect(() => {
     loadConversations()
-      .then((list) => setCurrent((c) => c ?? list[0]?.id ?? null))
+      .then((list) => {
+        const saved = readCurrentConv();
+        const pick = list.find((c) => c.id === saved)?.id ?? list[0]?.id ?? null;
+        setCurrent((c) => c ?? pick);
+      })
       .catch((e) => setError(String(e)));
   }, [loadConversations]);
+
+  // 每次切换会话都记下来，供下次刷新时恢复
+  useEffect(() => {
+    writeCurrentConv(current);
+  }, [current]);
 
   const refreshConversation = useCallback(async (cid: string) => {
     const [m, t] = await Promise.all([api.messages(cid), api.tasks(cid)]);
