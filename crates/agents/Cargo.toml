@@ -18,5 +18,8 @@ reqwest.workspace = true
 futures.workspace = true
 agent-client-protocol = { workspace = true, features = ["process"] }
 
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 [dev-dependencies]
 tokio.workspace = true

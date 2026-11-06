@@ -433,6 +433,16 @@ sequenceDiagram
 
 以命令行方式调用 `codex exec`，参数模板中的 `{prompt}`、`{workdir}`、`{last_message_file}` 会被替换。不同版本参数可能不同，请先运行 `codex exec --help` 核对。执行后收集 `git diff` 作为证据。
 
+子进程放在独立的进程组里（`crates/agents/src/proc_group.rs`），它启动的 shell、npm、测试等孙进程会一起被清理：
+
+| 场景 | 处理 |
+|---|---|
+| 正常退出 | 最多再读 0.5 秒剩余输出（孙进程可能还占着输出管道），然后 SIGKILL 组内残留进程 |
+| 超时（`timeout_secs`） | 整个组先 SIGTERM，等 3 秒，再 SIGKILL |
+| 取消 | 立即 SIGKILL 整个组 |
+
+`web_search` / `web_fetch` 调用的搜索命令用同样的方式管理。每次清理记一条 `agent.process_group_killed`。
+
 ### 7.6 质检与返工
 
 | 任务 | 是否质检 |
@@ -746,7 +756,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 规则 | `policy.reject` | 没有可用 agent，拒绝派发 |
 | 任务 | `task.status`、`task.status_conflict` | 每次状态变化一条（FAILED 为 ERROR 级别，NEEDS_HUMAN 为 WARN）；状态已被改掉、这次变化被拒绝时记 `task.status_conflict`（WARN，带期望状态和实际状态） |
 | 执行组 | `pool.wait`、`pool.member_missing`（debug） | 都在忙需要排队；配置的成员还没连上 |
-| 执行 | `task.no_agent`、`agent.run_start`、`agent.run_end`、`agent.run_failed` | 分配和执行 |
+| 执行 | `task.no_agent`、`agent.run_start`、`agent.run_end`、`agent.run_failed`、`agent.process_group_killed` | 分配和执行；`agent.process_group_killed` 记录子进程组被清理（`reason`：cancelled / timeout / exited_with_leftovers） |
 | ACP | `acp.permission`、`acp.finished`、`acp.handshake_failed`、`acp.runtime_error`、`acp.timeout` | |
 | 质检 | `review.verdict`、`review.failed` | |
 | 节点（AgentNexus 侧） | `discovery.found`、`discovery.removed`、`discovery.unavailable`、`node.paired`、`node.pair_failed`、`node.unpaired`、`node.online`、`node.offline`、`node.auth_failed`、`node.run_start`、`node.run_end` | 上线 / 离线只在状态变化时记录，避免刷屏 |
@@ -954,6 +964,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | 16 | 用户在前一条消息处理完之前不能再发 | 界面限制 | 允许排队发送 |
 | 17 | 评测集只评"判断 + 路由"，不评回答质量 | 直接回答、独立审查的质量需要人工看 | 增加"模型当评委"的回答质量评测 |
 | 18 | Reviewer 不能读文件 | 文件、仓库的审查交给 general / coding，而不是独立的 Reviewer | 给 Reviewer 只读的文件工具 |
+| 19 | Windows 上命令行 agent 没有进程组 | 取消 / 超时只结束直接子进程，孙进程可能残留 | 用 Job Object |
 
 ---
 
