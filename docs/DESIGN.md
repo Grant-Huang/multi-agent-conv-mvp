@@ -292,7 +292,7 @@ stateDiagram-v2
     RUNNING --> VERIFYING: 需要质检
     VERIFYING --> COMPLETED: 通过
     VERIFYING --> NEEDS_HUMAN: 需要人工判断 / 审查本身出错
-    VERIFYING --> RUNNING: 不通过，还有返工次数
+    VERIFYING --> QUEUED: 不通过，还有返工次数（重新排队等 agent）
     VERIFYING --> FAILED: 不通过，返工次数用完
     CREATED --> CANCELLED
     QUEUED --> CANCELLED
@@ -305,14 +305,24 @@ stateDiagram-v2
 |---|---|
 | CREATED | 刚创建 |
 | QUEUED | 等待执行；执行组都在忙时停在这里排队 |
-| RUNNING | 执行中（返工也回到这里） |
+| RUNNING | 已分到 agent、正在执行（返工先回到 QUEUED，分到 agent 后再到这里） |
 | VERIFYING | 质检中 |
 | NEEDS_HUMAN | 等人工：审批，或审查认为需要人判断 |
 | COMPLETED | 完成（通过质检，或不需要质检） |
 | FAILED | 失败。原因会带错误码，例如 `[E_ACP_HANDSHAKE] …` |
 | CANCELLED | 已取消 |
 
-COMPLETED、FAILED、CANCELLED 是终点。服务重启时，还没结束的任务（CREATED / QUEUED / RUNNING / VERIFYING）会被标记为 FAILED，这一版不做续跑。
+COMPLETED、FAILED、CANCELLED 是终点，进入后不会再变。
+
+**状态守卫**：每次状态变化都写明"允许从哪些状态来"，由数据库的一条带条件 UPDATE 完成（`Store::transition_task` / `finish_task` / `approve_task`）。所以：
+- 取消和完成同时发生时，谁先写进数据库谁算数：已完成的任务取消不了，交付照常；已取消的任务不再写结果、不再交付；
+- 同一个任务被同时批准多次，只有一次生效，只执行一遍；
+- 写库和推送状态事件在同一把锁里完成，前端收到的状态顺序与数据库一致。
+被拒绝的状态变化记一条 `task.status_conflict`（WARN）。
+
+**超时**（`task_timeout_secs`）：从第一次分到 agent 开始计时，排队等 agent 的时间不算；返工时的排队计入。
+
+服务重启时，还没结束的任务（CREATED / QUEUED / RUNNING / VERIFYING）会被标记为 FAILED，这一版不做续跑。
 
 ---
 
@@ -424,6 +434,16 @@ sequenceDiagram
 ### 7.5 Codex CLI
 
 以命令行方式调用 `codex exec`，参数模板中的 `{prompt}`、`{workdir}`、`{last_message_file}` 会被替换。不同版本参数可能不同，请先运行 `codex exec --help` 核对。执行后收集 `git diff` 作为证据。
+
+子进程放在独立的进程组里（`crates/agents/src/proc_group.rs`），它启动的 shell、npm、测试等孙进程会一起被清理：
+
+| 场景 | 处理 |
+|---|---|
+| 正常退出 | 最多再读 0.5 秒剩余输出（孙进程可能还占着输出管道），然后 SIGKILL 组内残留进程 |
+| 超时（`timeout_secs`） | 整个组先 SIGTERM，等 3 秒，再 SIGKILL |
+| 取消 | 立即 SIGKILL 整个组 |
+
+`web_search` / `web_fetch` 调用的搜索命令用同样的方式管理。每次清理记一条 `agent.process_group_killed`。
 
 ### 7.6 质检与返工
 
@@ -736,9 +756,9 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 对话 | `conversation.turn`、`conversation.reply`、`conversation.reply_stream_failed`、`conversation.reply_failed`、`conversation.config` | 每轮对话一条（决策、角色、任务、尝试次数、耗时）；直接回答的生成（是否流式、字数、耗时）；启动时的审查模式 |
 | 模型 | `llm.request_failed`、`llm.format_retry`、`llm.structured_failed`、`llm.structured_ok`（debug 级别） | 请求失败、格式不合格重试、最终失败 |
 | 规则 | `policy.reject` | 没有可用 agent，拒绝派发 |
-| 任务 | `task.status` | 每次状态变化一条（FAILED 为 ERROR 级别，NEEDS_HUMAN 为 WARN） |
+| 任务 | `task.status`、`task.status_conflict` | 每次状态变化一条（FAILED 为 ERROR 级别，NEEDS_HUMAN 为 WARN）；状态已被改掉、这次变化被拒绝时记 `task.status_conflict`（WARN，带期望状态和实际状态） |
 | 执行组 | `pool.wait`、`pool.member_missing`（debug） | 都在忙需要排队；配置的成员还没连上 |
-| 执行 | `task.no_agent`、`agent.run_start`、`agent.run_end`、`agent.run_failed` | 分配和执行 |
+| 执行 | `task.no_agent`、`agent.run_start`、`agent.run_end`、`agent.run_failed`、`agent.process_group_killed` | 分配和执行；`agent.process_group_killed` 记录子进程组被清理（`reason`：cancelled / timeout / exited_with_leftovers） |
 | ACP | `acp.permission`、`acp.finished`、`acp.handshake_failed`、`acp.runtime_error`、`acp.timeout` | |
 | 质检 | `review.verdict`、`review.failed` | |
 | 节点（AgentNexus 侧） | `discovery.found`、`discovery.removed`、`discovery.unavailable`、`node.paired`、`node.pair_failed`、`node.unpaired`、`node.online`、`node.offline`、`node.auth_failed`、`node.run_start`、`node.run_end` | 上线 / 离线只在状态变化时记录，避免刷屏 |
@@ -774,7 +794,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | `E_ACP_RUNTIME` | ACP 执行中出错 | 看 agent 自己的日志 |
 | `E_ACP_STOP` | agent 非正常结束 | 拒绝执行、超出 token 等，错误信息里有原因 |
 | `E_REVIEW_FAILED` | 审查本身失败 | 通常是模型格式问题，任务会进入"待人工" |
-| `E_TASK_TIMEOUT` | 任务总超时 | 调大 `task_timeout_secs` |
+| `E_TASK_TIMEOUT` | 任务超时（从第一次分到 agent 开始计时，排队不算） | 调大 `task_timeout_secs` |
 | `E_NODE_UNREACHABLE` | 连不上节点 / 执行中断开 | 节点没运行、网络不通、防火墙挡了端口 |
 | `E_NODE_AUTH` | 节点不认令牌 | 节点数据被清掉了，重新配对 |
 | `E_NODE_PAIR` | 配对失败 | 配对码错误或过期，看节点上显示的最新配对码 |
@@ -946,6 +966,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | 16 | 用户在前一条消息处理完之前不能再发 | 界面限制 | 允许排队发送 |
 | 17 | 评测集只评"判断 + 路由"，不评回答质量 | 直接回答、独立审查的质量需要人工看 | 增加"模型当评委"的回答质量评测 |
 | 18 | Reviewer 不能读文件 | 文件、仓库的审查交给 general / coding，而不是独立的 Reviewer | 给 Reviewer 只读的文件工具 |
+| 19 | Windows 上命令行 agent 没有进程组 | 取消 / 超时只结束直接子进程，孙进程可能残留 | 用 Job Object |
 
 ---
 
