@@ -180,3 +180,24 @@ max_review_rounds = 1              # Reviewer 判 fail 后最多返工几轮
 history_messages = 12              # 每轮带上最近多少条消息
 task_timeout_secs = 1800           # 单个任务超时：从第一次分到 agent 开始计时，排队不算
 approval_risk = "high"             # 风险达到该等级需人工审批：low / medium / high
+
+# ───── MCP：General 的轻量工具 Harness（可选）─────
+# 只启动自己信任、已安装的服务；command/args 不是 shell，不自动下载软件。
+# 实际工具 Schema 通过 MCP initialize + tools/list 获取，只开放显式列出的工具。
+# [[mcp.servers]]
+# id = "research"
+# transport = "stdio"
+# command = "tools/websearch/.venv/bin/websearch-mcp"
+# args = []
+# timeout_ms = 30000
+# [[mcp.servers.tools]]
+# name = "web_search"
+# capability_id = "research.search"
+# description = "搜索网页，返回标题、链接和摘要"
+# effect = "read_only"             # read_only / workspace_write；外部写入与删除暂不允许
+# input_types = ["application/json"]
+# output_types = ["application/json"]
+#
+# HTTP 服务使用 transport = "http"、url = "https://your-server.example/mcp"，
+# 不填写 command/args；可用 bearer_env = "MCP_RESEARCH_TOKEN" 引用环境变量。
+# 能力目录：GET /api/capabilities。协议、限制和计划见 docs/mcp/。

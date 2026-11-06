@@ -63,6 +63,7 @@ pub fn api(rt: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/agents", get(agents))
+        .route("/api/capabilities", get(capabilities))
         .route(
             "/api/conversations",
             get(list_conversations).post(create_conversation),
@@ -83,6 +84,10 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/nodes/{id}", axum::routing::delete(unpair_node))
         .route("/api/diagnostics", get(diagnostics))
         .with_state(rt)
+}
+
+async fn capabilities(State(rt): State<AppState>) -> Json<serde_json::Value> {
+    Json(json!(rt.capabilities))
 }
 
 async fn health(State(rt): State<AppState>) -> Json<serde_json::Value> {

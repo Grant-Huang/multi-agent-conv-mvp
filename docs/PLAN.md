@@ -1,5 +1,7 @@
 # AgentNexus MVP 开发计划与 TodoList
 
+新增授权工作：统一 MCP 能力卡片与 General 轻量 Harness，设计见 [mcp/DESIGN.md](mcp/DESIGN.md)，分阶段验收与状态见 [mcp/PLAN.md](mcp/PLAN.md)。不改变下列已有里程碑进度。
+
 > 最后更新：2026-11-05（M3 收尾：默认搜索 Exa，不合并来源、不缓存）
 > 规则：按里程碑逐步推进；每完成一步更新本文件（勾选进度、做必要的最小调整），用户确认后再进入下一步。
 > 新功能先写测试（TDD），测试冻结后只改业务代码；Python 部分覆盖率 ≥ 80%，通过 flake8。
