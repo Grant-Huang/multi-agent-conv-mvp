@@ -7,8 +7,8 @@
 //! 它只给出"评估意见"，任务最终状态由编排层按规则决定。
 
 use an_core::{
-    truncate_chars, AgentAdapter, AgentCard, EventSink, Evidence, ReviewVerdict, Role, TaskResult, TaskSpec, Verdict,
-    WorkerStatus,
+    truncate_chars, AgentAdapter, AgentCard, EventSink, Evidence, ReviewVerdict, Role, TaskResult,
+    TaskSpec, Verdict, WorkerStatus,
 };
 use an_llm::{ChatMessage, LlmClient};
 use anyhow::Result;
@@ -74,7 +74,11 @@ impl ReviewerAgent {
             })
             .await
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        Ok(ReviewVerdict { verdict: out.value.verdict, issues: out.value.issues, comment: out.value.comment })
+        Ok(ReviewVerdict {
+            verdict: out.value.verdict,
+            issues: out.value.issues,
+            comment: out.value.comment,
+        })
     }
 
     /// 验收环节：审查 Worker 的执行结果是否满足任务目标
@@ -88,7 +92,14 @@ impl ReviewerAgent {
         let artifacts = result
             .artifacts
             .iter()
-            .map(|a| format!("### [{}] {}\n{}", a.kind, a.name, truncate_chars(&a.content, 4000)))
+            .map(|a| {
+                format!(
+                    "### [{}] {}\n{}",
+                    a.kind,
+                    a.name,
+                    truncate_chars(&a.content, 4000)
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n\n");
         let evidence = result
@@ -100,8 +111,16 @@ impl ReviewerAgent {
         let user = format!(
             "## 任务目标\n{goal}\n\n## 执行者的结果摘要\n{}\n\n## 产物\n{}\n\n## 证据\n{}",
             result.summary,
-            if artifacts.is_empty() { "无".into() } else { artifacts },
-            if evidence.is_empty() { "无".into() } else { evidence },
+            if artifacts.is_empty() {
+                "无".into()
+            } else {
+                artifacts
+            },
+            if evidence.is_empty() {
+                "无".into()
+            } else {
+                evidence
+            },
         );
         self.judge(system, user).await
     }
@@ -119,24 +138,37 @@ impl AgentAdapter for ReviewerAgent {
         let system = "你是 AgentNexus 的独立审查员（Reviewer）。审查用户提交的内容，\n\
                       verdict 表示内容是否可以接受（pass/fail/needs_human），issues 逐条列出问题，\n\
                       comment 写一段总体评价和修改建议。";
-        let user = format!("## 审查要求\n{}\n\n## 相关上下文\n{}", task.goal, task.context);
+        let user = format!(
+            "## 审查要求\n{}\n\n## 相关上下文\n{}",
+            task.goal, task.context
+        );
         match self.judge(system, user).await {
             Ok(v) => {
                 let summary = format!(
                     "审查结论：{:?}\n{}\n{}",
                     v.verdict,
                     v.comment,
-                    v.issues.iter().map(|i| format!("- {i}")).collect::<Vec<_>>().join("\n")
+                    v.issues
+                        .iter()
+                        .map(|i| format!("- {i}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
                 );
                 Ok(TaskResult {
                     status: WorkerStatus::Succeeded,
                     summary,
                     artifacts: vec![],
-                    evidence: vec![Evidence { kind: "review_verdict".into(), content: serde_json::to_string(&v)? }],
+                    evidence: vec![Evidence {
+                        kind: "review_verdict".into(),
+                        content: serde_json::to_string(&v)?,
+                    }],
                     errors: vec![],
                 })
             }
-            Err(e) => Ok(TaskResult::failed_code(an_core::codes::REVIEW_FAILED, format!("审查失败：{e:#}"))),
+            Err(e) => Ok(TaskResult::failed_code(
+                an_core::codes::REVIEW_FAILED,
+                format!("审查失败：{e:#}"),
+            )),
         }
     }
 }

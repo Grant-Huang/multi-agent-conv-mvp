@@ -104,7 +104,10 @@ pub enum TaskStatus {
 impl TaskStatus {
     /// 终态：不会再自动变化（NeedsHuman 不算终态，人工审批后可以继续）
     pub fn is_terminal(&self) -> bool {
-        matches!(self, TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled)
+        matches!(
+            self,
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+        )
     }
 
     pub fn as_str(&self) -> &'static str {
@@ -149,7 +152,11 @@ pub enum TurnDecision {
     /// 委派给 Router，由后台 Agent 执行
     Delegate { task_goal: String },
     /// 针对进行中的任务：补充要求或取消
-    FollowUp { task_id: String, kind: FollowUpKind, change: String },
+    FollowUp {
+        task_id: String,
+        kind: FollowUpKind,
+        change: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -416,7 +423,11 @@ pub struct EventSink {
 
 impl EventSink {
     pub fn new(publisher: Arc<dyn EventPublisher>, conversation_id: &str, task_id: &str) -> Self {
-        Self { publisher, conversation_id: conversation_id.into(), task_id: task_id.into() }
+        Self {
+            publisher,
+            conversation_id: conversation_id.into(),
+            task_id: task_id.into(),
+        }
     }
 
     /// 发布一条进度事件
@@ -459,7 +470,10 @@ pub struct AgentError {
 
 impl AgentError {
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -592,7 +606,12 @@ pub fn hostname() -> String {
     std::process::Command::new("hostname")
         .output()
         .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_end_matches(".local").to_string())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .trim_end_matches(".local")
+                .to_string()
+        })
         .filter(|s| !s.is_empty())
         .or_else(|| std::env::var("COMPUTERNAME").ok())
         .unwrap_or_else(|| "unknown".into())

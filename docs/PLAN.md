@@ -70,16 +70,16 @@ M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B �
 - [x] **1.3 纠错进入回归集**
   - `an-eval --export-feedback <库> <草稿>` 写出评测行。目标文件名是 `routing.jsonl` 时拒绝
   - 确认后改 `evals/make_dataset.py` 再生成评测集。改提示词后用 `an-eval` 对比基线
-- [ ] **1.4 dream 模式**
-  - 晚间跑一次，不常驻。读当天 `logs/agentnexus.jsonl.*` 里的路由错误和 `routing_feedback`
-  - 用后台槽位上的 35B 提出：哪些派发样本该补进评测集、技能说明里哪几句和当前命令不一致
-  - 只写草稿文件（例如 `.tmp/dream/`）。不改 `evals/routing.jsonl`，不改 `SKILL.md`，不改线上提示词
-  - 测试：没有日志时退出 0 且不写草稿；有一条失败路由时草稿含该 `task_id`，且不改评测集原文件
-- [ ] **1.5 skill**（原独立 Skill 节。S.1 已完成）
+- [x] **1.4 dream 模式**
+  - `an-eval --dream [logs 目录] [日期]` 跑一次就退出。读当天 `logs/agentnexus.jsonl.<日期>` 里带 `task_id` 的失败行
+  - 草稿写到 `.tmp/dream/draft.md`：失败的 `task_id`，以及技能文本是否写明空结果、日期、不要编造。不调用模型，因此不占用 35B 槽位
+  - 没有失败行时不创建草稿。不改 `evals/routing.jsonl`，不改 `SKILL.md`
+  - 测试：`no_log_does_not_write_a_draft`、`failed_route_draft_names_the_task_and_leaves_the_dataset`
+- [x] **1.5 skill**（原独立 Skill 节。S.1 已完成）
   - [x] 技能文本与当前命令对齐：默认 Exa，日期写进关键词，空结果换说法，不自动换源，不写 Python
-  - [ ] 安装说明保持在 `tools/websearch/README.md` 的 `pi --skill`，不改用户本机 pi 配置
-  - [ ] 用固定问题核对技能文本：空结果、把旧页面当成今天、编造来源，这三类都在文中被禁止
-- [ ] **1.6 验收**：用 10 条故意构造的误派消息，纠错后再发相似消息，派发正确率提升。dream 草稿不参与这次验收，除非已经人工合入评测集
+  - [x] 安装说明在 `tools/websearch/README.md` 的 `pi --skill`。不改用户本机 pi 配置
+  - [x] `shipped_skill_forbids_empty_stale_and_made_up_sources`：空结果、旧页面、编造来源都在 `SKILL.md` 里被禁止
+- [x] **1.6 验收**：`ten_corrections_fix_similar_messages`。10 条概念题在纠正前全部被派到后台（0/10），写入「应直接回答」后，相似消息 10/10 直接回答。用的是假模型，它只在提示词出现纠正时改判。没有把 dream 草稿并进评测集
 
 ---
 
@@ -424,11 +424,10 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 
 ## M4 多问题消息逐条对应回答
 
-- [ ] **4.1 评测样本**：新增 F 组样本（一条消息含 2~4 个问题；混合"直接回答 + 需要委派"的情况）
-- [ ] **4.2 直接回答**：回答提示词要求识别多个问题，按编号逐条回答，不遗漏
-  - 测试：提示词包含规则；e2e 检查回答编号数 = 问题数
-- [ ] **4.3 混合情况**：Turn 判断输出拆分后的子项（每项 respond / delegate），Composer 汇总时按原问题编号对应
-  - 这一步改动 Turn 输出 schema，开始前单独确认设计
+- [x] **4.1 评测样本**：F 组 5 条（`mq-01` 到 `mq-03` 全是直接回答，`mq-mix-01` / `mq-mix-02` 含必须委派的子问题）。4.3 之前混合样本仍是整条一个动作
+- [x] **4.2 直接回答**：回答提示词要求按编号逐条回答、不遗漏。`reply_prompt_numbers_each_question`、`multi_question_reply_is_numbered`
+- [ ] **4.3 混合情况**：按 `docs/DESIGN.md` 第 9.6 节实现。能串行的不拆；只有写死的模板才并行。Router 只输出 `template_id`、`deliverable`、`slots_ok`。分支和汇合的输入输出用 JSON 信封校验，缺一路记 `missing`，Composer 只转述汇合结果
+  - 设计已写入第 9.6 节，代码未改。开工前仍等确认
 - [ ] **4.4 验收**：F 组样本逐条覆盖率 ≥ 95%
 
 ## M5 9B vs 35B A/B
@@ -467,7 +466,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 1. ~~M2 的第三方依赖~~（已确认：核心 ddgs + httpx；trafilatura、mcp 为可选安装）
 2. M6 的压测门槛和话题集
 3. 用 35B 作评委打分是否可接受（会占用 8200 槽位）
-4. M4.3 改 Turn 输出 schema 的设计（开始前单独确认）
+4. M4.3 按 `docs/DESIGN.md` 第 9.6 节改代码（设计已写入，实现未开工）
 5. ~~M7 是否排在 M3 之前 / 统一流式 / 槽位数~~（已确认：提前并改名 pre-M3；统一流式；35B 槽位 5→6 见第 6 项；9B 下线）
 6. ~~前台借用后台槽位~~（已确认 2026-11-05：**不借用**，改为 6 槽位 = 前台 2 + 后台 4；`borrow_idle` 默认 false）
 7. ~~pre-M3.5 怎样固定 pi 的槽位~~（已确认 2026-11-05：选 A，pi 扩展 + 环境变量 `AN_LLM_SLOT`；其他 coding agent 以后各自适配，通用代理方案 C 留到连接器设计评审时再议）

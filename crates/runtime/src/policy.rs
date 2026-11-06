@@ -13,7 +13,11 @@ pub struct Policy {
 
 impl Policy {
     /// 校验路由决策并给出裁决。返回 Err 表示路由不可执行（例如角色不可用）。
-    pub fn evaluate(&self, route: &mut RouteDecision, registry: &AgentRegistry) -> Result<PolicyVerdict, String> {
+    pub fn evaluate(
+        &self,
+        route: &mut RouteDecision,
+        registry: &AgentRegistry,
+    ) -> Result<PolicyVerdict, String> {
         let mut notes = vec![];
 
         // 规则 1：角色必须至少有一个可用的 agent
@@ -24,13 +28,20 @@ impl Policy {
                 "[{}] 没有可用的 {} agent{}",
                 an_core::codes::ROUTE_NO_AGENT,
                 route.execution_role.as_str(),
-                if reasons.is_empty() { String::new() } else { format!("（{}）", reasons.join("；")) }
+                if reasons.is_empty() {
+                    String::new()
+                } else {
+                    format!("（{}）", reasons.join("；"))
+                }
             ));
         }
 
         // 规则 2：工具只对 General 有意义，其他角色的工具需求直接清空
         if route.execution_role != Role::General && !route.required_tools.is_empty() {
-            notes.push(format!("{} 不使用内置工具，已忽略 required_tools", route.execution_role.as_str()));
+            notes.push(format!(
+                "{} 不使用内置工具，已忽略 required_tools",
+                route.execution_role.as_str()
+            ));
             route.required_tools.clear();
         }
 
@@ -54,6 +65,10 @@ impl Policy {
             notes.push("需要审查但 Reviewer 不可用，跳过审查".into());
         }
 
-        Ok(PolicyVerdict { auto_execute, needs_review, notes })
+        Ok(PolicyVerdict {
+            auto_execute,
+            needs_review,
+            notes,
+        })
     }
 }
