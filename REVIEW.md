@@ -1,6 +1,6 @@
 # AgentNexus 评审规则（REVIEW.md）
 
-本文是**夜间评审 agent** 的规则来源，同时说明它和**修复 agent**、人之间如何交接。
+本文是**夜间评审 agent** 的规则来源，同时说明它和**修复 agent**、人之间如何交接。修复 agent 的完整指令见根目录 `FIX.md`。
 评审 agent 的定时任务指令只写流程和边界，具体检查什么、怎么写结论，以本文为准。
 
 - 上位规则：`AGENTS.md`（本文不重复，也不放宽）
@@ -18,7 +18,7 @@
 | 角色 | 做什么 | 不做什么 | 产出 |
 |---|---|---|---|
 | 评审 agent（每晚） | 找问题、独立验证、给出修改意见；核对上次修复是否真的修好 | 不改业务代码、不改或删测试、不提交测试、不改 CI 和配置、不合并别人的 PR | `docs/review/DATE.md`（报告）+ `docs/review/findings.jsonl`（台账，只追加） |
-| 修复 agent（白天或接力） | 按报告的“交接清单”修问题：先写失败测试（Red），再改代码（Green），开 PR | 不自己宣布问题已关闭；不改台账里别人的事件 | 修复 PR；在台账追加 `fix_claimed` 事件 |
+| 修复 agent（白天或接力，按 `FIX.md`） | 按报告的“交接清单”修问题：先写失败测试（Red），再改代码（Green），开 PR | 不自己宣布问题已关闭；不改台账已有的行；不合并 | 修复 PR；运行总结 PR（追加 `fix_claimed` / `note` 事件、方案文件） |
 | 人 | 决定“需要人决定的事”；审批 L2/L3；驳回误报；批准评审规则修订 | 不逐条做常规审查 | 台账里的 `wontfix` / `rejected` 事件；REVIEW.md 的修改 |
 
 **执行权和验收权分离**（指南 12.4）：修复 agent 声称修好（`fix_claimed`），由下一次评审在最新代码上核对后
@@ -115,7 +115,7 @@ Agent 生命周期、任务状态机、执行组、Session 管理、ACP 通信�
 | event | 谁可以写 | 额外字段 | 状态变为 |
 |---|---|---|---|
 | `opened` | reviewer | `severity`、`risk`、`file`、`line`、`title`、`verdict`、`evidence`、`suggestion`、`source` | open |
-| `fix_claimed` | fixer | `pr`（链接）、`commit`、`tests`（新增的测试名） | fix_claimed |
+| `fix_claimed` | fixer | `pr`（修复 PR 链接）、`commit`、`tests`（新增的测试名） | fix_claimed（含义：修复 PR 已开） |
 | `verified_fixed` | reviewer | `commit`（核对时的 master 提交）、`evidence` | closed |
 | `reopened` | reviewer | `evidence`（为什么没修好） | open |
 | `wontfix` | human | `reason` | closed |
@@ -124,9 +124,13 @@ Agent 生命周期、任务状态机、执行组、Session 管理、ACP 通信�
 
 `id` 规则：`R-<首次发现日期 YYYYMMDD>-<报告中的编号>`，例如 `R-20261107-H1`；一经写入不再变化。
 
+多个 PR 同时追加时会在文件末尾冲突：解决方法是合并 master，**两边新增的行都保留**，不删、不改任何一行。
+
 ### 5.2 每次评审对台账做的事
 1. 读出所有当前状态为 open 或 fix_claimed 的条目；
-2. 在最新 master 上逐条核对：已修好 → 追加 `verified_fixed`；`fix_claimed` 但没修好 → 追加 `reopened`；
+2. 在最新 master 上逐条核对：
+   - open：已修好 → 追加 `verified_fixed`；
+   - fix_claimed：先看 `pr` 的状态。PR 还开着 → 不处理；PR 已合并 → 已修好追加 `verified_fixed`，没修好追加 `reopened`；PR 未合并就被关闭 → 追加 `reopened`，证据写“修复 PR 已关闭未合并”；
 3. 本次新发现 → 追加 `opened`；
 4. 对台账格式或已有条目有意见（例如严重度定错、两条其实是同一个问题）→ **不改原行**，写进报告第 8 节的修订建议，由人处理。
 

@@ -30,6 +30,8 @@ paths = [
   "REVIEW.md",
   # 七层围栏定期检查手册：同样约束评审 agent，改它必须由人审批。
   "7-fence-review.md",
+  # 修复 agent 的指令：修复 agent 不得改自己的规则后自动合并。
+  "FIX.md",
   "config/**",
   "tools/ci/**",
 ]
