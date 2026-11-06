@@ -56,7 +56,9 @@ impl ErrorKind {
     pub fn code(self) -> &'static str {
         match self {
             ErrorKind::Unreachable => codes::LLM_UNREACHABLE,
-            ErrorKind::TimeoutFirstToken | ErrorKind::TimeoutIdle | ErrorKind::TimeoutTotal => codes::LLM_TIMEOUT,
+            ErrorKind::TimeoutFirstToken | ErrorKind::TimeoutIdle | ErrorKind::TimeoutTotal => {
+                codes::LLM_TIMEOUT
+            }
             ErrorKind::ContextExceeded => codes::LLM_CONTEXT,
             ErrorKind::RateLimited => codes::LLM_RATE_LIMITED,
             ErrorKind::Http4xx | ErrorKind::Http5xx => codes::LLM_HTTP,
@@ -86,7 +88,12 @@ impl ErrorKind {
     pub fn trips_breaker(self) -> bool {
         matches!(
             self,
-            ErrorKind::Unreachable | ErrorKind::TimeoutFirstToken | ErrorKind::TimeoutIdle | ErrorKind::TimeoutTotal | ErrorKind::Http5xx | ErrorKind::StreamCut
+            ErrorKind::Unreachable
+                | ErrorKind::TimeoutFirstToken
+                | ErrorKind::TimeoutIdle
+                | ErrorKind::TimeoutTotal
+                | ErrorKind::Http5xx
+                | ErrorKind::StreamCut
         )
     }
 }
@@ -102,7 +109,12 @@ pub struct LlmError {
 
 impl LlmError {
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), status: None, retry_after: None }
+        Self {
+            kind,
+            message: message.into(),
+            status: None,
+            retry_after: None,
+        }
     }
 
     /// 根据 HTTP 状态码和响应内容分类
@@ -114,7 +126,12 @@ impl LlmError {
             _ => ErrorKind::Http4xx,
         };
         let shown: String = body.chars().take(500).collect();
-        Self { kind, message: format!("LLM 返回 HTTP {status}: {shown}"), status: Some(status), retry_after }
+        Self {
+            kind,
+            message: format!("LLM 返回 HTTP {status}: {shown}"),
+            status: Some(status),
+            retry_after,
+        }
     }
 
     pub fn is_retryable(&self) -> bool {
@@ -133,12 +150,26 @@ impl std::error::Error for LlmError {}
 /// 响应内容是不是"超出上下文"（llama.cpp 的 `exceed_context_size_error`，OpenAI 的 `context_length_exceeded` 等）
 pub fn is_context_error(body: &str) -> bool {
     let b = body.to_lowercase();
-    ["exceed_context_size", "context_length_exceeded", "context size", "context length", "maximum context", "too long", "n_ctx"].iter().any(|k| b.contains(k))
+    [
+        "exceed_context_size",
+        "context_length_exceeded",
+        "context size",
+        "context length",
+        "maximum context",
+        "too long",
+        "n_ctx",
+    ]
+    .iter()
+    .any(|k| b.contains(k))
 }
 
 /// 解析 `Retry-After`（只支持秒数写法；最长按 60 秒算）
 pub fn parse_retry_after(value: &str) -> Option<Duration> {
-    value.trim().parse::<u64>().ok().map(|s| Duration::from_secs(s.min(60)))
+    value
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(|s| Duration::from_secs(s.min(60)))
 }
 
 #[cfg(test)]
@@ -147,9 +178,18 @@ mod tests {
 
     #[test]
     fn http_status_classification() {
-        assert_eq!(LlmError::from_http(429, "slow down", None).kind, ErrorKind::RateLimited);
-        assert_eq!(LlmError::from_http(503, "busy", None).kind, ErrorKind::Http5xx);
-        assert_eq!(LlmError::from_http(401, "bad key", None).kind, ErrorKind::Http4xx);
+        assert_eq!(
+            LlmError::from_http(429, "slow down", None).kind,
+            ErrorKind::RateLimited
+        );
+        assert_eq!(
+            LlmError::from_http(503, "busy", None).kind,
+            ErrorKind::Http5xx
+        );
+        assert_eq!(
+            LlmError::from_http(401, "bad key", None).kind,
+            ErrorKind::Http4xx
+        );
         // 400 但不是上下文问题：不重试
         let e = LlmError::from_http(400, "{\"error\":\"unknown field response_format\"}", None);
         assert_eq!(e.kind, ErrorKind::Http4xx);
@@ -164,27 +204,52 @@ mod tests {
         assert_eq!(e.kind.code(), codes::LLM_CONTEXT);
         assert!(!e.is_retryable());
         let openai = r#"{"error":{"code":"context_length_exceeded","message":"This model's maximum context length is 8192 tokens"}}"#;
-        assert_eq!(LlmError::from_http(400, openai, None).kind, ErrorKind::ContextExceeded);
+        assert_eq!(
+            LlmError::from_http(400, openai, None).kind,
+            ErrorKind::ContextExceeded
+        );
     }
 
     #[test]
     fn retry_and_breaker_rules() {
-        for k in [ErrorKind::Unreachable, ErrorKind::TimeoutFirstToken, ErrorKind::TimeoutIdle, ErrorKind::Http5xx, ErrorKind::StreamCut] {
+        for k in [
+            ErrorKind::Unreachable,
+            ErrorKind::TimeoutFirstToken,
+            ErrorKind::TimeoutIdle,
+            ErrorKind::Http5xx,
+            ErrorKind::StreamCut,
+        ] {
             assert!(k.retryable() && k.trips_breaker(), "{k:?}");
         }
         // 429 要重试，但不是后端故障
         assert!(ErrorKind::RateLimited.retryable() && !ErrorKind::RateLimited.trips_breaker());
-        for k in [ErrorKind::ContextExceeded, ErrorKind::Http4xx, ErrorKind::Truncated, ErrorKind::Empty, ErrorKind::BreakerOpen, ErrorKind::Busy] {
+        for k in [
+            ErrorKind::ContextExceeded,
+            ErrorKind::Http4xx,
+            ErrorKind::Truncated,
+            ErrorKind::Empty,
+            ErrorKind::BreakerOpen,
+            ErrorKind::Busy,
+        ] {
             assert!(!k.retryable() && !k.trips_breaker(), "{k:?}");
         }
     }
 
     #[test]
     fn display_carries_code_and_message_without_losing_downcast() {
-        let e = LlmError::new(ErrorKind::TimeoutFirstToken, "等了 120 秒没有收到第一个 token");
-        assert_eq!(e.to_string(), "[E_LLM_TIMEOUT] 等了 120 秒没有收到第一个 token");
+        let e = LlmError::new(
+            ErrorKind::TimeoutFirstToken,
+            "等了 120 秒没有收到第一个 token",
+        );
+        assert_eq!(
+            e.to_string(),
+            "[E_LLM_TIMEOUT] 等了 120 秒没有收到第一个 token"
+        );
         let any: anyhow::Error = e.into();
-        assert_eq!(any.downcast_ref::<LlmError>().unwrap().kind, ErrorKind::TimeoutFirstToken);
+        assert_eq!(
+            any.downcast_ref::<LlmError>().unwrap().kind,
+            ErrorKind::TimeoutFirstToken
+        );
     }
 
     #[test]

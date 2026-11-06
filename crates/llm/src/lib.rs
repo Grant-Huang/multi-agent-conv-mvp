@@ -27,10 +27,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use an_core::codes;
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use an_core::codes;
 use serde_json::{json, Value};
 use tokio::time::{timeout_at, Instant as TokioInstant};
 
@@ -116,13 +116,22 @@ pub struct ChatMessage {
 
 impl ChatMessage {
     pub fn system(c: impl Into<String>) -> Self {
-        Self { role: "system".into(), content: c.into() }
+        Self {
+            role: "system".into(),
+            content: c.into(),
+        }
     }
     pub fn user(c: impl Into<String>) -> Self {
-        Self { role: "user".into(), content: c.into() }
+        Self {
+            role: "user".into(),
+            content: c.into(),
+        }
     }
     pub fn assistant(c: impl Into<String>) -> Self {
-        Self { role: "assistant".into(), content: c.into() }
+        Self {
+            role: "assistant".into(),
+            content: c.into(),
+        }
     }
 }
 
@@ -214,7 +223,10 @@ struct Deadline {
 
 impl Deadline {
     fn new(budget: Option<Duration>) -> Self {
-        Self { start: Instant::now(), budget }
+        Self {
+            start: Instant::now(),
+            budget,
+        }
     }
 
     fn remaining(&self) -> Option<Duration> {
@@ -233,14 +245,23 @@ struct CancelGuard<'a> {
 impl Drop for CancelGuard<'_> {
     fn drop(&mut self) {
         if !self.done {
-            self.client.emit(self.info, "cancelled", self.started.elapsed().as_millis() as u64, None, None);
+            self.client.emit(
+                self.info,
+                "cancelled",
+                self.started.elapsed().as_millis() as u64,
+                None,
+                None,
+            );
         }
     }
 }
 
 fn build_http(connect: Duration) -> Result<reqwest::Client> {
     // 不设整体超时：流式响应的各段超时由 `stream_once` 自己控制
-    reqwest::Client::builder().connect_timeout(connect).build().context("创建 HTTP 客户端失败")
+    reqwest::Client::builder()
+        .connect_timeout(connect)
+        .build()
+        .context("创建 HTTP 客户端失败")
 }
 
 impl LlmClient {
@@ -248,7 +269,15 @@ impl LlmClient {
         // 没绑定后端的客户端不设调用期限（和以前一致）
         let timeouts = Timeouts::defaults(cfg.timeout_secs, Priority::Background);
         let http = build_http(timeouts.connect)?;
-        Ok(Self { http, cfg, backend: None, role: String::new(), priority: Priority::Interactive, timeouts, disable_structured_thinking: false })
+        Ok(Self {
+            http,
+            cfg,
+            backend: None,
+            role: String::new(),
+            priority: Priority::Interactive,
+            timeouts,
+            disable_structured_thinking: false,
+        })
     }
 
     /// 复制一个使用其他分段超时的客户端
@@ -332,7 +361,11 @@ impl LlmClient {
     }
 
     fn endpoint(&self, path: &str) -> String {
-        format!("{}/{}", self.cfg.base_url.trim_end_matches('/'), path.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            self.cfg.base_url.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
     }
 
     /// 请求体：所有调用统一走流式（断开即取消生成），并要求服务端在最后附带 token 用量
@@ -362,7 +395,11 @@ impl LlmClient {
             }
         }
         if self.disable_structured_thinking && req.response_format.is_some() {
-            let kwargs = body.as_object_mut().expect("请求体是对象").entry("chat_template_kwargs").or_insert_with(|| json!({}));
+            let kwargs = body
+                .as_object_mut()
+                .expect("请求体是对象")
+                .entry("chat_template_kwargs")
+                .or_insert_with(|| json!({}));
             if let Some(map) = kwargs.as_object_mut() {
                 map.entry("enable_thinking").or_insert(json!(false));
             }
@@ -372,7 +409,13 @@ impl LlmClient {
 
     /// 发一次流式请求并累积结果。超时分三段：等响应 / 首 token 之前受 `first_token` 限制，
     /// 开始生成后每个 token 间隔受 `idle` 限制，整次请求受 `total` 限制。
-    async fn stream_once<F: FnMut(&str)>(&self, req: &CallReq<'_>, slot: Option<u32>, remaining: Option<Duration>, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
+    async fn stream_once<F: FnMut(&str)>(
+        &self,
+        req: &CallReq<'_>,
+        slot: Option<u32>,
+        remaining: Option<Duration>,
+        on_delta: &mut F,
+    ) -> std::result::Result<Attempt, LlmError> {
         use futures::StreamExt;
         let t = &self.timeouts;
         let start = TokioInstant::now();
@@ -380,7 +423,11 @@ impl LlmClient {
         let first_deadline = start + first_budget;
         let total_deadline = start + t.total;
         let limit_for = |first_pending: bool| -> (TokioInstant, ErrorKind) {
-            let (mut limit, mut kind) = if first_pending { (first_deadline, ErrorKind::TimeoutFirstToken) } else { (TokioInstant::now() + t.idle, ErrorKind::TimeoutIdle) };
+            let (mut limit, mut kind) = if first_pending {
+                (first_deadline, ErrorKind::TimeoutFirstToken)
+            } else {
+                (TokioInstant::now() + t.idle, ErrorKind::TimeoutIdle)
+            };
             if total_deadline <= limit {
                 (limit, kind) = (total_deadline, ErrorKind::TimeoutTotal);
             }
@@ -388,27 +435,48 @@ impl LlmClient {
         };
         let timeout_error = |kind: ErrorKind| {
             let msg = match kind {
-                ErrorKind::TimeoutFirstToken => format!("等待 {} 秒仍未收到第一个 token（排队或提示词预填充过久）", first_budget.as_secs()),
-                ErrorKind::TimeoutIdle => format!("生成过程中 {} 秒没有新的 token", t.idle.as_secs()),
+                ErrorKind::TimeoutFirstToken => format!(
+                    "等待 {} 秒仍未收到第一个 token（排队或提示词预填充过久）",
+                    first_budget.as_secs()
+                ),
+                ErrorKind::TimeoutIdle => {
+                    format!("生成过程中 {} 秒没有新的 token", t.idle.as_secs())
+                }
                 _ => format!("单次请求超过总时长上限 {} 秒", t.total.as_secs()),
             };
             LlmError::new(kind, msg)
         };
 
-        let mut http_req = self.http.post(self.endpoint("chat/completions")).json(&self.request_body(req, slot));
+        let mut http_req = self
+            .http
+            .post(self.endpoint("chat/completions"))
+            .json(&self.request_body(req, slot));
         if !self.cfg.api_key.is_empty() {
             http_req = http_req.bearer_auth(&self.cfg.api_key);
         }
         let (limit, kind) = limit_for(true);
         let resp = match timeout_at(limit, http_req.send()).await {
             Err(_) => return Err(timeout_error(kind)),
-            Ok(Err(e)) => return Err(LlmError::new(ErrorKind::Unreachable, format!("无法连接 LLM 服务 {}：{e}", self.cfg.base_url))),
+            Ok(Err(e)) => {
+                return Err(LlmError::new(
+                    ErrorKind::Unreachable,
+                    format!("无法连接 LLM 服务 {}：{e}", self.cfg.base_url),
+                ))
+            }
             Ok(Ok(r)) => r,
         };
         let status = resp.status();
         if !status.is_success() {
-            let retry_after = resp.headers().get(reqwest::header::RETRY_AFTER).and_then(|v| v.to_str().ok()).and_then(parse_retry_after);
-            let body = tokio::time::timeout(Duration::from_secs(10), resp.text()).await.ok().and_then(|r| r.ok()).unwrap_or_default();
+            let retry_after = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(parse_retry_after);
+            let body = tokio::time::timeout(Duration::from_secs(10), resp.text())
+                .await
+                .ok()
+                .and_then(|r| r.ok())
+                .unwrap_or_default();
             return Err(LlmError::from_http(status.as_u16(), &body, retry_after));
         }
 
@@ -419,17 +487,28 @@ impl LlmClient {
         let mut a = Attempt::default();
         'outer: loop {
             let (limit, kind) = limit_for(!first_seen);
-            let Some(chunk) = timeout_at(limit, stream.next()).await.map_err(|_| timeout_error(kind))? else { break };
-            buf.extend_from_slice(&chunk.map_err(|e| LlmError::new(ErrorKind::StreamCut, format!("读取流式响应失败：{e}")))?);
+            let Some(chunk) = timeout_at(limit, stream.next())
+                .await
+                .map_err(|_| timeout_error(kind))?
+            else {
+                break;
+            };
+            buf.extend_from_slice(&chunk.map_err(|e| {
+                LlmError::new(ErrorKind::StreamCut, format!("读取流式响应失败：{e}"))
+            })?);
             while let Some(pos) = buf.iter().position(|b| *b == b'\n') {
                 let line_bytes: Vec<u8> = buf.drain(..=pos).collect();
                 let line = String::from_utf8_lossy(&line_bytes);
-                let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else { continue };
+                let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else {
+                    continue;
+                };
                 if data == "[DONE]" {
                     done = true;
                     break 'outer;
                 }
-                let Ok(v) = serde_json::from_str::<Value>(data) else { continue };
+                let Ok(v) = serde_json::from_str::<Value>(data) else {
+                    continue;
+                };
                 if let Some(err) = v.get("error") {
                     let code = err["code"].as_u64().unwrap_or(500) as u16;
                     return Err(LlmError::from_http(code, &err.to_string(), None));
@@ -438,7 +517,10 @@ impl LlmClient {
                 let delta = &choice["delta"];
                 let piece = delta["content"].as_str().unwrap_or("");
                 // 推理内容（reasoning_content）不展示，但说明模型还在生成，用于"卡住"判断和首 token 计时
-                let thinking = delta["reasoning_content"].as_str().or_else(|| delta["reasoning"].as_str()).unwrap_or("");
+                let thinking = delta["reasoning_content"]
+                    .as_str()
+                    .or_else(|| delta["reasoning"].as_str())
+                    .unwrap_or("");
                 if !first_seen && !(piece.is_empty() && thinking.is_empty()) {
                     first_seen = true;
                     a.ttft_ms = Some(start.elapsed().as_millis() as u64);
@@ -462,7 +544,13 @@ impl LlmClient {
             }
         }
         if !done && a.finish_reason.is_none() {
-            return Err(LlmError::new(ErrorKind::StreamCut, format!("流式响应在结束标记之前中断（已收到 {} 个字符）", full.chars().count())));
+            return Err(LlmError::new(
+                ErrorKind::StreamCut,
+                format!(
+                    "流式响应在结束标记之前中断（已收到 {} 个字符）",
+                    full.chars().count()
+                ),
+            ));
         }
         a.text = full;
         a.total_ms = start.elapsed().as_millis() as u64;
@@ -470,12 +558,36 @@ impl LlmClient {
     }
 
     /// 记录一次尝试：调用统计、`llm.call` 日志
-    fn emit(&self, info: &CallInfo<'_>, outcome: &'static str, total_ms: u64, a: Option<&Attempt>, err: Option<&LlmError>) {
-        let backend = self.backend.as_ref().map(|b| b.name.as_str()).unwrap_or("-");
-        let (ttft, pt, ct) = a.map(|a| (a.ttft_ms, a.prompt_tokens, a.completion_tokens)).unwrap_or((None, None, None));
+    fn emit(
+        &self,
+        info: &CallInfo<'_>,
+        outcome: &'static str,
+        total_ms: u64,
+        a: Option<&Attempt>,
+        err: Option<&LlmError>,
+    ) {
+        let backend = self
+            .backend
+            .as_ref()
+            .map(|b| b.name.as_str())
+            .unwrap_or("-");
+        let (ttft, pt, ct) = a
+            .map(|a| (a.ttft_ms, a.prompt_tokens, a.completion_tokens))
+            .unwrap_or((None, None, None));
         let finish = a.and_then(|a| a.finish_reason.as_deref());
         if let Some(b) = &self.backend {
-            b.stats.record(CallRecord { role: self.role.clone(), priority: self.priority, outcome, attempt: info.format_attempt, slot: info.slot, queue_wait_ms: info.queue_wait_ms, ttft_ms: ttft, total_ms, prompt_tokens: pt, completion_tokens: ct });
+            b.stats.record(CallRecord {
+                role: self.role.clone(),
+                priority: self.priority,
+                outcome,
+                attempt: info.format_attempt,
+                slot: info.slot,
+                queue_wait_ms: info.queue_wait_ms,
+                ttft_ms: ttft,
+                total_ms,
+                prompt_tokens: pt,
+                completion_tokens: ct,
+            });
         }
         if err.is_some() || outcome == "truncated" {
             let code = err.map(|e| e.kind.code()).unwrap_or(codes::LLM_TRUNCATED);
@@ -487,11 +599,31 @@ impl LlmClient {
     }
 
     /// 一次尝试：熔断检查 → 流式请求 → 统计 / 日志 / 熔断计数。调用方中途丢弃（取消）时记为 `cancelled`
-    async fn call_once<F: FnMut(&str)>(&self, req: &CallReq<'_>, retry: u32, deadline: &Deadline, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
-        let mut info = CallInfo { req_id: req.req_id, schema: req.schema, format_attempt: req.format_attempt, retry, slot: None, queue_wait_ms: 0 };
+    async fn call_once<F: FnMut(&str)>(
+        &self,
+        req: &CallReq<'_>,
+        retry: u32,
+        deadline: &Deadline,
+        on_delta: &mut F,
+    ) -> std::result::Result<Attempt, LlmError> {
+        let mut info = CallInfo {
+            req_id: req.req_id,
+            schema: req.schema,
+            format_attempt: req.format_attempt,
+            retry,
+            slot: None,
+            queue_wait_ms: 0,
+        };
         if let Some(b) = &self.backend {
             if let Err(left) = b.breaker.check() {
-                let e = LlmError::new(ErrorKind::BreakerOpen, format!("后端 {} 连续失败，已熔断，约 {} 秒后自动试探恢复", b.name, left.as_secs() + 1));
+                let e = LlmError::new(
+                    ErrorKind::BreakerOpen,
+                    format!(
+                        "后端 {} 连续失败，已熔断，约 {} 秒后自动试探恢复",
+                        b.name,
+                        left.as_secs() + 1
+                    ),
+                );
                 self.emit(&info, e.kind.outcome(), 0, None, Some(&e));
                 return Err(e);
             }
@@ -499,14 +631,19 @@ impl LlmClient {
         // 申请槽位 / 并发许可（排队时间也受调用期限约束）；租约在本函数结束或被取消时自动归还
         let mut lease = None;
         if let Some(b) = &self.backend {
-            let who = Who { role: &self.role, priority: self.priority, req_id: req.req_id };
+            let who = Who {
+                role: &self.role,
+                priority: self.priority,
+                req_id: req.req_id,
+            };
             let default_wait = match self.priority {
                 Priority::Interactive => Duration::from_secs(30),
                 Priority::Background => Duration::from_secs(600),
             };
             let base = b.cfg.queue_secs.map_or(default_wait, Duration::from_secs);
             let max_wait = deadline.remaining().map_or(base, |r| base.min(r));
-            let est = estimate_messages(req.messages).saturating_add(req.max_tokens.unwrap_or(1024));
+            let est =
+                estimate_messages(req.messages).saturating_add(req.max_tokens.unwrap_or(1024));
             let queued = Instant::now();
             match b.sched.acquire(&who, est, max_wait).await {
                 Ok(l) => {
@@ -522,15 +659,27 @@ impl LlmClient {
             }
         }
         let started = Instant::now();
-        let mut guard = CancelGuard { client: self, info: &info, started, done: false };
-        let result = self.stream_once(req, info.slot, deadline.remaining(), on_delta).await;
+        let mut guard = CancelGuard {
+            client: self,
+            info: &info,
+            started,
+            done: false,
+        };
+        let result = self
+            .stream_once(req, info.slot, deadline.remaining(), on_delta)
+            .await;
         guard.done = true;
         let total_ms = started.elapsed().as_millis() as u64;
         match &result {
             Ok(a) => {
-                let outcome = if a.finish_reason.as_deref() == Some("length") { "truncated" } else { "ok" };
+                let outcome = if a.finish_reason.as_deref() == Some("length") {
+                    "truncated"
+                } else {
+                    "ok"
+                };
                 self.emit(&info, outcome, total_ms, Some(a), None);
-                if let (Some(l), Some(p), Some(c)) = (&lease, a.prompt_tokens, a.completion_tokens) {
+                if let (Some(l), Some(p), Some(c)) = (&lease, a.prompt_tokens, a.completion_tokens)
+                {
                     l.report_usage(p + c);
                 }
                 if let Some(b) = &self.backend {
@@ -543,7 +692,8 @@ impl LlmClient {
                 self.emit(&info, e.kind.outcome(), total_ms, None, Some(e));
                 if let (Some(b), ErrorKind::RateLimited) = (&self.backend, e.kind) {
                     // 429：整个后端暂停，别的请求也不要再打过去
-                    b.sched.pause_for(e.retry_after.unwrap_or(Duration::from_secs(1)), "429");
+                    b.sched
+                        .pause_for(e.retry_after.unwrap_or(Duration::from_secs(1)), "429");
                 }
                 if let (Some(b), true) = (&self.backend, e.kind.trips_breaker()) {
                     if b.breaker.record_failure() {
@@ -558,8 +708,17 @@ impl LlmClient {
     /// 带退避的调用：连接失败 / 超时 / 429 / 5xx / 流中断才重试，最多 `max_transient` 次
     /// （前台最多 1 次、后台用 `max_retries`），每次重试前按指数退避 + 抖动等待，且受调用期限约束；
     /// 已经向用户推送了部分文本时不再重试（否则会重复输出）
-    async fn run<F: FnMut(&str)>(&self, req: &CallReq<'_>, deadline: &Deadline, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
-        let max_transient = if self.priority == Priority::Interactive { self.cfg.max_retries.min(1) } else { self.cfg.max_retries };
+    async fn run<F: FnMut(&str)>(
+        &self,
+        req: &CallReq<'_>,
+        deadline: &Deadline,
+        on_delta: &mut F,
+    ) -> std::result::Result<Attempt, LlmError> {
+        let max_transient = if self.priority == Priority::Interactive {
+            self.cfg.max_retries.min(1)
+        } else {
+            self.cfg.max_retries
+        };
         let emitted = AtomicBool::new(false);
         let mut n = 0u32;
         loop {
@@ -578,7 +737,10 @@ impl LlmClient {
             }
             n += 1;
             let delay = backoff_delay(n, jitter01(), e.retry_after);
-            if deadline.remaining().is_some_and(|r| r < delay + Duration::from_secs(1)) {
+            if deadline
+                .remaining()
+                .is_some_and(|r| r < delay + Duration::from_secs(1))
+            {
                 return Err(e);
             }
             tracing::warn!(event = "llm.retry", code = codes::LLM_RETRY, req_id = req.req_id, role = %self.role, attempt = n, reason = e.kind.outcome(), backoff_ms = delay.as_millis() as u64, "模型调用失败，退避后重试");
@@ -587,7 +749,15 @@ impl LlmClient {
     }
 
     fn new_req<'a>(&self, messages: &'a [ChatMessage], schema: &'a str) -> CallReq<'a> {
-        CallReq { messages, response_format: None, max_tokens: self.cfg.max_tokens, schema, req_id: next_req_id(), format_attempt: 1, streaming: false }
+        CallReq {
+            messages,
+            response_format: None,
+            max_tokens: self.cfg.max_tokens,
+            schema,
+            req_id: next_req_id(),
+            format_attempt: 1,
+            streaming: false,
+        }
     }
 
     fn log_trim(&self, req_id: u64, r: &TrimReport, budget: u32, reason: &str) {
@@ -596,14 +766,30 @@ impl LlmClient {
 
     /// 按所属后端的上下文预算裁剪提示词；后端未知或上下文总量未知时原样返回。
     /// `reserve_output` 是额外预留的输出空间（结构化输出的格式重试会把上一轮输出追加回提示词）
-    fn fit_for(&self, messages: &[ChatMessage], req_id: u64, reserve_output: u32) -> Vec<ChatMessage> {
-        let Some(b) = &self.backend else { return messages.to_vec() };
+    fn fit_for(
+        &self,
+        messages: &[ChatMessage],
+        req_id: u64,
+        reserve_output: u32,
+    ) -> Vec<ChatMessage> {
+        let Some(b) = &self.backend else {
+            return messages.to_vec();
+        };
         let ctx = b.context_tokens();
         if ctx == 0 {
             return messages.to_vec();
         }
-        let max_output = self.cfg.max_tokens.unwrap_or(DEFAULT_OUTPUT_TOKENS).saturating_add(reserve_output);
-        let budget = ContextBudget { context_tokens: ctx, concurrency: b.context_divisor(), max_output }.prompt_tokens();
+        let max_output = self
+            .cfg
+            .max_tokens
+            .unwrap_or(DEFAULT_OUTPUT_TOKENS)
+            .saturating_add(reserve_output);
+        let budget = ContextBudget {
+            context_tokens: ctx,
+            concurrency: b.context_divisor(),
+            max_output,
+        }
+        .prompt_tokens();
         let (out, report) = fit(messages, budget);
         if report.changed() {
             self.log_trim(req_id, &report, budget, "budget");
@@ -612,7 +798,12 @@ impl LlmClient {
     }
 
     /// 同 `run`；服务端仍报"超上下文"（估算偏小、或上下文总量未知）时，把提示词砍到约一半再试一次
-    async fn run_fitted<F: FnMut(&str)>(&self, req: &CallReq<'_>, deadline: &Deadline, on_delta: &mut F) -> std::result::Result<Attempt, LlmError> {
+    async fn run_fitted<F: FnMut(&str)>(
+        &self,
+        req: &CallReq<'_>,
+        deadline: &Deadline,
+        on_delta: &mut F,
+    ) -> std::result::Result<Attempt, LlmError> {
         let err = match self.run(req, deadline, on_delta).await {
             Err(e) if e.kind == ErrorKind::ContextExceeded => e,
             other => return other,
@@ -626,7 +817,15 @@ impl LlmClient {
             return Err(err);
         }
         self.log_trim(req.req_id, &report, before / 2, "ctx_exceeded_retry");
-        let req2 = CallReq { messages: &msgs, response_format: req.response_format.clone(), max_tokens: req.max_tokens, schema: req.schema, req_id: req.req_id, format_attempt: req.format_attempt, streaming: req.streaming };
+        let req2 = CallReq {
+            messages: &msgs,
+            response_format: req.response_format.clone(),
+            max_tokens: req.max_tokens,
+            schema: req.schema,
+            req_id: req.req_id,
+            format_attempt: req.format_attempt,
+            streaming: req.streaming,
+        };
         self.run(&req2, deadline, on_delta).await
     }
 
@@ -636,18 +835,31 @@ impl LlmClient {
         // 输出被 max_tokens 截断时仍返回已有文本（回复被截短好过没有回复），只在日志里记 truncated
         let req = self.new_req(messages, "");
         let fitted = self.fit_for(messages, req.req_id, 0);
-        let req = CallReq { messages: &fitted, ..req };
+        let req = CallReq {
+            messages: &fitted,
+            ..req
+        };
         let a = self.run_fitted(&req, &deadline, &mut |_: &str| {}).await?;
         Ok(strip_think(&a.text))
     }
 
     /// 流式对话：每收到一段**可见**文本（已过滤思考段落）就调用 `on_delta`，最后返回完整回答。
     /// 调用失败时返回错误，调用方可以退回到 [`chat`](Self::chat)。
-    pub async fn chat_stream(&self, messages: &[ChatMessage], mut on_delta: impl FnMut(&str)) -> Result<String> {
+    pub async fn chat_stream(
+        &self,
+        messages: &[ChatMessage],
+        mut on_delta: impl FnMut(&str),
+    ) -> Result<String> {
         let deadline = Deadline::new(self.timeouts.deadline);
-        let req = CallReq { streaming: true, ..self.new_req(messages, "") };
+        let req = CallReq {
+            streaming: true,
+            ..self.new_req(messages, "")
+        };
         let fitted = self.fit_for(messages, req.req_id, 0);
-        let req = CallReq { messages: &fitted, ..req };
+        let req = CallReq {
+            messages: &fitted,
+            ..req
+        };
         let a = self.run_fitted(&req, &deadline, &mut on_delta).await?;
         if a.text.trim().is_empty() {
             return Err(LlmError::new(ErrorKind::Empty, "LLM 流式响应为空").into());
@@ -701,18 +913,36 @@ impl LlmClient {
         let deadline = Deadline::new(self.timeouts.deadline);
         let req_id = next_req_id();
         // 格式重试会把上一轮输出追加回提示词，所以多预留一份输出空间；之后追加的反馈不再重新裁剪
-        let mut msgs = self.fit_for(&msgs, req_id, self.cfg.max_tokens.unwrap_or(DEFAULT_OUTPUT_TOKENS));
+        let mut msgs = self.fit_for(
+            &msgs,
+            req_id,
+            self.cfg.max_tokens.unwrap_or(DEFAULT_OUTPUT_TOKENS),
+        );
         let mut max_tokens = self.cfg.max_tokens;
         let mut escalated = false;
         let mut attempt = 0;
         let fail = |e: &LlmError, raw_outputs: Vec<String>, attempts: u32| {
             tracing::error!(event = "llm.structured_failed", code = e.kind.code(), req_id, schema = schema_name, model = %self.cfg.model, attempts, outcome = e.kind.outcome(), error = %e.message, "模型调用最终失败");
-            StructuredError { message: e.to_string(), code: e.kind.code(), raw_outputs, attempts, latency_ms: started.elapsed().as_millis() as u64 }
+            StructuredError {
+                message: e.to_string(),
+                code: e.kind.code(),
+                raw_outputs,
+                attempts,
+                latency_ms: started.elapsed().as_millis() as u64,
+            }
         };
 
         while attempt < max_attempts {
             attempt += 1;
-            let req = CallReq { messages: &msgs, response_format: response_format.clone(), max_tokens, schema: schema_name, req_id, format_attempt: attempt, streaming: false };
+            let req = CallReq {
+                messages: &msgs,
+                response_format: response_format.clone(),
+                max_tokens,
+                schema: schema_name,
+                req_id,
+                format_attempt: attempt,
+                streaming: false,
+            };
             let a = match self.run_fitted(&req, &deadline, &mut |_: &str| {}).await {
                 Ok(a) => a,
                 Err(e) => return Err(fail(&e, raw_outputs, attempt)),
@@ -723,7 +953,15 @@ impl LlmClient {
                     escalated = true;
                     max_tokens = Some((mt * 2).min(MAX_TOKENS_CAP));
                     attempt -= 1;
-                    tracing::warn!(event = "llm.truncated_retry", code = codes::LLM_TRUNCATED, req_id, schema = schema_name, from = mt, to = max_tokens, "输出被截断，放大 max_tokens 重试一次");
+                    tracing::warn!(
+                        event = "llm.truncated_retry",
+                        code = codes::LLM_TRUNCATED,
+                        req_id,
+                        schema = schema_name,
+                        from = mt,
+                        to = max_tokens,
+                        "输出被截断，放大 max_tokens 重试一次"
+                    );
                     continue;
                 }
                 let e = LlmError::new(ErrorKind::Truncated, format!("输出被 max_tokens（{}）截断，放大后仍不够；请调大 [llm].max_tokens 或缩短要求输出的内容", max_tokens.map_or("未限制".to_string(), |m| m.to_string())));
@@ -735,7 +973,9 @@ impl LlmClient {
             // 解析 + 校验
             let parsed = extract_json(&raw)
                 .ok_or_else(|| "没有找到 JSON 对象".to_string())
-                .and_then(|j| serde_json::from_str::<T>(j).map_err(|e| format!("JSON 不符合格式要求: {e}")))
+                .and_then(|j| {
+                    serde_json::from_str::<T>(j).map_err(|e| format!("JSON 不符合格式要求: {e}"))
+                })
                 .and_then(|v| validate(&v).map(|_| v));
 
             match parsed {
@@ -773,18 +1013,31 @@ impl LlmClient {
     /// 健康检查：调用 `GET /models`。绑定了后端时结果缓存 8 秒，多个浏览器共用
     pub async fn list_models(&self) -> Result<Vec<String>> {
         match &self.backend {
-            Some(b) => b.models_cached(self.fetch_models()).await.map_err(anyhow::Error::msg),
+            Some(b) => b
+                .models_cached(self.fetch_models())
+                .await
+                .map_err(anyhow::Error::msg),
             None => self.fetch_models().await,
         }
     }
 
     async fn fetch_models(&self) -> Result<Vec<String>> {
-        let mut req = self.http.get(self.endpoint("models")).timeout(Duration::from_secs(5));
+        let mut req = self
+            .http
+            .get(self.endpoint("models"))
+            .timeout(Duration::from_secs(5));
         if !self.cfg.api_key.is_empty() {
             req = req.bearer_auth(&self.cfg.api_key);
         }
         let v: Value = req.send().await?.error_for_status()?.json().await?;
-        Ok(v["data"].as_array().map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect()).unwrap_or_default())
+        Ok(v["data"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     /// llama-server 的 `/slots` 和 `/metrics`（缓存 8 秒）。不是 `llama_cpp` 后端时返回 None
@@ -795,7 +1048,10 @@ impl LlmClient {
         }
         let http = self.http.clone();
         let base = self.cfg.base_url.clone();
-        Some(b.server_cached(async move { fetch_server(&http, &base).await }).await)
+        Some(
+            b.server_cached(async move { fetch_server(&http, &base).await })
+                .await,
+        )
     }
 }
 
@@ -805,13 +1061,35 @@ fn service_root(base: &str) -> String {
     b.strip_suffix("/v1").unwrap_or(b).to_string()
 }
 
-async fn fetch_server(http: &reqwest::Client, base: &str) -> std::result::Result<ServerView, String> {
+async fn fetch_server(
+    http: &reqwest::Client,
+    base: &str,
+) -> std::result::Result<ServerView, String> {
     let root = service_root(base);
     let get = |path: String| http.get(path).timeout(Duration::from_secs(5));
-    let slots_v: Value = get(format!("{root}/slots")).send().await.map_err(|e| format!("读取 /slots 失败：{e}"))?.error_for_status().map_err(|e| format!("/slots 返回错误：{e}"))?.json().await.map_err(|e| format!("/slots 不是 JSON：{e}"))?;
+    let slots_v: Value = get(format!("{root}/slots"))
+        .send()
+        .await
+        .map_err(|e| format!("读取 /slots 失败：{e}"))?
+        .error_for_status()
+        .map_err(|e| format!("/slots 返回错误：{e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("/slots 不是 JSON：{e}"))?;
     let slots = parse_slots(&slots_v).ok_or_else(|| "/slots 的返回不是槽位数组".to_string())?;
-    let text = get(format!("{root}/metrics")).send().await.map_err(|e| format!("读取 /metrics 失败：{e}"))?.error_for_status().map_err(|e| format!("/metrics 返回错误：{e}"))?.text().await.map_err(|e| format!("读取 /metrics 正文失败：{e}"))?;
-    Ok(ServerView { slots, metrics: parse_metrics(&text) })
+    let text = get(format!("{root}/metrics"))
+        .send()
+        .await
+        .map_err(|e| format!("读取 /metrics 失败：{e}"))?
+        .error_for_status()
+        .map_err(|e| format!("/metrics 返回错误：{e}"))?
+        .text()
+        .await
+        .map_err(|e| format!("读取 /metrics 正文失败：{e}"))?;
+    Ok(ServerView {
+        slots,
+        metrics: parse_metrics(&text),
+    })
 }
 
 /// 去掉推理模型输出里的 `<think>…</think>` 段落（Qwen3、DeepSeek-R1 等会输出）
@@ -920,20 +1198,33 @@ mod tests {
 
     #[test]
     fn with_base_url_changes_endpoint_and_keeps_other_settings() {
-        let cfg: LlmConfig = serde_json::from_str(r#"{"base_url":"http://127.0.0.1:8200/v1","model":"big"}"#).unwrap();
+        let cfg: LlmConfig =
+            serde_json::from_str(r#"{"base_url":"http://127.0.0.1:8200/v1","model":"big"}"#)
+                .unwrap();
         let big = LlmClient::new(cfg).unwrap();
-        let small = big.with_base_url("http://127.0.0.1:8201/v1/").with_model("small");
-        assert_eq!(small.endpoint("/chat/completions"), "http://127.0.0.1:8201/v1/chat/completions");
+        let small = big
+            .with_base_url("http://127.0.0.1:8201/v1/")
+            .with_model("small");
+        assert_eq!(
+            small.endpoint("/chat/completions"),
+            "http://127.0.0.1:8201/v1/chat/completions"
+        );
         assert_eq!(small.model(), "small");
         assert_eq!(small.config().timeout_secs, big.config().timeout_secs);
         // 原客户端不受影响
-        assert_eq!(big.endpoint("chat/completions"), "http://127.0.0.1:8200/v1/chat/completions");
+        assert_eq!(
+            big.endpoint("chat/completions"),
+            "http://127.0.0.1:8200/v1/chat/completions"
+        );
     }
 
     #[test]
     fn extracts_json_from_noisy_output() {
         let s = "好的，结果如下：\n```json\n{\"a\": \"含 } 括号\", \"b\": {\"c\": 1}}\n```\n以上。";
-        assert_eq!(extract_json(s).unwrap(), "{\"a\": \"含 } 括号\", \"b\": {\"c\": 1}}");
+        assert_eq!(
+            extract_json(s).unwrap(),
+            "{\"a\": \"含 } 括号\", \"b\": {\"c\": 1}}"
+        );
         assert!(extract_json("没有 json").is_none());
         assert!(extract_json("{\"未闭合\": 1").is_none());
     }

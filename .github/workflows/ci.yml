@@ -1,0 +1,166 @@
+# CI 门禁（设计说明见 docs/CI_GATES.md）。
+#
+# 注意：
+# - 第三方 action 目前使用主版本标签（如 @v4）。正式启用前应固定到具体 commit SHA，
+#   并由维护者核对，这一步尚未完成（见 docs/CI_GATES.md 的"待办"）。
+# - 本文件属于 L3 风险等级（config/risk-policy.toml），修改需要人工确认。
+# - 分支保护应把下列 job 名称设为必需检查：rust、web、python-websearch、python-tools、
+#   change-policy、security。
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# 同一分支的新提交会取消旧的运行，节省资源。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# 默认只读；需要写权限的 job 单独声明（目前没有）。
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # 与 AGENTS.md 的完成定义一致：所有 cargo 命令使用 target 目录。
+  CARGO_TARGET_DIR: target
+
+jobs:
+  # ---------- Rust ----------
+  rust:
+    name: rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      # 格式：未格式化的代码不允许合并（一次性格式化见 PR 的第二个提交）。
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      # 静态检查：任何 warning 都视为失败，与 AGENTS.md 一致。
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      # ts-rs 生成的 TypeScript 类型必须与 Rust 类型同步：重新生成后不应有差异。
+      - name: bindings 是否最新
+        run: |
+          cargo test -p an-core
+          git diff --exit-code -- web/src/bindings
+
+  # ---------- 前端 ----------
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  # ---------- Python：websearch 工具 ----------
+  python-websearch:
+    name: python-websearch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: tools/websearch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      # pyproject.toml 中已设置 -m 'not live'，默认不访问真实网络。
+      - name: 测试与覆盖率（阈值 80%，见 pyproject.toml）
+        run: uv run pytest --cov --cov-report=term
+      - name: flake8
+        run: uv run flake8 .
+
+  # ---------- Python：CI 策略脚本本身 ----------
+  python-tools:
+    name: python-tools
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # 策略脚本只用标准库；测试与 flake8 通过 uv 临时安装，不写入仓库。
+      - uses: astral-sh/setup-uv@v5
+      - name: pytest（策略脚本）
+        working-directory: tools/ci
+        run: uv run --no-project --python 3.13 --with pytest python -m pytest -q
+      - name: flake8（策略脚本）
+        run: uv run --no-project --python 3.13 --with flake8 flake8 --max-line-length 100 tools/ci
+
+  # ---------- 风险分级与变更规模 ----------
+  change-policy:
+    name: change-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 只对 PR 有意义：push 到 master 时没有"基线 vs 变更"的审查对象。
+    if: github.event_name == 'pull_request'
+    steps:
+      # 需要完整历史才能计算 base...head 的差异。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 风险分级
+        run: python3 tools/ci/risk_classify.py --json-out risk.json
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+      - name: 变更规模
+        # PR 描述经由环境变量传入，不直接拼进 run 脚本，避免被描述内容注入命令。
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 tools/ci/change_size_check.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: risk-report
+          path: risk.json
+          if-no-files-found: ignore
+
+  # ---------- 安全 ----------
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # 完整历史：密钥扫描需要覆盖所有提交，而不只是最新一次。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # 依赖漏洞扫描（RustSec 数据库）。使用预编译安装器，避免每次从源码编译。
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit
+        run: cargo audit
+      # 密钥泄露扫描：检查全部历史，防止 API key 被提交。
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

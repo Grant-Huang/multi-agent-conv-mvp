@@ -38,9 +38,9 @@ use crate::bus::Bus;
 use crate::composer::Composer;
 use crate::config::AppConfig;
 use crate::conversation::ConversationRuntime;
+use crate::nodes::NodeManager;
 use crate::orchestrator::Orchestrator;
 use crate::policy::Policy;
-use crate::nodes::NodeManager;
 use crate::registry::AgentRegistry;
 use crate::router::Router;
 use crate::store::Store;
@@ -71,11 +71,19 @@ impl Runtime {
     }
 
     /// 同上，并接入日志系统的诊断缓冲（`an_observe::init` 返回的那个）
-    pub fn with_diagnostics(config: AppConfig, store: Store, diagnostics: Arc<an_observe::Diagnostics>) -> Result<Self> {
+    pub fn with_diagnostics(
+        config: AppConfig,
+        store: Store,
+        diagnostics: Arc<an_observe::Diagnostics>,
+    ) -> Result<Self> {
         let store = Arc::new(store);
         let n = store.fail_interrupted_tasks()?;
         if n > 0 {
-            tracing::warn!(event = "task.interrupted", count = n, "{n} 个任务在上次运行中被中断，已标记为 FAILED");
+            tracing::warn!(
+                event = "task.interrupted",
+                count = n,
+                "{n} 个任务在上次运行中被中断，已标记为 FAILED"
+            );
         }
         let bus = Arc::new(Bus::new(store.clone()));
 
@@ -97,10 +105,23 @@ impl Runtime {
                 tracing::info!("未注册联网工具：{} 不可用", a.general.websearch_command);
             }
             tool_names = tools.names();
-            tool_listing = tools.infos().iter().map(|t| format!("  - {}：{}", t.name, t.description)).collect::<Vec<_>>().join("\n");
-            registry.register(Arc::new(GeneralAgent::new(llm_for(LlmRole::General), tools, a.general.max_steps, a.general.max_concurrent)));
+            tool_listing = tools
+                .infos()
+                .iter()
+                .map(|t| format!("  - {}：{}", t.name, t.description))
+                .collect::<Vec<_>>()
+                .join("\n");
+            registry.register(Arc::new(GeneralAgent::new(
+                llm_for(LlmRole::General),
+                tools,
+                a.general.max_steps,
+                a.general.max_concurrent,
+            )));
         }
-        let reviewer = a.reviewer.enabled.then(|| Arc::new(ReviewerAgent::new(llm_for(LlmRole::Reviewer))));
+        let reviewer = a
+            .reviewer
+            .enabled
+            .then(|| Arc::new(ReviewerAgent::new(llm_for(LlmRole::Reviewer))));
         if let Some(r) = &reviewer {
             registry.register(r.clone());
         }
@@ -108,7 +129,8 @@ impl Runtime {
             let mut coding = CodingAgent::new(a.coding.cfg.clone());
             // 直连本地推理服务的 coding agent（pi）：每个任务先申请后台槽位，再通过 AN_LLM_SLOT 交给子进程
             if let Some(name) = &a.coding.cfg.backend {
-                coding = coding.with_slot_backend(backends.slot_backend(name, a.coding.cfg.max_concurrent)?);
+                coding = coding
+                    .with_slot_backend(backends.slot_backend(name, a.coding.cfg.max_concurrent)?);
             }
             let card = an_core::AgentAdapter::card(&coding);
             if let Some(reason) = &card.disabled_reason {
@@ -120,14 +142,31 @@ impl Runtime {
         // 执行组配置立即校验一次（节点上的 agent 可能稍后才连上，所以只对已知成员校验）
         for role in Role::ALL {
             if let Err(e) = registry.group_ids(role) {
-                tracing::error!(event = "pool.invalid", code = e.code, role = role.as_str(), "{}", e.message);
+                tracing::error!(
+                    event = "pool.invalid",
+                    code = e.code,
+                    role = role.as_str(),
+                    "{}",
+                    e.message
+                );
             }
         }
-        let nodes = NodeManager::new(store.clone(), registry.clone(), format!("AgentNexus@{}", an_core::hostname()));
+        let nodes = NodeManager::new(
+            store.clone(),
+            registry.clone(),
+            format!("AgentNexus@{}", an_core::hostname()),
+        );
         nodes.load_saved()?;
 
         let o = &config.orchestrator;
-        let router = Arc::new(Router::new(llm_for(LlmRole::Router), registry.clone(), tool_names, Policy { approval_risk: o.approval_risk }));
+        let router = Arc::new(Router::new(
+            llm_for(LlmRole::Router),
+            registry.clone(),
+            tool_names,
+            Policy {
+                approval_risk: o.approval_risk,
+            },
+        ));
         let orchestrator = Arc::new(Orchestrator::new(
             store.clone(),
             bus.clone(),
@@ -150,15 +189,32 @@ impl Runtime {
             review_mode: config.conversation.review_requests,
             stream_replies: config.conversation.stream_replies,
         }));
-        tracing::info!(event = "conversation.config", review_requests = config.conversation.review_requests.as_str(), stream_replies = config.conversation.stream_replies);
+        tracing::info!(
+            event = "conversation.config",
+            review_requests = config.conversation.review_requests.as_str(),
+            stream_replies = config.conversation.stream_replies
+        );
 
-        Ok(Self { config, store, bus, registry, router, orchestrator, conversation, nodes, diagnostics, llm: backends.client(LlmRole::Conversation), backends: backends.clone() })
+        Ok(Self {
+            config,
+            store,
+            bus,
+            registry,
+            router,
+            orchestrator,
+            conversation,
+            nodes,
+            diagnostics,
+            llm: backends.client(LlmRole::Conversation),
+            backends: backends.clone(),
+        })
     }
 
     /// 启动后台任务：节点心跳、局域网发现。由 main 在 tokio 运行时中调用
     pub fn start_background(&self) {
         self.backends.spawn_probes();
-        self.nodes.start_heartbeat(Duration::from_secs(self.config.nodes.refresh_secs.max(3)));
+        self.nodes
+            .start_heartbeat(Duration::from_secs(self.config.nodes.refresh_secs.max(3)));
         if self.config.nodes.discovery {
             self.nodes.start_discovery();
         }
@@ -191,5 +247,8 @@ fn register_acp_agents(registry: &AgentRegistry, config: &AppConfig) {
 }
 
 fn agent_reason(agent: &AcpAgent) -> String {
-    an_core::AgentAdapter::card(agent).disabled_reason.clone().unwrap_or_default()
+    an_core::AgentAdapter::card(agent)
+        .disabled_reason
+        .clone()
+        .unwrap_or_default()
 }

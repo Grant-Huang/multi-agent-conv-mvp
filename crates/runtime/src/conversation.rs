@@ -103,18 +103,38 @@ fn turn_schema() -> Value {
 
 /// 把扁平输出转换成 TurnDecision，同时做业务校验（不通过会反馈给模型重试）
 fn to_decision(raw: &RawTurn, active: &[TaskRecord]) -> Result<TurnDecision, String> {
-    let need = |v: &str, field: &str| if v.trim().is_empty() { Err(format!("action={} 时 {field} 不能为空", raw.action)) } else { Ok(()) };
+    let need = |v: &str, field: &str| {
+        if v.trim().is_empty() {
+            Err(format!("action={} 时 {field} 不能为空", raw.action))
+        } else {
+            Ok(())
+        }
+    };
     match raw.action.as_str() {
         // 回答内容在下一步单独生成，这里先留空
-        "respond" => Ok(TurnDecision::Respond { reply: String::new() }),
-        "clarify" => need(&raw.question, "question").map(|_| TurnDecision::Clarify { question: raw.question.clone() }),
-        "delegate" => need(&raw.task_goal, "task_goal").map(|_| TurnDecision::Delegate { task_goal: raw.task_goal.clone() }),
+        "respond" => Ok(TurnDecision::Respond {
+            reply: String::new(),
+        }),
+        "clarify" => need(&raw.question, "question").map(|_| TurnDecision::Clarify {
+            question: raw.question.clone(),
+        }),
+        "delegate" => need(&raw.task_goal, "task_goal").map(|_| TurnDecision::Delegate {
+            task_goal: raw.task_goal.clone(),
+        }),
         "follow_up" => {
             if !active.iter().any(|t| t.id == raw.task_id) {
                 return Err(format!(
                     "task_id `{}` 不是进行中的任务；进行中的任务：{}",
                     raw.task_id,
-                    if active.is_empty() { "无（不能使用 follow_up）".into() } else { active.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ") }
+                    if active.is_empty() {
+                        "无（不能使用 follow_up）".into()
+                    } else {
+                        active
+                            .iter()
+                            .map(|t| t.id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    }
                 ));
             }
             let kind = match raw.follow_up_kind.as_str() {
@@ -125,7 +145,11 @@ fn to_decision(raw: &RawTurn, active: &[TaskRecord]) -> Result<TurnDecision, Str
             if kind == FollowUpKind::Supplement {
                 need(&raw.change, "change")?;
             }
-            Ok(TurnDecision::FollowUp { task_id: raw.task_id.clone(), kind, change: raw.change.clone() })
+            Ok(TurnDecision::FollowUp {
+                task_id: raw.task_id.clone(),
+                kind,
+                change: raw.change.clone(),
+            })
         }
         other => Err(format!("未知 action：{other}")),
     }
@@ -141,7 +165,10 @@ impl ConversationRuntime {
             router: d.router,
             orchestrator: d.orchestrator,
             history_messages: d.history_messages,
-            prompt_info: TurnPromptInfo { tools: d.tools, review_mode: d.review_mode },
+            prompt_info: TurnPromptInfo {
+                tools: d.tools,
+                review_mode: d.review_mode,
+            },
             stream_replies: d.stream_replies,
             locks: ConvLocks::new(),
         }
@@ -157,21 +184,45 @@ impl ConversationRuntime {
     }
 
     /// Turn Controller：只做决策，不产生副作用（评测脚本也直接调用它）
-    pub async fn decide_turn(&self, history: &[Message], active: &[TaskRecord]) -> std::result::Result<Structured<TurnDecision>, StructuredError> {
-        let query = history.iter().rev().find(|m| m.role == "user").map(|m| m.content.clone()).unwrap_or_default();
+    pub async fn decide_turn(
+        &self,
+        history: &[Message],
+        active: &[TaskRecord],
+    ) -> std::result::Result<Structured<TurnDecision>, StructuredError> {
+        let query = history
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.clone())
+            .unwrap_or_default();
         let examples = self.store.similar_feedback(&query, 5).unwrap_or_default();
-        let mut messages = vec![ChatMessage::system(turn_system_prompt(&self.prompt_info, active, &examples))];
+        let mut messages = vec![ChatMessage::system(turn_system_prompt(
+            &self.prompt_info,
+            active,
+            &examples,
+        ))];
         for m in history {
-            messages.push(if m.role == "user" { ChatMessage::user(&m.content) } else { ChatMessage::assistant(&m.content) });
+            messages.push(if m.role == "user" {
+                ChatMessage::user(&m.content)
+            } else {
+                ChatMessage::assistant(&m.content)
+            });
         }
         // 先拿到扁平结构，再转换（转换中的校验错误会触发重试）
         let active_owned = active.to_vec();
         let raw = self
             .llm
-            .chat_json::<RawTurn, _>(&messages, "turn_decision", &turn_schema(), move |r| to_decision(r, &active_owned).map(|_| ()))
+            .chat_json::<RawTurn, _>(&messages, "turn_decision", &turn_schema(), move |r| {
+                to_decision(r, &active_owned).map(|_| ())
+            })
             .await?;
         let value = to_decision(&raw.value, active).expect("已在校验中通过");
-        Ok(Structured { value, raw_outputs: raw.raw_outputs, attempts: raw.attempts, latency_ms: raw.latency_ms })
+        Ok(Structured {
+            value,
+            raw_outputs: raw.raw_outputs,
+            attempts: raw.attempts,
+            latency_ms: raw.latency_ms,
+        })
     }
 
     /// Context Builder（MVP 版）：把最近几条消息整理成文字，交给执行 Agent 作背景
@@ -181,7 +232,13 @@ impl ConversationRuntime {
             .rev()
             .take(6)
             .rev()
-            .map(|m| format!("{}：{}", if m.role == "user" { "用户" } else { "助手" }, truncate_chars(&m.content, 500)))
+            .map(|m| {
+                format!(
+                    "{}：{}",
+                    if m.role == "user" { "用户" } else { "助手" },
+                    truncate_chars(&m.content, 500)
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -194,17 +251,27 @@ impl ConversationRuntime {
             tracing::info!(event = "conversation.queued", conv_id = %conversation_id, waited_ms = turn_guard.waited_ms, "同一会话上一条消息还在处理，已排队等待");
         }
         let started = Instant::now();
-        let conv = self.store.get_conversation(conversation_id)?.context("会话不存在")?;
+        let conv = self
+            .store
+            .get_conversation(conversation_id)?
+            .context("会话不存在")?;
 
         // 1. 写入用户消息；第一条消息作为会话标题
-        let is_first = self.store.list_messages(conversation_id, Some(1))?.is_empty();
-        self.store.add_message(conversation_id, "user", text, None)?;
+        let is_first = self
+            .store
+            .list_messages(conversation_id, Some(1))?
+            .is_empty();
+        self.store
+            .add_message(conversation_id, "user", text, None)?;
         if is_first && conv.title == "新会话" {
-            self.store.rename_conversation(conversation_id, &truncate_chars(text, 24))?;
+            self.store
+                .rename_conversation(conversation_id, &truncate_chars(text, 24))?;
         }
 
         // 2. 构建上下文
-        let history = self.store.list_messages(conversation_id, Some(self.history_messages))?;
+        let history = self
+            .store
+            .list_messages(conversation_id, Some(self.history_messages))?;
         let active = self.store.active_tasks(conversation_id)?;
         let mut log = RouteLog {
             id: an_core::new_id("route"),
@@ -232,7 +299,16 @@ impl ConversationRuntime {
                 log.raw_outputs.extend(e.raw_outputs.clone());
                 log.attempts += e.attempts;
                 log.error = Some(e.to_string());
-                return self.finish(log, started, None, None, &format!("抱歉，我没能理解这条消息（模型输出格式错误：{}）。可以换个说法再试一次。", e.message));
+                return self.finish(
+                    log,
+                    started,
+                    None,
+                    None,
+                    &format!(
+                        "抱歉，我没能理解这条消息（模型输出格式错误：{}）。可以换个说法再试一次。",
+                        e.message
+                    ),
+                );
             }
         };
         log.turn_decision = Some(decision.clone());
@@ -242,21 +318,35 @@ impl ConversationRuntime {
         match &decision {
             TurnDecision::Respond { .. } => {
                 let reply_id = an_core::new_id("msg");
-                let reply = self.generate_reply(conversation_id, &reply_id, &history).await;
-                let decision = TurnDecision::Respond { reply: reply.clone() };
+                let reply = self
+                    .generate_reply(conversation_id, &reply_id, &history)
+                    .await;
+                let decision = TurnDecision::Respond {
+                    reply: reply.clone(),
+                };
                 self.finish_with_id(log, started, Some(decision), None, &reply, Some(&reply_id))
             }
-            TurnDecision::Clarify { question } => self.finish(log, started, Some(decision.clone()), None, question),
+            TurnDecision::Clarify { question } => {
+                self.finish(log, started, Some(decision.clone()), None, question)
+            }
             TurnDecision::Delegate { task_goal } => {
                 let goal = task_goal.clone();
                 self.delegate(log, started, decision, &goal, &ctx).await
             }
-            TurnDecision::FollowUp { task_id, kind, change } => {
+            TurnDecision::FollowUp {
+                task_id,
+                kind,
+                change,
+            } => {
                 let old = self.store.get_task(task_id)?.context("任务不存在")?;
                 match kind {
                     FollowUpKind::Cancel => {
                         let cancelled = self.orchestrator.cancel(task_id)?;
-                        let msg = if cancelled { format!("已取消任务：{}", truncate_chars(&old.goal, 60)) } else { "这个任务已经结束，无需取消。".into() };
+                        let msg = if cancelled {
+                            format!("已取消任务：{}", truncate_chars(&old.goal, 60))
+                        } else {
+                            "这个任务已经结束，无需取消。".into()
+                        };
                         log.task_id = Some(task_id.clone());
                         self.finish(log, started, Some(decision.clone()), None, &msg)
                     }
@@ -264,7 +354,8 @@ impl ConversationRuntime {
                         // MVP 做法：取消旧任务，用合并后的目标重新路由和派发
                         self.orchestrator.cancel(task_id)?;
                         let goal = format!("{}\n\n补充要求：{}", old.goal, change);
-                        self.delegate(log, started, decision.clone(), &goal, &ctx).await
+                        self.delegate(log, started, decision.clone(), &goal, &ctx)
+                            .await
                     }
                 }
             }
@@ -272,7 +363,14 @@ impl ConversationRuntime {
     }
 
     /// 委派：Router 路由 + Policy 校验 + Orchestrator 派发
-    async fn delegate(&self, mut log: RouteLog, started: Instant, decision: TurnDecision, goal: &str, ctx: &str) -> Result<TurnOutcome> {
+    async fn delegate(
+        &self,
+        mut log: RouteLog,
+        started: Instant,
+        decision: TurnDecision,
+        goal: &str,
+        ctx: &str,
+    ) -> Result<TurnOutcome> {
         let conversation_id = log.conversation_id.clone();
         let examples = self.store.similar_feedback(goal, 5).unwrap_or_default();
         match self.router.route(goal, ctx, &examples).await {
@@ -281,7 +379,13 @@ impl ConversationRuntime {
                 log.attempts += route.attempts;
                 log.route_decision = Some(route.decision.clone());
                 log.policy = Some(route.policy.clone());
-                let task = self.orchestrator.submit(&conversation_id, goal, ctx, route.decision.clone(), route.policy.clone())?;
+                let task = self.orchestrator.submit(
+                    &conversation_id,
+                    goal,
+                    ctx,
+                    route.decision.clone(),
+                    route.policy.clone(),
+                )?;
                 log.task_id = Some(task.id.clone());
                 let reply = if route.policy.auto_execute {
                     let intent = goal.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -299,28 +403,50 @@ impl ConversationRuntime {
                 log.attempts += f.attempts;
                 log.route_decision = f.decision;
                 log.error = Some(f.message.clone());
-                self.finish(log, started, Some(decision), None, &format!("这个任务暂时无法派发：{}", f.message))
+                self.finish(
+                    log,
+                    started,
+                    Some(decision),
+                    None,
+                    &format!("这个任务暂时无法派发：{}", f.message),
+                )
             }
         }
     }
 
     /// 直接回答：单独生成回复。开启流式时边生成边推送到界面（片段的 stream_id = 最终消息 id）；
     /// 流式失败时退回一次性生成；都失败时给出带错误码的说明。
-    async fn generate_reply(&self, conversation_id: &str, reply_id: &str, history: &[Message]) -> String {
+    async fn generate_reply(
+        &self,
+        conversation_id: &str,
+        reply_id: &str,
+        history: &[Message],
+    ) -> String {
         let mut messages = vec![ChatMessage::system(reply_system_prompt(&self.prompt_info))];
         for m in history {
-            messages.push(if m.role == "user" { ChatMessage::user(&m.content) } else { ChatMessage::assistant(&m.content) });
+            messages.push(if m.role == "user" {
+                ChatMessage::user(&m.content)
+            } else {
+                ChatMessage::assistant(&m.content)
+            });
         }
         let started = Instant::now();
         if self.stream_replies {
             let bus = self.bus.clone();
-            let result = self.reply_llm.chat_stream(&messages, |delta| bus.assistant_delta(conversation_id, reply_id, delta)).await;
+            let result = self
+                .reply_llm
+                .chat_stream(&messages, |delta| {
+                    bus.assistant_delta(conversation_id, reply_id, delta)
+                })
+                .await;
             match result {
                 Ok(text) => {
                     tracing::info!(event = "conversation.reply", conv_id = %conversation_id, streamed = true, chars = text.chars().count(), elapsed_ms = started.elapsed().as_millis() as u64);
                     return text;
                 }
-                Err(e) => tracing::warn!(event = "conversation.reply_stream_failed", code = an_core::codes::LLM_HTTP, conv_id = %conversation_id, error = %format!("{e:#}"), "流式生成失败，改用一次性生成"),
+                Err(e) => {
+                    tracing::warn!(event = "conversation.reply_stream_failed", code = an_core::codes::LLM_HTTP, conv_id = %conversation_id, error = %format!("{e:#}"), "流式生成失败，改用一次性生成")
+                }
             }
         }
         match self.reply_llm.chat(&messages).await {
@@ -328,16 +454,29 @@ impl ConversationRuntime {
                 tracing::info!(event = "conversation.reply", conv_id = %conversation_id, streamed = false, chars = text.chars().count(), elapsed_ms = started.elapsed().as_millis() as u64);
                 text
             }
-            Ok(_) => format!("[{}] 抱歉，模型没有返回内容，请再试一次。", an_core::codes::LLM_FORMAT),
+            Ok(_) => format!(
+                "[{}] 抱歉，模型没有返回内容，请再试一次。",
+                an_core::codes::LLM_FORMAT
+            ),
             Err(e) => {
                 tracing::error!(event = "conversation.reply_failed", code = an_core::codes::LLM_UNREACHABLE, conv_id = %conversation_id, error = %format!("{e:#}"));
-                format!("[{}] 抱歉，生成回答失败：{e:#}", an_core::codes::LLM_UNREACHABLE)
+                format!(
+                    "[{}] 抱歉，生成回答失败：{e:#}",
+                    an_core::codes::LLM_UNREACHABLE
+                )
             }
         }
     }
 
     /// 收尾：写入助手回复和路由日志
-    fn finish(&self, log: RouteLog, started: Instant, decision: Option<TurnDecision>, task: Option<TaskRecord>, reply: &str) -> Result<TurnOutcome> {
+    fn finish(
+        &self,
+        log: RouteLog,
+        started: Instant,
+        decision: Option<TurnDecision>,
+        task: Option<TaskRecord>,
+        reply: &str,
+    ) -> Result<TurnOutcome> {
         self.finish_with_id(log, started, decision, task, reply, None)
     }
 
@@ -353,20 +492,49 @@ impl ConversationRuntime {
     ) -> Result<TurnOutcome> {
         let task_ref = task.as_ref().map(|t| t.id.as_str());
         let msg = match reply_id {
-            Some(id) => self.store.add_message_with_id(id, &log.conversation_id, "assistant", reply, task_ref)?,
-            None => self.store.add_message(&log.conversation_id, "assistant", reply, task_ref)?,
+            Some(id) => self.store.add_message_with_id(
+                id,
+                &log.conversation_id,
+                "assistant",
+                reply,
+                task_ref,
+            )?,
+            None => self
+                .store
+                .add_message(&log.conversation_id, "assistant", reply, task_ref)?,
         };
         log.latency_ms = started.elapsed().as_millis() as u64;
         // 埋点：每轮对话一条，记录决策、路由、重试次数和耗时
-        let action = log.turn_decision.as_ref().map(|d| serde_json::to_value(d).ok().and_then(|v| v["action"].as_str().map(String::from)).unwrap_or_default()).unwrap_or_else(|| "none".into());
-        let role = log.route_decision.as_ref().map(|r| r.execution_role.as_str()).unwrap_or("-");
+        let action = log
+            .turn_decision
+            .as_ref()
+            .map(|d| {
+                serde_json::to_value(d)
+                    .ok()
+                    .and_then(|v| v["action"].as_str().map(String::from))
+                    .unwrap_or_default()
+            })
+            .unwrap_or_else(|| "none".into());
+        let role = log
+            .route_decision
+            .as_ref()
+            .map(|r| r.execution_role.as_str())
+            .unwrap_or("-");
         match &log.error {
-            Some(err) => tracing::warn!(event = "conversation.turn", conv_id = %log.conversation_id, action = %action, role, task_id = ?log.task_id, attempts = log.attempts, elapsed_ms = log.latency_ms, error = %err),
-            None => tracing::info!(event = "conversation.turn", conv_id = %log.conversation_id, action = %action, role, task_id = ?log.task_id, attempts = log.attempts, elapsed_ms = log.latency_ms),
+            Some(err) => {
+                tracing::warn!(event = "conversation.turn", conv_id = %log.conversation_id, action = %action, role, task_id = ?log.task_id, attempts = log.attempts, elapsed_ms = log.latency_ms, error = %err)
+            }
+            None => {
+                tracing::info!(event = "conversation.turn", conv_id = %log.conversation_id, action = %action, role, task_id = ?log.task_id, attempts = log.attempts, elapsed_ms = log.latency_ms)
+            }
         }
         if let Err(e) = self.store.insert_route_log(&log) {
             tracing::error!(error = %e, "写入路由日志失败");
         }
-        Ok(TurnOutcome { reply: msg, decision, task })
+        Ok(TurnOutcome {
+            reply: msg,
+            decision,
+            task,
+        })
     }
 }

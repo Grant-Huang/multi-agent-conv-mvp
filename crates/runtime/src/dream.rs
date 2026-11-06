@@ -9,12 +9,22 @@ use serde_json::Value;
 /// 从一行 JSON 日志里取出失败路由的 task_id。普通信息行返回 None。
 pub fn failed_task_id(line: &str) -> Option<String> {
     let v: Value = serde_json::from_str(line).ok()?;
-    let task_id = v.get("task_id").and_then(|x| x.as_str()).filter(|s| !s.is_empty())?;
+    let task_id = v
+        .get("task_id")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())?;
     let level = v.get("level").and_then(|x| x.as_str()).unwrap_or("");
-    let has_error = v.get("error").and_then(|x| x.as_str()).is_some_and(|s| !s.is_empty());
+    let has_error = v
+        .get("error")
+        .and_then(|x| x.as_str())
+        .is_some_and(|s| !s.is_empty());
     let event = v.get("event").and_then(|x| x.as_str()).unwrap_or("");
     let failed = level.eq_ignore_ascii_case("ERROR") || has_error || event.ends_with("_failed");
-    if failed { Some(task_id.to_string()) } else { None }
+    if failed {
+        Some(task_id.to_string())
+    } else {
+        None
+    }
 }
 
 /// 技能文本里缺了哪几条禁止项。空结果表示文本已经写明。
@@ -33,7 +43,8 @@ pub fn skill_gaps(text: &str) -> Vec<&'static str> {
 }
 
 pub fn draft_text(task_ids: &[String], gaps: &[&str]) -> String {
-    let mut out = String::from("# dream 草稿\n\n这是审查草稿。确认后才可以改评测集或技能文件。\n\n");
+    let mut out =
+        String::from("# dream 草稿\n\n这是审查草稿。确认后才可以改评测集或技能文件。\n\n");
     if task_ids.is_empty() {
         out.push_str("## 派发\n没有失败路由。\n");
     } else {
@@ -107,7 +118,13 @@ mod tests {
         fs::write(&dataset, "{\"id\":\"keep\"}\n").unwrap();
         let before = fs::read(&dataset).unwrap();
         let out = dir.join("dream");
-        assert!(run(&logs, "2026-11-05", "没有结果时换一种说法。把日期写进关键词。不要编造。", &out).unwrap());
+        assert!(run(
+            &logs,
+            "2026-11-05",
+            "没有结果时换一种说法。把日期写进关键词。不要编造。",
+            &out
+        )
+        .unwrap());
         let draft = fs::read_to_string(out.join("draft.md")).unwrap();
         assert!(draft.contains("task_id=task-9"));
         assert!(!draft.contains("task-ok"));
@@ -118,7 +135,8 @@ mod tests {
     #[test]
     fn shipped_skill_forbids_empty_stale_and_made_up_sources() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let skill = fs::read_to_string(root.join("tools/websearch/skills/websearch/SKILL.md")).unwrap();
+        let skill =
+            fs::read_to_string(root.join("tools/websearch/skills/websearch/SKILL.md")).unwrap();
         assert!(skill_gaps(&skill).is_empty(), "{:?}", skill_gaps(&skill));
         let readme = fs::read_to_string(root.join("tools/websearch/README.md")).unwrap();
         assert!(readme.contains("pi --skill ./tools/websearch/skills/websearch"));

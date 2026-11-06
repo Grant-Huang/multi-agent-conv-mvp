@@ -72,13 +72,27 @@ impl NodeManager {
     }
 
     fn conn_of(n: &StoredNode) -> NodeConn {
-        NodeConn { node_id: n.node_id.clone(), name: n.name.clone(), address: n.address.clone(), token: n.token.clone() }
+        NodeConn {
+            node_id: n.node_id.clone(),
+            name: n.name.clone(),
+            address: n.address.clone(),
+            token: n.token.clone(),
+        }
     }
 
     /// 把节点的 agent 写入注册表
     fn publish_agents(&self, n: &StoredNode, cards: &[AgentCard], online: bool) {
-        let agents: Vec<Arc<dyn AgentAdapter>> =
-            cards.iter().map(|c| Arc::new(RemoteAgent::new(self.client.clone(), Self::conn_of(n), c.clone(), online)) as Arc<dyn AgentAdapter>).collect();
+        let agents: Vec<Arc<dyn AgentAdapter>> = cards
+            .iter()
+            .map(|c| {
+                Arc::new(RemoteAgent::new(
+                    self.client.clone(),
+                    Self::conn_of(n),
+                    c.clone(),
+                    online,
+                )) as Arc<dyn AgentAdapter>
+            })
+            .collect();
         self.registry.replace_node_agents(&n.node_id, agents);
     }
 
@@ -86,7 +100,10 @@ impl NodeManager {
     pub fn load_saved(&self) -> anyhow::Result<()> {
         for n in self.store.list_nodes()? {
             self.publish_agents(&n, &n.cards, false);
-            self.status.lock().unwrap().insert(n.node_id.clone(), (false, Some("尚未连接".into())));
+            self.status
+                .lock()
+                .unwrap()
+                .insert(n.node_id.clone(), (false, Some("尚未连接".into())));
         }
         Ok(())
     }
@@ -94,7 +111,13 @@ impl NodeManager {
     /// 检查一个节点：在线则同步 agent 列表，离线则标记不可用。只在状态变化时写日志，避免刷屏
     pub async fn refresh(&self, n: &StoredNode) {
         let result = self.client.agents(&Self::conn_of(n)).await;
-        let was_online = self.status.lock().unwrap().get(&n.node_id).map(|s| s.0).unwrap_or(false);
+        let was_online = self
+            .status
+            .lock()
+            .unwrap()
+            .get(&n.node_id)
+            .map(|s| s.0)
+            .unwrap_or(false);
         match result {
             Ok(cards) => {
                 if !was_online {
@@ -102,7 +125,10 @@ impl NodeManager {
                 }
                 let _ = self.store.update_node_cards(&n.node_id, &cards);
                 self.publish_agents(n, &cards, true);
-                self.status.lock().unwrap().insert(n.node_id.clone(), (true, None));
+                self.status
+                    .lock()
+                    .unwrap()
+                    .insert(n.node_id.clone(), (true, None));
             }
             Err(e) => {
                 if was_online {
@@ -112,7 +138,10 @@ impl NodeManager {
                     tracing::error!(event = "node.auth_failed", code = codes::NODE_AUTH, node_id = %n.node_id, "节点拒绝了令牌，需要重新配对");
                 }
                 self.publish_agents(n, &n.cards, false);
-                self.status.lock().unwrap().insert(n.node_id.clone(), (false, Some(e.to_string())));
+                self.status
+                    .lock()
+                    .unwrap()
+                    .insert(n.node_id.clone(), (false, Some(e.to_string())));
             }
         }
     }
@@ -131,7 +160,11 @@ impl NodeManager {
         if info.protocol != an_core::node::PROTOCOL_VERSION {
             return Err(AgentError::new(
                 codes::NODE_PROTOCOL,
-                format!("节点协议版本 {} 与本机 {} 不一致，请升级", info.protocol, an_core::node::PROTOCOL_VERSION),
+                format!(
+                    "节点协议版本 {} 与本机 {} 不一致，请升级",
+                    info.protocol,
+                    an_core::node::PROTOCOL_VERSION
+                ),
             ));
         }
         let resp = self.client.pair(&address, code, &self.client_name).await.inspect_err(|e| {
@@ -146,14 +179,23 @@ impl NodeManager {
             paired_at: an_core::now(),
         };
         stored.cards = self.client.agents(&Self::conn_of(&stored)).await?;
-        self.store.upsert_node(&stored).map_err(|e| AgentError::new(codes::NODE_PROTOCOL, format!("保存节点失败：{e:#}")))?;
+        self.store
+            .upsert_node(&stored)
+            .map_err(|e| AgentError::new(codes::NODE_PROTOCOL, format!("保存节点失败：{e:#}")))?;
         self.publish_agents(&stored, &stored.cards, true);
-        self.status.lock().unwrap().insert(stored.node_id.clone(), (true, None));
+        self.status
+            .lock()
+            .unwrap()
+            .insert(stored.node_id.clone(), (true, None));
         if let Some(d) = self.discovered.lock().unwrap().get_mut(&stored.node_id) {
             d.paired = true;
         }
         tracing::info!(event = "node.paired", node_id = %stored.node_id, name = %stored.name, address = %address, agents = stored.cards.len(), "节点配对成功");
-        Ok(self.paired().into_iter().find(|p| p.node_id == stored.node_id).expect("刚保存的节点"))
+        Ok(self
+            .paired()
+            .into_iter()
+            .find(|p| p.node_id == stored.node_id)
+            .expect("刚保存的节点"))
     }
 
     /// 解除配对：删除令牌，移除它的 agent
@@ -180,8 +222,20 @@ impl NodeManager {
             .into_iter()
             .map(|n| {
                 let (online, last_error) = status.get(&n.node_id).cloned().unwrap_or((false, None));
-                let agents = cards.iter().filter(|c| c.kind == "node" && c.location == n.name).map(|c| c.id.clone()).collect();
-                PairedNode { node_id: n.node_id, name: n.name, address: n.address, online, last_error, agents, paired_at: n.paired_at }
+                let agents = cards
+                    .iter()
+                    .filter(|c| c.kind == "node" && c.location == n.name)
+                    .map(|c| c.id.clone())
+                    .collect();
+                PairedNode {
+                    node_id: n.node_id,
+                    name: n.name,
+                    address: n.address,
+                    online,
+                    last_error,
+                    agents,
+                    paired_at: n.paired_at,
+                }
             })
             .collect()
     }
@@ -221,26 +275,49 @@ impl NodeManager {
         let this = self.clone();
         tokio::spawn(async move {
             let _daemon = daemon; // 保持守护进程存活
-            // fullname → node_id，用于处理"服务消失"事件
+                                  // fullname → node_id，用于处理"服务消失"事件
             let mut names: BTreeMap<String, String> = BTreeMap::new();
             while let Ok(event) = receiver.recv_async().await {
                 match event {
                     mdns_sd::ServiceEvent::ServiceResolved(info) => {
-                        let Some(node_id) = info.get_property_val_str("id").map(String::from) else { continue };
+                        let Some(node_id) = info.get_property_val_str("id").map(String::from)
+                        else {
+                            continue;
+                        };
                         // 优先使用 IPv4 地址；mDNS 解析出的主机名在部分系统上不可用
                         let mut v4: Vec<_> = info.get_addresses_v4().into_iter().collect();
                         v4.sort();
-                        let host = v4.iter().find(|ip| !ip.is_loopback()).or(v4.first()).map(|ip| ip.to_string()).unwrap_or_else(|| info.get_hostname().trim_end_matches('.').to_string());
-                        let paired = this.store.list_nodes().unwrap_or_default().iter().any(|n| n.node_id == node_id);
+                        let host = v4
+                            .iter()
+                            .find(|ip| !ip.is_loopback())
+                            .or(v4.first())
+                            .map(|ip| ip.to_string())
+                            .unwrap_or_else(|| {
+                                info.get_hostname().trim_end_matches('.').to_string()
+                            });
+                        let paired = this
+                            .store
+                            .list_nodes()
+                            .unwrap_or_default()
+                            .iter()
+                            .any(|n| n.node_id == node_id);
                         let node = DiscoveredNode {
                             node_id: node_id.clone(),
-                            name: info.get_property_val_str("name").unwrap_or("未命名节点").to_string(),
+                            name: info
+                                .get_property_val_str("name")
+                                .unwrap_or("未命名节点")
+                                .to_string(),
                             address: format!("http://{host}:{}", info.get_port()),
                             os: info.get_property_val_str("os").unwrap_or("").to_string(),
                             paired,
                         };
                         names.insert(info.get_fullname().to_string(), node_id.clone());
-                        let is_new = this.discovered.lock().unwrap().insert(node_id.clone(), node.clone()).is_none();
+                        let is_new = this
+                            .discovered
+                            .lock()
+                            .unwrap()
+                            .insert(node_id.clone(), node.clone())
+                            .is_none();
                         if is_new {
                             tracing::info!(event = "discovery.found", node_id = %node_id, name = %node.name, address = %node.address, "发现局域网节点");
                         }
@@ -261,7 +338,11 @@ impl NodeManager {
 /// 补全地址：`192.168.1.23` → `http://192.168.1.23:7788`
 pub fn normalize_address(input: &str) -> String {
     let s = input.trim().trim_end_matches('/');
-    let with_scheme = if s.starts_with("http://") || s.starts_with("https://") { s.to_string() } else { format!("http://{s}") };
+    let with_scheme = if s.starts_with("http://") || s.starts_with("https://") {
+        s.to_string()
+    } else {
+        format!("http://{s}")
+    };
     // 没写端口时补上默认端口
     let after_scheme = with_scheme.split("://").nth(1).unwrap_or("");
     if after_scheme.contains(':') {
@@ -280,9 +361,21 @@ mod tests {
 
     #[test]
     fn address_normalization() {
-        assert_eq!(normalize_address("192.168.1.23"), "http://192.168.1.23:7788");
-        assert_eq!(normalize_address(" 192.168.1.23:9000/ "), "http://192.168.1.23:9000");
-        assert_eq!(normalize_address("http://mac.local"), "http://mac.local:7788");
-        assert_eq!(normalize_address("https://n.example:443"), "https://n.example:443");
+        assert_eq!(
+            normalize_address("192.168.1.23"),
+            "http://192.168.1.23:7788"
+        );
+        assert_eq!(
+            normalize_address(" 192.168.1.23:9000/ "),
+            "http://192.168.1.23:9000"
+        );
+        assert_eq!(
+            normalize_address("http://mac.local"),
+            "http://mac.local:7788"
+        );
+        assert_eq!(
+            normalize_address("https://n.example:443"),
+            "https://n.example:443"
+        );
     }
 }

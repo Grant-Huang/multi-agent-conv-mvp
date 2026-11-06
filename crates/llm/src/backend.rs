@@ -139,16 +139,25 @@ impl BackendConfig {
             return (vec![], vec![]);
         }
         if self.interactive_slots.is_empty() && self.background_slots.is_empty() && self.slots > 0 {
-            return if self.slots == 1 { (vec![0], vec![0]) } else { (vec![0], (1..self.slots).collect()) };
+            return if self.slots == 1 {
+                (vec![0], vec![0])
+            } else {
+                (vec![0], (1..self.slots).collect())
+            };
         }
-        (self.interactive_slots.clone(), self.background_slots.clone())
+        (
+            self.interactive_slots.clone(),
+            self.background_slots.clone(),
+        )
     }
 
     /// 能不能接后台角色（general / reviewer / coding）
     pub fn accepts_background(&self) -> bool {
         match self.kind {
             BackendKind::LlamaCpp => !self.effective_slots().1.is_empty(),
-            BackendKind::Openai => self.max_inflight == 0 || self.max_inflight > self.reserved_interactive,
+            BackendKind::Openai => {
+                self.max_inflight == 0 || self.max_inflight > self.reserved_interactive
+            }
         }
     }
 
@@ -157,11 +166,21 @@ impl BackendConfig {
         match self.kind {
             BackendKind::LlamaCpp => {
                 let (i, b) = self.effective_slots();
-                format!("槽位 {} 个，前台 {:?}，后台 {:?}，借用空闲={}", self.slots, i, b, self.borrow_idle)
+                format!(
+                    "槽位 {} 个，前台 {:?}，后台 {:?}，借用空闲={}",
+                    self.slots, i, b, self.borrow_idle
+                )
             }
             BackendKind::Openai => {
                 let mut parts = vec![];
-                parts.push(if self.max_inflight == 0 { "并发不限".to_string() } else { format!("并发上限 {}（预留前台 {}）", self.max_inflight, self.reserved_interactive) });
+                parts.push(if self.max_inflight == 0 {
+                    "并发不限".to_string()
+                } else {
+                    format!(
+                        "并发上限 {}（预留前台 {}）",
+                        self.max_inflight, self.reserved_interactive
+                    )
+                });
                 if self.rpm > 0 {
                     parts.push(format!("rpm {}", self.rpm));
                 }
@@ -182,14 +201,27 @@ impl BackendConfig {
         match self.kind {
             BackendKind::LlamaCpp => {
                 if self.slots == 0 {
-                    return Err(at("slots", "llama_cpp 后端必须填写槽位总数（与 llama-server 的 -np 一致）"));
+                    return Err(at(
+                        "slots",
+                        "llama_cpp 后端必须填写槽位总数（与 llama-server 的 -np 一致）",
+                    ));
                 }
                 let (interactive, background) = self.effective_slots();
-                for (field, list) in [("interactive_slots", &interactive), ("background_slots", &background)] {
+                for (field, list) in [
+                    ("interactive_slots", &interactive),
+                    ("background_slots", &background),
+                ] {
                     let mut seen = BTreeSet::new();
                     for s in list {
                         if *s >= self.slots {
-                            return Err(at(field, &format!("槽位 {s} 超出范围（slots = {}，编号 0..{}）", self.slots, self.slots - 1)));
+                            return Err(at(
+                                field,
+                                &format!(
+                                    "槽位 {s} 超出范围（slots = {}，编号 0..{}）",
+                                    self.slots,
+                                    self.slots - 1
+                                ),
+                            ));
                         }
                         if !seen.insert(*s) {
                             return Err(at(field, &format!("槽位 {s} 重复")));
@@ -199,19 +231,38 @@ impl BackendConfig {
                 if interactive.is_empty() {
                     return Err(at("interactive_slots", "至少要有一个前台槽位"));
                 }
-                if self.max_inflight != 0 || self.reserved_interactive != 0 || self.rpm != 0 || self.tpm != 0 {
-                    return Err(at("max_inflight / reserved_interactive / rpm / tpm", "llama_cpp 后端用槽位调度，请删除这些字段"));
+                if self.max_inflight != 0
+                    || self.reserved_interactive != 0
+                    || self.rpm != 0
+                    || self.tpm != 0
+                {
+                    return Err(at(
+                        "max_inflight / reserved_interactive / rpm / tpm",
+                        "llama_cpp 后端用槽位调度，请删除这些字段",
+                    ));
                 }
             }
             BackendKind::Openai => {
-                if self.slots != 0 || !self.interactive_slots.is_empty() || !self.background_slots.is_empty() {
-                    return Err(at("slots / interactive_slots / background_slots", "openai 后端没有槽位概念，请删除这些字段，改用 max_inflight"));
+                if self.slots != 0
+                    || !self.interactive_slots.is_empty()
+                    || !self.background_slots.is_empty()
+                {
+                    return Err(at(
+                        "slots / interactive_slots / background_slots",
+                        "openai 后端没有槽位概念，请删除这些字段，改用 max_inflight",
+                    ));
                 }
                 if self.max_inflight > 0 && self.reserved_interactive > self.max_inflight {
-                    return Err(at("reserved_interactive", &format!("不能大于 max_inflight（{}）", self.max_inflight)));
+                    return Err(at(
+                        "reserved_interactive",
+                        &format!("不能大于 max_inflight（{}）", self.max_inflight),
+                    ));
                 }
                 if self.max_inflight == 0 && self.reserved_interactive > 0 {
-                    return Err(at("reserved_interactive", "没有设置 max_inflight 时预留数没有意义，请同时设置 max_inflight"));
+                    return Err(at(
+                        "reserved_interactive",
+                        "没有设置 max_inflight 时预留数没有意义，请同时设置 max_inflight",
+                    ));
                 }
             }
         }
@@ -240,7 +291,10 @@ pub const PROBE_TTL: Duration = Duration::from_secs(8);
 #[derive(Debug, Default)]
 struct ProbeCache {
     models: Option<(Instant, std::result::Result<Vec<String>, String>)>,
-    server: Option<(Instant, std::result::Result<crate::status::ServerView, String>)>,
+    server: Option<(
+        Instant,
+        std::result::Result<crate::status::ServerView, String>,
+    )>,
 }
 
 /// llama-server `/props` 里我们关心的字段
@@ -251,7 +305,10 @@ pub struct ServerProps {
 }
 
 pub fn parse_props(v: &Value) -> Option<ServerProps> {
-    Some(ServerProps { n_ctx: v["default_generation_settings"]["n_ctx"].as_u64()? as u32, total_slots: v["total_slots"].as_u64()? as u32 })
+    Some(ServerProps {
+        n_ctx: v["default_generation_settings"]["n_ctx"].as_u64()? as u32,
+        total_slots: v["total_slots"].as_u64()? as u32,
+    })
 }
 
 impl Backend {
@@ -259,7 +316,18 @@ impl Backend {
         let name = name.into();
         let sched = Scheduler::new(&name, &cfg);
         let ctx = AtomicU32::new(cfg.context_tokens);
-        Self { name, cfg, breaker: Breaker::default_policy(), stats: Stats::new(500), sched, ctx, probe_cache: AsyncMutex::new(ProbeCache { models: None, server: None }) }
+        Self {
+            name,
+            cfg,
+            breaker: Breaker::default_policy(),
+            stats: Stats::new(500),
+            sched,
+            ctx,
+            probe_cache: AsyncMutex::new(ProbeCache {
+                models: None,
+                server: None,
+            }),
+        }
     }
 
     /// 模型列表：缓存未过期就直接返回，否则调用 `fetch` 并记住结果（成功和失败都缓存）。
@@ -280,7 +348,10 @@ impl Backend {
     }
 
     /// `/slots` + `/metrics`：同样缓存。只对 `llama_cpp` 后端有意义
-    pub async fn server_cached<F>(&self, fetch: F) -> std::result::Result<crate::status::ServerView, String>
+    pub async fn server_cached<F>(
+        &self,
+        fetch: F,
+    ) -> std::result::Result<crate::status::ServerView, String>
     where
         F: std::future::Future<Output = std::result::Result<crate::status::ServerView, String>>,
     {
@@ -299,7 +370,11 @@ impl Backend {
     /// 租约持有期间槽位归它，调用方把 `lease.slot()` 告诉外部进程（环境变量 `AN_LLM_SLOT`），结束时丢弃租约即归还。
     /// 排队有期限（`queue_secs`，默认 600 秒），超时返回 `E_LLM_BUSY`
     pub async fn lease_background(&self, role: &str) -> Result<Lease, LlmError> {
-        let who = Who { role, priority: Priority::Background, req_id: crate::next_req_id() };
+        let who = Who {
+            role,
+            priority: Priority::Background,
+            req_id: crate::next_req_id(),
+        };
         let wait = Duration::from_secs(self.cfg.queue_secs.unwrap_or(600));
         self.sched.acquire(&who, 0, wait).await
     }
@@ -314,7 +389,11 @@ impl Backend {
 
     /// 同时占用这个上下文的请求数：共享池（llama.cpp 的 `--kv-unified`）按槽位数分摊，否则每个请求独占
     pub fn context_divisor(&self) -> u32 {
-        if self.cfg.context_shared.unwrap_or(self.cfg.kind == BackendKind::LlamaCpp) {
+        if self
+            .cfg
+            .context_shared
+            .unwrap_or(self.cfg.kind == BackendKind::LlamaCpp)
+        {
             self.cfg.slots.max(1)
         } else {
             1
@@ -327,9 +406,20 @@ impl Backend {
         use anyhow::Context;
         let base = self.cfg.base_url.trim_end_matches('/');
         let url = format!("{}/props", base.strip_suffix("/v1").unwrap_or(base));
-        let http = reqwest::Client::builder().timeout(Duration::from_secs(5)).build()?;
-        let v: Value = http.get(&url).send().await.with_context(|| format!("无法连接 {url}"))?.error_for_status()?.json().await?;
-        let props = parse_props(&v).with_context(|| format!("{url} 的返回里没有 n_ctx / total_slots（不是 llama-server？）"))?;
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()?;
+        let v: Value = http
+            .get(&url)
+            .send()
+            .await
+            .with_context(|| format!("无法连接 {url}"))?
+            .error_for_status()?
+            .json()
+            .await?;
+        let props = parse_props(&v).with_context(|| {
+            format!("{url} 的返回里没有 n_ctx / total_slots（不是 llama-server？）")
+        })?;
         if self.cfg.context_tokens == 0 {
             self.set_context_tokens(props.n_ctx);
         }
@@ -346,7 +436,12 @@ mod tests {
     use super::*;
 
     fn local(slots: u32) -> BackendConfig {
-        BackendConfig { kind: BackendKind::LlamaCpp, base_url: "http://x/v1".into(), slots, ..Default::default() }
+        BackendConfig {
+            kind: BackendKind::LlamaCpp,
+            base_url: "http://x/v1".into(),
+            slots,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -363,7 +458,11 @@ mod tests {
 
     #[test]
     fn explicit_lists_win_and_empty_background_means_front_only() {
-        let c = BackendConfig { interactive_slots: vec![0, 1], background_slots: vec![], ..local(2) };
+        let c = BackendConfig {
+            interactive_slots: vec![0, 1],
+            background_slots: vec![],
+            ..local(2)
+        };
         // 两个列表里只要有一个非空，就不再套用默认值
         assert_eq!(c.effective_slots(), (vec![0, 1], vec![]));
         assert!(!c.accepts_background());
@@ -373,11 +472,32 @@ mod tests {
 
     #[test]
     fn slot_errors_name_the_field() {
-        let e = BackendConfig { interactive_slots: vec![0], background_slots: vec![1, 5], ..local(5) }.validate("l").unwrap_err();
-        assert!(e.contains("background_slots") && e.contains("超出范围"), "{e}");
-        let e = BackendConfig { interactive_slots: vec![0, 0], background_slots: vec![1], ..local(5) }.validate("l").unwrap_err();
+        let e = BackendConfig {
+            interactive_slots: vec![0],
+            background_slots: vec![1, 5],
+            ..local(5)
+        }
+        .validate("l")
+        .unwrap_err();
+        assert!(
+            e.contains("background_slots") && e.contains("超出范围"),
+            "{e}"
+        );
+        let e = BackendConfig {
+            interactive_slots: vec![0, 0],
+            background_slots: vec![1],
+            ..local(5)
+        }
+        .validate("l")
+        .unwrap_err();
         assert!(e.contains("interactive_slots") && e.contains("重复"), "{e}");
-        let e = BackendConfig { interactive_slots: vec![], background_slots: vec![1], ..local(5) }.validate("l").unwrap_err();
+        let e = BackendConfig {
+            interactive_slots: vec![],
+            background_slots: vec![1],
+            ..local(5)
+        }
+        .validate("l")
+        .unwrap_err();
         assert!(e.contains("至少要有一个前台槽位"), "{e}");
         let e = local(0).validate("l").unwrap_err();
         assert!(e.contains("slots"), "{e}");
@@ -385,30 +505,67 @@ mod tests {
 
     #[test]
     fn llama_cpp_rejects_remote_limit_fields_and_openai_rejects_slots() {
-        let e = BackendConfig { max_inflight: 4, ..local(5) }.validate("l").unwrap_err();
+        let e = BackendConfig {
+            max_inflight: 4,
+            ..local(5)
+        }
+        .validate("l")
+        .unwrap_err();
         assert!(e.contains("max_inflight"), "{e}");
-        let cloud = BackendConfig { base_url: "https://c/v1".into(), slots: 2, ..Default::default() };
+        let cloud = BackendConfig {
+            base_url: "https://c/v1".into(),
+            slots: 2,
+            ..Default::default()
+        };
         assert!(cloud.validate("c").unwrap_err().contains("没有槽位概念"));
     }
 
     #[test]
     fn openai_reserved_must_fit_inflight() {
-        let ok = BackendConfig { base_url: "https://c/v1".into(), max_inflight: 8, reserved_interactive: 1, ..Default::default() };
+        let ok = BackendConfig {
+            base_url: "https://c/v1".into(),
+            max_inflight: 8,
+            reserved_interactive: 1,
+            ..Default::default()
+        };
         assert!(ok.validate("c").is_ok());
         assert!(ok.accepts_background());
-        let bad = BackendConfig { reserved_interactive: 9, ..ok.clone() };
-        assert!(bad.validate("c").unwrap_err().contains("reserved_interactive"));
-        let bad = BackendConfig { max_inflight: 0, reserved_interactive: 1, ..ok.clone() };
+        let bad = BackendConfig {
+            reserved_interactive: 9,
+            ..ok.clone()
+        };
+        assert!(bad
+            .validate("c")
+            .unwrap_err()
+            .contains("reserved_interactive"));
+        let bad = BackendConfig {
+            max_inflight: 0,
+            reserved_interactive: 1,
+            ..ok.clone()
+        };
         assert!(bad.validate("c").unwrap_err().contains("max_inflight"));
         // 全部并发都预留给前台：不接后台
-        let all = BackendConfig { max_inflight: 2, reserved_interactive: 2, ..ok };
+        let all = BackendConfig {
+            max_inflight: 2,
+            reserved_interactive: 2,
+            ..ok
+        };
         assert!(!all.accepts_background());
     }
 
     #[test]
     fn empty_base_url_is_rejected_and_describe_hides_secrets() {
-        assert!(BackendConfig::default().validate("x").unwrap_err().contains("base_url"));
-        let c = BackendConfig { base_url: "https://c/v1".into(), api_key_env: Some("MY_KEY".into()), max_inflight: 8, rpm: 60, ..Default::default() };
+        assert!(BackendConfig::default()
+            .validate("x")
+            .unwrap_err()
+            .contains("base_url"));
+        let c = BackendConfig {
+            base_url: "https://c/v1".into(),
+            api_key_env: Some("MY_KEY".into()),
+            max_inflight: 8,
+            rpm: 60,
+            ..Default::default()
+        };
         let d = c.describe_limits();
         assert!(d.contains("并发上限 8") && d.contains("rpm 60"), "{d}");
         assert!(!d.contains("MY_KEY"));
