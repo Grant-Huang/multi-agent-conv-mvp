@@ -50,9 +50,7 @@ fn mock_reply(req: &Value, format_calls: &AtomicUsize) -> String {
                 d["action"] = "follow_up".into();
                 d["task_id"] = id.into();
                 d["follow_up_kind"] = "cancel".into();
-            } else if last_user.contains("问题一") {
-                d["action"] = "respond".into();
-            } else if last_user.contains("你好") {
+            } else if last_user.contains("问题一") || last_user.contains("你好") {
                 d["action"] = "respond".into();
             } else if last_user.contains("验收") {
                 // 没看到纠正时故意派错；提示词里有「正确做法：respond」才改对
