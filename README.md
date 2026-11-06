@@ -18,6 +18,8 @@ Conversation Agent + Router + 3 个执行 Agent 的最小可运行骨架。后�
 
 完整设计（架构、数据模型、状态机、时序、接口、配置、已知限制、演进路线）见 [docs/DESIGN.md](docs/DESIGN.md)。
 
+功能操作、测试先行流程与真实浏览器验证见 [测试指南](docs/testing/README.md)；在 `web/` 执行 `npm run verify`。
+
 设计原则（来自前期讨论）：
 - **Conversation 和 Router 分开**：Conversation 决定"要不要委派"，Router 决定"派给谁"。
 - **Agents as Tools**：用户只面对 Conversation，Worker 只返回结构化结果。

@@ -483,3 +483,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 - pi 的 Slack 扩展 `@arvoretech/pi-slack-bridge` 偶发崩溃（exit 1），按要求暂不关闭
 - Codex / opencode 的 GLM 额度在 2026-11-06 17:15 重置前会返回 429
 - `~/.config/opencode/opencode.json` 有明文 Slack token 和 DeepSeek key，建议改成环境变量
+
+## 工程验证体系
+
+基于远端 929301a 审查 Feature Map 与端到端验证方案，设计见 `docs/testing/DESIGN.md`，实施步骤见 `docs/testing/PLAN.md`，先定义用例再实现验证基础设施。本次不包含 M4.3 或 MOM 开发；实际结果见 `docs/testing/RESULTS.md`。
