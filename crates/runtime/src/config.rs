@@ -38,6 +38,16 @@ pub struct AppConfig {
     pub logging: LoggingSection,
     #[serde(default)]
     pub conversation: ConversationSection,
+    /// Explicitly configured MCP servers; discovery occurs before Runtime assembly.
+    #[serde(default)]
+    pub mcp: McpSection,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpSection {
+    #[serde(default)]
+    pub servers: Vec<an_agents::mcp::McpServerConfig>,
 }
 
 /// 前台（Conversation）的行为

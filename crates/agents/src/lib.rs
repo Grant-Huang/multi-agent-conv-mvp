@@ -9,8 +9,10 @@
 //! | Remote   | 远程节点上的 agent           | 跨机器执行                    |
 
 pub mod acp;
+pub mod capability;
 pub mod coding;
 pub mod general;
+pub mod mcp;
 pub mod proc_group;
 pub mod remote;
 pub mod reviewer;

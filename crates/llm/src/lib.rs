@@ -521,7 +521,7 @@ impl LlmClient {
                     .as_str()
                     .or_else(|| delta["reasoning"].as_str())
                     .unwrap_or("");
-                if !first_seen && !(piece.is_empty() && thinking.is_empty()) {
+                if !(first_seen || piece.is_empty() && thinking.is_empty()) {
                     first_seen = true;
                     a.ttft_ms = Some(start.elapsed().as_millis() as u64);
                 }
