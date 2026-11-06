@@ -9,7 +9,7 @@
 - 变更规模脚本：`tools/ci/change_size_check.py`
 - 提示注入扫描脚本：`tools/ci/injection_scan.py`
 - PR 模板：`.github/pull_request_template.md`；依赖更新：`.github/dependabot.yml`
-- 定期检查手册：`docs/PERIODIC_REVIEW.md`（含围栏差距清单与提示注入专项检查）
+- 定期检查手册：`7-fence-review.md`（含围栏差距清单与提示注入专项检查）
 - 代码负责人：`.github/CODEOWNERS`
 - 上位设计：`docs/AUTONOMOUS_DEV_ACTION_GUIDE.md`（第 1~3 层，附录 A.6、A.9、A.12）
 
@@ -65,7 +65,7 @@
 
 ### 2.4 提示注入扫描
 
-只看新增行，规则细节和局限见 `tools/ci/injection_scan.py` 头部注释与 `docs/PERIODIC_REVIEW.md` 第 4 节。
+只看新增行，规则细节和局限见 `tools/ci/injection_scan.py` 头部注释与 `7-fence-review.md` 第 4 节。
 
 | 规则 | 结果 |
 |---|---|
