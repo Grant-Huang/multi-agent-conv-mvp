@@ -12,7 +12,8 @@
 - 不改与当前任务无关的模块。
 - 不随意改公开接口：HTTP API、`config.toml` 字段、`AgentAdapter` trait。必须改时先说明理由。
 - 修改数据库表结构必须附迁移，参考 `crates/runtime/src/store.rs` 中补列的写法。
-- 新功能先写测试；测试定稿后只改业务代码。
+- 新增或改变功能前，先按 `docs/testing/README.md` 创建端到端用例和可执行测试，再改实现；新行为须有业务断言 Red→Green 证据，环境失败不算 Red。既有行为补录标为基线。
+- 验收用例定稿后只改业务代码，不改断言迎合实现；同步 `docs/testing/features.json`、功能地图和证据状态。
 - 单次改动尽量集中在一个 crate 内、一个目标内。
 
 ## 禁止

@@ -32,11 +32,7 @@ async fn main() -> Result<()> {
     );
 
     let store = Store::open(&config.server.db_path)?;
-    let rt = Arc::new(Runtime::with_diagnostics(
-        config.clone(),
-        store,
-        diagnostics,
-    )?);
+    let rt = Arc::new(Runtime::with_mcp_diagnostics(config.clone(), store, diagnostics).await?);
     rt.start_background();
 
     // 启动时检查一次 LLM 连通性（失败不退出，方便先启动服务再开模型）

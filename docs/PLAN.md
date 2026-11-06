@@ -1,5 +1,7 @@
 # AgentNexus MVP 开发计划与 TodoList
 
+新增授权工作：统一 MCP 能力卡片与 General 轻量 Harness，设计见 [mcp/DESIGN.md](mcp/DESIGN.md)，分阶段验收与状态见 [mcp/PLAN.md](mcp/PLAN.md)。不改变下列已有里程碑进度。
+
 > 最后更新：2026-11-05（M3 收尾：默认搜索 Exa，不合并来源、不缓存）
 > 规则：按里程碑逐步推进；每完成一步更新本文件（勾选进度、做必要的最小调整），用户确认后再进入下一步。
 > 新功能先写测试（TDD），测试冻结后只改业务代码；Python 部分覆盖率 ≥ 80%，通过 flake8。
@@ -485,3 +487,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 ## MOM 独立模拟流程
 
 按用户授权新增主 Agent、公告板双视图、S1 多扰动生产和 S2 客诉 Mock 流程；不替代上面的通用代理里程碑。实施、运行及测试见 [MOM 实施说明](mom/IMPLEMENTATION.md)，真实能力缺口统一见 [Mock 清单](mom/MOCK_REGISTER.md)。
+
+## 工程验证体系
+
+基于远端 929301a 审查 Feature Map 与端到端验证方案，设计见 `docs/testing/DESIGN.md`，实施步骤见 `docs/testing/PLAN.md`，先定义用例再实现验证基础设施。本次不包含 M4.3 或 MOM 开发；实际结果见 `docs/testing/RESULTS.md`。

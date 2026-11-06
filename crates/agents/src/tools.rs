@@ -3,31 +3,34 @@
 //! 安全边界：所有文件类工具都被限制在配置的 `workspace_dir` 内，
 //! 通过路径规范化防止 `../` 越界访问。
 //!
-//! 以后接 MCP：实现同一个 `Tool` trait，内部用 rmcp 客户端转发调用即可，
-//! General Agent 和 Router 都不需要改。
+//! MCP 适配器见 `mcp` 模块，与内置工具共用此注册表和 General 调用入口。
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::capability::{CapabilityCard, Effect};
 use an_core::{Artifact, ToolInfo};
+
+use crate::proc_group::{self, GroupChild};
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 
 /// 工具执行结果
+#[derive(Debug)]
 pub struct ToolOutput {
     /// 返回给模型看的文本
     pub text: String,
     /// 如果工具产出了文件，作为产物返回
-    pub artifact: Option<Artifact>,
+    pub artifacts: Vec<Artifact>,
 }
 
 impl ToolOutput {
     fn text(t: impl Into<String>) -> Self {
         Self {
             text: t.into(),
-            artifact: None,
+            artifacts: vec![],
         }
     }
 }
@@ -38,6 +41,23 @@ pub trait Tool: Send + Sync {
     fn description(&self) -> &str;
     /// 参数说明（给模型看的简短 JSON 示例）
     fn args_hint(&self) -> &str;
+    fn capability(&self) -> CapabilityCard {
+        CapabilityCard {
+            capability_id: self.name().into(),
+            tool_id: self.name().into(),
+            description: self.description().into(),
+            provider: "builtin".into(),
+            effect: if self.name() == "write_file" {
+                Effect::WorkspaceWrite
+            } else {
+                Effect::ReadOnly
+            },
+            input_schema: args_schema(),
+            output_schema: None,
+            input_types: vec!["application/json".into()],
+            output_types: vec!["text/plain".into()],
+        }
+    }
     async fn call(&self, args: &Value) -> Result<ToolOutput>;
 }
 
@@ -48,6 +68,24 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
+    pub fn capabilities(&self) -> Vec<CapabilityCard> {
+        self.tools.values().map(|tool| tool.capability()).collect()
+    }
+
+    pub fn extend(&mut self, other: Self) -> Result<()> {
+        if other.tools.keys().any(|name| self.tools.contains_key(name)) {
+            bail!("E_MCP_CONFIG: duplicate tool ID");
+        }
+        self.tools.extend(other.tools);
+        Ok(())
+    }
+
+    pub async fn call(&self, name: &str, args: &Value) -> Result<ToolOutput> {
+        self.get(name)
+            .ok_or_else(|| anyhow!("E_TOOL_UNKNOWN: {name}"))?
+            .call(args)
+            .await
+    }
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.name().to_string(), tool);
     }
@@ -130,20 +168,85 @@ struct WebCmd {
     timeout: Duration,
 }
 
-async fn run_websearch(cmd: &WebCmd, args: &[&str]) -> Result<String> {
-    let child = tokio::process::Command::new(&cmd.command)
+/// 子进程的输出
+struct Collected {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+/// 运行搜索命令并收集输出。子进程放在独立进程组里：
+/// 超时时整个组先 SIGTERM 再 SIGKILL；正常退出后最多再读 DRAIN_AFTER_EXIT 的剩余输出，
+/// 然后清理组内残留进程（孙进程继承了管道时，不能等管道关闭，否则会一直等到超时）。
+async fn run_collect(cmd: &WebCmd, args: &[&str]) -> Result<Collected> {
+    use tokio::io::AsyncReadExt;
+
+    let mut command = tokio::process::Command::new(&cmd.command);
+    command
         .args(args)
-        .kill_on_drop(true)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .stdin(std::process::Stdio::null())
-        .spawn()
-        .with_context(|| format!("无法启动 {}", cmd.command))?;
-    let out = match tokio::time::timeout(cmd.timeout, child.wait_with_output()).await {
-        Ok(Ok(out)) => out,
-        Ok(Err(e)) => return Err(e).with_context(|| format!("{} 执行失败", cmd.command)),
-        Err(_) => bail!("{} 超时（{} 秒）", cmd.command, cmd.timeout.as_secs()),
+        .stdin(std::process::Stdio::null());
+    proc_group::configure(&mut command);
+    let mut child =
+        GroupChild::spawn(&mut command, "").with_context(|| format!("无法启动 {}", cmd.command))?;
+    let mut out_pipe = child
+        .child_mut()
+        .stdout
+        .take()
+        .context("没有拿到标准输出")?;
+    let mut err_pipe = child
+        .child_mut()
+        .stderr
+        .take()
+        .context("没有拿到标准错误")?;
+
+    let collect = async {
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let (mut out_buf, mut err_buf) = ([0u8; 8192], [0u8; 8192]);
+        let (mut out_done, mut err_done) = (false, false);
+        let mut exit = None;
+        let mut drain_until = tokio::time::Instant::now();
+        while !(out_done && err_done) {
+            tokio::select! {
+                status = child.wait(), if exit.is_none() => {
+                    exit = Some(status);
+                    drain_until = tokio::time::Instant::now() + proc_group::DRAIN_AFTER_EXIT;
+                },
+                _ = tokio::time::sleep_until(drain_until), if exit.is_some() => break,
+                n = out_pipe.read(&mut out_buf), if !out_done => match n {
+                    Ok(0) | Err(_) => out_done = true,
+                    Ok(n) => stdout.extend_from_slice(&out_buf[..n]),
+                },
+                n = err_pipe.read(&mut err_buf), if !err_done => match n {
+                    Ok(0) | Err(_) => err_done = true,
+                    Ok(n) => stderr.extend_from_slice(&err_buf[..n]),
+                },
+            }
+        }
+        match exit {
+            Some(status) => status,
+            None => child.wait().await,
+        }
+        .map(|_| Collected { stdout, stderr })
     };
+    match tokio::time::timeout(cmd.timeout, collect).await {
+        Ok(Ok(out)) => {
+            child.kill_leftovers();
+            Ok(out)
+        }
+        Ok(Err(e)) => {
+            child.kill_leftovers();
+            Err(e).with_context(|| format!("{} 执行失败", cmd.command))
+        }
+        Err(_) => {
+            child.terminate("timeout").await;
+            bail!("{} 超时（{} 秒）", cmd.command, cmd.timeout.as_secs())
+        }
+    }
+}
+
+async fn run_websearch(cmd: &WebCmd, args: &[&str]) -> Result<String> {
+    let out = run_collect(cmd, args).await?;
     let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if stdout.is_empty() {
         let err = String::from_utf8_lossy(&out.stderr);
@@ -428,11 +531,11 @@ impl Tool for WriteFile {
             .with_context(|| format!("无法写入文件 {rel}"))?;
         Ok(ToolOutput {
             text: format!("已写入 {rel}（{} 字符）", content.chars().count()),
-            artifact: Some(Artifact {
+            artifacts: vec![Artifact {
                 kind: "file".into(),
                 name: rel.into(),
                 content: content.into(),
-            }),
+            }],
         })
     }
 }
@@ -609,6 +712,68 @@ mod tests {
         };
         assert!(message.contains("超时"), "{message}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 搜索命令超时：整个进程组被结束，脚本起的孙进程不残留（仅 Unix）
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn websearch_timeout_kills_group() {
+        use crate::test_proc::*;
+        let dir = std::env::temp_dir().join(an_core::new_id("an-websearch-group"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pid_file = dir.join("gc.pid");
+        let script = write_script(
+            &dir,
+            &format!(
+                "#!/bin/sh\nsleep 300 &\necho $! > {}\nwait\n",
+                pid_file.display()
+            ),
+        );
+        let cmd = WebCmd {
+            command: script.to_string_lossy().into_owned(),
+            timeout: Duration::from_millis(500),
+        };
+        let err = run_websearch(&cmd, &["search", "q"])
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("超时"), "{err}");
+        let pid = read_pid(&pid_file, 2);
+        let dead = wait_dead(pid, 5);
+        force_kill(pid);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(dead, "超时后孙进程 {pid} 还在运行");
+    }
+
+    /// 搜索命令已经输出并退出、孙进程还占着管道：立即返回结果，不等到超时
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn websearch_exited_command_does_not_hang_on_inherited_pipe() {
+        use crate::test_proc::*;
+        let dir = std::env::temp_dir().join(an_core::new_id("an-websearch-pipe"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pid_file = dir.join("gc.pid");
+        let script = write_script(
+            &dir,
+            &format!("#!/bin/sh\nsleep 300 &\necho $! > {}\nprintf '%s' '{{\"status\":\"success\",\"data\":{{}},\"message\":\"\"}}'\n", pid_file.display()),
+        );
+        let cmd = WebCmd {
+            command: script.to_string_lossy().into_owned(),
+            timeout: Duration::from_secs(10),
+        };
+        let started = std::time::Instant::now();
+        let out = run_websearch(&cmd, &["search", "q"]).await;
+        let elapsed = started.elapsed();
+        let pid = read_pid(&pid_file, 2);
+        let dead = wait_dead(pid, 5);
+        force_kill(pid);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(out.unwrap().contains("success"));
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "命令退出后应尽快返回，实际用了 {elapsed:?}"
+        );
+        assert!(dead, "残留的孙进程 {pid} 应被清理");
     }
 
     #[test]

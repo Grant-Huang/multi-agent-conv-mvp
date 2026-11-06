@@ -9,12 +9,18 @@
 //! | Remote   | 远程节点上的 agent           | 跨机器执行                    |
 
 pub mod acp;
+pub mod capability;
 pub mod coding;
 pub mod general;
+pub mod mcp;
+pub mod proc_group;
 pub mod remote;
 pub mod reviewer;
 pub mod tools;
 pub mod util;
+
+#[cfg(all(test, unix))]
+mod test_proc;
 
 pub use acp::{AcpAgent, AcpConfig, PermissionMode};
 pub use coding::{CodingAgent, CodingConfig, SLOT_ENV};

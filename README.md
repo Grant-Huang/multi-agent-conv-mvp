@@ -18,6 +18,8 @@ Conversation Agent + Router + 3 个执行 Agent 的最小可运行骨架。后�
 
 完整设计（架构、数据模型、状态机、时序、接口、配置、已知限制、演进路线）见 [docs/DESIGN.md](docs/DESIGN.md)。
 
+功能操作、测试先行流程与真实浏览器验证见 [测试指南](docs/testing/README.md)；在 `web/` 执行 `npm run verify`。
+
 设计原则（来自前期讨论）：
 - **Conversation 和 Router 分开**：Conversation 决定"要不要委派"，Router 决定"派给谁"。
 - **Agents as Tools**：用户只面对 Conversation，Worker 只返回结构化结果。
@@ -189,13 +191,16 @@ cargo test -p an-core # 修改 core 的类型后运行，重新生成 web/src/bi
 
 ## MVP 刻意没做的
 
-任务 DAG / 并行子任务、跨互联网的节点、节点 TLS、长期记忆（RelOS）、MCP 工具接入（`Tool` trait 已预留）、ACP 的文件/终端代理能力、断点续跑（服务重启时中断的任务标记为 FAILED）、多用户与鉴权、Slack 入口。
+任务 DAG / 并行子任务、跨互联网的节点、节点 TLS、长期记忆（RelOS）、ACP 的文件/终端代理能力、断点续跑（服务重启时中断的任务标记为 FAILED）、多用户与鉴权、Slack 入口。
+
+MCP 已增加配置式接入：General 使用轻量 Harness 调用 stdio / Streamable HTTP 工具，启动时发现真实 Schema，并执行本地允许清单和参数校验。接入说明见 [docs/mcp/README.md](docs/mcp/README.md)，完整设计和阶段限制见 [docs/mcp/DESIGN.md](docs/mcp/DESIGN.md)。当前支持文本资源产物；PPTX 等二进制文件的存储、下载和真实提供方集成仍在后续计划。
 
 ## API
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | /api/health | LLM 连通性、模型列表、Agent 状态 |
+| GET | /api/capabilities | 已连接工具的能力卡片、provider 和输入输出 Schema |
 | GET / POST | /api/conversations | 会话列表 / 新建会话 |
 | GET / POST | /api/conversations/{id}/messages | 消息列表 / 发送消息 `{"text": "..."}` |
 | GET | /api/tasks?conversation_id= | 任务列表 |
