@@ -6,7 +6,8 @@
 //!   `{prompt}` 任务描述、`{workdir}` 工作目录、`{last_message_file}` 最后一条回复的输出文件；
 //!   不同版本 Codex 的参数可能不同，请用 `codex exec --help` 核对后修改配置；
 //! - 卡片的 id / 名称 / 类型可在配置中指定，默认是 codex / Codex CLI / codex；
-//! - 子进程设置 `kill_on_drop`：编排层取消任务（abort）时子进程会被一起杀掉；
+//! - 子进程放在独立的进程组里（[`crate::proc_group`]）：取消、超时、正常结束时，
+//!   连同它启动的孙进程一起结束，不会残留；
 //! - 执行后在工作目录跑 `git diff`，把改动作为产物和证据交给 Reviewer。
 //!   "Codex 说改好了"不等于"改对了"，验收要看证据。
 
@@ -21,6 +22,7 @@ use an_core::{
     TaskResult, TaskSpec, WorkerStatus,
 };
 
+use crate::proc_group::{self, GroupChild};
 use crate::util::{collect_git_changes, expand_tilde, resolve_command, snapshot_worktree};
 use an_llm::Backend;
 use anyhow::{Context, Result};
@@ -301,23 +303,24 @@ impl AgentAdapter for CodingAgent {
             Some(s) => cmd.env(SLOT_ENV, s.to_string()),
             None => cmd.env_remove(SLOT_ENV),
         };
-        let mut child = cmd
-            .args(&args)
+        cmd.args(&args)
             .current_dir(&workdir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true) // 任务被取消时自动杀掉子进程
-            .spawn()
-            .map_err(|e| {
-                AgentError::new(
-                    codes::AGENT_SPAWN,
-                    format!("无法启动 {}：{e}", self.cfg.command),
-                )
-            })?;
+            .stderr(Stdio::piped());
+        // 新进程组：取消 / 超时 / 结束时连同孙进程一起清理（见 proc_group）
+        proc_group::configure(&mut cmd);
+        let mut child = GroupChild::spawn(&mut cmd, &task.task_id).map_err(|e| {
+            AgentError::new(
+                codes::AGENT_SPAWN,
+                format!("无法启动 {}：{e}", self.cfg.command),
+            )
+        })?;
 
-        let mut stdout = BufReader::new(child.stdout.take().expect("stdout piped")).lines();
-        let mut stderr = BufReader::new(child.stderr.take().expect("stderr piped")).lines();
+        let mut stdout =
+            BufReader::new(child.child_mut().stdout.take().expect("stdout piped")).lines();
+        let mut stderr =
+            BufReader::new(child.child_mut().stderr.take().expect("stderr piped")).lines();
         let mut out_tail: VecDeque<String> = VecDeque::new();
         let mut err_tail: VecDeque<String> = VecDeque::new();
         let push = |q: &mut VecDeque<String>, l: String| {
@@ -327,14 +330,22 @@ impl AgentAdapter for CodingAgent {
             q.push_back(l);
         };
 
-        // 4. 一边读输出（进度按 20 行或 200ms 合并成一条），一边等待进程结束，整体受超时控制
+        // 4. 一边读输出（进度按 20 行或 200ms 合并成一条），一边等待进程结束，整体受超时控制。
+        //    子进程退出后最多再读 DRAIN_AFTER_EXIT：孙进程可能继承了管道，不能等管道关闭
         let run = async {
             let mut progress = ProgressBuf::new();
             let (mut out_done, mut err_done) = (false, false);
+            let mut exit = None;
+            let mut drain_until = tokio::time::Instant::now();
             while !(out_done && err_done) {
                 let deadline = progress.deadline();
                 let pending = progress.pending();
                 tokio::select! {
+                    status = child.wait(), if exit.is_none() => {
+                        exit = Some(status);
+                        drain_until = tokio::time::Instant::now() + proc_group::DRAIN_AFTER_EXIT;
+                    },
+                    _ = tokio::time::sleep_until(drain_until), if exit.is_some() => break,
                     line = stdout.next_line(), if !out_done => match line {
                         Ok(Some(l)) => {
                             if let Some(msg) = progress.push(Self::describe_line(&l)) {
@@ -356,17 +367,25 @@ impl AgentAdapter for CodingAgent {
             if progress.pending() {
                 events.progress(progress.drain());
             }
-            child.wait().await
+            match exit {
+                Some(status) => status,
+                None => child.wait().await,
+            }
         };
-        let exit = match tokio::time::timeout(Duration::from_secs(self.cfg.timeout_secs), run).await
-        {
-            Ok(r) => r.context("等待子进程失败")?,
-            // 超时：返回后 child 被 drop，kill_on_drop 会杀掉进程
+        let outcome = tokio::time::timeout(Duration::from_secs(self.cfg.timeout_secs), run).await;
+        let exit = match outcome {
+            Ok(r) => {
+                // 正常退出：清掉组里残留的孙进程（例如没关的 dev server）
+                child.kill_leftovers();
+                r.context("等待子进程失败")?
+            }
+            // 超时：先 SIGTERM 整个进程组，等一会儿再 SIGKILL
             Err(_) => {
+                child.terminate("timeout").await;
                 return Ok(TaskResult::failed_code(
                     codes::AGENT_TIMEOUT,
                     format!("{} 超时（{} 秒）", self.card.name, self.cfg.timeout_secs),
-                ))
+                ));
             }
         };
 
@@ -600,6 +619,75 @@ mod tests {
         assert!(buf.push("a".into()).is_none());
         std::thread::sleep(Duration::from_millis(210));
         assert_eq!(buf.push("b".into()).as_deref(), Some("a\nb"));
+    }
+
+    // ───── 子进程清理：按进程组结束，孙进程不残留（仅 Unix） ─────
+
+    /// 用 sh 冒充 agent：后台起一个 `sleep 300` 孙进程，pid 写到工作目录的 gc.pid
+    #[cfg(unix)]
+    fn grandchild_agent(tag: &str, script_tail: &str, timeout_secs: u64) -> (CodingAgent, PathBuf) {
+        let dir = std::env::temp_dir().join(an_core::new_id(&format!("an-coding-{tag}")));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg: CodingConfig = serde_json::from_value(serde_json::json!({
+            "command": "sh",
+            "args": ["-c", format!("sleep 300 & echo $! > {{workdir}}/gc.pid; {script_tail}")],
+            "workdir": dir,
+            "timeout_secs": timeout_secs,
+        }))
+        .unwrap();
+        let dir = dir.canonicalize().unwrap();
+        (CodingAgent::new(cfg), dir)
+    }
+
+    /// 超时：整个进程组被结束，孙进程不残留
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timeout_kills_grandchildren() {
+        use crate::test_proc::*;
+        let (agent, dir) = grandchild_agent("timeout", "wait", 1);
+        let r = agent.run(spec("gc-timeout"), sink()).await.unwrap();
+        assert!(r.errors.join("").contains(codes::AGENT_TIMEOUT), "{r:?}");
+        let pid = read_pid(&dir.join("gc.pid"), 2);
+        let dead = wait_dead(pid, 5);
+        force_kill(pid);
+        assert!(dead, "超时后孙进程 {pid} 还在运行");
+    }
+
+    /// 取消（future 被 drop）：整个进程组被结束
+    // 多线程运行时：测试线程在等 pid 文件时，后台任务要能继续跑
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn abort_kills_grandchildren() {
+        use crate::test_proc::*;
+        let (agent, dir) = grandchild_agent("abort", "wait", 60);
+        let handle = tokio::spawn(async move { agent.run(spec("gc-abort"), sink()).await });
+        let pid = read_pid(&dir.join("gc.pid"), 5);
+        handle.abort();
+        let _ = handle.await;
+        let dead = wait_dead(pid, 5);
+        force_kill(pid);
+        assert!(dead, "取消后孙进程 {pid} 还在运行");
+    }
+
+    /// 子进程已经退出、孙进程还占着输出管道：任务要马上结束，残留的孙进程也要清理
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn exited_child_does_not_hang_on_inherited_pipe() {
+        use crate::test_proc::*;
+        let (agent, dir) = grandchild_agent("pipe", "echo done", 10);
+        let started = std::time::Instant::now();
+        let r = agent.run(spec("gc-pipe"), sink()).await.unwrap();
+        let elapsed = started.elapsed();
+        let pid = read_pid(&dir.join("gc.pid"), 2);
+        let dead = wait_dead(pid, 5);
+        force_kill(pid);
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "子进程退出后任务应尽快结束，实际用了 {elapsed:?}"
+        );
+        assert_eq!(r.status, WorkerStatus::Succeeded, "{r:?}");
+        assert!(r.summary.contains("done"), "{}", r.summary);
+        assert!(dead, "正常结束后残留的孙进程 {pid} 应被清理");
     }
 
     #[test]

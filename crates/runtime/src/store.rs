@@ -30,6 +30,15 @@ const EVENT_KEEP: i64 = 20_000;
 /// 读超过这个时间记一条 `store.read_slow`
 const READ_SLOW_MS: u128 = 50;
 
+/// 尚未结束的任务状态（取消时允许的起点）。NEEDS_HUMAN 不是终态：人工审批后还能继续
+pub const ACTIVE_STATUSES: [TaskStatus; 5] = [
+    TaskStatus::Created,
+    TaskStatus::Queued,
+    TaskStatus::Running,
+    TaskStatus::Verifying,
+    TaskStatus::NeedsHuman,
+];
+
 enum WriteCmd {
     Event(TaskEvent),
     /// 把已经进通道的事件写完，再通知等待方
@@ -531,6 +540,59 @@ impl Store {
         Ok(())
     }
 
+    /// 带条件的状态转换：只有当前状态属于 `from` 时才改成 `to`。返回 true 表示确实改了。
+    /// 判断和修改在同一条 UPDATE 里完成，并发调用时只有一个能成功（取消 / 完成 / 批准互不覆盖）。
+    pub fn transition_task(&self, id: &str, from: &[TaskStatus], to: TaskStatus) -> Result<bool> {
+        self.finish_task(id, from, to, None)
+    }
+
+    /// 人工批准：只有 NEEDS_HUMAN 且还没有执行结果（审批前就停下的任务）才能改成 QUEUED。
+    /// 并发批准时只有一个返回 true。
+    pub fn approve_task(&self, id: &str) -> Result<bool> {
+        let changed = self.write().execute(
+            "UPDATE tasks SET status = 'QUEUED', updated_at = ?2 WHERE id = ?1 AND status = 'NEEDS_HUMAN' AND result_json IS NULL",
+            params![id, now()],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// 同 [`Store::transition_task`]，`result` 有值时与状态在同一条 UPDATE 里写入：
+    /// 条件不满足时状态和结果都不写。
+    pub fn finish_task(
+        &self,
+        id: &str,
+        from: &[TaskStatus],
+        to: TaskStatus,
+        result: Option<&TaskResult>,
+    ) -> Result<bool> {
+        if from.is_empty() {
+            return Ok(false);
+        }
+        // from 来自代码里的常量，只有固定的几个值；仍然走参数绑定，不拼接字符串
+        let placeholders = (0..from.len())
+            .map(|i| format!("?{}", i + 5))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "UPDATE tasks SET status = ?2, updated_at = ?3, result_json = COALESCE(?4, result_json) WHERE id = ?1 AND status IN ({placeholders})"
+        );
+        let result_json = result.map(serde_json::to_string).transpose()?;
+        let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![
+            Box::new(id.to_string()),
+            Box::new(to.as_str()),
+            Box::new(now()),
+            Box::new(result_json),
+        ];
+        values.extend(
+            from.iter()
+                .map(|s| Box::new(s.as_str()) as Box<dyn rusqlite::ToSql>),
+        );
+        let changed = self
+            .write()
+            .execute(&sql, rusqlite::params_from_iter(values.iter()))?;
+        Ok(changed == 1)
+    }
+
     pub fn set_task_result(&self, id: &str, result: &TaskResult) -> Result<()> {
         self.write().execute(
             "UPDATE tasks SET result_json = ?2, updated_at = ?3 WHERE id = ?1",
@@ -581,12 +643,13 @@ impl Store {
         rows.into_iter().collect()
     }
 
-    /// 某个角色、某个状态的任务数。排队名次用它：调用时本任务还没写成 QUEUED，所以名次是这个数 + 1
-    pub fn count_role_status(&self, role: &str, status: TaskStatus) -> Result<i64> {
-        let _timer = ReadTimer::new("count_role_status");
+    /// 排队名次：同角色、比这个任务早创建、还在 QUEUED 的任务数（不含自己）
+    pub fn queued_ahead(&self, id: &str) -> Result<i64> {
+        let _timer = ReadTimer::new("queued_ahead");
         Ok(self.read().query_row(
-            "SELECT COUNT(*) FROM tasks WHERE role = ?1 AND status = ?2",
-            params![role, status.as_str()],
+            "SELECT COUNT(*) FROM tasks o JOIN tasks me ON me.id = ?1
+             WHERE o.role = me.role AND o.status = 'QUEUED' AND o.created_at < me.created_at AND o.id <> me.id",
+            [id],
             |r| r.get(0),
         )?)
     }
@@ -1295,5 +1358,129 @@ mod tests {
         assert!(v.get("expect_role").is_none());
         assert!(v["note"].as_str().unwrap().contains("delegate / coding"));
         assert!(draft.starts_with("// 纠错草稿"));
+    }
+
+    fn sample_task(id: &str, status: TaskStatus) -> TaskRecord {
+        use an_core::{Risk, Role, RouteDecision, TaskClass};
+        TaskRecord {
+            id: id.into(),
+            conversation_id: "c1".into(),
+            goal: "g".into(),
+            role: Role::General,
+            status,
+            route: RouteDecision {
+                task_class: TaskClass::L1,
+                execution_role: Role::General,
+                required_tools: vec![],
+                risk_level: Risk::Low,
+                reason: String::new(),
+            },
+            policy: PolicyVerdict {
+                auto_execute: true,
+                needs_review: false,
+                notes: vec![],
+            },
+            result: None,
+            review: None,
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    /// 状态转换只在当前状态属于 `from` 时生效
+    #[test]
+    fn transition_task_respects_from() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        store
+            .insert_task(&sample_task("t1", TaskStatus::Queued), "")
+            .unwrap();
+        // 当前不是 RUNNING：不改
+        assert!(!store
+            .transition_task("t1", &[TaskStatus::Running], TaskStatus::Verifying)
+            .unwrap());
+        assert_eq!(
+            store.get_task("t1").unwrap().unwrap().status,
+            TaskStatus::Queued
+        );
+        // 当前是 QUEUED：改
+        assert!(store
+            .transition_task("t1", &[TaskStatus::Queued], TaskStatus::Running)
+            .unwrap());
+        assert_eq!(
+            store.get_task("t1").unwrap().unwrap().status,
+            TaskStatus::Running
+        );
+        // 不存在的任务：返回 false
+        assert!(!store
+            .transition_task("nope", &[TaskStatus::Running], TaskStatus::Cancelled)
+            .unwrap());
+    }
+
+    /// 结束任务：状态和结果一起写；已进入终态的任务不会被改回去
+    #[test]
+    fn finish_task_writes_result_and_never_leaves_terminal() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        store
+            .insert_task(&sample_task("t1", TaskStatus::Running), "")
+            .unwrap();
+        // 先被取消
+        assert!(store
+            .transition_task("t1", &ACTIVE_STATUSES, TaskStatus::Cancelled)
+            .unwrap());
+        // 再尝试写完成：失败，结果也不写入
+        let done = TaskResult {
+            status: an_core::WorkerStatus::Succeeded,
+            summary: "ok".into(),
+            artifacts: vec![],
+            evidence: vec![],
+            errors: vec![],
+        };
+        assert!(!store
+            .finish_task(
+                "t1",
+                &[TaskStatus::Running, TaskStatus::Verifying],
+                TaskStatus::Completed,
+                Some(&done)
+            )
+            .unwrap());
+        let t = store.get_task("t1").unwrap().unwrap();
+        assert_eq!(t.status, TaskStatus::Cancelled);
+        assert!(t.result.is_none());
+
+        store
+            .insert_task(&sample_task("t2", TaskStatus::Running), "")
+            .unwrap();
+        assert!(store
+            .finish_task(
+                "t2",
+                &[TaskStatus::Running],
+                TaskStatus::Completed,
+                Some(&done)
+            )
+            .unwrap());
+        let t = store.get_task("t2").unwrap().unwrap();
+        assert_eq!(t.status, TaskStatus::Completed);
+        assert_eq!(t.result.unwrap().summary, "ok");
+        // 终态之后再取消：失败
+        assert!(!store
+            .transition_task("t2", &ACTIVE_STATUSES, TaskStatus::Cancelled)
+            .unwrap());
+    }
+
+    /// 排队名次：只数同角色、比自己早创建、状态是 QUEUED 的任务
+    #[test]
+    fn queued_ahead_counts_only_earlier_tasks() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let mut a = sample_task("a", TaskStatus::Queued);
+        a.created_at = "2026-01-01T00:00:01.000Z".into();
+        let mut b = sample_task("b", TaskStatus::Queued);
+        b.created_at = "2026-01-01T00:00:02.000Z".into();
+        let mut c = sample_task("c", TaskStatus::Running);
+        c.created_at = "2026-01-01T00:00:00.000Z".into();
+        for t in [&a, &b, &c] {
+            store.insert_task(t, "").unwrap();
+        }
+        assert_eq!(store.queued_ahead("a").unwrap(), 0);
+        assert_eq!(store.queued_ahead("b").unwrap(), 1);
     }
 }
