@@ -115,20 +115,21 @@ describe("进度条", () => {
   const lines = ["排队中", "执行中 1/3", "写入文件"];
 
   it("默认只显示最新一条", () => {
-    render(<TaskTicker lines={lines} />);
+    render(<TaskTicker lines={lines} running={false} />);
     expect(screen.getByText("写入文件")).toBeTruthy();
     expect(screen.queryByText("排队中")).toBeNull();
   });
 
-  it("展开后显示全部历史，最新的在最上面", () => {
-    render(<TaskTicker lines={lines} />);
+  // 需求变更（用户确认）：展开内容从旧到新列出，与执行顺序一致
+  it("展开后显示全部历史，从旧到新", () => {
+    render(<TaskTicker lines={lines} running={false} />);
     fireEvent.click(screen.getByTitle("展开全部进度"));
     const items = screen.getAllByRole("listitem").map((li) => li.textContent);
-    expect(items).toEqual(["写入文件", "执行中 1/3", "排队中"]);
+    expect(items).toEqual(["排队中", "执行中 1/3", "写入文件"]);
   });
 
-  it("没有进度时不渲染", () => {
-    const { container } = render(<TaskTicker lines={[]} />);
+  it("没有进度且未运行时不渲染", () => {
+    const { container } = render(<TaskTicker lines={[]} running={false} />);
     expect(container.innerHTML).toBe("");
   });
 });

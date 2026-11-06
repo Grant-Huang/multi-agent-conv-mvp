@@ -156,20 +156,25 @@ pre {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .thinking-hint { font-size: 12px; margin-top: 4px; }
-/* 进度条：单行，新进度从下往上滑入；等宽小字，与对话正文区分 */
-.ticker { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--muted); }
+/* 走马灯：背景与正文气泡一致（同一变量），字体比正文小、颜色更浅；新进度从下往上滑入 */
+.ticker { background: var(--bot-bubble); font-size: 12px; color: var(--muted); }
 .ticker-line {
-  display: flex; align-items: center; gap: 6px; width: 100%; height: 26px; padding: 0 8px;
-  border: 1px solid var(--border); border-radius: 6px; background: var(--code-bg);
+  display: flex; align-items: center; gap: 6px; width: 100%; height: 24px; padding: 0 2px;
+  border: 0; border-radius: 6px; background: var(--bot-bubble);
   color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden;
 }
-.ticker-line:hover { border-color: var(--accent); }
+.ticker-line:hover { color: var(--text); }
 .ticker-text {
   flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   animation: ticker-up 0.35s ease-out both;
 }
 .ticker-caret { flex-shrink: 0; opacity: 0.7; }
-.ticker.is-failed .ticker-line { color: var(--bad); border-color: var(--bad); }
+/* 运行指示：行尾的旋转圆弧，任务结束后组件不再渲染它 */
+.ticker-spin { flex-shrink: 0; color: var(--muted); animation: ticker-spin 0.9s linear infinite; }
+@keyframes ticker-spin {
+  to { transform: rotate(360deg); }
+}
+.ticker.is-failed .ticker-line { color: var(--bad); }
 .ticker-history {
   margin: 4px 0 0; padding: 6px 8px 6px 24px; max-height: 180px; overflow-y: auto;
   border-left: 2px solid var(--border); line-height: 1.5;

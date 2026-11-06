@@ -161,6 +161,26 @@ impl BackendConfig {
         }
     }
 
+    /// 后台能同时使用的容量，用来限制模板拆分的分支数（设计 9.6：分支数不超过后台槽位数）。
+    ///
+    /// 换算规则：
+    /// - `llama_cpp`：生效的 `background_slots` 个数；
+    /// - `openai`：`max_inflight - reserved_interactive`；`max_inflight = 0` 时不限，返回 `None`。
+    ///
+    /// 返回 `Some(0)` 表示该后端不接后台角色。
+    pub fn background_capacity(&self) -> Option<u32> {
+        match self.kind {
+            BackendKind::LlamaCpp => Some(self.effective_slots().1.len() as u32),
+            BackendKind::Openai => {
+                if self.max_inflight == 0 {
+                    None
+                } else {
+                    Some(self.max_inflight.saturating_sub(self.reserved_interactive))
+                }
+            }
+        }
+    }
+
     /// 一句话描述限流方式（启动日志 / 诊断用，不含密钥）
     pub fn describe_limits(&self) -> String {
         match self.kind {
@@ -454,6 +474,38 @@ mod tests {
         assert_eq!((i, b), (vec![0], vec![0]));
         assert!(local(5).validate("l").is_ok());
         assert!(local(1).validate("l").is_ok());
+    }
+
+    #[test]
+    fn background_capacity_follows_the_config_items_named_in_docs() {
+        // llama_cpp：后台槽位个数（背景槽位 [2,3,4,5] → 4）
+        let c = BackendConfig {
+            interactive_slots: vec![0, 1],
+            background_slots: vec![2, 3, 4, 5],
+            ..local(6)
+        };
+        assert_eq!(c.background_capacity(), Some(4));
+        // 没有后台槽位的后端，容量为 0
+        let front_only = BackendConfig {
+            interactive_slots: vec![0, 1],
+            background_slots: vec![],
+            ..local(2)
+        };
+        assert_eq!(front_only.background_capacity(), Some(0));
+        // openai：并发上限减去前台预留；不限并发时返回 None
+        let cloud = BackendConfig {
+            kind: BackendKind::Openai,
+            max_inflight: 8,
+            reserved_interactive: 1,
+            ..local(0)
+        };
+        assert_eq!(cloud.background_capacity(), Some(7));
+        let unlimited = BackendConfig {
+            kind: BackendKind::Openai,
+            max_inflight: 0,
+            ..local(0)
+        };
+        assert_eq!(unlimited.background_capacity(), None);
     }
 
     #[test]

@@ -18,12 +18,16 @@
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [
       "web/src/components/TaskPanel.tsx",
+      "web/src/components/TaskTicker.tsx",
+      "web/src/components/ChatView.tsx",
       "web/src/artifacts.ts",
-      "crates/runtime/src/orchestrator.rs"
+      "crates/runtime/src/orchestrator.rs",
+      "crates/agents/src/general.rs"
     ],
     "coverage": "browser",
     "cases": [
-      "E2E-FILE"
+      "E2E-FILE",
+      "E2E-TICKER"
     ]
   },
   {
@@ -91,6 +95,28 @@
     ],
     "coverage": "backend",
     "cases": []
+  },
+  {
+    "id": "templates",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/template.rs",
+      "crates/llm/src/backend.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-TPL-01",
+      "RT-TPL-02",
+      "RT-TPL-03",
+      "RT-TPL-04",
+      "RT-TPL-05",
+      "RT-TPL-06",
+      "RT-TPL-07",
+      "RT-TPL-08",
+      "RT-TPL-09",
+      "RT-TPL-10"
+    ]
   },
   {
     "id": "mom",
