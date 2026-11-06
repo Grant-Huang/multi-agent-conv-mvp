@@ -24,6 +24,7 @@ pub mod prompts;
 pub mod registry;
 pub mod router;
 pub mod store;
+pub mod template;
 
 use std::sync::Arc;
 use std::time::Duration;
