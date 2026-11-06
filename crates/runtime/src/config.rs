@@ -85,7 +85,7 @@ impl AppConfig {
     /// 解析配置，同时返回被忽略的（不认识的）字段路径，例如 `agents.prefer`
     pub fn parse(text: &str) -> Result<(Self, Vec<String>)> {
         let mut unknown = vec![];
-        let de = toml::Deserializer::new(text);
+        let de = toml::Deserializer::parse(text)?;
         let cfg = serde_ignored::deserialize(de, |path| unknown.push(path.to_string()))?;
         Ok((cfg, unknown))
     }
