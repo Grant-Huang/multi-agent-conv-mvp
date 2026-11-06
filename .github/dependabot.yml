@@ -14,7 +14,4 @@ updates:
     directory: /web
     schedule:
       interval: weekly
-  - package-ecosystem: pip
-    directory: /tools/websearch
-    schedule:
-      interval: weekly
+
