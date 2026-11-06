@@ -10,3 +10,11 @@ test('missing documents and sources are rejected', () => assert.ok(check([{...fe
 test('unknown cases are rejected', () => assert.ok(check([{...feature,cases:['E2E-UNKNOWN']}]).length));
 test('browser case must have executable test', () => assert.ok(validateMap([feature], {exists:()=>true,caseIds:['E2E-CHAT'],testIds:[]}).length));
 test('unmapped browser tests are rejected', () => assert.ok(validateMap([], {exists:()=>true,caseIds:['E2E-CHAT'],testIds:['E2E-CHAT']}).length));
+
+// ── 运行时用例（RT-*）：每条用例必须有对应的 Rust 测试函数，且映射不能遗漏 ──
+const rtFeature = { id: 'templates', document: 'docs/DESIGN.md', sources: ['chat.ts'], cases: [], runtime_cases: ['RT-TPL-01'], coverage: 'backend' };
+const rtOpts = { exists: () => true, caseIds: [], testIds: [], runtimeCaseIds: ['RT-TPL-01'], runtimeTestIds: ['rt_tpl_01_quote_template_loads'] };
+test('runtime case with a matching Rust test resolves', () => assert.deepEqual(validateMap([rtFeature], rtOpts), []));
+test('unknown runtime case is rejected', () => assert.ok(validateMap([{ ...rtFeature, runtime_cases: ['RT-TPL-99'] }], rtOpts).some(x => x.includes('unknown runtime case'))));
+test('runtime case without a Rust test is rejected', () => assert.ok(validateMap([rtFeature], { ...rtOpts, runtimeTestIds: [] }).some(x => x.includes('missing runtime test'))));
+test('unmapped runtime test is rejected', () => assert.ok(validateMap([], { ...rtOpts, runtimeTestIds: ['rt_tpl_01_quote_template_loads'] }).some(x => x.includes('unmapped runtime test'))));
