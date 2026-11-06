@@ -25,17 +25,25 @@ const EXAMPLES = [
 /** 助手回复按 Markdown 渲染（react-markdown 默认不渲染原始 HTML） */
 const MessageRow = memo(function MessageRow(props: {
   m: Message;
+  /** 任务的最后一条消息：显示状态、操作和产物 */
   task: TaskRecord | null;
+  /** 任务的第一条消息（简短回复）：走马灯挂在这里，最终正文在它之后 */
+  tickerTask: TaskRecord | null;
   rank: number | null;
   lines: string[];
   busy: boolean;
   onAct?: (kind: TaskActionKind, taskId: string) => void;
 }) {
-  const { m, task, rank, lines, busy, onAct } = props;
+  const { m, task, tickerTask, rank, lines, busy, onAct } = props;
+  // 有进度或仍在运行时才显示走马灯；没有任务的消息不显示
+  const showTicker = !!tickerTask && (isRunning(tickerTask) || lines.length > 0);
   return (
     <div className={`msg ${m.role}`}>
       <div className={m.role === "user" ? "bubble" : "bubble md"}>
         {m.role === "user" ? m.content : <MarkdownText text={m.content} />}
+        {showTicker && tickerTask && (
+          <TaskTicker lines={lines} running={isRunning(tickerTask)} failed={tickerTask.status === "FAILED"} />
+        )}
         {task && (
           <div className="task-live">
             <div className={`task-status s-${task.status.toLowerCase()}`}>{taskStatusLine(task, rank)}</div>
@@ -63,7 +71,6 @@ const MessageRow = memo(function MessageRow(props: {
                 />
               </div>
             )}
-            <TaskTicker lines={lines} failed={task.status === "FAILED"} />
             {task.status === "FAILED" && task.result?.errors.length ? (
               <div className="task-reason">{task.result.errors.join("；")}</div>
             ) : null}
@@ -76,6 +83,7 @@ const MessageRow = memo(function MessageRow(props: {
 }, (a, b) => a.m.id === b.m.id && a.m.content === b.m.content && a.m.role === b.m.role
   && a.task?.status === b.task?.status && a.rank === b.rank && a.lines === b.lines && a.busy === b.busy
   && a.onAct === b.onAct
+  && a.tickerTask?.id === b.tickerTask?.id && a.tickerTask?.status === b.tickerTask?.status
   && artifactStamp(a.task) === artifactStamp(b.task));
 
 /** 运行中（可取消）：待批准的任务不算运行中，它的取消按钮已由"待批准"分支提供，避免重复 */
@@ -180,6 +188,9 @@ export function ChatView(props: {
   // 同一个任务只在它的最后一条消息旁显示状态，避免重复
   const latest = new Map<string, string>();
   for (const m of messages) if (m.task_id) latest.set(m.task_id, m.id);
+  // 走马灯挂在任务的第一条消息（简短回复）下面，最终正文在它之后
+  const first = new Map<string, string>();
+  for (const m of messages) if (m.task_id && !first.has(m.task_id)) first.set(m.task_id, m.id);
 
   return (
     <div className="chat">
@@ -205,14 +216,18 @@ export function ChatView(props: {
           </div>
         )}
         {messages.map((m) => {
-          const task = m.task_id && latest.get(m.task_id) === m.id ? tasks.find((t) => t.id === m.task_id) ?? null : null;
+          const tid = m.task_id;
+          const owner = tid ? tasks.find((t) => t.id === tid) ?? null : null;
+          const task = owner && tid && latest.get(tid) === m.id ? owner : null;
+          const tickerTask = owner && tid && first.get(tid) === m.id ? owner : null;
           return (
             <MessageRow
               key={m.id}
               m={m}
               task={task}
+              tickerTask={tickerTask}
               rank={task ? queueRank(task, tasks) : null}
-              lines={task && m.task_id ? notes[m.task_id] ?? EMPTY_LINES : EMPTY_LINES}
+              lines={tickerTask && tid ? notes[tid] ?? EMPTY_LINES : EMPTY_LINES}
               busy={!!task && busyTask === task.id}
               onAct={props.onTaskAction ? act : undefined}
             />

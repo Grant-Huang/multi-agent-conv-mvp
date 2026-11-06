@@ -1,6 +1,6 @@
 [
  {"id":"conversation","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/App.tsx","web/src/components/ChatView.tsx","crates/runtime/src/conversation.rs"],"coverage":"browser","cases":["E2E-CONV","E2E-MOBILE"]},
- {"id":"tasks","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/components/TaskPanel.tsx","web/src/artifacts.ts","crates/runtime/src/orchestrator.rs"],"coverage":"browser","cases":["E2E-FILE"]},
+ {"id":"tasks","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/components/TaskPanel.tsx","web/src/components/TaskTicker.tsx","web/src/components/ChatView.tsx","web/src/artifacts.ts","crates/runtime/src/orchestrator.rs","crates/agents/src/general.rs"],"coverage":"browser","cases":["E2E-FILE","E2E-TICKER"]},
  {"id":"approval","document":"docs/testing/FEATURE_MAP.md","sources":["crates/runtime/src/policy.rs","web/src/components/ChatView.tsx"],"coverage":"browser","cases":["E2E-APPROVE"]},
  {"id":"cancellation","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/components/ConfirmButton.tsx","crates/runtime/src/orchestrator.rs"],"coverage":"browser","cases":["E2E-CANCEL"]},
  {"id":"observability","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/components/DiagnosticsPanel.tsx","web/src/components/RouteLogPanel.tsx"],"coverage":"browser","cases":["E2E-DIAG"]},
