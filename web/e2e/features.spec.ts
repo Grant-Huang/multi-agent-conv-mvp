@@ -91,3 +91,60 @@ test('E2E-MOBILE: 窄屏会话抽屉', async ({ page }) => {
   await send(page, '你好移动验证');
   await expect(page.locator('.msg.assistant').last()).toContainText('你好，验证成功');
 });
+
+test('E2E-TICKER: 简短回复后接走马灯，历史从旧到新且不带步骤编号，正文在最后，运行中有指示', async ({ page }) => {
+  const out = await send(page, '写验证报告');
+  await complete(page, out.task.id);
+  // 期望的进度文字：按时间顺序取非助手事件，相邻重复只保留一条（与界面的进度列表规则一致）
+  const events = (await (await page.request.get(`/api/tasks/${out.task.id}`)).json()).events as Array<{ kind: string; message: string }>;
+  const expected: string[] = [];
+  for (const e of events) {
+    if (e.kind === 'assistant_message' || !e.message.trim()) continue;
+    if (expected.at(-1) !== e.message) expected.push(e.message);
+  }
+  expect(expected.length).toBeGreaterThan(1);
+
+  // 走马灯挂在任务的第一条消息（简短回复）下面；最终正文在它之后，且不在走马灯里
+  const ackBubble = page.locator('main .msg.assistant').first().locator('.bubble');
+  const ticker = ackBubble.locator('.ticker');
+  await expect(ticker).toHaveCount(1);
+  const finalBubble = page.locator('main .msg.assistant').last().locator('.bubble');
+  await expect(finalBubble.locator('.ticker')).toHaveCount(0);
+  expect((await ticker.boundingBox())!.y).toBeLessThan((await finalBubble.boundingBox())!.y);
+
+  // 收起时只显示最新一行
+  const line = ticker.locator('.ticker-line');
+  await expect(line.locator('.ticker-text')).toHaveText(expected.at(-1)!);
+
+  // 展开：从旧到新，每行都是工作内容，没有"第 N 步"前缀
+  await line.click();
+  const items = await ticker.locator('.ticker-history li').allTextContents();
+  expect(items).toEqual(expected);
+  for (const t of items) expect(t).not.toMatch(/^第\s*\d+\s*步/);
+
+  // 走马灯背景与正文一致；字体比正文小
+  const tickerBg = await ticker.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const bodyBg = await ackBubble.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(tickerBg).toBe(bodyBg);
+  const tickerFont = await line.locator('.ticker-text').evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  const bodyFont = await ackBubble.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(tickerFont).toBeLessThan(bodyFont);
+
+  // 完成后没有运行指示
+  await expect(page.locator('main .ticker-spin')).toHaveCount(0);
+
+  // 运行中：走马灯行最右侧有动画 SVG；取消后指示消失
+  await page.getByRole('button', { name: '＋ 新会话', exact: true }).click();
+  const slow = await send(page, '慢验证任务');
+  await expect.poll(async () => (await (await page.request.get(`/api/tasks/${slow.task.id}`)).json()).task.status).toBe('RUNNING');
+  const spin = page.locator('main .ticker-spin');
+  await expect(spin).toBeVisible();
+  expect(await spin.evaluate((el) => getComputedStyle(el).animationName)).not.toBe('none');
+  const row = (await page.locator('main .ticker-line').boundingBox())!;
+  const mark = (await spin.boundingBox())!;
+  expect(mark.x + mark.width).toBeGreaterThanOrEqual(row.x + row.width - 2);
+  await page.locator('main').getByRole('button', { name: '取消任务', exact: true }).click();
+  await page.locator('main').getByRole('button', { name: '确认取消', exact: true }).click();
+  await expect.poll(async () => (await (await page.request.get(`/api/tasks/${slow.task.id}`)).json()).task.status).toBe('CANCELLED');
+  await expect(page.locator('main .ticker-spin')).toHaveCount(0);
+});

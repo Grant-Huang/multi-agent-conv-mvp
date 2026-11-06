@@ -119,7 +119,8 @@ impl AgentAdapter for GeneralAgent {
         let mut evidence = Vec::new();
         let mut artifacts: Vec<Artifact> = Vec::new();
 
-        for step_no in 1..=self.max_steps {
+        // 步数只用于限制循环；进度文字只写工作内容，不带"第 N 步"
+        for _ in 1..=self.max_steps {
             // 校验：tool_call 时必须给出工具名
             let step = match self
                 .llm
@@ -161,7 +162,7 @@ impl AgentAdapter for GeneralAgent {
 
             // 执行工具
             events.progress(format!(
-                "第 {step_no} 步：调用工具 {}，参数 {}",
+                "调用工具 {}，参数 {}",
                 step.tool,
                 an_core::truncate_chars(&step.args.to_string(), 200)
             ));
