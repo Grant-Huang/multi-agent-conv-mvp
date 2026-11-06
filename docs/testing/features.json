@@ -6,5 +6,6 @@
  {"id":"observability","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/components/DiagnosticsPanel.tsx","web/src/components/RouteLogPanel.tsx"],"coverage":"browser","cases":["E2E-DIAG"]},
  {"id":"nodes","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/components/NodesPanel.tsx","crates/server/tests/e2e.rs"],"coverage":"backend","cases":[]},
  {"id":"feedback","document":"docs/testing/FEATURE_MAP.md","sources":["web/src/misroute.test.tsx","crates/runtime/src/store.rs"],"coverage":"backend","cases":[]},
- {"id":"tools-evals","document":"docs/testing/FEATURE_MAP.md","sources":["tools/websearch/README.md","crates/server/src/bin/eval.rs"],"coverage":"backend","cases":[]}
+ {"id":"tools-evals","document":"docs/testing/FEATURE_MAP.md","sources":["tools/websearch/README.md","crates/server/src/bin/eval.rs"],"coverage":"backend","cases":[]},
+ {"id":"templates","document":"docs/testing/FEATURE_MAP.md","sources":["crates/runtime/src/template.rs","crates/llm/src/backend.rs"],"coverage":"backend","cases":[],"runtime_cases":["RT-TPL-01","RT-TPL-02","RT-TPL-03","RT-TPL-04","RT-TPL-05","RT-TPL-06","RT-TPL-07","RT-TPL-08","RT-TPL-09","RT-TPL-10"]}
 ]

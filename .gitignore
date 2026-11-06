@@ -18,3 +18,6 @@ venv/
 
 web/test-results/
 web/playwright-report/
+
+# verify 的 E2E 用例运行时生成的交付物（不入库）
+/crates/server/workspace/

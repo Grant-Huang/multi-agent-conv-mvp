@@ -76,3 +76,90 @@ Tests  17 passed (17)
 ## 推送前复验
 
 提交前发现远端又新增 5 个提交，已将本次分支 rebase 到 `20c0153`，无冲突。再次运行全仓 Rust：212 passed、0 failed、2 ignored；严格 Clippy `-D warnings` 与 cargo fmt --check 均退出 0。前端 17 项、地图 6 项与浏览器 6 项再次通过（浏览器实际输出 `6 passed (6.2s)`）。以上初次基线记录保留为历史证据，本节是推送版本的复验结果。
+
+## M4.3 运行时用例（RT-TPL-01 ~ RT-TPL-10）
+
+### 诚实说明
+
+M4.3 的确定性校验实现（`crates/runtime/src/template.rs`、`crates/llm/src/backend.rs` 的 `background_capacity`）**先于**本次用例编写。为补上 Red→Green，本次做了以下事情：
+
+1. 备份实现（sha256 `00b2f70c…`），用例定稿后，先把实现替换为**桩**（签名不变，逻辑为占位），跑用例看业务断言失败（Red-1）；
+2. 再用**类型变异**单独验证由类型保证的规则（Red-2）；
+3. 恢复备份实现，全部通过（Green）。
+
+RT-TPL-08 的缺失场景在 Red 之前修正过一次：原场景的 payload 同时多出字段又缺字段，断言期望的原因文字与实现报告的顺序不一致。改为 CASES 描述的"字段不全"（payload 为空），断言改为具体的缺失字段。这次修正发生在 Red 之前，不是为了迎合实现。
+
+### Red-1（实现替换为桩）
+
+```
+test rt_tpl_01_quote_template_loads ... ok
+test rt_tpl_03_dependency_edges_are_rejected ... ok
+test rt_tpl_02_capability_is_a_router_role ... ok
+test rt_tpl_07_payload_values_must_be_strings ... ok
+test rt_tpl_04_branches_must_fit_background_capacity ... FAILED
+test rt_tpl_05_unclear_router_slots_stay_single ... FAILED
+test rt_tpl_06_envelope_fields_must_match ... FAILED
+test rt_tpl_09_join_rejects_unknown_or_duplicate ... FAILED
+test rt_tpl_08_missing_branches_are_not_filled ... FAILED
+test rt_tpl_08_all_branches_ok_completes_join ... FAILED
+test result: FAILED. 4 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+test rt_tpl_10_capacity_follows_backend_config ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+```
+
+失败的是 RT-TPL-04、05、06、08（两条）、09 与 RT-TPL-10 的业务断言。RT-TPL-01、02、03、07 在桩阶段仍通过：前两条是正向用例；02、03、07 由类型声明保证，由 Red-2 验证。
+
+### Red-2（类型变异，逻辑保持真实）
+
+```
+test rt_tpl_04_branches_must_fit_background_capacity ... ok
+test rt_tpl_01_quote_template_loads ... ok
+test rt_tpl_06_envelope_fields_must_match ... ok
+test rt_tpl_05_unclear_router_slots_stay_single ... ok
+test rt_tpl_08_all_branches_ok_completes_join ... ok
+test rt_tpl_08_missing_branches_are_not_filled ... ok
+test rt_tpl_09_join_rejects_unknown_or_duplicate ... ok
+test rt_tpl_02_capability_is_a_router_role ... FAILED
+test rt_tpl_03_dependency_edges_are_rejected ... FAILED
+test rt_tpl_07_payload_values_must_be_strings ... FAILED
+test result: FAILED. 7 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+error: test failed, to rerun pass `-p an-runtime --test template_cases`
+```
+
+失败的是 RT-TPL-02（能力名）、03（依赖边）、07（payload 类型）。变异版本为编译通过，只调整了 payload 的 trim 检查与空映射构造，业务逻辑未变。
+
+### Green（恢复实现）
+
+```
+test rt_tpl_01_quote_template_loads ... ok
+test rt_tpl_04_branches_must_fit_background_capacity ... ok
+test rt_tpl_03_dependency_edges_are_rejected ... ok
+test rt_tpl_02_capability_is_a_router_role ... ok
+test rt_tpl_05_unclear_router_slots_stay_single ... ok
+test rt_tpl_06_envelope_fields_must_match ... ok
+test rt_tpl_07_payload_values_must_be_strings ... ok
+test rt_tpl_08_all_branches_ok_completes_join ... ok
+test rt_tpl_09_join_rejects_unknown_or_duplicate ... ok
+test rt_tpl_08_missing_branches_are_not_filled ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test rt_tpl_10_capacity_follows_backend_config ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+### 校验器的 Red→Green
+
+`web/verification/check-map.test.mjs` 新增 4 个 runtime 映射测试：扩展前 3 条失败（未知用例、缺测试、未映射测试），扩展后 `node --test` 为 10 通过、0 失败。
+
+## 本次验证命令与结果
+
+- `npm run test:map`：`Feature map valid: 9 features, 6 browser cases`
+- `cargo fmt --all -- --check`：通过
+- `CARGO_TARGET_DIR=target cargo clippy --locked --all-targets -- -D warnings`：退出码 0
+- `CARGO_TARGET_DIR=target cargo test --locked --workspace`：260 passed，0 failed，2 ignored
+- `cd web && npm test`：17 passed
+- `cd web && npm run build`：通过
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/opt/pw-browsers/chromium npm run verify`：退出码 0，6 个浏览器用例全部通过（`6 passed (8.3s)`）
+
+环境记录：首次 verify 失败是因为 Playwright 默认的 headless shell 路径不存在，改用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 后通过；之前 `npm ci` 因磁盘写满未完整安装 `@types/node`，重新安装后解决。
+
+范围限制：M4.3 的并行执行与 Composer 汇合回复未接入编排器，RT 用例不覆盖它们；M4.4（真实模型 F 组覆盖率）未运行。

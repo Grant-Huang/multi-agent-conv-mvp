@@ -12,11 +12,12 @@
 | observability | 右侧底部“开发者模式：关”切开，再点击“诊断”“路由日志” | 诊断显示真实后端；路由日志匹配本次消息，可展开模型原文 | E2E-DIAG；复制剪贴板尚待完整浏览器验证 |
 | nodes | “节点”→按地址添加/发现节点→配对；解除也两步确认 | 以测试节点核对授权、执行、解除后的不可用状态 | 现有 server/tests/e2e.rs node_flow/ACP；真实 LAN 未覆盖 |
 | feedback | 展开可匹配用户消息的任务→“派错了”→动作/角色/说明→保存 | POST /api/feedback 信封、持久化记录；非法动作/角色被拒；导出仅为草稿 | 现有 misroute 组件及 Rust HTTP 测试；本次无模板纠正字段 |
+| templates | 当前无界面入口（M4.3 尚未接入编排器） | 模板校验、Router 拆分决定、分支信封与汇合输入在 Runtime 集成层验证 | RT-TPL-01 至 RT-TPL-10；Rust 集成测试与单元测试；并行执行与 Composer 汇合回复未实现 |
 | tools-evals | 聊天委派工具；终端 websearch、an-eval、dream | 计算/文件/CLI证据、JSON错误、逐条评分和失败草稿；不自动改主评测集 | 现有 Rust/Python 测试；真实搜索时效与模型质量另验 |
 
 应用为单页布局，网页没有 /tasks、/settings 或 /templates/run 路径。API 以 crates/server/src/lib.rs 为准；状态和中文文案见 web/src/labels.ts。
 
-当前不是已实现功能：M4.3 固定模板并行、MOM 主控/黑板、知识库、Benny 自动修复、多用户登录、通用动态 DAG、执行中断续跑。它们在其他设计中出现不代表当前代码存在。
+当前不是已实现功能：M4.3 的模板并行执行与 Composer 汇合回复（校验部分见 templates 行）、MOM 主控/黑板、知识库、Benny 自动修复、多用户登录、通用动态 DAG、执行中断续跑。它们在其他设计中出现不代表当前代码存在。
 
 ## 操作定位与维护
 
