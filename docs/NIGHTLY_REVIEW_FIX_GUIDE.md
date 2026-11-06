@@ -148,7 +148,10 @@
    2. Branch name pattern 填 `master`。
    3. 勾选 **Require a pull request before merging**。**暂时不要勾选** 其下的 **Require approvals** 和 **Require review from Code Owners**：单人仓库里，作者不能批准自己的 PR，勾上后任何 PR 都无法合并（PR 13 的 H4）。
    4. 勾选 **Require status checks to pass before merging**，搜索并添加 6 个检查：`rust`、`web`、`python-websearch`、`python-tools`、`change-policy`、`security`。**Require branches to be up to date before merging** 先不勾，否则评审的报告 PR 每次都要先更新分支才能合并。
-   5. 勾选 **Do not allow bypassing the above settings**，让管理员（也就是你自己）也不能绕过。
+   5. 让管理员（也就是你自己）也不能绕过。不同界面的写法不同（未对照官方文档核对，以页面为准）：
+      - 经典规则页面：通常在页面靠下、标题类似 “Rules applied to everyone including administrators” 的区域，勾选 **Do not allow bypassing the above settings**；较早的界面叫 **Include administrators**。
+      - Rulesets 页面（Settings → Rules → Rulesets）：没有这个勾选框，改为让 **Bypass list 保持为空**（不要加入 Repository admin 等角色），并把 **Enforcement status** 设为 **Active**。
+      - 都找不到时：先保存其余设置，之后用自己的账号在一个 CI 未通过的 PR 上看合并按钮。如果还能看到 “bypass rules” 之类的选项，说明管理员仍然可以绕过。
    6. 确认 **Allow force pushes** 和 **Allow deletions** 都没有勾选。
    7. 保存。
    8. 验证：在任意会话里试 `git push origin HEAD:master`，应该被拒绝；打开任意 PR，底部应该列出 6 个必需检查。
