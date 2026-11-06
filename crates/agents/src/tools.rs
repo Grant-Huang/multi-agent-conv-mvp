@@ -3,31 +3,32 @@
 //! 安全边界：所有文件类工具都被限制在配置的 `workspace_dir` 内，
 //! 通过路径规范化防止 `../` 越界访问。
 //!
-//! 以后接 MCP：实现同一个 `Tool` trait，内部用 rmcp 客户端转发调用即可，
-//! General Agent 和 Router 都不需要改。
+//! MCP 适配器见 `mcp` 模块，与内置工具共用此注册表和 General 调用入口。
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::capability::{CapabilityCard, Effect};
 use an_core::{Artifact, ToolInfo};
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 
 /// 工具执行结果
+#[derive(Debug)]
 pub struct ToolOutput {
     /// 返回给模型看的文本
     pub text: String,
     /// 如果工具产出了文件，作为产物返回
-    pub artifact: Option<Artifact>,
+    pub artifacts: Vec<Artifact>,
 }
 
 impl ToolOutput {
     fn text(t: impl Into<String>) -> Self {
         Self {
             text: t.into(),
-            artifact: None,
+            artifacts: vec![],
         }
     }
 }
@@ -38,6 +39,23 @@ pub trait Tool: Send + Sync {
     fn description(&self) -> &str;
     /// 参数说明（给模型看的简短 JSON 示例）
     fn args_hint(&self) -> &str;
+    fn capability(&self) -> CapabilityCard {
+        CapabilityCard {
+            capability_id: self.name().into(),
+            tool_id: self.name().into(),
+            description: self.description().into(),
+            provider: "builtin".into(),
+            effect: if self.name() == "write_file" {
+                Effect::WorkspaceWrite
+            } else {
+                Effect::ReadOnly
+            },
+            input_schema: args_schema(),
+            output_schema: None,
+            input_types: vec!["application/json".into()],
+            output_types: vec!["text/plain".into()],
+        }
+    }
     async fn call(&self, args: &Value) -> Result<ToolOutput>;
 }
 
@@ -48,6 +66,24 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
+    pub fn capabilities(&self) -> Vec<CapabilityCard> {
+        self.tools.values().map(|tool| tool.capability()).collect()
+    }
+
+    pub fn extend(&mut self, other: Self) -> Result<()> {
+        if other.tools.keys().any(|name| self.tools.contains_key(name)) {
+            bail!("E_MCP_CONFIG: duplicate tool ID");
+        }
+        self.tools.extend(other.tools);
+        Ok(())
+    }
+
+    pub async fn call(&self, name: &str, args: &Value) -> Result<ToolOutput> {
+        self.get(name)
+            .ok_or_else(|| anyhow!("E_TOOL_UNKNOWN: {name}"))?
+            .call(args)
+            .await
+    }
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.name().to_string(), tool);
     }
@@ -428,11 +464,11 @@ impl Tool for WriteFile {
             .with_context(|| format!("无法写入文件 {rel}"))?;
         Ok(ToolOutput {
             text: format!("已写入 {rel}（{} 字符）", content.chars().count()),
-            artifact: Some(Artifact {
+            artifacts: vec![Artifact {
                 kind: "file".into(),
                 name: rel.into(),
                 content: content.into(),
-            }),
+            }],
         })
     }
 }

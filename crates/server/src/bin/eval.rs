@@ -356,10 +356,12 @@ async fn main() -> Result<()> {
         config.conversation.review_requests = m;
     }
     let mode = config.conversation.review_requests;
-    let rt = Runtime::new(
+    let rt = Runtime::with_mcp_diagnostics(
         config.clone(),
         Store::open(std::path::Path::new(":memory:"))?,
-    )?;
+        an_observe::diagnostics_only(),
+    )
+    .await?;
 
     let mut cases: Vec<Case> = std::fs::read_to_string(&args.dataset)
         .with_context(|| format!("无法读取评测集 {}", args.dataset.display()))?
