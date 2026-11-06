@@ -86,6 +86,9 @@ pre {
   text-align: left; border: 0; background: transparent; color: var(--text);
   padding: 7px 8px; border-radius: 6px; cursor: pointer; font: inherit;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* 列表是 flex 列，条目多时默认会被压扁（overflow:hidden 让最小高度变成 0），
+     文字就叠在一起。条目保持自然高度，多出来的由 .conv-list 滚动。 */
+  flex-shrink: 0;
 }
 .conv-item:hover { background: var(--bg); }
 .conv-item.active { background: var(--bg); font-weight: 600; }
