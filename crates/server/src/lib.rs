@@ -163,9 +163,12 @@ async fn send_message(
     let text = body.text.trim().to_string();
     let turn_rt = rt.clone();
     let turn = tokio::spawn(async move { turn_rt.conversation.handle_message(&id, &text).await });
-    let outcome = turn
-        .await
-        .map_err(|e| AppError(StatusCode::INTERNAL_SERVER_ERROR, format!("回合执行异常：{e}")))??;
+    let outcome = turn.await.map_err(|e| {
+        AppError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("回合执行异常：{e}"),
+        )
+    })??;
     Ok(Json(outcome))
 }
 

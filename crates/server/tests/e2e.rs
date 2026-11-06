@@ -1148,17 +1148,34 @@ async fn start_slow_mock_llm(delay: std::time::Duration) -> String {
 #[tokio::test]
 async fn turn_survives_client_disconnect() {
     let llm = start_slow_mock_llm(std::time::Duration::from_millis(1500)).await;
-    let config: AppConfig = toml::from_str(&format!("[llm]\nbase_url = \"{llm}\"\nmodel = \"mock\"\n")).unwrap();
-    let rt = Arc::new(Runtime::new(config, Store::open(std::path::Path::new(":memory:")).unwrap()).unwrap());
+    let config: AppConfig =
+        toml::from_str(&format!("[llm]\nbase_url = \"{llm}\"\nmodel = \"mock\"\n")).unwrap();
+    let rt = Arc::new(
+        Runtime::new(
+            config,
+            Store::open(std::path::Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
     let conv = rt.store.create_conversation("刷新测试").unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let rt_serve = rt.clone();
-    tokio::spawn(async move { axum::serve(listener, an_server::api(rt_serve)).await.unwrap() });
+    tokio::spawn(async move {
+        axum::serve(listener, an_server::api(rt_serve))
+            .await
+            .unwrap()
+    });
     // 300ms 后客户端放弃请求，等价于浏览器刷新：连接被断开
-    let http = reqwest::Client::builder().timeout(std::time::Duration::from_millis(300)).build().unwrap();
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(300))
+        .build()
+        .unwrap();
     let res = http
-        .post(format!("http://{addr}/api/conversations/{}/messages", conv.id))
+        .post(format!(
+            "http://{addr}/api/conversations/{}/messages",
+            conv.id
+        ))
         .json(&json!({"text": "什么是 MES 系统"}))
         .send()
         .await;
@@ -1168,7 +1185,12 @@ async fn turn_survives_client_disconnect() {
     assert!(
         msgs.iter().any(|m| m.role == "assistant"),
         "断开后助手消息应仍被保存，实际消息：{:?}",
-        msgs.iter().map(|m| (m.role.clone(), m.content.chars().take(20).collect::<String>())).collect::<Vec<_>>()
+        msgs.iter()
+            .map(|m| (
+                m.role.clone(),
+                m.content.chars().take(20).collect::<String>()
+            ))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1176,21 +1198,41 @@ async fn turn_survives_client_disconnect() {
 #[tokio::test]
 async fn turn_completes_without_disconnect() {
     let llm = start_slow_mock_llm(std::time::Duration::from_millis(1500)).await;
-    let config: AppConfig = toml::from_str(&format!("[llm]\nbase_url = \"{llm}\"\nmodel = \"mock\"\n")).unwrap();
-    let rt = Arc::new(Runtime::new(config, Store::open(std::path::Path::new(":memory:")).unwrap()).unwrap());
+    let config: AppConfig =
+        toml::from_str(&format!("[llm]\nbase_url = \"{llm}\"\nmodel = \"mock\"\n")).unwrap();
+    let rt = Arc::new(
+        Runtime::new(
+            config,
+            Store::open(std::path::Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
     let conv = rt.store.create_conversation("对照测试").unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let rt_serve = rt.clone();
-    tokio::spawn(async move { axum::serve(listener, an_server::api(rt_serve)).await.unwrap() });
-    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(60)).build().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, an_server::api(rt_serve))
+            .await
+            .unwrap()
+    });
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .unwrap();
     let res = http
-        .post(format!("http://{addr}/api/conversations/{}/messages", conv.id))
+        .post(format!(
+            "http://{addr}/api/conversations/{}/messages",
+            conv.id
+        ))
         .json(&json!({"text": "什么是 MES 系统"}))
         .send()
         .await
         .expect("不断开时请求应正常返回");
     assert!(res.status().is_success(), "状态码 {}", res.status());
     let msgs = rt.store.list_messages(&conv.id, None).unwrap();
-    assert!(msgs.iter().any(|m| m.role == "assistant"), "对照组也应有助手消息");
+    assert!(
+        msgs.iter().any(|m| m.role == "assistant"),
+        "对照组也应有助手消息"
+    );
 }
