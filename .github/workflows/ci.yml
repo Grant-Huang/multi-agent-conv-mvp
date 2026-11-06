@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -67,7 +67,7 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
@@ -87,7 +87,7 @@ jobs:
       run:
         working-directory: tools/websearch
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - run: uv sync --frozen
       # pyproject.toml 中已设置 -m 'not live'，默认不访问真实网络。
@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # 策略脚本只用标准库；测试与 flake8 通过 uv 临时安装，不写入仓库。
       - uses: astral-sh/setup-uv@v7
       - name: pytest（策略脚本）
@@ -120,7 +120,7 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       # 需要完整历史才能计算 base...head 的差异。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v7
@@ -159,7 +159,7 @@ jobs:
     timeout-minutes: 20
     steps:
       # 完整历史：密钥扫描需要覆盖所有提交，而不只是最新一次。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # 依赖漏洞扫描（RustSec 数据库）。使用预编译安装器，避免每次从源码编译。
