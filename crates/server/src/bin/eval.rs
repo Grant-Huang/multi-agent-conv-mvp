@@ -4,6 +4,7 @@
 //! ```text
 //! cargo run --release --bin an-eval -- [config.toml] [evals/routing.jsonl] [选项]
 //! cargo run --bin an-eval -- --export-feedback data/agentnexus.db .tmp/feedback-draft.jsonl
+//! cargo run --bin an-eval -- --dream [logs 目录] [日期]
 //!   --review-mode reviewer|direct|auto   覆盖配置中的审查模式
 //!   --tag 标签                           只跑带这个标签的样本（可重复）
 //!   --limit N                            只跑前 N 条
@@ -223,6 +224,35 @@ struct Args {
     label: Option<String>,
 }
 
+fn local_date() -> String {
+    std::process::Command::new("date")
+        .arg("+%F")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| s.len() == 10)
+        .unwrap_or_else(|| an_core::now().chars().take(10).collect())
+}
+
+fn dream_once() -> Result<bool> {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() != Some("--dream") {
+        return Ok(false);
+    }
+    let log_dir = PathBuf::from(args.next().unwrap_or_else(|| "logs".into()));
+    let date = args.next().unwrap_or_else(local_date);
+    let skill = std::fs::read_to_string("tools/websearch/skills/websearch/SKILL.md").unwrap_or_default();
+    let out = PathBuf::from(".tmp/dream");
+    let wrote = an_runtime::dream::run(&log_dir, &date, &skill, &out)?;
+    if wrote {
+        println!("已写入草稿 {}/draft.md", out.display());
+    } else {
+        println!("当天没有失败路由，未写草稿");
+    }
+    Ok(true)
+}
+
 fn export_feedback_draft() -> Result<bool> {
     let mut args = std::env::args().skip(1);
     if args.next().as_deref() != Some("--export-feedback") {
@@ -275,6 +305,9 @@ fn parse_args() -> Result<Args> {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "error".into())).init();
     if export_feedback_draft()? {
+        return Ok(());
+    }
+    if dream_once()? {
         return Ok(());
     }
     let args = parse_args()?;

@@ -98,6 +98,12 @@
 {"id": "rev-file-02", "text": "评审 reports/q3.md 的结论是否站得住", "tags": ["review", "review-file"], "expect_action": "delegate", "expect_role": "general", "note": "需要先读文件"}
 {"id": "rev-repo-01", "text": "审查一下仓库里 src/order.rs 的实现有没有并发问题", "tags": ["review", "review-repo"], "expect_action": "delegate", "expect_role": "coding", "note": "需要读代码仓库"}
 {"id": "rev-repo-02", "text": "看看最近一次提交的改动有没有问题", "tags": ["review", "review-repo"], "expect_action": "delegate", "expect_role": "coding", "note": "需要读代码仓库"}
+// ───── F. 一条消息里的多个问题 ─────
+{"id": "mq-01", "text": "问题一：什么是 MES？问题二：TCP 和 UDP 有什么区别？", "tags": ["multi-question"], "expect_action": "respond", "note": "两个都可以直接回答"}
+{"id": "mq-02", "text": "1. 解释 Rust 的所有权。2. 写一个快速排序示例给我看看。3. SPC 是什么意思？", "tags": ["multi-question"], "expect_action": "respond", "note": "三个都在对话里回答，不写入仓库"}
+{"id": "mq-03", "text": "什么是代码审查的最佳实践？另外多 agent 里审查流程一般怎么设计？", "tags": ["multi-question"], "expect_action": "respond", "note": "两个讨论题，不是审查请求"}
+{"id": "mq-mix-01", "text": "现在几点？另外什么是 MES？", "tags": ["multi-question", "mixed"], "expect_action": "delegate", "expect_role": "general", "expect_class": "L2", "expect_tools": ["current_time"], "note": "含必须用工具的子问题。4.3 之前整条委派，不拆开"}
+{"id": "mq-mix-02", "text": "帮我算一下 (12+8)/4。再解释一下这里的括号先算。", "tags": ["multi-question", "mixed"], "expect_action": "delegate", "expect_role": "general", "expect_class": "L2", "expect_tools": ["calculator"], "note": "计算必须委派；解释部分 4.3 再拆"}
 // ───── H. 跟进进行中的任务（follow_up） ─────
 {"id": "fu-01", "text": "先停一下吧，这个不用做了", "tags": ["follow-up"], "expect_action": "follow_up", "active_tasks": [{"id": "task-cache", "goal": "给 MES 接口加一层缓存", "role": "coding", "status": "RUNNING"}], "expect_task_id": "task-cache", "expect_follow_up_kind": "cancel"}
 {"id": "fu-02", "text": "另外缓存过期时间设成 5 分钟", "tags": ["follow-up"], "expect_action": "follow_up", "active_tasks": [{"id": "task-cache", "goal": "给 MES 接口加一层缓存", "role": "coding", "status": "RUNNING"}], "expect_task_id": "task-cache", "expect_follow_up_kind": "supplement"}

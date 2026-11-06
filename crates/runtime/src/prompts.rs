@@ -183,6 +183,7 @@ pub fn reply_system_prompt(info: &TurnPromptInfo) -> String {
          \n\
          要求：\n\
          - 使用中文，简洁、准确，先给结论；\n\
+         - 最新消息里有多个问题时，按编号逐条回答，条数与问题数相同，不合并、不遗漏；\n\
          - 不知道就说不知道；不要编造需要工具才能获得的信息（当前时间、文件内容、代码仓库状态、精确计算结果）；\n\
          {review}\
          - 给出代码时使用 Markdown 代码块。",
@@ -267,6 +268,13 @@ mod tests {
 
         let p = reply_system_prompt(&info(ReviewMode::Direct));
         assert!(p.contains("如果用户要求审查对话中的内容"));
+    }
+
+    #[test]
+    fn reply_prompt_numbers_each_question() {
+        let p = reply_system_prompt(&info(ReviewMode::Reviewer));
+        assert!(p.contains("按编号逐条回答"));
+        assert!(p.contains("不遗漏"));
     }
 
     #[test]
