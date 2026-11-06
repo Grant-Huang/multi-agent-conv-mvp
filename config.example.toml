@@ -178,5 +178,5 @@ level = "info"                     # error / warn / info / debug
 [orchestrator]
 max_review_rounds = 1              # Reviewer 判 fail 后最多返工几轮
 history_messages = 12              # 每轮带上最近多少条消息
-task_timeout_secs = 1800           # 单个任务总超时
+task_timeout_secs = 1800           # 单个任务超时：从第一次分到 agent 开始计时，排队不算
 approval_risk = "high"             # 风险达到该等级需人工审批：low / medium / high
