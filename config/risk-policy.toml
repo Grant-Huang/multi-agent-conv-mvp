@@ -28,6 +28,8 @@ paths = [
   # 评审 agent 的规则：它只能在 docs/review/ 下提交报告和台账（L0，可自动合并），
   # 改评审规则本身必须由人审批，防止评审 agent 自己改规则后自动合并。
   "REVIEW.md",
+  # 七层围栏定期检查手册：同样约束评审 agent，改它必须由人审批。
+  "7-fence-review.md",
   "config/**",
   "tools/ci/**",
 ]

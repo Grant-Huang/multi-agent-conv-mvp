@@ -5,7 +5,7 @@
 
 - 上位规则：`AGENTS.md`（本文不重复，也不放宽）
 - 来源：`docs/AUTONOMOUS_DEV_ACTION_GUIDE.md` 第 3.4、8.5、8.6、10.9、12.4 节，附录 A.10、A.11
-- 定期的七层围栏检查（每周 / 每月项）如果有 `docs/PERIODIC_REVIEW.md`，按那份文件执行；
+- 定期的七层围栏检查（每周 / 每月项）按根目录的 `7-fence-review.md` 执行；
   本文只管“每晚对新提交的代码评审”。两份文件冲突时，以更严格的一条为准，并在报告里指出冲突。
 
 > 本文是 L3 文件（`config/risk-policy.toml`、`.github/CODEOWNERS`）：修改必须由负责人审批，

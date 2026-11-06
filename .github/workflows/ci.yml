@@ -137,7 +137,7 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: python3 tools/ci/change_size_check.py
       # 提示注入 / 工作流注入扫描（第七层：规范自动执行；规则与局限见脚本头部注释和
-      # docs/PERIODIC_REVIEW.md 第 4 节）。同样经环境变量传入 PR 描述。
+      # 7-fence-review.md 第 4 节）。同样经环境变量传入 PR 描述。
       - name: 提示注入扫描
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}

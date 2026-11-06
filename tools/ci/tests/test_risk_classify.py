@@ -121,6 +121,8 @@ def test_real_policy_review_rules_need_owner_but_reports_stay_l0():
     policy = rc.load_policy(REAL_POLICY)
     rules, default = policy["rules"], policy["default_level"]
     assert rc.classify_path("REVIEW.md", rules, default).level == "L3"
+    # 七层围栏定期检查手册同样约束评审 agent，也必须由负责人审批。
+    assert rc.classify_path("7-fence-review.md", rules, default).level == "L3"
     assert rc.classify_path("docs/review/2026-11-07.md", rules, default).level == "L0"
     assert rc.classify_path("docs/review/findings.jsonl", rules, default).level == "L0"
 
