@@ -88,7 +88,7 @@ jobs:
         working-directory: tools/websearch
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --frozen
       # pyproject.toml 中已设置 -m 'not live'，默认不访问真实网络。
       - name: 测试与覆盖率（阈值 80%，见 pyproject.toml）
@@ -104,7 +104,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # 策略脚本只用标准库；测试与 flake8 通过 uv 临时安装，不写入仓库。
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - name: pytest（策略脚本）
         working-directory: tools/ci
         run: uv run --no-project --python 3.13 --with pytest python -m pytest -q
