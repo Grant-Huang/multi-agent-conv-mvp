@@ -764,6 +764,16 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 节点（AgentNexus 侧） | `discovery.found`、`discovery.removed`、`discovery.unavailable`、`node.paired`、`node.pair_failed`、`node.unpaired`、`node.online`、`node.offline`、`node.auth_failed`、`node.run_start`、`node.run_end` | 上线 / 离线只在状态变化时记录，避免刷屏 |
 | 节点（节点侧） | `node.advertised`、`node.advertise_failed`、`node.code_rotated`、`node.paired`、`node.pair_failed`、`node.auth_failed`、`node.busy`、`node.run_start`、`node.run_end`、`node.run_failed`、`node.run_cancelled`、`node.state_save_failed` | |
 
+补充事件（后端配置、调度与存储）：
+
+| 模块 | 事件 | 什么时候记录 |
+|---|---|---|
+| 对话 | `conversation.queued` | 对话进入处理队列 |
+| 存储 | `store.event_batch`、`store.read_slow` | 批量落库与超过阈值的读取 |
+| 后端 | `llm.backend_probe`、`llm.backend_probe_failed`、`config.backends` | 后端探测和配置加载 |
+| 模型 | `llm.call`、`llm.context_trim`、`llm.breaker`、`llm.retry`、`llm.truncated_retry`、`llm.ratelimit` | 调用结果、裁剪、熔断、重试和限速 |
+| 槽位 | `llm.slot_acquire`、`llm.slot_release`、`llm.slots_mismatch` | 槽位申请、归还和配置不匹配 |
+
 ### 10.4 错误码清单
 
 | 错误码 | 含义 | 常见原因 / 怎么办 |
@@ -805,6 +815,8 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | `W_DISCOVERY` | 局域网发现不可用 | 网络不支持组播，改用"按地址添加" |
 | `W_CONFIG_UNKNOWN_KEY` | 配置里有不认识的字段，已忽略 | 多半是拼写错误或旧版本写法（例如旧的 `[agents.prefer]`） |
 | `W_STORE_READ_SLOW` | 一次数据库读取超过 50ms | 看 `store.read_slow` 的 `op` 和 `ms`；事件写入已改成批量，若仍频繁出现再看磁盘 |
+
+MCP 错误码见 [MCP 错误码表](mcp/DESIGN.md#错误码)，覆盖配置、连接、权限、协议、参数、工具执行与输出校验。
 
 ### 10.5 排查示例
 
