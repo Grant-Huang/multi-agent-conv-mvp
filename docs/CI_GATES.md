@@ -7,6 +7,9 @@
 - 风险分级策略：`config/risk-policy.toml`
 - 风险分级脚本：`tools/ci/risk_classify.py`
 - 变更规模脚本：`tools/ci/change_size_check.py`
+- 提示注入扫描脚本：`tools/ci/injection_scan.py`
+- PR 模板：`.github/pull_request_template.md`；依赖更新：`.github/dependabot.yml`
+- 定期检查手册：`docs/PERIODIC_REVIEW.md`（含围栏差距清单与提示注入专项检查）
 - 代码负责人：`.github/CODEOWNERS`
 - 上位设计：`docs/AUTONOMOUS_DEV_ACTION_GUIDE.md`（第 1~3 层，附录 A.6、A.9、A.12）
 
@@ -17,12 +20,12 @@
 
 | job（必需检查名） | 检查内容 | 失败条件 | 对应 AGENTS.md 完成定义 |
 |---|---|---|---|
-| `rust` | `cargo fmt --check`、`cargo clippy -D warnings`、`cargo test --workspace`、ts-rs 绑定是否最新 | 任一命令非零退出，或绑定有未提交差异 | `cargo test`、`cargo clippy` 无警告 |
+| `rust` | `cargo fmt --check`、`cargo clippy --locked -D warnings`、`cargo test --locked --workspace`、ts-rs 绑定是否最新 | 任一命令非零退出，或绑定有未提交差异 | `cargo test`、`cargo clippy` 无警告 |
 | `web` | `npm run typecheck`、`npm test`、`npm run build` | 任一步骤失败 | `npm run build` |
 | `python-websearch` | `tools/websearch` 的 pytest（覆盖率 ≥ 80%）与 flake8 | 测试失败、覆盖率不足、lint 报错 | — |
 | `python-tools` | `tools/ci` 策略脚本的测试与 flake8 | 同上 | — |
-| `change-policy` | 风险分级（只输出结论）+ 变更规模（可阻断） | 变更规模阻断（见第 2 节） | — |
-| `security` | `cargo audit`、gitleaks 全历史扫描 | 发现已知漏洞或密钥 | — |
+| `change-policy` | 风险分级（只输出结论）+ 变更规模（可阻断）+ 提示注入扫描（可阻断） | 变更规模阻断（见第 2 节）；注入扫描阻断（见 2.4） | — |
+| `security` | `cargo audit`、`npm audit --omit=dev --audit-level=high`、gitleaks 全历史扫描 | 发现已知漏洞或密钥 | — |
 
 `change-policy` 只在 PR 上运行。风险等级本身不会让 job 失败：等级决定的是**审批要求**，
 而审批要求只能由 GitHub 的分支保护和 CODEOWNERS 强制执行（见第 3 节）。
@@ -60,11 +63,23 @@
 阈值依据：本仓库最近 25 个非合并提交多为 500~1500 行，少数超过 3000 行。
 800 / 2000 是**待确认的建议值**，见第 5 节。
 
+### 2.4 提示注入扫描
+
+只看新增行，规则细节和局限见 `tools/ci/injection_scan.py` 头部注释与 `docs/PERIODIC_REVIEW.md` 第 4 节。
+
+| 规则 | 结果 |
+|---|---|
+| 不可见字符（零宽、双向控制、Unicode 标签） | **阻断**，不可降级 |
+| 工作流里外部可控内容（PR 标题 / 正文 / 分支名 / 评论等）直接出现在 `run:` 等非 `env` 位置 | **阻断**，不可降级 |
+| 注入短语出现在代码、配置、评测数据、AGENTS.md / CLAUDE.md | **阻断**；PR 描述含 `## 注入扫描说明`（≥ 20 字）则降为警告 |
+| 注入短语出现在普通文档；Markdown 里的长 HTML 注释 | 警告 |
+
 ### 2.3 本地验证
 
 ```bash
 python3 tools/ci/risk_classify.py --base origin/master
 PR_BODY="" python3 tools/ci/change_size_check.py --base origin/master
+PR_BODY="" python3 tools/ci/injection_scan.py --base origin/master
 cd tools/ci && uv run --no-project --python 3.13 --with pytest python -m pytest -q
 ```
 
@@ -100,6 +115,7 @@ cd tools/ci && uv run --no-project --python 3.13 --with pytest python -m pytest 
 
 - [ ] **确认 CODEOWNERS 的负责人**：当前全部为 `@Grant-Huang`（仓库所有者）。
 - [ ] **确认变更规模阈值**（800 / 2000 行，20 / 40 文件）。
+- [ ] **首次 CI 运行后核对新增检查**：`npm audit` 是否因历史漏洞失败；`cargo --locked` 是否因 Cargo.lock 未同步失败；注入扫描有无误报。
 - [ ] **固定第三方 action 版本**：工作流目前用主版本标签（`@v4` 等）。正式启用前应替换为具体 commit SHA，
       并由维护者核对，本次未填写任何 SHA。
 - [ ] **首次 CI 运行后核对**：Rust 工具链、系统依赖、gitleaks 与 cargo-audit 的结果。

@@ -14,10 +14,10 @@ on:
   push:
     branches: [master]
 
-# 同一分支的新提交会取消旧的运行，节省资源。
+# 同一 PR 的新提交会取消旧的运行；master 上的运行不取消，保证每个合并提交都有完整记录。
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # 默认只读；需要写权限的 job 单独声明（目前没有）。
 permissions:
@@ -47,15 +47,15 @@ jobs:
 
       # 静态检查：任何 warning 都视为失败，与 AGENTS.md 一致。
       - name: cargo clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: cargo test
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       # ts-rs 生成的 TypeScript 类型必须与 Rust 类型同步：重新生成后不应有差异。
       - name: bindings 是否最新
         run: |
-          cargo test -p an-core
+          cargo test --locked -p an-core
           git diff --exit-code -- web/src/bindings
 
   # ---------- 前端 ----------
@@ -136,11 +136,20 @@ jobs:
           GITHUB_BASE_REF: ${{ github.base_ref }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: python3 tools/ci/change_size_check.py
+      # 提示注入 / 工作流注入扫描（第七层：规范自动执行；规则与局限见脚本头部注释和
+      # docs/PERIODIC_REVIEW.md 第 4 节）。同样经环境变量传入 PR 描述。
+      - name: 提示注入扫描
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 tools/ci/injection_scan.py --json-out injection.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: risk-report
-          path: risk.json
+          path: |
+            risk.json
+            injection.json
           if-no-files-found: ignore
 
   # ---------- 安全 ----------
@@ -159,6 +168,13 @@ jobs:
           tool: cargo-audit
       - name: cargo audit
         run: cargo audit
+      # 前端生产依赖漏洞扫描：只看会进入产物的依赖，high 及以上阻断。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: npm audit（生产依赖）
+        working-directory: web
+        run: npm audit --omit=dev --audit-level=high
       # 密钥泄露扫描：检查全部历史，防止 API key 被提交。
       - name: gitleaks
         uses: gitleaks/gitleaks-action@v2
