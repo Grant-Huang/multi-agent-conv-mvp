@@ -1,0 +1,20 @@
+# 依赖更新：让第三方 action 和依赖的升级以 PR 的形式出现，走同样的 CI 门禁。
+# 固定 action 到 commit SHA 后，Dependabot 也会负责更新 SHA（见 docs/CI_GATES.md 待办）。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /tools/websearch
+    schedule:
+      interval: weekly
