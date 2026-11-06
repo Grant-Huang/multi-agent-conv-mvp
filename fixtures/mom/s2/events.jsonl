@@ -1,0 +1,1 @@
+{"id":"CMP-001","scenario":"s2","kind":"complaint","source":"customer","occurred_at":540,"batch":"B77","customer":"A","asset":"CNC-XX","payload":{"shipment":"C100","ctq":"diameter","samples":5}}

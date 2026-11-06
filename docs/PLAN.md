@@ -481,3 +481,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 - pi 的 Slack 扩展 `@arvoretech/pi-slack-bridge` 偶发崩溃（exit 1），按要求暂不关闭
 - Codex / opencode 的 GLM 额度在 2026-11-06 17:15 重置前会返回 429
 - `~/.config/opencode/opencode.json` 有明文 Slack token 和 DeepSeek key，建议改成环境变量
+
+## MOM 独立模拟流程
+
+按用户授权新增主 Agent、公告板双视图、S1 多扰动生产和 S2 客诉 Mock 流程；不替代上面的通用代理里程碑。实施、运行及测试见 [MOM 实施说明](mom/IMPLEMENTATION.md)，真实能力缺口统一见 [Mock 清单](mom/MOCK_REGISTER.md)。

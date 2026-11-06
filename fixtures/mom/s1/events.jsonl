@@ -1,0 +1,3 @@
+{"id":"s1-order","scenario":"s1","kind":"order","source":"MES","occurred_at":497,"batch":"B77","customer":"A","asset":"CNC-XX","payload":{"quantity":500,"deadline":"16:00"}}
+{"id":"s1-vibration","scenario":"s1","kind":"vibration","source":"EAM","occurred_at":503,"batch":"B77","customer":"A","asset":"CNC-XX","payload":{"warning":true,"safety_trip":false}}
+{"id":"s1-quality","scenario":"s1","kind":"quality","source":"QMS","occurred_at":511,"batch":"B77","customer":"A","asset":"CNC-XX","payload":{"cpk":1.1,"capability_threshold":1.33}}

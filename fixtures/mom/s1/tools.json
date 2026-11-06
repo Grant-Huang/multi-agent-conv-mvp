@@ -1,0 +1,1 @@
+{"latency_minutes":1,"max_parallel":3,"child_latency_minutes":3,"child_lease_minutes":5,"approval_ttl_minutes":5,"snapshot_ttl_minutes":5,"mock_ids":["M01","M02","M03","M04","M05","M06","M07","M08","M09","M10","M11","M12","M14","M17","M18","M19","M20","M21","M22","M23"]}
