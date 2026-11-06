@@ -10,10 +10,10 @@
 //!   分支内部的先后关系只以 `serial_steps` 文本形式交给该分支的 agent。
 //! - 吃不准就不拆：任何不明确的 Router 输出都退回单动作。
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use an_core::Role;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
 /// 信封 `status` 允许的取值
 pub const STATUS_OK: &str = "ok";
@@ -39,7 +39,8 @@ pub struct Template {
 #[serde(deny_unknown_fields)]
 pub struct BranchSpec {
     pub id: String,
-    pub capability: String,
+    /// 与 Router 的执行角色同一套名字（general / coding / reviewer）；其他值解析时报错
+    pub capability: Role,
     pub serial_steps: Vec<String>,
     pub output_required: Vec<String>,
 }
@@ -48,7 +49,7 @@ pub struct BranchSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JoinSpec {
-    pub capability: String,
+    pub capability: Role,
     pub writes_file: bool,
 }
 
@@ -59,7 +60,9 @@ pub struct BranchEnvelope {
     pub branch_id: String,
     pub status: String,
     pub missing: String,
-    pub payload: Map<String, Value>,
+    /// 只允许字符串值（设计示例如 `"hours": "6"`）。数字、布尔、数组、对象在解析时即被拒绝，
+    /// 调用方应把解析失败记为该路 `missing`。
+    pub payload: BTreeMap<String, String>,
 }
 
 /// Router 的三个扁平字段（设计 9.6 的表格）。字段都必填，不适用的填空字符串。
@@ -89,18 +92,14 @@ pub struct TemplateRegistry {
 impl TemplateRegistry {
     /// 构造注册表：每个模板都必须通过 [`validate_template`]，id 不得重复。
     /// 任何一个模板有问题都整体失败，而不是跳过它。
-    pub fn new(
-        templates: Vec<Template>,
-        known_capabilities: &[&str],
-        max_branches: usize,
-    ) -> Result<Self, Vec<String>> {
+    pub fn new(templates: Vec<Template>, max_branches: usize) -> Result<Self, Vec<String>> {
         let mut problems = Vec::new();
         let mut seen = HashSet::new();
         for t in &templates {
             if !seen.insert(t.id.as_str()) {
                 problems.push(format!("模板 id 重复：{}", t.id));
             }
-            if let Err(mut p) = validate_template(t, known_capabilities, max_branches) {
+            if let Err(mut p) = validate_template(t, max_branches) {
                 problems.append(&mut p);
             }
         }
@@ -125,13 +124,8 @@ impl TemplateRegistry {
 }
 
 /// 检查单个模板。返回全部问题（而不是遇到第一个就停），方便一次改完。
-pub fn validate_template(
-    t: &Template,
-    known_capabilities: &[&str],
-    max_branches: usize,
-) -> Result<(), Vec<String>> {
+pub fn validate_template(t: &Template, max_branches: usize) -> Result<(), Vec<String>> {
     let mut p = Vec::new();
-    let caps: HashSet<&str> = known_capabilities.iter().copied().collect();
     let who = if t.id.is_empty() {
         "<无 id>"
     } else {
@@ -161,12 +155,6 @@ pub fn validate_template(
         } else if !branch_ids.insert(b.id.as_str()) {
             p.push(format!("[{who}] 分支 id 重复：{}", b.id));
         }
-        if !caps.contains(b.capability.as_str()) {
-            p.push(format!(
-                "[{who}] 分支 {} 的能力 {} 不在能力卡片中",
-                b.id, b.capability
-            ));
-        }
         if b.serial_steps.is_empty() || b.serial_steps.iter().any(|s| s.trim().is_empty()) {
             p.push(format!(
                 "[{who}] 分支 {} 的 serial_steps 为空或含空步骤",
@@ -183,13 +171,6 @@ pub fn validate_template(
                 b.id
             ));
         }
-    }
-
-    if !caps.contains(t.join.capability.as_str()) {
-        p.push(format!(
-            "[{who}] 汇合能力 {} 不在能力卡片中",
-            t.join.capability
-        ));
     }
 
     if p.is_empty() {
@@ -252,12 +233,7 @@ pub fn validate_envelope(spec: &BranchSpec, env: &BranchEnvelope) -> Result<(), 
                 return Err(format!("payload 缺少字段 {lack}"));
             }
             for (k, v) in &env.payload {
-                let blank = match v {
-                    Value::Null => true,
-                    Value::String(s) => s.trim().is_empty(),
-                    _ => false,
-                };
-                if blank {
+                if v.trim().is_empty() {
                     return Err(format!("payload 字段 {k} 为空"));
                 }
             }
@@ -342,14 +318,14 @@ fn missing_envelope(branch_id: &str, reason: &str) -> BranchEnvelope {
         branch_id: branch_id.to_string(),
         status: STATUS_MISSING.into(),
         missing: reason.into(),
-        payload: Map::new(),
+        payload: BTreeMap::new(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     /// 设计文档 9.6 中的 quote 模板原文（JSON）
     const QUOTE: &str = r#"{
@@ -370,14 +346,12 @@ mod tests {
       "join": { "capability": "general", "writes_file": true }
     }"#;
 
-    const CAPS: &[&str] = &["general", "coding", "reviewer"];
-
     fn quote() -> Template {
         serde_json::from_str(QUOTE).expect("设计文档中的 quote 模板应能解析")
     }
 
     fn registry() -> TemplateRegistry {
-        TemplateRegistry::new(vec![quote()], CAPS, 4).expect("quote 应通过校验")
+        TemplateRegistry::new(vec![quote()], 4).expect("quote 应通过校验")
     }
 
     fn slots(template_id: &str, deliverable: &str, slots_ok: &str) -> RouteSlots {
@@ -393,7 +367,7 @@ mod tests {
             branch_id: branch.into(),
             status: "ok".into(),
             missing: String::new(),
-            payload: payload.as_object().cloned().unwrap_or_default(),
+            payload: serde_json::from_value(payload).expect("测试数据应为字符串映射"),
         }
     }
 
@@ -401,7 +375,7 @@ mod tests {
 
     #[test]
     fn quote_template_from_design_is_valid() {
-        assert!(validate_template(&quote(), CAPS, 4).is_ok());
+        assert!(validate_template(&quote(), 4).is_ok());
     }
 
     #[test]
@@ -417,7 +391,7 @@ mod tests {
 
     #[test]
     fn too_many_branches_for_slots_is_rejected() {
-        let problems = validate_template(&quote(), CAPS, 2).unwrap_err();
+        let problems = validate_template(&quote(), 2).unwrap_err();
         assert!(
             problems.iter().any(|p| p.contains("超过后台槽位数")),
             "{problems:?}"
@@ -425,23 +399,29 @@ mod tests {
     }
 
     #[test]
-    fn unknown_capability_is_reported() {
-        // quote 只用 general（分支和汇合都是），只要能力表里有 general 就应通过
-        assert!(validate_template(&quote(), &["general"], 4).is_ok());
-        // 没有 general 的能力表应报错，且分支和汇合各报一次
-        let problems = validate_template(&quote(), &["coding"], 4).unwrap_err();
-        assert!(
-            problems
-                .iter()
-                .any(|p| p.contains("能力 general 不在能力卡片中")),
-            "{problems:?}"
+    fn capability_must_be_a_router_role_name() {
+        // capability 与 Router 的执行角色同名：不认识的名字在解析时直接报错
+        let bad = QUOTE.replacen(
+            r#""capability": "general","#,
+            r#""capability": "writer","#,
+            1,
         );
-        assert!(
-            problems
-                .iter()
-                .any(|p| p.contains("汇合能力 general 不在能力卡片中")),
-            "{problems:?}"
-        );
+        let err = serde_json::from_str::<Template>(&bad)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("writer"), "{err}");
+        // 设计示例中的 general / 其他两个角色名都应能解析
+        for name in ["general", "coding", "reviewer"] {
+            let ok = QUOTE.replacen(
+                r#""capability": "general","#,
+                &format!(r#""capability": "{name}","#),
+                1,
+            );
+            assert!(
+                serde_json::from_str::<Template>(&ok).is_ok(),
+                "{name} 应可解析"
+            );
+        }
     }
 
     #[test]
@@ -449,7 +429,7 @@ mod tests {
         let mut t = quote();
         t.branches[1].id = "damage".into();
         t.branches[2].serial_steps = vec![];
-        let problems = validate_template(&t, CAPS, 4).unwrap_err();
+        let problems = validate_template(&t, 4).unwrap_err();
         assert!(
             problems.iter().any(|p| p.contains("分支 id 重复")),
             "{problems:?}"
@@ -462,7 +442,7 @@ mod tests {
 
     #[test]
     fn duplicate_template_id_is_rejected() {
-        let err = TemplateRegistry::new(vec![quote(), quote()], CAPS, 4).unwrap_err();
+        let err = TemplateRegistry::new(vec![quote(), quote()], 4).unwrap_err();
         assert!(err.iter().any(|p| p.contains("模板 id 重复")));
     }
 
@@ -521,6 +501,25 @@ mod tests {
     // ── 分支信封 ──
 
     #[test]
+    fn non_string_payload_value_is_rejected_at_parse() {
+        // 数字、布尔、数组、对象都不允许：调用方解析失败时记为该路 missing
+        for bad in [
+            json!({"hours": 6}),
+            json!({"ok": true}),
+            json!({"x": ["a"]}),
+            json!({"x": null}),
+        ] {
+            let raw = json!({"branch_id": "damage", "status": "ok", "missing": "", "payload": bad});
+            assert!(
+                serde_json::from_value::<BranchEnvelope>(raw).is_err(),
+                "{bad} 应被拒绝"
+            );
+        }
+        let good = json!({"branch_id": "damage", "status": "ok", "missing": "", "payload": {"hours": "6"}});
+        assert!(serde_json::from_value::<BranchEnvelope>(good).is_ok());
+    }
+
+    #[test]
     fn ok_envelope_with_exact_fields_passes() {
         let spec = &quote().branches[0];
         let env = ok_env("damage", json!({"verdict": "可修", "hours": "6"}));
@@ -556,7 +555,7 @@ mod tests {
     fn non_ok_envelope_must_have_empty_payload_and_reason() {
         let spec = &quote().branches[0];
         let mut miss = missing_envelope("damage", "缺测量值");
-        miss.payload.insert("verdict".into(), json!("可修"));
+        miss.payload.insert("verdict".into(), "可修".into());
         assert!(validate_envelope(spec, &miss)
             .unwrap_err()
             .contains("payload 必须为空"));
@@ -568,7 +567,7 @@ mod tests {
             branch_id: "damage".into(),
             status: "failed".into(),
             missing: String::new(),
-            payload: Map::new(),
+            payload: BTreeMap::new(),
         };
         assert!(validate_envelope(spec, &failed).is_ok());
     }
