@@ -37,7 +37,7 @@ from common import diff_text, path_matches, pr_section, resolve_base  # noqa: E4
 
 # 零宽字符、双向控制符、Unicode 标签字符（U+E0000~E007F）。
 HIDDEN_CHARS = re.compile(
-    "[​-‏‪-‮⁠-⁤⁦-⁩﻿\U000e0000-\U000e007f]"
+    "[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\U000e0000-\U000e007f]"
 )
 
 # 外部可控的 GitHub 上下文：不能出现在 run 脚本里。
