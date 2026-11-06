@@ -17,7 +17,7 @@
 
 | 角色 | 做什么 | 不做什么 | 产出 |
 |---|---|---|---|
-| 评审 agent（每晚） | 找问题、独立验证、给出修改意见；核对上次修复是否真的修好 | 不改业务代码、不改或删测试、不提交测试、不改 CI 和配置、不合并别人的 PR | `docs/review/DATE.md`（报告）+ `docs/review/findings.jsonl`（台账，只追加） |
+| 评审 agent（每晚） | 找问题、独立验证、给出修改意见；核对上次修复是否真的修好（含撤销检查）；在打开着的修复 PR 上发预审评论 | 不改业务代码、不改或删测试、不提交测试、不改 CI 和配置、不合并别人的 PR | `docs/review/DATE.md`（报告）+ `docs/review/findings.jsonl`（台账，只追加） |
 | 修复 agent（白天或接力，按 `FIX.md`） | 按报告的“交接清单”修问题：先写失败测试（Red），再改代码（Green），开 PR | 不自己宣布问题已关闭；不改台账已有的行；不合并 | 修复 PR；运行总结 PR（追加 `fix_claimed` / `note` 事件、方案文件） |
 | 人 | 决定“需要人决定的事”；审批 L2/L3；驳回误报；批准评审规则修订 | 不逐条做常规审查 | 台账里的 `wontfix` / `rejected` 事件；REVIEW.md 的修改 |
 
@@ -70,6 +70,25 @@ Agent 生命周期、任务状态机、执行组、Session 管理、ACP 通信�
 8. 日志和错误信息中不暴露密钥。
 9. 新接口、配置字段、错误码、事件名在文档里有记录；PLAN 的勾选与代码进度一致。
 10. 新行为有对应的验收用例和可执行测试（`docs/testing/README.md`）；缺失的写进“测试缺口”。
+
+### 3.4 周五深读：轮流通读一个模块的现有代码
+只审查新提交的 diff，老代码里的问题永远看不到。所以每周五的评审额外通读下表中的一个模块（不限于本周改动），
+按第 3.2、3.3 节逐条核对，发现照常写入台账（`source` 写“周五深读 <模块号>”）。
+轮到哪个模块：`当天的 ISO 周数 % 9`，例如 `python3 -c "import datetime;print(datetime.date.today().isocalendar()[1] % 9)"`。
+
+| 号 | 模块 | 主要文件 |
+|---|---|---|
+| 0 | 任务状态机与执行组 | `crates/runtime/src/orchestrator.rs`、`registry.rs`、`conv_lock.rs` |
+| 1 | 持久化 | `crates/runtime/src/store.rs` |
+| 2 | 子进程、ACP 与 git | `crates/agents/src/acp.rs`、`util.rs`、`proc_group.rs`、`coding.rs` |
+| 3 | MCP 与工具 | `crates/agents/src/mcp.rs`、`tools.rs`、`capability.rs` |
+| 4 | 对话、路由与提示词 | `crates/runtime/src/conversation.rs`、`router.rs`、`composer.rs`、`prompts.rs` |
+| 5 | 节点与远程 agent | `crates/runtime/src/nodes.rs`、`crates/node/src/`、`crates/agents/src/remote.rs` |
+| 6 | HTTP 接口与 SSE | `crates/server/src/lib.rs` |
+| 7 | MOM 模拟 | `crates/runtime/src/mom/`、`crates/server/src/mom.rs` |
+| 8 | 模型调用与调度 | `crates/llm/src/`、`crates/runtime/src/backends.rs` |
+
+深读的时间计入周五 90 分钟的预算；读不完就在报告里写明读到哪里，下次轮到时接着读。
 
 ---
 
@@ -127,12 +146,43 @@ Agent 生命周期、任务状态机、执行组、Session 管理、ACP 通信�
 多个 PR 同时追加时会在文件末尾冲突：解决方法是合并 master，**两边新增的行都保留**，不删、不改任何一行。
 
 ### 5.2 每次评审对台账做的事
-1. 读出所有当前状态为 open 或 fix_claimed 的条目；
+1. 运行 `python3 tools/ci/ledger_stats.py --date DATE`，得到**今天要核对的条目**：
+   - 平日：P0/P1 中仍为 open 的，加上所有 fix_claimed；
+   - 周五：全部 open 和 fix_claimed。
+   这样平日不会因为几十条 P2/P3 而超时，低优先级的条目每周至少核对一次。脚本同时检查台账格式和越权事件，
+   有问题时写进报告，不要自己改已有行。
 2. 在最新 master 上逐条核对：
    - open：已修好 → 追加 `verified_fixed`；
-   - fix_claimed：先看 `pr` 的状态。PR 还开着 → 不处理；PR 已合并 → 已修好追加 `verified_fixed`，没修好追加 `reopened`；PR 未合并就被关闭 → 追加 `reopened`，证据写“修复 PR 已关闭未合并”；
+   - fix_claimed：先看 `pr` 的状态。PR 还开着 → 不处理（它在第 5.3 节的预审里看）；PR 未合并就被关闭 → 追加 `reopened`，证据写“修复 PR 已关闭未合并”；PR 已合并 → 做下面的**撤销检查**，再决定 `verified_fixed` 还是 `reopened`。
+   - **撤销检查**（验证测试真的锁住了 bug）：在临时工作区里把修复 PR 对**非测试文件**的改动撤掉，
+     保留它新增的测试，然后运行这些测试：
+     ```bash
+     git worktree add /tmp/revert-check origin/master && cd /tmp/revert-check
+     git diff <修复PR的合并提交>^1 <修复PR的合并提交> --name-only   # 区分测试文件和非测试文件
+     git checkout <修复PR的合并提交>^1 -- <非测试文件...>            # 只撤掉修复
+     <运行 fix_claimed 里列出的测试>                                  # 必须失败
+     cd - && git worktree remove --force /tmp/revert-check
+     ```
+     撤掉修复后测试**仍然通过**，说明测试没锁住这个 bug：追加 `reopened`，证据写“撤销修复后测试仍通过”。
+     撤掉后测试失败、恢复后通过，且原失败场景在 master 上不再出现，才追加 `verified_fixed`，证据里写两次运行的结果行。
+     撤销后无法编译时，改为人工判断，并在证据里写明。
 3. 本次新发现 → 追加 `opened`；
 4. 对台账格式或已有条目有意见（例如严重度定错、两条其实是同一个问题）→ **不改原行**，写进报告第 8 节的修订建议，由人处理。
+
+### 5.3 修复 PR 预审（影子模式：只评论，不阻断）
+修复 agent 的 PR 合并前只有人看过，修复本身引入的问题要等合并后的下一晚才被发现。所以每次评审还要看一遍
+**当前打开着的 `fix/*` 分支 PR**（运行总结 PR `fix/run-*` 除外）：
+
+1. 读 PR 的 diff、描述里的 Red / Green 证据，确认改动只针对对应的台账 id，没有顺手改别的东西；
+2. 在 PR 分支上做第 5.2 节的撤销检查；
+3. 按第 3 节检查修复有没有引入新问题，特别是修复本身有没有违反架构不变量；
+4. 结论写成**一条** PR 评论（同一个 PR 已有你的评论且 PR 没有新提交时，不重复评论）：
+   “预审通过”或“预审发现 N 个问题”，每个问题写文件:行号和失败场景。评论末尾注明“夜间评审预审，仅供参考，不阻断合并”。
+   **不得**批准、请求修改（request changes）、合并或关闭 PR，也不得往修复分支推送。
+5. 同样的结论写进报告的“修复 PR 预审”一节。不能在 PR 上评论时，只写报告。
+
+预审发现的问题**不写入台账**（PR 还没合并，问题不在 master 上）；合并后如果问题仍在，按正常流程 `opened`。
+预审有没有用，靠周检统计：预审指出的问题，合并后是否真的在台账里出现（`7-fence-review.md` 第 2.5 节）。
 
 ---
 
@@ -161,10 +211,11 @@ cd web && npm ci && npm run build
 5. 🔴 高 / 🟠 中 / 🟡 低 优先级明细（第 4.3 节的格式）。
 6. 设计 / 计划 / 代码一致性。
 7. 测试缺口：缺哪些测试、建议的 Given / When / Then。**评审 agent 不写这些测试**，由修复 agent 写。
-8. 围栏检查：按 `7-fence-review.md` 第 5 节（周五含每周项和人工待办）。
-9. **评审规则与台账修订建议**（第 8 节）。
-10. 台账核对明细、驳回清单。
-11. 检查命令输出。
+8. 修复 PR 预审（第 5.3 节）：每个打开着的修复 PR 一行结论；没有就写“无”。
+9. 围栏检查：按 `7-fence-review.md` 第 5 节（周五含每周项、人工待办和第 3.4 节的深读结果）。
+10. **评审规则与台账修订建议**（第 8 节）。
+11. 台账核对明细（含撤销检查结果）、驳回清单。
+12. 检查命令输出。
 
 ---
 
