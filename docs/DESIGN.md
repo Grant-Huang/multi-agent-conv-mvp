@@ -617,6 +617,89 @@ v2 覆盖：闲聊常识建议（18）、追问（9）、计算与时间（9）�
 
 General Agent 没有用推理服务自带的"函数调用"功能（不同小模型对它的支持差别很大），而是每一步都让模型输出 `{"action": "tool_call" | "final", "tool", "args", "answer"}`。
 
+### 9.6 M4：模板拆分与输入输出 JSON
+
+本节是 M4.3 的设计，尚未改代码。线上仍是一条消息一个动作。
+
+能串行做完的留在一个 agent 里。只有几路都长、互不等待、串起来会超过一次任务能扛住的时间，才套模板并行。模型不现场编图。图是人手写的模板；能力卡片只声明节点上谁能做（`id`、角色、输入输出类型、并发、产物），不声明边。
+
+Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON，字段都必填，不适用的填空字符串：
+
+```json
+{
+  "template_id": "",
+  "deliverable": "",
+  "slots_ok": "no"
+}
+```
+
+| 字段 | 取值 | 程序怎么用 |
+|---|---|---|
+| `template_id` | 已注册模板的 `id`，或空字符串 | 空字符串表示不拆，走现有的单动作 |
+| `deliverable` | 该模板声明的交付物名称，或空字符串 | 必须与模板一致，否则拒绝拆分 |
+| `slots_ok` | `yes` 或 `no` | `no`、模板未注册、或卡片对不上，整单退回一个 agent |
+
+吃不准就不拆。拆错会并行跑出几路废结果。
+
+模板本身也是 JSON。程序在加载时检查：无环、每个 `capability` 能在能力卡片里找到、分支数量不超过后台槽位、下游要的字段上游声明了。分支内部的先后写在 `serial_steps` 里，留给这一路的 agent，不拆成图上的节点。
+
+```json
+{
+  "id": "quote",
+  "deliverable": "报价单",
+  "required_slots": ["序列号或型号", "交期"],
+  "branches": [
+    {
+      "id": "damage",
+      "capability": "general",
+      "serial_steps": ["读测量值", "对照修复限度", "给出可修结论和工时"],
+      "output_required": ["verdict", "hours"]
+    },
+    {
+      "id": "parts",
+      "capability": "general",
+      "serial_steps": ["取原厂清单", "对库存和替代件", "算缺件金额"],
+      "output_required": ["shortage_amount"]
+    },
+    {
+      "id": "history",
+      "capability": "general",
+      "serial_steps": ["查本机维修", "查同型号返修", "给保修风险"],
+      "output_required": ["warranty_risk"]
+    }
+  ],
+  "join": { "capability": "general", "writes_file": true }
+}
+```
+
+每一路返回同一个信封。`status` 不是 `ok` 时 `payload` 必须是空对象，汇总不得用别的路填补。
+
+```json
+{
+  "branch_id": "damage",
+  "status": "ok",
+  "missing": "",
+  "payload": { "verdict": "可修", "hours": "6" }
+}
+```
+
+| 字段 | 规则 |
+|---|---|
+| `branch_id` | 必须等于模板里的分支 `id` |
+| `status` | `ok`、`missing`、`failed` 三者之一 |
+| `missing` | `ok` 时为空；否则写缺的是哪一项 |
+| `payload` | `ok` 时必须带齐该分支的 `output_required`，且不得多出未声明的键；其他状态为 `{}` |
+
+汇合的输入是各路信封组成的数组，键必须盖住全部 `branch_id`，缺席的一路记为 `status: "missing"`。`writes_file` 为真时，由汇合任务把文件落盘。Composer 只根据这份汇合结果回复用户：文件名、各路结论、缺了哪一路。它不重新取数，也不编造未出现的字段。
+
+第一批只放三张模板，评测用现场原话，并放上「看起来专业但只有一台、数据已经在消息里」的反例。准确度只考核 `template_id`、`deliverable`、`slots_ok`。判错记在这一层，经现有纠错进入评测草稿；人不确认就不改线上模板。
+
+| 模板 `id` | 何时并行 | 每路内部仍串行 | 交付物 |
+|---|---|---|---|
+| `quote` | 损伤、物料、历史三路互不等待，客户等当天修复价 | 测量后再对限度；物料号确定后再查替代件；本机故障类别确定后再统计同型号 | 报价单 |
+| `stop_line` | 一批机台彼此无关，逐台串行会占满检验档期 | 同一台内：铭牌、检测、出厂参数、超差、处置 | 停线清单 |
+| `release` | 试验、合规、客户条款三条线都没完不能发货 | 循环结束后才读曲线；批次号确定后才查材质证明；条款列出后才对现场记录 | 放行单 |
+
 ---
 
 ## 10. 日志与排查

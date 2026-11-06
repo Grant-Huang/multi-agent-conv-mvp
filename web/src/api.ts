@@ -77,7 +77,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`);
   return body as T;
 }
 
@@ -92,6 +92,18 @@ export const api = {
   task: (id: string, after?: string) => request<TaskDetail>(`/api/tasks/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   cancel: (id: string) => request<{ cancelled: boolean }>(`/api/tasks/${id}/cancel`, { method: "POST" }),
   approve: (id: string) => request<{ approved: boolean }>(`/api/tasks/${id}/approve`, { method: "POST" }),
+  feedback: (body: {
+    message_id: string;
+    original_action: string;
+    original_role?: string;
+    correct_action: string;
+    correct_role?: string;
+    note?: string;
+  }) =>
+    request<{ status: string; data: { id: string }; message: string }>("/api/feedback", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   routeLogs: () => request<RouteLog[]>("/api/route-logs?limit=50"),
   nodes: () => request<NodesView>("/api/nodes"),
   pairNode: (address: string, code: string) =>

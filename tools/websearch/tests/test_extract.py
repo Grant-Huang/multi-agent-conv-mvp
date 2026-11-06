@@ -303,6 +303,13 @@ def test_forcing_trafilatura_without_install_is_an_error(monkeypatch):
         html_to_markdown(body("<p>x</p>"), BASE, "trafilatura")
 
 
+def test_comment_inside_removed_script_does_not_crash():
+    html = body("<script><!-- tracker --></script><p>正文还在。</p>")
+    _, md = convert(html)
+    assert "正文还在" in md
+    assert "tracker" not in md
+
+
 def test_unknown_extractor_is_an_error():
     with pytest.raises(InvalidArgument):
         html_to_markdown(body("<p>x</p>"), BASE, "bs4")

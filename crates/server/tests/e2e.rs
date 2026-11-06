@@ -60,8 +60,17 @@ fn mock_reply(req: &Value, format_calls: &AtomicUsize) -> String {
                 d["action"] = "follow_up".into();
                 d["task_id"] = id.into();
                 d["follow_up_kind"] = "cancel".into();
-            } else if last_user.contains("你好") {
+            } else if last_user.contains("问题一") || last_user.contains("你好") {
+                // 两种问候/问题都直接回答（原来是两个内容相同的分支，clippy::if_same_then_else 报错）
                 d["action"] = "respond".into();
+            } else if last_user.contains("验收") {
+                // 没看到纠正时故意派错；提示词里有「正确做法：respond」才改对
+                if system.contains("正确做法：respond") {
+                    d["action"] = "respond".into();
+                } else {
+                    d["action"] = "delegate".into();
+                    d["task_goal"] = last_user.into();
+                }
             } else {
                 d["action"] = "delegate".into();
                 d["task_goal"] = last_user.into();
@@ -101,7 +110,9 @@ fn mock_reply(req: &Value, format_calls: &AtomicUsize) -> String {
         "review_verdict" => json!({"verdict":"pass","issues":[],"comment":"符合要求"}).to_string(),
         // 没有 response_format：直接回答（第二步）或 Composer 生成交付消息
         _ if system.contains("直接回答用户的最新消息") => {
-            if last_user.contains("格式测试") {
+            if last_user.contains("问题一") && system.contains("按编号逐条回答") {
+                "1. MES 是制造执行系统。\n2. TCP 面向连接，UDP 不面向连接。".into()
+            } else if last_user.contains("格式测试") {
                 "格式修正后的回答".into()
             } else {
                 "你好！有什么可以帮你？".into()
@@ -928,4 +939,176 @@ workspace_dir = "{ws}"
         .unwrap()
         .unwrap_or_default()
         .contains("删除旧数据"));
+}
+
+#[tokio::test]
+async fn feedback_api_saves_and_rejects() {
+    let config: AppConfig =
+        toml::from_str("[llm]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\n").unwrap();
+    let rt = Arc::new(
+        Runtime::new(
+            config,
+            Store::open(std::path::Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let rt_keep = rt.clone();
+    tokio::spawn(async move { axum::serve(listener, an_server::api(rt)).await.unwrap() });
+    let http = reqwest::Client::new();
+    let base = format!("http://{addr}");
+
+    let bad = http
+        .post(format!("{base}/api/feedback"))
+        .json(&json!({"message_id":"m1","original_action":"delegate","correct_action":"guess"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 400);
+    let body: Value = bad.json().await.unwrap();
+    assert_eq!(body["status"], "error");
+    assert!(body["message"].as_str().unwrap_or("").contains("动作"));
+
+    let ok = http
+        .post(format!("{base}/api/feedback"))
+        .json(&json!({
+            "message_id": "m1",
+            "original_action": "delegate",
+            "original_role": "coding",
+            "correct_action": "respond",
+            "note": "只是在问概念"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert!(ok.status().is_success());
+    let body: Value = ok.json().await.unwrap();
+    assert_eq!(body["status"], "success");
+    let saved = rt_keep.store.list_feedback().unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].message_id, "m1");
+    assert_eq!(saved[0].correct_action, "respond");
+    assert!(saved[0].correct_role.is_none());
+}
+
+#[tokio::test]
+async fn ten_corrections_fix_similar_messages() {
+    use an_core::{Message, TurnDecision};
+    use an_runtime::store::RoutingFeedback;
+
+    let pairs = [
+        ("什么是 MES 系统", "验收：什么是 MES 系统"),
+        ("解释 Rust 的所有权机制", "验收：解释 Rust 的所有权机制"),
+        ("TCP 和 UDP 的区别", "验收：TCP 和 UDP 的区别"),
+        (
+            "Python 的 list 和 tuple 区别",
+            "验收：Python 的 list 和 tuple 区别",
+        ),
+        ("什么是代码审查的最佳实践", "验收：什么是代码审查的最佳实践"),
+        ("给我降低抛料率的建议", "验收：给我降低抛料率的建议"),
+        ("写一个快速排序给我看看", "验收：写一个快速排序给我看看"),
+        (
+            "用 Rust 写个读取 CSV 的示例",
+            "验收：用 Rust 写个读取 CSV 的示例",
+        ),
+        ("git 怎么回滚上一次提交", "验收：git 怎么回滚上一次提交"),
+        (
+            "calculator 工具支持哪些运算",
+            "验收：calculator 工具支持哪些运算",
+        ),
+    ];
+    let llm_url = start_mock_llm().await;
+    let config: AppConfig = toml::from_str(&format!(
+        "[llm]\nbase_url = \"{llm_url}\"\nmodel = \"mock\"\n"
+    ))
+    .unwrap();
+    let rt = Arc::new(
+        Runtime::new(
+            config,
+            Store::open(std::path::Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let conv = rt.store.create_conversation("验收").unwrap();
+
+    let ask = |text: &str| {
+        let history = vec![Message {
+            id: "q".into(),
+            conversation_id: conv.id.clone(),
+            role: "user".into(),
+            content: text.into(),
+            task_id: None,
+            created_at: an_core::now(),
+        }];
+        let rt = rt.clone();
+        let text = text.to_string();
+        async move {
+            let d = rt
+                .conversation
+                .decide_turn(&history, &[])
+                .await
+                .unwrap_or_else(|e| panic!("{text}: {e}"));
+            matches!(d.value, TurnDecision::Respond { .. })
+        }
+    };
+
+    let mut before = 0;
+    for (_, similar) in pairs {
+        if ask(similar).await {
+            before += 1;
+        }
+    }
+    for (i, (orig, _)) in pairs.iter().enumerate() {
+        let msg = rt.store.add_message(&conv.id, "user", orig, None).unwrap();
+        rt.store
+            .insert_feedback(&RoutingFeedback {
+                id: format!("fb-{i}"),
+                message_id: msg.id,
+                original_action: "delegate".into(),
+                original_role: Some("general".into()),
+                correct_action: "respond".into(),
+                correct_role: None,
+                note: "这是概念题".into(),
+                created_at: an_core::now(),
+            })
+            .unwrap();
+    }
+    let mut after = 0;
+    for (_, similar) in pairs {
+        if ask(similar).await {
+            after += 1;
+        }
+    }
+    assert_eq!(before, 0, "纠正前应全部误派");
+    assert_eq!(after, pairs.len(), "纠正后相似消息应全部直接回答");
+}
+
+#[tokio::test]
+async fn multi_question_reply_is_numbered() {
+    let llm_url = start_mock_llm().await;
+    let config: AppConfig = toml::from_str(&format!(
+        "[llm]\nbase_url = \"{llm_url}\"\nmodel = \"mock\"\n"
+    ))
+    .unwrap();
+    let rt = Runtime::new(
+        config,
+        Store::open(std::path::Path::new(":memory:")).unwrap(),
+    )
+    .unwrap();
+    let conv = rt.store.create_conversation("多问题").unwrap();
+    let out = rt
+        .conversation
+        .handle_message(&conv.id, "问题一：什么是 MES？问题二：TCP 和 UDP 的区别？")
+        .await
+        .unwrap();
+    let text = out.reply.content;
+    assert!(text.contains("1."), "{text}");
+    assert!(text.contains("2."), "{text}");
+    assert_eq!(
+        text.lines()
+            .filter(|l| l.starts_with(|c: char| c.is_ascii_digit()))
+            .count(),
+        2
+    );
 }

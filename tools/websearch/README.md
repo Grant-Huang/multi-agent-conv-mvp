@@ -6,7 +6,7 @@
 - **MCP server**：`websearch-mcp`（stdio），支持 MCP 的 agent 直接挂载
 - **Python 函数**：`from agent_websearch import api`
 
-搜索默认用 DuckDuckGo，也可以换成 Exa 托管搜索（`WEBSEARCH_PROVIDER=exa` 或 `--provider exa`），两者都不需要 API key。抓取先在本机下载并转成 Markdown，失败再用 [Jina Reader](https://r.jina.ai) 兜底。设计见 [DESIGN.md](DESIGN.md)。
+搜索默认用 Exa 托管搜索（不需要 API key）。备选是 DuckDuckGo（`WEBSEARCH_PROVIDER=ddg` 或 `--provider ddg`）和 Parallel（`--provider parallel`）。抓取先在本机下载并转成 Markdown，失败再用 [Jina Reader](https://r.jina.ai) 兜底。设计见 [DESIGN.md](DESIGN.md)。
 
 ## 安装
 
@@ -67,13 +67,13 @@ websearch fetch https://example.com --max-chars 8000 # 抓取单个网页
 pi --skill ./tools/websearch/skills/websearch -p "..."
 ```
 
-**AgentNexus**：计划在 M3 通过 CLI 接入（见 `docs/PLAN.md`）。
+**AgentNexus**：General 的 `web_search` / `web_fetch` 调用这个 CLI。不填 `provider` 时用 Exa。见 `docs/PLAN.md` 的 M3.4。
 
 ## 配置（环境变量）
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `WEBSEARCH_PROVIDER` | `ddg` | `ddg` 或 `exa`。Exa 走托管接口，不需要 key |
+| `WEBSEARCH_PROVIDER` | `exa` | `exa`、`ddg` 或 `parallel`。都不需要 key。失败不会自动换源 |
 | `WEBSEARCH_FETCH_ORDER` | `local_first` | `local_first` / `jina_first` / `jina_only` / `local_only`（不能把 URL 发给第三方时用 `local_only`） |
 | `WEBSEARCH_EXTRACTOR` | `auto` | `auto` / `lxml` / `trafilatura` |
 | `WEBSEARCH_SEARCH_TIMEOUT` | `30` | 搜索硬超时（秒） |

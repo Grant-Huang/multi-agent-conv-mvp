@@ -189,9 +189,17 @@ impl ConversationRuntime {
         history: &[Message],
         active: &[TaskRecord],
     ) -> std::result::Result<Structured<TurnDecision>, StructuredError> {
+        let query = history
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.clone())
+            .unwrap_or_default();
+        let examples = self.store.similar_feedback(&query, 5).unwrap_or_default();
         let mut messages = vec![ChatMessage::system(turn_system_prompt(
             &self.prompt_info,
             active,
+            &examples,
         ))];
         for m in history {
             messages.push(if m.role == "user" {
@@ -364,7 +372,8 @@ impl ConversationRuntime {
         ctx: &str,
     ) -> Result<TurnOutcome> {
         let conversation_id = log.conversation_id.clone();
-        match self.router.route(goal, ctx).await {
+        let examples = self.store.similar_feedback(goal, 5).unwrap_or_default();
+        match self.router.route(goal, ctx, &examples).await {
             Ok(route) => {
                 log.raw_outputs.extend(route.raw_outputs);
                 log.attempts += route.attempts;

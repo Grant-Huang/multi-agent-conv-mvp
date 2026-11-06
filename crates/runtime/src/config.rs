@@ -225,6 +225,18 @@ pub struct GeneralConfig {
     /// 同时最多执行几个任务（受本地模型并发能力限制）
     #[serde(default = "d_general_concurrency")]
     pub max_concurrent: u32,
+    /// `websearch` 可执行文件。不在 PATH 上或留空时，不注册联网工具
+    #[serde(default = "d_websearch_command")]
+    pub websearch_command: String,
+    /// 一次搜索或抓取的超时（秒）
+    #[serde(default = "d_websearch_timeout")]
+    pub websearch_timeout_secs: u64,
+}
+fn d_websearch_command() -> String {
+    "websearch".into()
+}
+fn d_websearch_timeout() -> u64 {
+    45
 }
 fn d_general_concurrency() -> u32 {
     4
@@ -245,6 +257,8 @@ impl Default for GeneralConfig {
             max_steps: d_steps(),
             workspace_dir: d_ws(),
             max_concurrent: d_general_concurrency(),
+            websearch_command: d_websearch_command(),
+            websearch_timeout_secs: d_websearch_timeout(),
         }
     }
 }

@@ -69,7 +69,11 @@ impl Router {
         })
     }
 
-    fn system_prompt(&self, roles: &[Role]) -> String {
+    fn system_prompt(
+        &self,
+        roles: &[Role],
+        examples: &[crate::prompts::CorrectionExample],
+    ) -> String {
         // 角色是"做什么"，同一角色可能有多个 agent，这里按角色描述，避免重复
         let agents = roles
             .iter()
@@ -92,16 +96,18 @@ impl Router {
              3. 其他（问答、分析、计算、读写普通文件、写 Markdown 或纯文本的文档）→ general；\n\
              4. required_tools 只列 general 真正需要的工具，其他角色留空数组；\n\
              5. risk_level：只读操作为 low；会写文件或改代码为 medium；删除数据、对外发送、涉及生产环境为 high；\n\
-             6. reason 用一句中文说明理由。",
+             6. reason 用一句中文说明理由。{corrections}",
             tools = if self.tool_names.is_empty() { "无".into() } else { self.tool_names.join(", ") },
+            corrections = crate::prompts::correction_section(examples),
         )
     }
 
-    /// 执行路由：分类 + 规则校验
+    /// 执行路由：分类 + 规则校验。`examples` 为空时系统提示词与没有纠错时相同。
     pub async fn route(
         &self,
         task_goal: &str,
         context: &str,
+        examples: &[crate::prompts::CorrectionExample],
     ) -> Result<RouteOutcome, RouteFailure> {
         // 始终让模型在全部角色中选择："该由谁做"只看任务本身。
         // 某角色当前没有可用的 agent 时由 Policy 明确报错（E_ROUTE_NO_AGENT），
@@ -114,7 +120,7 @@ impl Router {
             format!("任务目标：{task_goal}\n\n对话背景：\n{context}")
         };
         let messages = [
-            ChatMessage::system(self.system_prompt(&roles)),
+            ChatMessage::system(self.system_prompt(&roles, examples)),
             ChatMessage::user(user),
         ];
         let tool_names = self.tool_names.clone();
@@ -191,7 +197,7 @@ mod tests {
 
     #[test]
     fn prompt_routes_code_artifacts_to_coding() {
-        let p = router().system_prompt(&Role::ALL);
+        let p = router().system_prompt(&Role::ALL, &[]);
         let coding_rule = p
             .lines()
             .find(|l| l.contains("→ coding") && l.contains("HTML"))
@@ -204,5 +210,17 @@ mod tests {
             p.contains("Markdown 或纯文本"),
             "general 的文档应限定为 Markdown 或纯文本：{p}"
         );
+        assert!(!p.contains("以往纠正"));
+        let with = router().system_prompt(
+            &Role::ALL,
+            &[crate::prompts::CorrectionExample {
+                user_text: "写一个网页".into(),
+                correct_action: "delegate".into(),
+                correct_role: Some("coding".into()),
+                note: String::new(),
+            }],
+        );
+        assert!(with.starts_with(&p));
+        assert!(with.contains("delegate / coding"));
     }
 }

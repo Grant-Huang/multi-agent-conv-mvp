@@ -1,6 +1,6 @@
 # AgentNexus MVP 开发计划与 TodoList
 
-> 最后更新：2026-11-05（pre-M3 方案确认、35B 改 6 槽位 = 前台 2 + 后台 4、不借用、9B 下线）
+> 最后更新：2026-11-05（M3 收尾：默认搜索 Exa，不合并来源、不缓存）
 > 规则：按里程碑逐步推进；每完成一步更新本文件（勾选进度、做必要的最小调整），用户确认后再进入下一步。
 > 新功能先写测试（TDD），测试冻结后只改业务代码；Python 部分覆盖率 ≥ 80%，通过 flake8。
 
@@ -8,10 +8,10 @@
 
 | 项目 | 配置 |
 |---|---|
-| 所有 LLM 角色（前台判断 / 回复 / 汇总、路由、General、审查） | llama.cpp `127.0.0.1:8200`，Qwen3.8-35B-A3B Q4_K_M；**6 个槽位**（目标；现在运行的进程还是 5 个，pre-M3.3 开始前重启）共享 262144 上下文池（`--kv-unified`，多开槽位不增加 KV 内存），K/V 缓存 `q4_0` + `-fa on`；计划：前台用 slot 0~1，后台用 slot 2~5，互不借用（pre-M3.3） |
+| 所有 LLM 角色（前台判断 / 回复 / 汇总、路由、General、审查） | llama.cpp `127.0.0.1:8200`，Qwen3.8-35B-A3B Q4_K_M；**6 个槽位**（2026-11-05 评分时 `/slots` 为 0–5）。共享 262144 上下文池（`--kv-unified`），K/V 缓存 `q4_0` + `-fa on`。前台 slot 0~1，后台 slot 2~5，互不借用 |
 | coding agent | pi（`~/.npm-global/bin/pi`），只用 8200 上的 35B；pi 的 `contextWindow` 已同步为 262144 |
 | 9B（Qwen3.8-9B Q5_K_M） | **已下线**（2026-11-05，释放内存）；需要时通过 llama.cpp router 按请求唤起，不常驻 |
-| 启动方式 | 8200 是手动启动的独立进程（不是 launchd）：`scripts/llama_server_35b.sh`（环境变量可覆盖参数，`LLAMA_LOG` 指定日志文件）；日志 `~/models/llama_8200.log` |
+| 启动方式 | 8200 由 launchd 守护（2026-11-05 改）：`com.hermes.llama-35b` → `/Users/admin/tools/llama.cpp/llama-server-35b.sh`，开机自启 + 崩溃重启，日志 `~/temp/llama-server/launchd-35b.{out,err}.log`。此前是手工进程（`scripts/llama_server_35b.sh`，仅保留为前台调试入口），重启机器后 8200 会消失、pi 就失去 LLM |
 | llama.cpp | `0.6.0-dev (commit 23b0202)`；**流式请求断开会取消生成，非流式不会**；槽位参数名 `id_slot`（2026-11-05 实测） |
 | 后端 / 前端 | `agentnexus` 监听 8787；前端 `web/`（Vite + React） |
 | 构建 | 所有 cargo 命令加 `CARGO_TARGET_DIR=target` |
@@ -21,16 +21,16 @@
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M0 | 本地部署 + e2e 发现的 5 个问题 + 派发边界规则 | ✅ 完成 |
-| M1 | 派发"越用越聪明"：纠错反馈、相似经验检索、纠错回归 | 待开始 |
+| M1 | 派发越用越聪明：纠错、dream 审查、skill | 未完成。1.1 存储进行中，其余未开始 |
 | M2 | 独立的网页搜索工具包（Python，MCP / CLI / 函数） | 2.1~2.8 完成 |
 | pre-M3 | 稳定性加固：流式统一、槽位调度、上下文预算、前端 / 存储（已确认提前） | pre-M3.0 ~ .10 完成 |
 | 设计评审 | 能力卡片与路由扩展（会话 / OCR / PPT·文档 / 画图；只出设计、等确认） | pre-M3 之后、M3 之前 |
-| M3 | 搜索接入 General agent + 多方案 A/B | 待开始 |
+| M3 | 搜索接入 General agent + 多方案 A/B | ✅ 完成。默认 Exa |
 | M4 | 多问题消息逐条对应回答 | 待开始 |
 | M5 | 9B vs 35B A/B（路由判断 + 最终回答） | 暂停：9B 已下线（2026-11-05），初步结果留档 |
 | M6 | 复杂话题 e2e 综合评估 + 10 用户压测 | 待开始 |
 
-顺序：M2 → **pre-M3** → M3 → M4 → M6，M1 可与 M2 并行（互不依赖）。
+顺序：M0 → M2 → pre-M3 → M3 已完成。当前做 **M1**，然后 M4、M6。M5 暂停。
 M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B 复测。
 
 ---
@@ -53,21 +53,33 @@ M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B �
 
 ## M1 派发越用越聪明
 
-现状：派发全靠 LLM 判断（Turn Controller → Router → Policy），没有正则；判断错了不会留下任何经验。
+现状（2026-11-05 核查）：派发仍全靠 LLM 判断（Turn Controller → Router → Policy），没有正则，也没有纠错表、检索、导出或定时审查。代码进度为 0，从 1.1 开始。
+
+设计约束：dream 和 skill 都不自动改线上提示词或评测集。产出是草稿，人工确认后才进入 `evals/routing.jsonl` 或技能文件。
 
 - [ ] **1.1 纠错反馈**
-  - 前端任务卡片加"派错了"按钮，可选正确角色 / 动作 + 一句说明
-  - 新表 `routing_feedback`（消息 id、原判断、正确判断、说明、时间），附数据库迁移说明
-  - API：`POST /api/feedback`，统一返回 `{status, data, message}`，参数校验
-  - 测试：存取、非法参数拒绝
-- [ ] **1.2 相似经验检索（few-shot）**
-  - 判断前从纠错表中取与当前消息最相似的 3~5 条，作为示例拼进 Turn / Router 提示词
-  - 相似度先用字符 n-gram（标准库实现，不引入向量库）；效果不够再评估 embedding
-  - 测试：检索排序、提示词包含示例、无纠错时提示词不变
-- [ ] **1.3 纠错进入回归集**
-  - 提供导出命令，把纠错记录转成 `evals/routing.jsonl` 格式，人工确认后合入 `make_dataset.py`
-  - 每次改提示词跑一遍回归，对比基线
-- [ ] **1.4 验收**：用 10 条故意构造的误派消息，纠错后再发相似消息，派发正确率提升
+  - 前端任务卡片加「派错了」，可选正确角色 / 动作和一句说明
+  - 表 `routing_feedback`：消息 id、原动作、原角色、正确动作、正确角色、说明、时间。新库建表即可，不改已有表
+  - API：`POST /api/feedback`，返回 `{status, data, message}`，非法参数拒绝
+  - 测试：存取、未知动作或角色拒绝
+  - 存储、`POST /api/feedback` 和任务卡片「派错了」已落地。未知动作返回 400，正文是 `{status, data, message}`。按钮只出现在能对上用户消息的任务上，原动作记为 delegate
+- [x] **1.2 相似经验检索（few-shot）**
+  - 判断前按消息原文的字符二元组重合度取最多 5 条，拼进 Turn / Router 提示词
+  - 没有重合时不追加这一节，提示词与没有纠错时相同
+  - 测试：`similar_feedback_ranks_by_overlap`、`empty_corrections_leave_the_prompt_unchanged`
+- [x] **1.3 纠错进入回归集**
+  - `an-eval --export-feedback <库> <草稿>` 写出评测行。目标文件名是 `routing.jsonl` 时拒绝
+  - 确认后改 `evals/make_dataset.py` 再生成评测集。改提示词后用 `an-eval` 对比基线
+- [x] **1.4 dream 模式**
+  - `an-eval --dream [logs 目录] [日期]` 跑一次就退出。读当天 `logs/agentnexus.jsonl.<日期>` 里带 `task_id` 的失败行
+  - 草稿写到 `.tmp/dream/draft.md`：失败的 `task_id`，以及技能文本是否写明空结果、日期、不要编造。不调用模型，因此不占用 35B 槽位
+  - 没有失败行时不创建草稿。不改 `evals/routing.jsonl`，不改 `SKILL.md`
+  - 测试：`no_log_does_not_write_a_draft`、`failed_route_draft_names_the_task_and_leaves_the_dataset`
+- [x] **1.5 skill**（原独立 Skill 节。S.1 已完成）
+  - [x] 技能文本与当前命令对齐：默认 Exa，日期写进关键词，空结果换说法，不自动换源，不写 Python
+  - [x] 安装说明在 `tools/websearch/README.md` 的 `pi --skill`。不改用户本机 pi 配置
+  - [x] `shipped_skill_forbids_empty_stale_and_made_up_sources`：空结果、旧页面、编造来源都在 `SKILL.md` 里被禁止
+- [x] **1.6 验收**：`ten_corrections_fix_similar_messages`。10 条概念题在纠正前全部被派到后台（0/10），写入「应直接回答」后，相似消息 10/10 直接回答。用的是假模型，它只在提示词出现纠正时改判。没有把 dream 草稿并进评测集
 
 ---
 
@@ -91,7 +103,7 @@ M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B �
 - [x] **2.4 抓取管线**：`fetch_local` + `fetch_jina` + 按 `WEBSEARCH_FETCH_ORDER` 依次尝试的 `api.fetch`
 - [x] **2.5 搜索**：provider 接口 + DDG 子进程实现（硬超时 30s）+ `api.search` + `api.search_and_fetch`（并发抓取）
   - 实测发现：`ddgs` 对同一查询会随机报"无结果"/限流 → 子进程内对此自动重试最多 3 次
-  - 12 个查询实测 11 个有结果，平均 3.5s，最慢 8.3s；偶发空结果，留给 M3 与 Exa / Parallel 对比
+  - 12 个查询实测 11 个有结果，平均 3.5s，最慢 8.3s。和 Exa / Parallel 的对比见 M3.3，结论见 M3.4
 - [x] **2.6 入口**：CLI（`websearch search-fetch / search / fetch`，统一 JSON 输出）+ MCP server（`web_search_and_fetch` / `web_search` / `web_fetch`）
   - MCP 用 `mcp` 2.x（`MCPServer`，不是旧版 FastMCP）；已用真实 stdio 协议验证握手、列工具、调用
 - [x] **2.7 验收**：299 个单元测试、覆盖率 97%、flake8 通过；11 个 live 测试联网通过；README；pi 用 skill（`tools/websearch/skills/websearch`）、MCP agent 用 `websearch-mcp`
@@ -99,13 +111,13 @@ M6 依赖 M3、M4、pre-M3 完成；M5 暂停，需要时再按请求唤起 9B �
   - 核查：pi 本身没有内置联网；官方 `badlogic/pi-skills` 的 `brave-search` 需要 `BRAVE_API_KEY`（无 key 直接退出）；本机没装它，会话记录里 89 个会话从未调用过搜索工具。用户看到的"免费搜索"来源未查明，待用户提供截图 / 工具名
   - 正文提取对比（`.tmp/ref/cmp_extract.py`，9 个可抓取页面）：大体持平；HN、阮一峰博客我更好（pi 输出被破坏的表格 / 只拿到 105 字），GitHub / Hugging Face 我带少量导航噪声
   - 修复缺陷：无 `<article>/<main>` 的 Sphinx 类文档站只提到一个小节（docs.python.org 9946 字 → 52960 字）：`role="main"`、`itemprop="articleBody"` 也作为语义候选；新增 2 个测试，301 个测试通过，flake8 通过
-  - 已确认只用 ddgs，不加 Brave provider；**freshness / region 参数待做**（用户已选，排在 pre-M3 之后）
+  - 已确认只用 ddgs，不加 Brave provider。`freshness` / `region` 在 M3.5 决定不做，日期写进查询
 - [x] **2.8 第二个搜索来源：Exa**（2026-11-05）
   - 你给的 `DDGS` + `r.jina.ai` 写法，包里已经是这条管线：`search` 只拿 URL，`search_and_fetch` 再抓正文（默认本机优先，失败用 Jina，合并调用每页 3000 字）。没有把查询词打到 stdout
-  - Exa 用托管 MCP `https://mcp.exa.ai/mcp` 的 `web_search_exa`，无 key。`ExaProvider` 只解析标题 / URL / Highlights，正文仍走上面的抓取管线。`WEBSEARCH_PROVIDER=exa` 或 `--provider exa`
+  - Exa 用托管 MCP `https://mcp.exa.ai/mcp` 的 `web_search_exa`，无 key。`ExaProvider` 只解析标题 / URL / Highlights，正文仍走上面的抓取管线。默认就是 Exa；`WEBSEARCH_PROVIDER=ddg` 或 `--provider ddg` 改回 DuckDuckGo。Exa 失败不自动换源。请求带上托管接口要求的 `objective`（与 query 相同）
   - 实测这次调用返回 200，能解析出 URL。单元测试覆盖解析、截断条数、坏 URL、超时、HTTP 错误、MCP 错误。311 个测试通过，flake8 通过
   - 豆包搜索不做无 key 来源：火山引擎接口要 `Authorization: Bearer`，每月有免费次数，但是账号密钥。等有 key 再加 provider，密钥只走环境变量
-  - pi 仍没有内置免费搜索（2.7a）。和 DDG 的效果对比留在 M3 的 A/B，不在这一步用 35B 重跑
+  - pi 仍没有内置免费搜索（2.7a）。效果对比已在 M3.3 完成，默认见 M3.4
 
 ## pre-M3 稳定性加固（原 M7，2026-11-05 确认提前到 M3 之前）
 
@@ -370,27 +382,52 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 
 ---
 
+## Skill
+
+已并入 M1.5。下面保留完成记录，未完成项以 M1.5 为准。
+
+现状：`tools/websearch/skills/websearch/SKILL.md` 教 pi 用 bash 调 `websearch`。General 不读这个文件，M3.1 走 `Tool` 接口。不自动改写技能正文（不做「用模型优化 skill 文本」）。
+
+- [x] **S.1 与当前命令对齐**（2026-11-05，`tools/websearch/skills/websearch/SKILL.md`）
+  - 默认搜索是 Exa，skill 不要求加 `--provider`；需要 DuckDuckGo 时才写 `--provider ddg`
+  - 问「最近、今天、近 24 小时」时，关键词里写上日期
+  - 结果为空就换一次说法再搜，最多 3 次；`status=error` 读 `message`，不自动换搜索源
+  - 只根据返回内容回答，末尾列出实际用到的 `url`；不要写 Python
+- [ ] **S.2 安装方式写进 `tools/websearch/README.md`**：pi 要把该目录放到它的 skill 路径下才生效。不改用户本机的 pi 配置
+- [ ] **S.3 用固定问题核对 skill 文本**：空结果、过期资料、编造来源这三类用法都在文中被禁止。不引入自动改写
+
 ## M3 接入 General agent + 搜索方案 A/B
 
-- [ ] **3.1 接入**：在 `crates/agents/src/tools.rs` 按现有 `Tool` 接口实现 `web_search` / `web_fetch`，内部调用 M2 的 CLI `websearch search-fetch`（JSON 输出），不在 Rust 里重复实现搜索逻辑
-  - 配置项：CLI 路径、超时；未安装时工具不注册，前台能力清单自动不显示联网
-  - 测试：CLI 缺失、超时、正常 JSON 解析
-- [ ] **3.2 三个方案作为 provider 接入**（同一接口，配置切换）
-  - A：DuckDuckGo + 本地抓取 + Jina 兜底
-  - B：Exa 托管 MCP（`web_search_exa`，无 key）
-  - C：Parallel 托管 MCP（`web_search`）
-- [ ] **3.3 A/B 评测**：固定话题集（见 M6.1），每个方案跑同一批查询
-  - 指标：成功率、结果数、正文字数、中文站点可用率、延迟 P50/P95、答案质量评分（见 M6.2）
-  - 预调研数据：DDG+Jina 中文站抓取 5/12 成功；Exa 4/4，约 2 万字，0.4~1.9s；Parallel 4/4，约 2.6 万字，约 1s
-- [ ] **3.4 结论**：选默认方案，其余保留为备选 provider
+- [x] **3.1 接入**（2026-11-05）：`web_search` / `web_fetch` 调用 `websearch` CLI，不在 Rust 里重写搜索
+  - 配置：`agents.general.websearch_command`（默认 `websearch`）、`websearch_timeout_secs`（默认 45）。命令不在 PATH 上或留空时不注册，前台能力清单里就没有联网
+  - 测试：命令缺失不注册、成功 JSON、超时。`an-agents` 工具测试与 `an-runtime` 配置测试通过
+- [x] **3.2 三个方案作为 provider 接入**（2026-11-05）
+  - A：DuckDuckGo + 本地抓取 + Jina 兜底（`--provider ddg`）
+  - B：Exa 托管 MCP（`web_search_exa`，无 key，当前默认）
+  - C：Parallel 托管 MCP（`https://search.parallel.ai/mcp` 的 `web_search`，无 key）。只取标题、URL、摘录，正文仍走同一条抓取管线
+  - General 的 `web_search` 接受可选参数 `provider`（`exa` / `ddg` / `parallel`），不填就用 CLI 默认的 Exa。失败不自动换源
+- [x] **3.3 A/B 评测**（2026-11-05，`scripts/ab_m3_3.py`，原始结果 `.tmp/ab_m3_3.json`）
+  - M6.1 的话题集还没定稿，这次用 6 条固定查询：3 条中文（11 月 5 日 agent 架构、上海 2026 人工智能政策、Qwen 工具调用）、3 条英文（llama.cpp 槽位、agents as tools / handoff、ACP v2）
+  - 每个来源 `search_and_fetch`，最多 3 条、每页 1500 字。没有调用 35B。质量分是按标题和正文是否对题手打的 1~5 分，不是 M6.2 的模型评委
+  - 有结果的查询：DuckDuckGo 4/6，Exa 6/6，Parallel 6/6。都没有抛错。DuckDuckGo 的两条英文架构查询返回空列表
+  - 平均结果数：2.0 / 3.0 / 3.0。截断前正文字数合计：9.6 万 / 60.4 万 / 53.1 万。正文字数受协议长页影响，不作为选型依据
+  - 延迟 P50 / P95：DuckDuckGo 7.3s / 16.3s，Exa 1.6s / 12.1s，Parallel 2.0s / 17.7s
+  - 三条中文查询抓到的页面里，正文含足够汉字的比例：DuckDuckGo 9/9，Exa 8/8，Parallel 7/9
+  - 手打对题均分：DuckDuckGo 3.3，Exa 4.7，Parallel 3.7。Exa 命中当天架构讨论和 ACP v2 原文；Parallel 的中文新闻偏标签页，编排结果是同一篇文档的三个链接；DuckDuckGo 的政策页和 KV 教程好，但两条英文查询是空的
+  - 35B 评委（2026-11-05，`scripts/judge_m3_3.py`，槽位 5，这次请求关闭思考以便输出 JSON，不改服务器默认；逐条分在 `.tmp/ab_m3_3_judge.json`）。五项均分：DuckDuckGo 3.03，Exa 4.10，Parallel 3.63。Exa 的相关性 4.67、引用 4.33；DuckDuckGo 被两条空结果拉到准确性 2.83；Parallel 的覆盖 3.17（重复链接、中文新闻偏题）
+- [x] **3.4 结论**（2026-11-05）：默认保持 Exa。35B 评分和手打排序一致。DuckDuckGo 与 Parallel 留作 `--provider` 备选，失败不自动换源
+- [x] **3.5 收尾**（2026-11-05）：按 3.4 把还写着「等 A/B」的说明改成已定结论
+  - 不合并三个来源，不做结果缓存。空结果和重复链接说明合并不会更稳
+  - 抓取顺序仍是 `local_first`。这次比的是搜索源，不是本机和 Jina 的顺序
+  - General 的 `web_search` 不填 `provider` 即 Exa。技能说明同样要求默认不加 `--provider`
+  - `freshness` / `region` 仍不做。评测里把日期写进查询已经够用
 
 ## M4 多问题消息逐条对应回答
 
-- [ ] **4.1 评测样本**：新增 F 组样本（一条消息含 2~4 个问题；混合"直接回答 + 需要委派"的情况）
-- [ ] **4.2 直接回答**：回答提示词要求识别多个问题，按编号逐条回答，不遗漏
-  - 测试：提示词包含规则；e2e 检查回答编号数 = 问题数
-- [ ] **4.3 混合情况**：Turn 判断输出拆分后的子项（每项 respond / delegate），Composer 汇总时按原问题编号对应
-  - 这一步改动 Turn 输出 schema，开始前单独确认设计
+- [x] **4.1 评测样本**：F 组 5 条（`mq-01` 到 `mq-03` 全是直接回答，`mq-mix-01` / `mq-mix-02` 含必须委派的子问题）。4.3 之前混合样本仍是整条一个动作
+- [x] **4.2 直接回答**：回答提示词要求按编号逐条回答、不遗漏。`reply_prompt_numbers_each_question`、`multi_question_reply_is_numbered`
+- [ ] **4.3 混合情况**：按 `docs/DESIGN.md` 第 9.6 节实现。能串行的不拆；只有写死的模板才并行。Router 只输出 `template_id`、`deliverable`、`slots_ok`。分支和汇合的输入输出用 JSON 信封校验，缺一路记 `missing`，Composer 只转述汇合结果
+  - 设计已写入第 9.6 节，代码未改。开工前仍等确认
 - [ ] **4.4 验收**：F 组样本逐条覆盖率 ≥ 95%
 
 ## M5 9B vs 35B A/B
@@ -429,7 +466,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 1. ~~M2 的第三方依赖~~（已确认：核心 ddgs + httpx；trafilatura、mcp 为可选安装）
 2. M6 的压测门槛和话题集
 3. 用 35B 作评委打分是否可接受（会占用 8200 槽位）
-4. M4.3 改 Turn 输出 schema 的设计（开始前单独确认）
+4. M4.3 按 `docs/DESIGN.md` 第 9.6 节改代码（设计已写入，实现未开工）
 5. ~~M7 是否排在 M3 之前 / 统一流式 / 槽位数~~（已确认：提前并改名 pre-M3；统一流式；35B 槽位 5→6 见第 6 项；9B 下线）
 6. ~~前台借用后台槽位~~（已确认 2026-11-05：**不借用**，改为 6 槽位 = 前台 2 + 后台 4；`borrow_idle` 默认 false）
 7. ~~pre-M3.5 怎样固定 pi 的槽位~~（已确认 2026-11-05：选 A，pi 扩展 + 环境变量 `AN_LLM_SLOT`；其他 coding agent 以后各自适配，通用代理方案 C 留到连接器设计评审时再议）

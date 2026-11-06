@@ -146,6 +146,13 @@ c("rev-file-02", "评审 reports/q3.md 的结论是否站得住", "delegate", ["
 c("rev-repo-01", "审查一下仓库里 src/order.rs 的实现有没有并发问题", "delegate", ["review", "review-repo"], "coding", note="需要读代码仓库")
 c("rev-repo-02", "看看最近一次提交的改动有没有问题", "delegate", ["review", "review-repo"], "coding", note="需要读代码仓库")
 
+section("F. 一条消息里的多个问题")
+c("mq-01", "问题一：什么是 MES？问题二：TCP 和 UDP 有什么区别？", "respond", ["multi-question"], note="两个都可以直接回答")
+c("mq-02", "1. 解释 Rust 的所有权。2. 写一个快速排序示例给我看看。3. SPC 是什么意思？", "respond", ["multi-question"], note="三个都在对话里回答，不写入仓库")
+c("mq-03", "什么是代码审查的最佳实践？另外多 agent 里审查流程一般怎么设计？", "respond", ["multi-question"], note="两个讨论题，不是审查请求")
+c("mq-mix-01", "现在几点？另外什么是 MES？", "delegate", ["multi-question", "mixed"], "general", "L2", ["current_time"], note="含必须用工具的子问题。4.3 之前整条委派，不拆开")
+c("mq-mix-02", "帮我算一下 (12+8)/4。再解释一下这里的括号先算。", "delegate", ["multi-question", "mixed"], "general", "L2", ["calculator"], note="计算必须委派；解释部分 4.3 再拆")
+
 section("H. 跟进进行中的任务（follow_up）")
 T_CACHE = {"id": "task-cache", "goal": "给 MES 接口加一层缓存", "role": "coding", "status": "RUNNING"}
 T_WEEKLY = {"id": "task-weekly", "goal": "汇总本周质量数据，生成质量周报保存到 reports/weekly.md", "role": "general", "status": "RUNNING"}

@@ -46,6 +46,7 @@ def test_parses_title_url_and_highlights(mock_http):
     assert sent["params"]["name"] == "web_search_exa"
     assert sent["params"]["arguments"]["query"] == "llama.cpp kv"
     assert sent["params"]["arguments"]["numResults"] == 5
+    assert sent["params"]["arguments"]["objective"] == "llama.cpp kv"
     assert "authorization" not in route.calls.last.request.headers
 
 

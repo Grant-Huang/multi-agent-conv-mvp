@@ -9,6 +9,7 @@
 //! | GET  | /api/tasks?conversation_id= | 任务列表 |
 //! | GET  | /api/tasks/{id}?after= | 任务详情；`after` 为事件 id 时只返回它之后的新事件 |
 //! | POST | /api/tasks/{id}/cancel、/approve | 取消 / 人工批准 |
+//! | POST | /api/feedback | 记下一次派发纠错 |
 //! | GET  | /api/route-logs?limit= | 路由日志 |
 //! | GET  | /api/events?conversation_id= | SSE 事件流 |
 //! | GET  | /api/nodes | 局域网发现的节点 + 已配对节点 |
@@ -74,6 +75,7 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/tasks/{id}", get(get_task))
         .route("/api/tasks/{id}/cancel", post(cancel_task))
         .route("/api/tasks/{id}/approve", post(approve_task))
+        .route("/api/feedback", post(post_feedback))
         .route("/api/route-logs", get(route_logs))
         .route("/api/events", get(events))
         .route("/api/nodes", get(list_nodes))
@@ -202,6 +204,67 @@ async fn cancel_task(
     rt.store.get_task(&id)?.ok_or_else(|| not_found("任务"))?;
     let cancelled = rt.orchestrator.cancel(&id)?;
     Ok(Json(json!({ "cancelled": cancelled })))
+}
+
+#[derive(Deserialize)]
+struct FeedbackBody {
+    message_id: String,
+    original_action: String,
+    #[serde(default)]
+    original_role: Option<String>,
+    correct_action: String,
+    #[serde(default)]
+    correct_role: Option<String>,
+    #[serde(default)]
+    note: String,
+}
+
+fn blank_to_none(value: Option<String>) -> Option<String> {
+    value.and_then(|s| {
+        let t = s.trim().to_string();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    })
+}
+
+/// 记下一次派发纠错。成功和失败都用 `{status, data, message}`。
+async fn post_feedback(State(rt): State<AppState>, Json(body): Json<FeedbackBody>) -> Response {
+    let saved = an_runtime::store::RoutingFeedback {
+        id: an_core::new_id("fb"),
+        message_id: body.message_id,
+        original_action: body.original_action,
+        original_role: blank_to_none(body.original_role),
+        correct_action: body.correct_action,
+        correct_role: blank_to_none(body.correct_role),
+        note: body.note,
+        created_at: an_core::now(),
+    };
+    match rt.store.insert_feedback(&saved) {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(json!({ "status": "success", "data": { "id": saved.id }, "message": "" })),
+        )
+            .into_response(),
+        Err(e) => {
+            let message = e.to_string();
+            let code = if message.contains("不能为空")
+                || message.contains("动作只能")
+                || message.contains("未知角色")
+            {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            (
+                code,
+                Json(json!({ "status": "error", "data": null, "message": message })),
+            )
+                .into_response()
+        }
+    }
 }
 
 async fn approve_task(
