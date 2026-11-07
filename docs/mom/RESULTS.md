@@ -56,3 +56,5 @@
 最终验证：Rust **311 passed、0 failed、2 ignored**（MOM runtime43、HTTP4）；严格 Clippy 无警告，fmt通过；前端18项通过；完整 verify **12 passed (19.5s)**，包含主界面入口、配置影响排产结果、持续事件与播放暂停。日志位于 `/workspace/.setup/mom-dynamic-*.log`，截图与JSON/JUnit位于 `web/test-results/`。没有进行真实模型、企业接口或墙钟工业调度验收。
 
 合并前主干新增 `4b3f395` 的 MOM 安全修复，已以其保护逻辑为基准整合动态队列；保留全部 rt_mom_01~05 与 HTTP 联锁断言。最终复验：Rust **317 passed、0 failed、2 ignored**（MOM Runtime48、HTTP5）；严格 Clippy、格式通过；Chromium **12 passed (18.3s)**。前端仍为18项通过。日志前缀 `mom-dynamic-merged-*`，先前311项为前一基线。
+
+最后一次推送前主干新增连接状态功能 `4fa1627`，已无冲突合入并复验：Rust **326 passed、0 failed、2 ignored**，Clippy无警告；前端20项通过，完整浏览器12项通过（19.2s）。主界面连接状态与 MOM 入口同时保留。本节为最终合并代码基线，前文数字保留为分阶段证据。
