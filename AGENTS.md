@@ -15,6 +15,7 @@
 - 新增或改变功能前，先按 `docs/testing/README.md` 创建端到端用例和可执行测试，再改实现；新行为须有业务断言 Red→Green 证据，环境失败不算 Red。既有行为补录标为基线。
 - 验收用例定稿后只改业务代码，不改断言迎合实现；同步 `docs/testing/features.json`、功能地图和证据状态。
 - 单次改动尽量集中在一个 crate 内、一个目标内。
+- `web/src/bindings/` 下的 TypeScript 类型由 `an-core` 的 Rust 类型生成，不要手改：改了 `an-core` 的导出类型或 `web/` 用到的接口类型后，运行 `CARGO_TARGET_DIR=target cargo test -p an-core` 重新生成并一起提交（CI 会检查是否最新）。
 
 ## 禁止
 - 不得修改或删除已有测试来让失败的测试通过。

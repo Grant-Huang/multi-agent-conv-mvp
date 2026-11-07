@@ -15,6 +15,7 @@ __pycache__/
 .venv/
 venv/
 .claude/
+CLAUDE.local.md
 
 web/test-results/
 web/playwright-report/
