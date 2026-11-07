@@ -81,6 +81,19 @@ pub(super) fn validate_change(key: &str, value: &Value) -> Result<()> {
             value.as_str().is_some_and(|s| s.len() <= 16000),
             "history must be bounded text"
         ),
+        // E1-C：服务层从 RelOS 取回的关系上下文，作为一条观测写入（大小受限，status 取值受限）
+        "relos" => {
+            let status = value.get("status").and_then(Value::as_str);
+            ensure!(
+                value.is_object()
+                    && matches!(status, Some("ok" | "unavailable" | "timeout" | "empty")),
+                "relos must be an object with status ok|unavailable|timeout|empty"
+            );
+            ensure!(
+                value.to_string().len() <= 65_536,
+                "relos context must be at most 64KB"
+            );
+        }
         "resources_available"
         | "certified"
         | "tool_available"
