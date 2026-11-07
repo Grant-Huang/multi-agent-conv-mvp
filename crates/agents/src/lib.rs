@@ -15,6 +15,7 @@ pub mod general;
 pub mod mcp;
 pub mod proc_group;
 pub mod remote;
+pub mod report;
 pub mod reviewer;
 pub mod tools;
 pub mod util;

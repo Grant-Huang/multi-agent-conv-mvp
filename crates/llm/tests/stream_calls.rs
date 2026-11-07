@@ -517,8 +517,8 @@ async fn call_deadline_stops_retries_and_caps_the_first_token_wait() {
 }
 
 #[tokio::test]
-async fn total_timeout_limits_a_slow_but_alive_stream() {
-    let chunks: Chunks = (0..20)
+async fn tokens_keep_a_slow_stream_alive_past_the_total_timeout() {
+    let mut chunks: Chunks = (0..20)
         .map(|_| {
             (
                 ms(100),
@@ -526,6 +526,8 @@ async fn total_timeout_limits_a_slow_but_alive_stream() {
             )
         })
         .collect();
+    chunks.push(finish("stop"));
+    chunks.push(done());
     let m = start(move |_, _| Reply::Stream {
         head_delay: ms(0),
         chunks: chunks.clone(),
@@ -538,8 +540,8 @@ async fn total_timeout_limits_a_slow_but_alive_stream() {
         timeouts(2000, 1000, 600),
         BackendConfig::default(),
     );
-    let err = c.chat(&msgs()).await.unwrap_err();
-    assert_eq!(kind(&err), ErrorKind::TimeoutTotal);
+    let text = c.chat(&msgs()).await.unwrap();
+    assert_eq!(text, "字".repeat(20));
 }
 
 // ───────────────────────── 取消 ─────────────────────────
@@ -618,7 +620,7 @@ async fn ask(c: &LlmClient) -> Result<an_llm::Structured<Value>, an_llm::Structu
 }
 
 #[tokio::test]
-async fn truncated_json_doubles_max_tokens_once_without_feeding_back_the_partial_output() {
+async fn truncated_json_doubles_max_tokens_and_returns_the_partial_prefix() {
     let m = start(|i, _| {
         if i == 0 {
             json_cfg_reply("{\"a\":", "length")
@@ -638,11 +640,15 @@ async fn truncated_json_doubles_max_tokens_once_without_feeding_back_the_partial
         ),
         (2, json!(100), json!(200))
     );
-    assert_eq!(
-        m.body(1)["messages"],
-        m.body(0)["messages"],
-        "半截输出不能拼回提示词"
-    );
+    let second_body = m.body(1);
+    let second = second_body["messages"].as_array().unwrap();
+    let joined = second
+        .iter()
+        .filter_map(|m| m["content"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(joined.contains("{\"a\":"), "截断前缀要交回重试");
+    assert!(joined.contains("append"), "重试要说明从断点续写");
 }
 
 #[tokio::test]

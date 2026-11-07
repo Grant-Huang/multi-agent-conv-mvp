@@ -100,6 +100,29 @@
     "cases": []
   },
   {
+    "id": "reports",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/general.rs",
+      "crates/agents/src/report.rs",
+      "crates/agents/src/tools.rs",
+      "crates/runtime/src/router.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-REP-01",
+      "RT-REP-02",
+      "RT-REP-03",
+      "RT-REP-04",
+      "RT-REP-05",
+      "RT-REP-06",
+      "RT-REP-07",
+      "RT-REP-08",
+      "RT-REP-09"
+    ]
+  },
+  {
     "id": "templates",
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [

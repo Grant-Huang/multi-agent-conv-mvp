@@ -27,7 +27,7 @@
 
 ## 运行时用例（Runtime 集成层，实现前定义）
 
-浏览器用例之外，M4.3 固定模板的确定性校验没有界面入口，按设计在 Runtime 集成层验收。每条用例对应一个以 `rt_tpl_NN_` 开头的 Rust 集成测试函数（`crates/*/tests/*.rs`），由 `web/verification/check-map.mjs` 检查映射。模板并行执行与汇合回复尚未接入编排器，不在本组用例内。
+浏览器用例之外，M4.3 固定模板的确定性校验（RT-TPL-*，测试函数前缀 `rt_tpl_NN_`）和 General 写研究报告的流程（RT-REP-*，前缀 `rt_rep_NN_`）没有独立界面入口，按设计在 Runtime 集成层验收。由 `web/verification/check-map.mjs` 检查映射。模板并行执行与汇合回复尚未接入编排器；研究报告的章节并行在 General 内部完成，见 DESIGN 9.5。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -40,6 +40,15 @@
 | RT-TPL-07 | templates | 信封 payload 中的值分别为数字、布尔、数组、对象、null 与字符串 | 反序列化信封 | 非字符串值全部解析失败；字符串值解析成功 |
 | RT-TPL-08 | templates | parts 分支缺席；history 分支 payload 字段不全 | 汇合 | 两路都记为 missing，缺失原因非空，payload 为空，不用其他路数据填补；complete 为 false |
 | RT-TPL-09 | templates | 信封的 branch_id 不在模板中；同一 branch_id 出现两次 | 汇合 | 两种情况都整体报错，不生成汇合输入 |
+| RT-REP-01 | reports | General 只注册 write_file，受控模型一次 write_file 写完全文并带 answer | 执行任务 | Succeeded，summary 等于 answer，只调用模型 1 次，文件内容即这次写入 |
+| RT-REP-02 | reports | 路由只要求 web_search（未同时要求 write_file，仍走逐步循环）；受控模型第一步就写文件 | 执行任务 | 先写的请求被打回，下一次请求含“先调用 web_search”；证据只有 web_search、write_file 各一次；文件含检索来源，没有凭记忆写的正文 |
+| RT-REP-03 | reports | 路由同时要求 web_search 与 write_file；report_max_searches=6；受控模型规划 3 章（每章 1 个查询），再按章写正文，最后写摘要结论 | 执行任务 | Succeeded；模型调用 = 1 规划 + 3 章 + 1 汇合；检索 ≤ 6 且无重复查询；每个章节标题恰好一次；正文链接都来自检索结果；文件无「正文已省略」 |
+| RT-REP-04 | reports | 受控模型写三步长文：overwrite、append、final（不要求 web_search） | 执行任务 | 写长文请求的 max_tokens 不小于 8192；第二次请求的历史只有 content_chars，没有“正文已省略”占位，也不回放正文；工具结果提示 mode=append |
+| RT-REP-05 | reports | 同 RT-REP-03，report_parallel=2，三章写完顺序被打乱（第2章最快） | 执行任务 | 同时进行的章节模型请求 ≤ 2；落盘文件仍按大纲顺序第1→2→3章 |
+| RT-REP-06 | reports | 同 RT-REP-03，但检索命令全部失败 | 执行任务 | Failed，错误含检索失败；不调用章节写作；工作区无报告文件 |
+| RT-REP-07 | reports | 三章中第2章两次写作都失败，另两章成功 | 执行任务 | Succeeded（过半成功）；summary 写明缺失第2章；文件有第1、3章，无第2章正文标题 |
+| RT-REP-08 | reports | 同 RT-REP-03，章节写作阶段人为挂起 | 执行中 abort 该次 run | abort 后不再发出新的模型请求；报告文件不再增长 |
+| RT-REP-09 | reports | 规划与检索只有 [S1]；受控模型在第1章写了不存在的 [S9] | 执行任务 | Succeeded；正文无 `[S9]`；参考资料只有检索到的真实链接 |
 | RT-TPL-10 | templates | 后端 llama_cpp 配置 background_slots=[2,3,4,5]；openai 配置 max_inflight=8、reserved_interactive=1；openai 不限并发 | 读取 background_capacity | 分别为 4、7、不限（None） |
 
 ## MOM 可配置持续仿真（实现前定义）

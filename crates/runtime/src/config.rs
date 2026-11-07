@@ -229,6 +229,12 @@ pub struct GeneralConfig {
     /// 工具循环最大步数
     #[serde(default = "d_steps")]
     pub max_steps: usize,
+    /// 研究报告全文检索次数上限（去重后）
+    #[serde(default = "d_report_searches")]
+    pub report_max_searches: usize,
+    /// 研究报告同时写作的章节数
+    #[serde(default = "d_report_parallel")]
+    pub report_parallel: usize,
     /// 文件工具只能访问这个目录
     #[serde(default = "d_ws")]
     pub workspace_dir: PathBuf,
@@ -257,6 +263,12 @@ fn d_true() -> bool {
 fn d_steps() -> usize {
     6
 }
+fn d_report_searches() -> usize {
+    6
+}
+fn d_report_parallel() -> usize {
+    3
+}
 fn d_ws() -> PathBuf {
     "workspace/files".into()
 }
@@ -265,6 +277,8 @@ impl Default for GeneralConfig {
         Self {
             enabled: true,
             max_steps: d_steps(),
+            report_max_searches: d_report_searches(),
+            report_parallel: d_report_parallel(),
             workspace_dir: d_ws(),
             max_concurrent: d_general_concurrency(),
             websearch_command: d_websearch_command(),

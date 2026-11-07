@@ -260,7 +260,9 @@ async fn run_websearch(cmd: &WebCmd, args: &[&str]) -> Result<String> {
             .unwrap_or("搜索失败");
         bail!("{message}");
     }
-    Ok(an_core::truncate_chars(&stdout, READ_LIMIT))
+    // 原样返回：截断会破坏 JSON，研究报告解析链接会失败；
+    // 逐步循环若嫌长，由 General 写历史时再 clip_middle。
+    Ok(stdout)
 }
 
 /// 读取字符串参数
@@ -504,6 +506,29 @@ impl Tool for ReadFile {
     }
 }
 
+/// 续写内容里有一段不短于 DUPLICATE_RUN 字的文字已经在文件里出现过
+const DUPLICATE_RUN: usize = 200;
+
+fn repeats_existing_text(existing: &str, addition: &str) -> bool {
+    let chars: Vec<char> = addition.chars().collect();
+    if chars.len() < DUPLICATE_RUN {
+        return false;
+    }
+    let step = DUPLICATE_RUN / 4;
+    let mut start = 0;
+    loop {
+        let end = (start + DUPLICATE_RUN).min(chars.len());
+        let window: String = chars[end - DUPLICATE_RUN..end].iter().collect();
+        if existing.contains(&window) {
+            return true;
+        }
+        if end == chars.len() {
+            return false;
+        }
+        start += step;
+    }
+}
+
 struct WriteFile {
     root: PathBuf,
 }
@@ -514,27 +539,49 @@ impl Tool for WriteFile {
         "write_file"
     }
     fn description(&self) -> &str {
-        "在工作目录中写入文本文件（如 Markdown 报告），已存在则覆盖"
+        "在工作目录中写入文本文件（如 Markdown 报告）。mode=overwrite 覆盖，mode=append 把 content 接到文件末尾。续写必须用 append，不要重写开头"
     }
     fn args_hint(&self) -> &str {
-        r##"{"path": "reports/report.md", "content": "# 标题\n正文"}"##
+        r##"{"path": "reports/report.md", "content": "# 标题\n正文", "mode": "overwrite"}"##
     }
     async fn call(&self, args: &Value) -> Result<ToolOutput> {
         let rel = arg_str(args, "path")?;
         let content = arg_str(args, "content")?;
+        let mode = args
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("overwrite");
+        if mode != "overwrite" && mode != "append" {
+            bail!("mode 只能是 overwrite 或 append");
+        }
         let p = resolve_in_root(&self.root, rel)?;
         if let Some(parent) = p.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
-        tokio::fs::write(&p, content)
+        let stored = if mode == "append" && p.exists() {
+            let prev = tokio::fs::read_to_string(&p)
+                .await
+                .with_context(|| format!("无法读取已有文件 {rel}"))?;
+            if repeats_existing_text(&prev, content) {
+                bail!("{rel} 里已经写过这段内容，未追加。content 只放尚未写出的新章节");
+            }
+            format!("{prev}{content}")
+        } else {
+            content.to_string()
+        };
+        tokio::fs::write(&p, &stored)
             .await
             .with_context(|| format!("无法写入文件 {rel}"))?;
+        let n = stored.chars().count();
+        let tail: String = stored.chars().skip(n.saturating_sub(80)).collect();
         Ok(ToolOutput {
-            text: format!("已写入 {rel}（{} 字符）", content.chars().count()),
+            text: format!(
+                "已写入 {rel}（{n} 字符，{mode}）。末尾：{tail}\n全部写完：下一步 action=final。还没写完：下一步 write_file 且 mode=append，content 只放新增章节，最后一次写入带上 answer。"
+            ),
             artifacts: vec![Artifact {
                 kind: "file".into(),
                 name: rel.into(),
-                content: content.into(),
+                content: stored,
             }],
         })
     }
@@ -563,14 +610,20 @@ impl Tool for WebSearch {
             .unwrap_or(3)
             .clamp(1, 8);
         let n = n.to_string();
-        let mut argv = vec![
-            "search-fetch".to_string(),
-            query.to_string(),
-            "-n".into(),
-            n,
-            "--max-chars".into(),
-            "3000".into(),
-        ];
+        // fetch=false：只返回标题/链接/摘要，研究报告用这个就够，不必再抓全文
+        let fetch = args.get("fetch").and_then(|v| v.as_bool()).unwrap_or(true);
+        let mut argv = if fetch {
+            vec![
+                "search-fetch".to_string(),
+                query.to_string(),
+                "-n".into(),
+                n,
+                "--max-chars".into(),
+                "3000".into(),
+            ]
+        } else {
+            vec!["search".to_string(), query.to_string(), "-n".into(), n]
+        };
         if let Some(provider) = args
             .get("provider")
             .and_then(|v| v.as_str())
@@ -731,14 +784,15 @@ mod tests {
         );
         let cmd = WebCmd {
             command: script.to_string_lossy().into_owned(),
-            timeout: Duration::from_millis(500),
+            // 并行跑全量测试时机器忙，500ms 可能在脚本写出 pid 之前就超时
+            timeout: Duration::from_millis(2000),
         };
         let err = run_websearch(&cmd, &["search", "q"])
             .await
             .unwrap_err()
             .to_string();
         assert!(err.contains("超时"), "{err}");
-        let pid = read_pid(&pid_file, 2);
+        let pid = read_pid(&pid_file, 5);
         let dead = wait_dead(pid, 5);
         force_kill(pid);
         let _ = std::fs::remove_dir_all(&dir);
@@ -774,6 +828,54 @@ mod tests {
             "命令退出后应尽快返回，实际用了 {elapsed:?}"
         );
         assert!(dead, "残留的孙进程 {pid} 应被清理");
+    }
+
+    #[tokio::test]
+    async fn write_file_append_keeps_the_existing_head() {
+        let dir = std::env::temp_dir().join(format!("an-write-append-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tools = ToolRegistry::with_builtin(&dir).unwrap();
+        let write = tools.get("write_file").unwrap();
+        write
+            .call(&json!({"path":"reports/r.md","content":"# 标题\n开头","mode":"overwrite"}))
+            .await
+            .unwrap();
+        let out = write
+            .call(&json!({"path":"reports/r.md","content":"\n后续","mode":"append"}))
+            .await
+            .unwrap();
+        let disk = std::fs::read_to_string(dir.join("reports/r.md")).unwrap();
+        assert_eq!(disk, "# 标题\n开头\n后续");
+        assert!(out.text.contains("append"));
+        assert!(out.text.contains("后续"));
+        assert!(!out.artifacts[0].content.contains("正文已省略"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn write_file_append_rejects_text_already_in_the_file() {
+        let dir = std::env::temp_dir().join(format!("an-write-dup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tools = ToolRegistry::with_builtin(&dir).unwrap();
+        let write = tools.get("write_file").unwrap();
+        let section = format!(
+            "## 五、情景分析\n{}",
+            "红蓝政府与分裂政府的影响。".repeat(30)
+        );
+        write
+            .call(&json!({"path":"r.md","content":format!("# 报告\n{section}"),"mode":"overwrite"}))
+            .await
+            .unwrap();
+        let err = write
+            .call(&json!({"path":"r.md","content":format!("\n{section}"),"mode":"append"}))
+            .await
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("已经写过"), "{err:#}");
+        let disk = std::fs::read_to_string(dir.join("r.md")).unwrap();
+        assert_eq!(disk.matches("## 五、情景分析").count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

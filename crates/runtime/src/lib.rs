@@ -191,12 +191,16 @@ impl Runtime {
                 .map(|t| format!("  - {}：{}", t.name, t.description))
                 .collect::<Vec<_>>()
                 .join("\n");
-            registry.register(Arc::new(GeneralAgent::new(
-                llm_for(LlmRole::General),
-                tools,
-                a.general.max_steps,
-                a.general.max_concurrent,
-            )));
+            registry.register(Arc::new(
+                GeneralAgent::new(
+                    llm_for(LlmRole::General),
+                    tools,
+                    a.general.max_steps,
+                    a.general.max_concurrent,
+                )
+                .with_report_max_searches(a.general.report_max_searches)
+                .with_report_parallel(a.general.report_parallel),
+            ));
         }
         let reviewer = a
             .reviewer
