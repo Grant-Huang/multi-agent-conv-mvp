@@ -454,11 +454,7 @@ async fn rt_rep_03_research_report_writes_outline_then_each_chapter_after_its_se
         "{:?}",
         result.errors
     );
-    assert_eq!(
-        m.calls.load(Ordering::SeqCst),
-        5,
-        "1 规划 + 3 章 + 1 汇合"
-    );
+    assert_eq!(m.calls.load(Ordering::SeqCst), 5, "1 规划 + 3 章 + 1 汇合");
 
     let searches: Vec<String> = result
         .evidence

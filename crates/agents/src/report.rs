@@ -145,10 +145,7 @@ pub async fn run(
         });
     }
 
-    let ok_n = outcomes
-        .iter()
-        .filter(|o| o.status == "ok")
-        .count();
+    let ok_n = outcomes.iter().filter(|o| o.status == "ok").count();
     let total = outcomes.len().max(1);
     if ok_n * 2 <= total {
         let missing: Vec<_> = outcomes
@@ -355,8 +352,12 @@ async fn search_all(
             (i, q, args, result)
         });
     }
-    let mut ordered: Vec<(usize, String, Value, Result<crate::tools::ToolOutput, anyhow::Error>)> =
-        Vec::new();
+    let mut ordered: Vec<(
+        usize,
+        String,
+        Value,
+        Result<crate::tools::ToolOutput, anyhow::Error>,
+    )> = Vec::new();
     while let Some(item) = futs.next().await {
         ordered.push(item);
     }
@@ -386,10 +387,7 @@ async fn search_all(
             Err(e) => {
                 evidence.push(Evidence {
                     kind: "tool_call".into(),
-                    content: format!(
-                        "web_search({}) → error: {e:#}",
-                        json!({"query": q})
-                    ),
+                    content: format!("web_search({}) → error: {e:#}", json!({"query": q})),
                 });
             }
         }
@@ -455,7 +453,10 @@ fn parse_search_hits(text: &str) -> Vec<(String, String, String)> {
             }
             if let Some(&i) = by_url.get(url) {
                 let extra: String = content.chars().take(1200).collect();
-                if !hits[i].2.contains(&extra.chars().take(40).collect::<String>()) {
+                if !hits[i]
+                    .2
+                    .contains(&extra.chars().take(40).collect::<String>())
+                {
                     if !hits[i].2.is_empty() {
                         hits[i].2.push('\n');
                     }
@@ -530,7 +531,12 @@ async fn write_chapters(
     let outline = plan
         .chapters
         .iter()
-        .map(|c| format!("- {}（{}）：写「{}」；不写「{}」", c.id, c.title, c.scope, c.exclude))
+        .map(|c| {
+            format!(
+                "- {}（{}）：写「{}」；不写「{}」",
+                c.id, c.title, c.scope, c.exclude
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -659,9 +665,7 @@ async fn join_report(llm: &LlmClient, plan: &Plan, outcomes: &[ChapterOutcome]) 
         .collect::<Vec<_>>()
         .join("\n");
     let messages = vec![
-        ChatMessage::system(
-            "你为研究报告写摘要与结论。只输出 JSON，字段 abstract 与 conclusion。",
-        ),
+        ChatMessage::system("你为研究报告写摘要与结论。只输出 JSON，字段 abstract 与 conclusion。"),
         ChatMessage::user(format!(
             "报告标题：{}\n各章概要：\n{summaries}\n请写摘要与结论。",
             plan.title

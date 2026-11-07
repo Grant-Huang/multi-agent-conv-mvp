@@ -611,10 +611,7 @@ impl Tool for WebSearch {
             .clamp(1, 8);
         let n = n.to_string();
         // fetch=false：只返回标题/链接/摘要，研究报告用这个就够，不必再抓全文
-        let fetch = args
-            .get("fetch")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+        let fetch = args.get("fetch").and_then(|v| v.as_bool()).unwrap_or(true);
         let mut argv = if fetch {
             vec![
                 "search-fetch".to_string(),
