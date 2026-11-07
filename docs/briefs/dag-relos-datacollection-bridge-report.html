@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>可沉淀 DAG 架构报告 · AgentNexus × RelOS × data-collection</title>
+<style>
+  :root {
+    --ink: #1a2332;
+    --muted: #5a6a7a;
+    --line: #d8e0e8;
+    --paper: #f7f5f0;
+    --card: #ffffff;
+    --accent: #0f6e56;
+    --accent-soft: #d8f3e7;
+    --warn: #9a5b00;
+    --warn-soft: #fff1d6;
+    --code-bg: #eef2f6;
+    --shadow: 0 1px 0 rgba(26, 35, 50, 0.04), 0 12px 32px rgba(26, 35, 50, 0.06);
+    --radius: 12px;
+    --max: 920px;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 500px at 10% -10%, #dff3ea 0%, transparent 55%),
+      radial-gradient(900px 420px at 100% 0%, #e8eef5 0%, transparent 50%),
+      var(--paper);
+    font-family: "IBM Plex Sans", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", sans-serif;
+    line-height: 1.65;
+    font-size: 16px;
+  }
+
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 48px 24px 96px; }
+
+  header.hero {
+    padding: 28px 0 36px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 36px;
+  }
+  .eyebrow {
+    display: inline-block;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  h1 {
+    font-family: "Source Serif 4", "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif;
+    font-size: clamp(1.8rem, 4vw, 2.45rem);
+    line-height: 1.25;
+    font-weight: 650;
+    margin: 0 0 14px;
+    letter-spacing: -0.02em;
+  }
+  .lede {
+    font-size: 1.05rem;
+    color: var(--muted);
+    max-width: 46em;
+    margin: 0 0 22px;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .meta span strong { color: var(--ink); font-weight: 600; }
+
+  nav.toc {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px 22px;
+    box-shadow: var(--shadow);
+    margin-bottom: 40px;
+  }
+  nav.toc h2 {
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 10px;
+    font-weight: 600;
+  }
+  nav.toc ol {
+    margin: 0;
+    padding-left: 1.2em;
+    columns: 2;
+    gap: 24px;
+  }
+  nav.toc a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+  }
+  nav.toc a:hover { border-bottom-color: var(--accent); color: var(--accent); }
+  @media (max-width: 700px) {
+    nav.toc ol { columns: 1; }
+  }
+
+  section {
+    margin: 0 0 44px;
+    scroll-margin-top: 24px;
+  }
+  h2 {
+    font-family: "Source Serif 4", "Source Han Serif SC", "Noto Serif SC", serif;
+    font-size: 1.55rem;
+    margin: 0 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-soft);
+  }
+  h3 {
+    font-size: 1.05rem;
+    margin: 26px 0 10px;
+    color: var(--ink);
+  }
+  p { margin: 0 0 12px; }
+  ul, ol { margin: 0 0 14px; padding-left: 1.25em; }
+  li { margin-bottom: 6px; }
+  li::marker { color: var(--accent); }
+
+  .callout {
+    background: var(--accent-soft);
+    border-left: 4px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 16px;
+    margin: 16px 0;
+  }
+  .callout.warn {
+    background: var(--warn-soft);
+    border-left-color: var(--warn);
+  }
+  .callout p:last-child { margin-bottom: 0; }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin: 16px 0;
+  }
+  @media (max-width: 800px) {
+    .grid-3 { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 16px 14px;
+    box-shadow: var(--shadow);
+  }
+  .card .layer {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .card h4 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+  }
+  .card p { font-size: 0.92rem; color: var(--muted); margin: 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+    margin: 14px 0 18px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  th {
+    background: #eef4f1;
+    font-weight: 600;
+    font-size: 0.84rem;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  pre, code {
+    font-family: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.84rem;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    line-height: 1.5;
+    margin: 12px 0 18px;
+  }
+  code {
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  pre code { background: none; padding: 0; }
+
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+    margin: 16px 0 8px;
+  }
+  .flow .node {
+    flex: 1 1 160px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    min-width: 140px;
+  }
+  .flow .node strong { display: block; margin-bottom: 4px; }
+  .flow .node span { font-size: 0.85rem; color: var(--muted); }
+  .flow .arrow {
+    display: flex;
+    align-items: center;
+    color: var(--accent);
+    font-weight: 700;
+    padding: 0 2px;
+    flex: 0 0 auto;
+  }
+  @media (max-width: 700px) {
+    .flow .arrow { width: 100%; justify-content: center; transform: rotate(90deg); }
+  }
+
+  .phase {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 12px;
+    margin: 12px 0;
+    padding: 14px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+  .phase .badge {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
+  .phase h4 { margin: 2px 0 6px; }
+  .phase p { margin: 0; font-size: 0.92rem; color: var(--muted); }
+
+  footer {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  @media print {
+    body { background: white; font-size: 11pt; }
+    .wrap { padding: 0; max-width: none; }
+    nav.toc, .card, .phase, table, pre { box-shadow: none; break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,650&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div class="eyebrow">Architecture Brief · 2026-11-06</div>
+      <h1>可沉淀 DAG：把 AgentNexus、RelOS 与 data-collection 打通</h1>
+      <p class="lede">
+        本报告回答一个架构问题：AgentNexus 里的执行图（DAG / 模板）是否应完全写死在代码中？
+        结论是<strong>不应写死实现，也不应让模型运行时现场编图</strong>；正确路径是把
+        data-collection 采集的工序草稿，经 RelOS 关系图谱沉淀与审核，晋升为 AgentNexus
+        可执行模板，由最前 Router 做封闭选择。
+      </p>
+      <div class="meta">
+        <span><strong>范围</strong> AgentNexus MVP · RelOS · data-collection</span>
+        <span><strong>对齐</strong> DESIGN.md §9.5 / §9.6</span>
+        <span><strong>性质</strong> 架构建议（尚未改代码）</span>
+      </div>
+    </header>
+
+    <nav class="toc" aria-label="目录">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#s1">结论摘要</a></li>
+        <li><a href="#s2">问题背景</a></li>
+        <li><a href="#s3">三层职责</a></li>
+        <li><a href="#s4">DAG 三态生命周期</a></li>
+        <li><a href="#s5">数据飞轮与晋升契约</a></li>
+        <li><a href="#s6">与 DESIGN 9.6 的对齐</a></li>
+        <li><a href="#s7">研究报告流水线的位置</a></li>
+        <li><a href="#s8">推荐落地阶段</a></li>
+        <li><a href="#s9">风险、边界与非目标</a></li>
+        <li><a href="#s10">附录：示例映射</a></li>
+      </ol>
+    </nav>
+
+    <section id="s1">
+      <h2>1. 结论摘要</h2>
+      <div class="callout">
+        <p><strong>一句话：</strong>DAG 应从 RelOS 关系与 data-collection 工序里<strong>沉淀并晋升</strong>，不是运行时编造；AgentNexus 最前面的小 Router 只负责选择已晋升的图。</p>
+      </div>
+      <ul>
+        <li><strong>不要</strong>把每一种业务流水线永久硬编码在 Rust 分支里（如长期靠 <code>report.rs</code> 特例扩容）。</li>
+        <li><strong>不要</strong>让对话模型在运行时发明依赖边——与 DESIGN 9.6「模型不现场编图」冲突，也难评测。</li>
+        <li><strong>要</strong>建立「草稿图 → 关系约束 → 可执行模板」三态，并以人审 / 置信度门槛控制晋升。</li>
+        <li><strong>要</strong>用统一执行引擎消费模板 JSON；新图来自晋升，而不是改编排核心。</li>
+      </ul>
+    </section>
+
+    <section id="s2">
+      <h2>2. 问题背景</h2>
+      <h3>2.1 当前现状</h3>
+      <p>
+        AgentNexus 已具备两条相关路径：
+      </p>
+      <ol>
+        <li><strong>研究报告固定流水线（§9.5）</strong>：当路由同时要求 <code>web_search</code> 与 <code>write_file</code> 时，走代码控制的
+          规划 → 检索 → 并行写章 → 汇合；章节信封对齐 9.6 字段，但<strong>暂不接入编排器模板拆分</strong>。</li>
+        <li><strong>M4.3 模板拆分（§9.6）</strong>：设计已写入，校验层部分落地；编排器接入与 Composer 汇合仍是里程碑事项。
+          原则是「能串行的不拆；只有写死的模板才并行；Router 只输出 <code>template_id</code> / <code>deliverable</code> / <code>slots_ok</code>」。</li>
+      </ol>
+      <h3>2.2 张力</h3>
+      <p>
+        若业务图继续靠人在代码里写死，AgentNexus 会变成「报告工厂 + 少数工业模板」；
+        而 data-collection 已经在采集制造专家真实工作流 DAG，RelOS 已经把关系当作第一公民。
+        三者若不打通，L3 调度层会缺少可持续增长的工序知识来源。
+      </p>
+      <div class="callout warn">
+        <p><strong>关键约束：</strong>「可沉淀」≠「运行时自由生成」。可沉淀解决的是模板从哪里来；运行时仍然只执行已注册、已校验的图。</p>
+      </div>
+    </section>
+
+    <section id="s3">
+      <h2>3. 三层职责</h2>
+      <p>RelOS 仓库已明确 Nexus AI Platform 的分层定位，本报告在其上补齐「DAG 如何流动」：</p>
+      <div class="grid-3">
+        <div class="card">
+          <div class="layer">L3 · 意识 / 调度</div>
+          <h4>AgentNexus</h4>
+          <p>自然语言入口、Router 选图、按模板执行、信封校验、汇合与交付。不负责发明工序知识。</p>
+        </div>
+        <div class="card">
+          <div class="layer">L2 · 关系记忆</div>
+          <h4>RelOS</h4>
+          <p>实体与关系可计算；置信度、审核、演化。回答「什么能连、凭什么信、能否自动化」。</p>
+        </div>
+        <div class="card">
+          <div class="layer">L1 · 感知 / 采集</div>
+          <h4>data-collection（及 Ops）</h4>
+          <p>专家会话采集真实工作流 DAG / 本体标注；执行层做动作。提供草稿图与证据，不直接驱动生产调度。</p>
+        </div>
+      </div>
+      <h3>3.1 各层产出物</h3>
+      <table>
+        <thead>
+          <tr><th>层</th><th>主要产出</th><th>对 DAG 的作用</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>data-collection</td>
+            <td>Graph Workflow Dataset、制造运营本体字段、会话证据</td>
+            <td>产生<strong>草稿 DAG</strong>（人怎么做事）</td>
+          </tr>
+          <tr>
+            <td>RelOS</td>
+            <td>关系边、置信度、pending_review / active、反馈强化</td>
+            <td>给边与节点加<strong>关系约束与可信度</strong></td>
+          </tr>
+          <tr>
+            <td>AgentNexus</td>
+            <td><code>template_id</code>、能力卡片、分支信封、执行轨迹</td>
+            <td>只消费<strong>已晋升可执行模板</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="s4">
+      <h2>4. DAG 三态生命周期</h2>
+      <table>
+        <thead>
+          <tr><th>形态</th><th>谁产生</th><th>可否改线上执行</th><th>成功标准</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>草稿图 Draft</strong></td>
+            <td>data-collection 专家会话整理</td>
+            <td>否，只进数据集 / RelOS pending</td>
+            <td>结构合法、有证据、可回放会话</td>
+          </tr>
+          <tr>
+            <td><strong>关系约束 Constrained</strong></td>
+            <td>挂到 RelOS 图谱，经置信度与人审</td>
+            <td>否，仍不可被 Router 选中</td>
+            <td>边类型合法、置信度门槛、无冲突环（业务环另议）</td>
+          </tr>
+          <tr>
+            <td><strong>可执行模板 Executable</strong></td>
+            <td>晋升注册到 AgentNexus 模板库</td>
+            <td>是，经加载校验后可上线</td>
+            <td>无环、能力存在、槽位够、信封字段齐、评测通过</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="flow" aria-label="三态流转">
+        <div class="node"><strong>Draft</strong><span>采集工序 DAG</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><strong>Constrained</strong><span>RelOS 审核强化</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><strong>Executable</strong><span>模板校验注册</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><strong>Run</strong><span>Router 封闭选择</span></div>
+      </div>
+      <p>
+        运行日志与失败模式可回流 RelOS（哪些边经常 missing、哪些并行组合浪费槽位），形成强化信号；
+        但回流<strong>不得自动改写线上模板</strong>，必须再走晋升门槛——与 9.6「人不确认就不改线上模板」一致。
+      </p>
+    </section>
+
+    <section id="s5">
+      <h2>5. 数据飞轮与晋升契约</h2>
+      <h3>5.1 飞轮示意</h3>
+<pre><code>data-collection
+  专家会话 → 工作流 DAG 草稿 (+ 本体：角色/证据/异常/升级)
+        │
+        ▼
+RelOS
+  挂接实体与关系 · 置信度 · pending_review → active
+        │  仅 active 且声明可执行
+        ▼
+AgentNexus 模板库
+  template_id + capability + serial_steps + output_required + join
+        │
+        ▼
+最前 Router（小决策模型）
+  { template_id, deliverable, slots_ok } 封闭选择
+        │
+        ▼
+固定边执行 → 信封汇合 → Composer 转述
+        │
+        └── 轨迹 / missing 回流 RelOS（待审强化，不自动上线）</code></pre>
+
+      <h3>5.2 晋升契约（建议最小字段）</h3>
+      <p>从 RelOS / 采集侧导出到 AgentNexus 时，至少对齐下列映射：</p>
+      <table>
+        <thead>
+          <tr><th>源侧概念</th><th>目标（AgentNexus 模板）</th><th>规则</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>workflow_id / 版本</td>
+            <td><code>id</code>（template_id）</td>
+            <td>稳定 ID；晋升时钉版本，不静默覆盖</td>
+          </tr>
+          <tr>
+            <td>交付物 / 业务结果名</td>
+            <td><code>deliverable</code></td>
+            <td>与 Router 输出必须一致</td>
+          </tr>
+          <tr>
+            <td>可并行工序簇</td>
+            <td><code>branches[]</code></td>
+            <td>互不等待才成分支；否则进 <code>serial_steps</code></td>
+          </tr>
+          <tr>
+            <td>单路内部步骤</td>
+            <td><code>serial_steps</code></td>
+            <td>留给该路 agent，不拆成图上隐藏依赖边</td>
+          </tr>
+          <tr>
+            <td>角色 / 技能需求</td>
+            <td><code>capability</code></td>
+            <td>必须命中已注册能力卡片</td>
+          </tr>
+          <tr>
+            <td>产出字段 / 证据槽</td>
+            <td><code>output_required</code> + 信封 <code>payload</code></td>
+            <td>缺一路记 missing，禁止他路填补</td>
+          </tr>
+          <tr>
+            <td>RelOS confidence / status</td>
+            <td>晋升门槛元数据</td>
+            <td>例如仅 <code>active</code> 且置信度 ≥ 阈值才可注册</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>5.3 接口形态（概念）</h3>
+<pre><code>POST /templates/promote
+{
+  "source": "relos",
+  "relation_subgraph_id": "...",
+  "workflow_draft_id": "...",
+  "proposed_template": { /* 9.6 模板 JSON */ },
+  "evidence": { "confidence_min": 0.75, "reviewers": ["..."] }
+}
+→ 校验：无环 / capability / slots / 字段闭合
+→ 结果：rejected | pending_human | registered(template_id, version)</code></pre>
+    </section>
+
+    <section id="s6">
+      <h2>6. 与 DESIGN 9.6 的对齐</h2>
+      <table>
+        <thead>
+          <tr><th>9.6 既有原则</th><th>本方案如何遵守</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>模型不现场编图</td>
+            <td>Router 仍只做封闭选择题；图来自已注册模板</td>
+          </tr>
+          <tr>
+            <td>图是人手写的模板</td>
+            <td>扩展为「人手写 <em>或</em> 经人审晋升的沉淀模板」，权威仍是注册表</td>
+          </tr>
+          <tr>
+            <td>吃不准就不拆</td>
+            <td><code>template_id=""</code> / <code>slots_ok=no</code> 整单退回单 agent</td>
+          </tr>
+          <tr>
+            <td>能力卡片只声明节点能力，不声明边</td>
+            <td>边只存在于模板；RelOS 关系用于晋升决策，不直接当运行时边源</td>
+          </tr>
+          <tr>
+            <td>信封缺一路记 missing，不用他路填补</td>
+            <td>晋升出的模板必须声明 <code>output_required</code>；执行规则不变</td>
+          </tr>
+          <tr>
+            <td>人不确认就不改线上模板</td>
+            <td>飞轮回流只进评测草稿 / RelOS pending，晋升需显式确认</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <p>
+          因此，「从 RelOS 沉淀」改变的是<strong>模板供给链</strong>，不是推翻 9.6 的运行时安全边界。
+          第一批仍可用手工模板（quote / stop_line / release）验证 Router 准确度；沉淀通道随后接入。
+        </p>
+      </div>
+    </section>
+
+    <section id="s7">
+      <h2>7. 研究报告流水线的位置</h2>
+      <p>
+        当前 <code>report.rs</code> 是产品打通用的<strong>手写晋升特例</strong>：固定四阶段、内部并行、信封语义对齐 9.6，
+        但尚未进入编排器模板库。它证明了「代码控制固定流程 + 小模型写内容」可行。
+      </p>
+      <ul>
+        <li><strong>短期：</strong>保留 report 特例，继续补长度预算、检索上限等交付质量。</li>
+        <li><strong>中期：</strong>把报告流水线表达为第一张可执行模板（或「单能力内固定 serial/parallel 子图」），减少特例代码。</li>
+        <li><strong>长期：</strong>工业模板（报价、停线、放行、排故）优先走 data-collection → RelOS → 晋升；报告类可继续以产品内置模板为主。</li>
+      </ul>
+      <p>
+        区分很重要：<strong>检索材料可以长</strong>，最终正文贴近目标字数（如约 4000 字）是交付层预算问题；
+        这与 DAG 供给链正交，但同属「固定流水线可控」的收益。
+      </p>
+    </section>
+
+    <section id="s8">
+      <h2>8. 推荐落地阶段</h2>
+      <div class="phase">
+        <div class="badge">P0</div>
+        <div>
+          <h4>契约与样例（不改运行时核心）</h4>
+          <p>定义 Draft → RelOS → Template 字段映射表；用 1 条制造工作流样例 + 现有 quote 模板做对照文档；明确晋升门槛（置信度、人审、版本钉扎）。</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="badge">P1</div>
+        <div>
+          <h4>AgentNexus：模板注册 API / 校验器闭环</h4>
+          <p>完成 9.6 编排器接入；模板从文件或 API 注册；Router 评测集只考三字段；报告特例可并列存在。</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="badge">P2</div>
+        <div>
+          <h4>RelOS：可执行切片导出</h4>
+          <p>对 active 关系子图提供「导出为 proposed_template」；带 evidence 与 reviewer；默认 pending_human。</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="badge">P3</div>
+        <div>
+          <h4>data-collection：采集端对齐导出 Schema</h4>
+          <p>会话采集 DAG 直接产出可被 RelOS 摄入的草稿；闭环「采一条 → 审一条 → 晋升一条 → Router 能选中」。</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="badge">P4</div>
+        <div>
+          <h4>回流与评测</h4>
+          <p>执行 missing / 耗时 / 槽位争用写回 RelOS 待审；模板变更必须走评测草稿，禁止静默覆盖生产 template_id。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="s9">
+      <h2>9. 风险、边界与非目标</h2>
+      <h3>9.1 风险</h3>
+      <ul>
+        <li><strong>把关系图直接当运行时 DAG：</strong>工业关系图常含诊断联想、非执行顺序边，直接执行会并行错误路径。</li>
+        <li><strong>自动晋升无门槛：</strong>低置信度边进入模板库，Router「选对模板」也会跑出废结果。</li>
+        <li><strong>字段漂移：</strong>采集 Schema、RelOS 关系类型、9.6 信封三套词汇不对齐，导致晋升大量 rejected。</li>
+        <li><strong>特例膨胀：</strong>每加一种业务就新写一个 <code>*_flow.rs</code>，会绕开模板体系。</li>
+      </ul>
+      <h3>9.2 明确非目标（本阶段不做）</h3>
+      <ul>
+        <li>通用动态 DAG：对话中由大模型即时生成任意依赖图并执行。</li>
+        <li>RelOS 在线推理结果直接触发生产写操作而不经 AgentNexus 权限与人审链路。</li>
+        <li>用执行失败自动改写线上模板边（只允许进入待审 / 评测草稿）。</li>
+      </ul>
+      <h3>9.3 成功判据</h3>
+      <ol>
+        <li>至少 1 条非手工工业模板完成「采集 → RelOS active → 注册 → Router 选中 → 信封汇合」全路径。</li>
+        <li>Router 评测仍只考核三字段；模板变更有版本与人确认记录。</li>
+        <li>报告类任务质量（检索上限、正文长度预算、引用可点）不因模板化回退。</li>
+      </ol>
+    </section>
+
+    <section id="s10">
+      <h2>10. 附录：示例映射（示意）</h2>
+      <p>以 9.6 的 <code>quote</code> 为例，展示「沉淀后仍长什么样」——结构不变，供给来源可变：</p>
+<pre><code>{
+  "id": "quote",
+  "deliverable": "报价单",
+  "required_slots": ["序列号或型号", "交期"],
+  "source": {
+    "relos_subgraph": "repair-quote-v3",
+    "draft_workflow": "dc-wf-repair-quote-017",
+    "confidence_min": 0.82,
+    "promoted_by": "human:reviewer.li"
+  },
+  "branches": [
+    {
+      "id": "damage",
+      "capability": "general",
+      "serial_steps": ["读测量值", "对照修复限度", "给出可修结论和工时"],
+      "output_required": ["verdict", "hours"]
+    },
+    {
+      "id": "parts",
+      "capability": "general",
+      "serial_steps": ["取原厂清单", "对库存和替代件", "算缺件金额"],
+      "output_required": ["shortage_amount"]
+    },
+    {
+      "id": "history",
+      "capability": "general",
+      "serial_steps": ["查本机维修", "查同型号返修", "给保修风险"],
+      "output_required": ["warranty_risk"]
+    }
+  ],
+  "join": { "capability": "general", "writes_file": true }
+}</code></pre>
+      <p>Router 运行时输出仍保持扁平、必填：</p>
+<pre><code>{
+  "template_id": "quote",
+  "deliverable": "报价单",
+  "slots_ok": "yes"
+}</code></pre>
+      <div class="callout">
+        <p>
+          <strong>最终建议：</strong>把「可沉淀 DAG」列为跨仓架构主题，P0 先冻结晋升契约与样例对照；
+          AgentNexus 侧继续完成 9.6 执行闭环与报告交付质量；RelOS / data-collection 侧按同一 Schema 出口对齐。
+          如此，三个项目共享同一飞轮，而不是三套互不相认的图。
+        </p>
+      </div>
+    </section>
+
+    <footer>
+      <p>文档位置：<code>docs/briefs/dag-relos-datacollection-bridge-report.html</code> · 单文件可离线打开 · 打印友好</p>
+      <p>依据：AgentNexus <code>docs/DESIGN.md</code> §9.5/§9.6 · RelOS 三层定位 · data-collection 专家工作流采集产品线</p>
+    </footer>
+  </div>
+</body>
+</html>
