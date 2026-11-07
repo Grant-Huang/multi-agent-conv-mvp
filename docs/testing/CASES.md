@@ -81,3 +81,23 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-MOM-09 | mom | 未启用 RelOS | 正常运行 S1 | 诊断输出与原有 Mock 一致（来源 EAM、M03） |
 | HTTP-MOM-RELOS-01 | mom | an-mom 配置桩 RelOS | POST /api/mom/scenarios/s1 | 请求以 CNC-XX 为中心、含 Line-B 锚点与预算；Agent 视图中诊断节点带桩返回的候选根因与关系 ID |
 | HTTP-MOM-RELOS-02 | mom | RelOS 地址无人监听 | POST /api/mom/scenarios/s1 | 10 秒内返回；案例照常创建，诊断 UNKNOWN、relos_status=unavailable，进入人工决策 |
+
+## 专家工作流节点绑定与模板晋升（E1-C 方案 B，实现前定义）
+
+把 data-collection 中"专家确认"的工作流图（`fixtures/mom/expert/workflows.json`）编译为带节点绑定的工作流模板：
+每个节点按确定性规则 R1–R8 得到执行者（agent / human / system / agent_then_human / structural / unbound）、领域、工具、
+技能与闸门；相邻同领域的 agent 节点合并为一段。只做编译、校验和统计，不接入编排器执行。
+绑定未经专家确认的模板不晋升。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-BIND-01 | mom | 审批节点（带角色、SLA 时限、超时边） | 绑定 | 执行者为 human；闸门类型 approval，审批人=角色、时限取自 SLA、升级对象取自超时边；永不为 agent/system（R1） |
+| RT-BIND-02 | mom | 机制为设备，或标签为物理动作（搬、贴、复测、停线…） | 绑定 | 执行者为 human 工作项（R2） |
+| RT-BIND-03 | mom | 机制为系统（ERP/MES…），标签分读操作与写操作 | 绑定 | 执行者为 agent，工具为归一后的系统 ID；写操作同时列入 write_tools 并带 action_approval 闸门（R3） |
+| RT-BIND-04 | mom | 判断节点：有明确阈值/关键词，或没有 | 绑定 | 有明确规则时为 system（确定性规则）；否则为 agent_then_human（R4/R5） |
+| RT-BIND-05 | mom | 节点带控制文档与执行角色 | 绑定 | 控制文档成为技能；角色映射到领域（检验员→质量、维修工→设备、计划员→计划…）（R6/R7） |
+| RT-BIND-06 | mom | 无角色、无链接、看不出动作；或系统不在工具清单 | 绑定 | 执行者为 unbound 并给出原因，不猜测（R8） |
+| RT-BIND-07 | mom | 质量 agent→质量 agent→人工→质量 agent 的串行链 | 分段 | 前两个合并为一段（步骤按顺序），人工节点单独成段，之后另起一段；条件边保留为段间路由 |
+| RT-BIND-08 | mom | 9 条真实专家工作流 | 全部编译并统计 | 每个节点恰好一张绑定卡、恰好属于一段；审批节点全为 human；所有模板通过校验；未经专家确认的模板一律不晋升；报告合计与逐条一致 |
+| RT-BIND-09 | mom | 人为构造的错误模板（段间有环、写工具无闸门、工具不在清单、审批绑成 agent、节点遗漏） | 校验 | 每种错误都被拒绝并给出原因 |
+| RT-BIND-10 | mom | 标签以信息动作开头但含物理词（"输出保养记录"）；含"自动"的动作；有信息动作但无角色 | 绑定 | 开头的信息动作优先，判为 agent；系统自动动作判为 system（R4）；无角色的信息工作判为 agent 并要求专家补充领域，而不是 unbound |

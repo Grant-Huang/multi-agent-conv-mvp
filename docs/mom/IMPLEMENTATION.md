@@ -35,6 +35,8 @@ cargo run --bin an-mom -- --db data/mom.db --bind 127.0.0.1:8790
 
 可选 RelOS 关系上下文（E1-C，台账 M24）：`cargo run --bin an-mom -- --relos-url http://127.0.0.1:8000`（或环境变量 `AN_MOM_RELOS_URL`）。创建 S1 前，服务层在加锁之外异步调用 RelOS `POST /v1/context/compile`（以 CNC-XX 为中心、Line-B 与批次为锚点，预算 1000），5 秒超时、不重试；结果作为观测写入 `world.relos`（WorldChanged 事件留痕），维护/质量诊断只读这条记录，引擎仍可确定性重放。RelOS 不可用、超时或无候选时，诊断为 UNKNOWN 并带 `relos_status`，案例进入人工决策，不会自动下发。没有子进程；HTTP 请求随请求 future 取消。RelOS 中的知识目前为仿真数据，候选根因只是假设。也可通过故障注入 `{"command":"fault","key":"relos","value":{"status":"unavailable"}}` 模拟 RelOS 故障。
 
+专家工作流节点绑定（E1-C 方案 B）：`mom::binding` 把 data-collection 中专家确认的工作流图编译为带节点绑定（执行者、领域、工具、技能、闸门）的工作流模板并校验，只做编译和统计，不接入编排器执行。规则、结果与局限见 `docs/mom/EXPERT_BINDING.md`；`cargo run -p an-runtime --example promote_expert` 重新生成结果。
+
 可选主模型入口：`cargo run --bin an-mom -- --llm-config config.toml`，读取现有 `[llm]` 配置。最多一个 Master 请求/案例、全局最多四个；模型 60 秒外层超时，45 秒客户端超时，一次格式修正，上限 512 输出 token。模型结果通过版本检查和受限 intent 校验。当前只开放 wait/delegation，不宣传为完整 LLM 自主排产；真实模型未配置、未验证。
 
 ## 新增模拟 API

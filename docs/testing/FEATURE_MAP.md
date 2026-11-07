@@ -37,4 +37,6 @@ MOM 增量：主界面左侧 **MOM 运营沙盘** → 同源 `/mom/`；配置持
 
 RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS 不可用时的安全降级、上下文写入校验与未启用时的兼容；HTTP-MOM-RELOS-01/02（`crates/server/tests/mom.rs`）用桩 RelOS 与无人监听地址验证 an-mom 的端到端调用。RelOS 知识为仿真数据（台账 M24）。
 
+专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
+
 每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。

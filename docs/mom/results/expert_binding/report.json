@@ -1,0 +1,270 @@
+{
+  "workflows": [
+    {
+      "id": "a1730eb234bc",
+      "name": "销售订单转生产需求",
+      "nodes": 10,
+      "work_nodes": 8,
+      "by_executor": {
+        "agent": 7,
+        "agent_then_human": 1,
+        "structural": 2
+      },
+      "needs_expert": 7,
+      "segments": 8,
+      "agent_segments": 5,
+      "multi_node_agent_segments": 1,
+      "parallel_branches": 0,
+      "promotion": "needs_completion",
+      "promotion_reasons": [
+        "销售确认客户的交付订单（n2）：未链接系统，需指定工具",
+        "核对产品编码、版本、数量和承诺交期（n3）：未链接系统，需指定工具",
+        "查看现货、在制和已锁定库存（n4）：未链接系统，需指定工具",
+        "扣除可用量后生成净需求，并关联客户订单号（n5）：未链接系统，需指定工具",
+        "先冻结原计算结果（n7）：未链接系统，需指定工具",
+        "找销售和工程确认后重算（n8）：未链接系统，需指定工具",
+        "找销售和工程确认后重算（n8）：未能确定领域（缺少执行角色）",
+        "输出可追溯的净需求清单与需求日期（n9）：未链接系统，需指定工具"
+      ]
+    },
+    {
+      "id": "49320012a412",
+      "name": "来料检验（IQC）基本流程",
+      "nodes": 12,
+      "work_nodes": 9,
+      "by_executor": {
+        "agent": 1,
+        "agent_then_human": 2,
+        "human": 5,
+        "structural": 3,
+        "unbound": 1
+      },
+      "needs_expert": 2,
+      "segments": 12,
+      "agent_segments": 1,
+      "multi_node_agent_segments": 0,
+      "parallel_branches": 0,
+      "promotion": "needs_completion",
+      "promotion_reasons": [
+        "检验员拿规格书和验收标准先看一遍（n2）：看不出是物理动作还是信息工作，需指定执行方式",
+        "通知质量经理（n11）：未链接系统，需指定工具"
+      ]
+    },
+    {
+      "id": "363c8b363c4c",
+      "name": "01_IQC_来料检验",
+      "nodes": 31,
+      "work_nodes": 29,
+      "by_executor": {
+        "agent": 5,
+        "agent_then_human": 3,
+        "human": 16,
+        "structural": 2,
+        "system": 4,
+        "unbound": 1
+      },
+      "needs_expert": 3,
+      "segments": 31,
+      "agent_segments": 5,
+      "multi_node_agent_segments": 0,
+      "parallel_branches": 0,
+      "promotion": "needs_completion",
+      "promotion_reasons": [
+        "收货检验报告当日17:00前上传ERP（n15）：未能确定领域（缺少执行角色）",
+        "解锁（n27）：无执行角色、无对象链接，无法判断执行者",
+        "判断供应商分级（新/稳定/战略）（ncef596）：未链接系统，需指定工具",
+        "判断供应商分级（新/稳定/战略）（ncef596）：未能确定领域（缺少执行角色）"
+      ]
+    },
+    {
+      "id": "a797ea3e77dd",
+      "name": "02_FAI_首件检验",
+      "nodes": 12,
+      "work_nodes": 9,
+      "by_executor": {
+        "agent": 1,
+        "agent_then_human": 1,
+        "human": 6,
+        "structural": 3,
+        "unbound": 1
+      },
+      "needs_expert": 1,
+      "segments": 12,
+      "agent_segments": 1,
+      "multi_node_agent_segments": 0,
+      "parallel_branches": 0,
+      "promotion": "needs_completion",
+      "promotion_reasons": [
+        "操作工调整参数重做，再做首件（n11）：看不出是物理动作还是信息工作，需指定执行方式"
+      ]
+    },
+    {
+      "id": "62bca67f6ab4",
+      "name": "03_工序扫码",
+      "nodes": 10,
+      "work_nodes": 7,
+      "by_executor": {
+        "agent": 2,
+        "agent_then_human": 2,
+        "human": 2,
+        "structural": 3,
+        "unbound": 1
+      },
+      "needs_expert": 3,
+      "segments": 10,
+      "agent_segments": 2,
+      "multi_node_agent_segments": 0,
+      "parallel_branches": 0,
+      "promotion": "needs_completion",
+      "promotion_reasons": [
+        "记录作业时间开始加工（n5）：未链接系统，需指定工具",
+        "改单（n8）：未链接系统，需指定工具",
+        "退回（n9）：看不出是物理动作还是信息工作，需指定执行方式"
+      ]
+    },
+    {
+      "id": "101fcbcc1176",
+      "name": "04_设备预防保养",
+      "nodes": 18,
+      "work_nodes": 16,
+      "by_executor": {
+        "agent": 4,
+        "agent_then_human": 3,
+        "human": 7,
+        "structural": 2,
+        "system": 1,
+        "unbound": 1
+      },
+      "needs_expert": 5,
+      "segments": 18,
+      "agent_segments": 4,
+      "multi_node_agent_segments": 0,
+      "parallel_branches": 0,
+      "promotion": "needs_completion",
+      "promotion_reasons": [
+        "核对执行资格（n10）：未链接系统，需指定工具",
+        "记录结果（n12）：未链接系统，需指定工具",
+        "生成纠正工单（n15）：未链接系统，需指定工具",
+        "保持停用（n17）：看不出是物理动作还是信息工作，需指定执行方式",
+        "输出保养记录和下次保养周期（n18）：未链接系统，需指定工具"
+      ]
+    },
+    {
+      "id": "919292982dc2",
+      "name": "05_SPC失控响应",
+      "nodes": 13,
+      "work_nodes": 11,
+      "by_executor": {
+        "agent": 4,
+        "agent_then_human": 2,
+        "human": 3,
+        "structural": 2,
+        "system": 1,
+        "unbound": 1
+      },
+      "needs_expert": 4,
+      "segments": 13,
+      "agent_segments": 4,
+      "multi_node_agent_segments": 0,
+      "parallel_branches": 0,
+      "promotion": "needs_completion",
+      "promotion_reasons": [
+        "确认失控（n2）：未链接系统，需指定工具",
+        "确认失控（n2）：未能确定领域（缺少执行角色）",
+        "查特殊原因（n4）：未链接系统，需指定工具",
+        "查特殊原因（n4）：未能确定领域（缺少执行角色）",
+        "不能计算过程能力（n7）：无执行角色、无对象链接，无法判断执行者",
+        "记录处理过程（n8）：未链接系统，需指定工具",
+        "记录处理过程（n8）：未能确定领域（缺少执行角色）"
+      ]
+    },
+    {
+      "id": "ac2d0de6c05a",
+      "name": "09_日排程下达",
+      "nodes": 8,
+      "work_nodes": 6,
+      "by_executor": {
+        "agent": 4,
+        "agent_then_human": 1,
+        "human": 1,
+        "structural": 2
+      },
+      "needs_expert": 2,
+      "segments": 8,
+      "agent_segments": 4,
+      "multi_node_agent_segments": 0,
+      "parallel_branches": 0,
+      "promotion": "needs_completion",
+      "promotion_reasons": [
+        "核对班次人员、设备可用状态、工装和齐套物料（n2）：未链接系统，需指定工具",
+        "标记待投产并寻找替代顺序（n4）：未链接系统，需指定工具"
+      ]
+    },
+    {
+      "id": "804ed80b8a5e",
+      "name": "10_复合工序+异常",
+      "nodes": 23,
+      "work_nodes": 19,
+      "by_executor": {
+        "agent": 2,
+        "agent_then_human": 3,
+        "human": 13,
+        "structural": 4,
+        "system": 1
+      },
+      "needs_expert": 2,
+      "segments": 23,
+      "agent_segments": 2,
+      "multi_node_agent_segments": 0,
+      "parallel_branches": 0,
+      "promotion": "needs_completion",
+      "promotion_reasons": [
+        "首件录入（n8）：未链接系统，需指定工具",
+        "记录不良（n9）：未链接系统，需指定工具",
+        "记录不良（n9）：未能确定领域（缺少执行角色）"
+      ]
+    }
+  ],
+  "totals": {
+    "nodes": 137,
+    "work_nodes": 114,
+    "by_executor": {
+      "agent": 30,
+      "agent_then_human": 18,
+      "human": 53,
+      "structural": 23,
+      "system": 7,
+      "unbound": 6
+    },
+    "needs_expert": 29,
+    "segments": 135,
+    "agent_segments": 28,
+    "multi_node_agent_segments": 1,
+    "rules": {
+      "R1": 12,
+      "R2": 41,
+      "R3": 30,
+      "R4": 7,
+      "R5": 18,
+      "R6": 41,
+      "R7": 77,
+      "R8": 6
+    },
+    "tools": {
+      "aps": 1,
+      "cmms": 1,
+      "erp": 4,
+      "mes": 3,
+      "plm": 1,
+      "spc": 1
+    }
+  },
+  "funnel": {
+    "workflows": 9,
+    "valid": 9,
+    "fully_bound": 0,
+    "parallel_eligible": 0,
+    "pending_expert_confirmation": 0,
+    "promoted": 0
+  }
+}
