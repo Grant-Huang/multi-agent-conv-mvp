@@ -222,3 +222,112 @@ async fn safety_trip_rejects_http_patch_and_dispatch_without_side_effects() {
     }
     task.abort();
 }
+
+#[tokio::test]
+async fn terminal_cases_reject_http_fault_without_mutating_state() {
+    let (url, task) = server().await;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap();
+    for closed in [false, true] {
+        let created: Value = client
+            .post(format!("{url}/api/mom/scenarios/s1"))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let id = created["case_id"].as_str().unwrap();
+        let endpoint = format!("{url}/api/mom/cases/{id}/commands");
+        let human = format!("{url}/api/mom/cases/{id}");
+        if closed {
+            let state: Value = client
+                .get(&human)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            for body in [
+                json!({"command":"approve","scope":"production","actor":"supervisor","plan_revision":state["plan_revision"]}),
+                json!({"command":"execute","scope":"production"}),
+                json!({"command":"advance","minutes":3}),
+                json!({"command":"close"}),
+            ] {
+                client
+                    .post(&endpoint)
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap()
+                    .error_for_status()
+                    .unwrap();
+            }
+        } else {
+            client
+                .post(&endpoint)
+                .json(&json!({"command":"cancel"}))
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+        }
+        let before: Value = client
+            .get(&human)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let event_url = format!("{url}/api/mom/cases/{id}/events?limit=1000");
+        let events: Value = client
+            .get(&event_url)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let response = client
+            .post(&endpoint)
+            .json(&json!({"command":"fault","key":"resources_available","value":false}))
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            response.status().is_client_error(),
+            "terminal case accepted HTTP fault"
+        );
+        assert_eq!(
+            client
+                .get(&human)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap(),
+            before
+        );
+        assert_eq!(
+            client
+                .get(&event_url)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap(),
+            events
+        );
+    }
+    task.abort();
+    let _ = task.await;
+}
