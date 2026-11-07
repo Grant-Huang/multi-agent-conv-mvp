@@ -1,0 +1,4229 @@
+[
+ {
+  "id": "a1730eb234bc",
+  "name": "销售订单转生产需求",
+  "status": "expert_confirmed",
+  "start_node_ids": [
+   "n1"
+  ],
+  "end_node_ids": [
+   "n10"
+  ],
+  "nodes": [
+   {
+    "node_id": "n1",
+    "node_type": "start",
+    "label": "开始",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n2",
+    "node_type": "activity",
+    "label": "销售确认客户的交付订单",
+    "actor_roles": [
+     "销售"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n3",
+    "node_type": "activity",
+    "label": "核对产品编码、版本、数量和承诺交期",
+    "actor_roles": [
+     "计划员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n4",
+    "node_type": "activity",
+    "label": "查看现货、在制和已锁定库存",
+    "actor_roles": [
+     "计划员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n5",
+    "node_type": "activity",
+    "label": "扣除可用量后生成净需求，并关联客户订单号",
+    "actor_roles": [
+     "计划员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n6",
+    "node_type": "decision",
+    "label": "客户临时改版或库存已被其他订单占用？",
+    "actor_roles": [
+     "计划员"
+    ],
+    "decision_question": "客户是否临时改版或库存已被其他订单占用？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n7",
+    "node_type": "activity",
+    "label": "先冻结原计算结果",
+    "actor_roles": [
+     "计划员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n8",
+    "node_type": "activity",
+    "label": "找销售和工程确认后重算",
+    "actor_roles": [
+     "计划员",
+     "销售",
+     "工程"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": {
+     "enabled": true,
+     "rework_reference_node_id": "n5",
+     "condition": "客户临时改版或库存已被其他订单占用",
+     "description": "冻结原计算结果并经销售和工程确认后，重新计算净需求"
+    },
+    "object_links": []
+   },
+   {
+    "node_id": "n9",
+    "node_type": "activity",
+    "label": "输出可追溯的净需求清单与需求日期",
+    "actor_roles": [
+     "计划员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n10",
+    "node_type": "end",
+    "label": "结束",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   }
+  ],
+  "edges": [
+   {
+    "from": "n1",
+    "to": "n2",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n2",
+    "to": "n3",
+    "edge_type": "handoff",
+    "condition": null
+   },
+   {
+    "from": "n3",
+    "to": "n4",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n4",
+    "to": "n5",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n5",
+    "to": "n6",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n6",
+    "to": "n7",
+    "edge_type": "conditional",
+    "condition": "客户临时改版或库存已被其他订单占用"
+   },
+   {
+    "from": "n6",
+    "to": "n9",
+    "edge_type": "conditional",
+    "condition": "客户未临时改版且库存未被其他订单占用"
+   },
+   {
+    "from": "n7",
+    "to": "n8",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n8",
+    "to": "n9",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n9",
+    "to": "n10",
+    "edge_type": "normal",
+    "condition": null
+   }
+  ]
+ },
+ {
+  "id": "49320012a412",
+  "name": "来料检验（IQC）基本流程",
+  "status": "expert_confirmed",
+  "start_node_ids": [
+   "n1"
+  ],
+  "end_node_ids": [
+   "n10"
+  ],
+  "nodes": [
+   {
+    "node_id": "n1",
+    "node_type": "start",
+    "label": "货到了",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n2",
+    "node_type": "activity",
+    "label": "检验员拿规格书和验收标准先看一遍",
+    "actor_roles": [
+     "检验员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n3",
+    "node_type": "activity",
+    "label": "按AQL抽样方案抽一部分样品，记下批号和抽样数量",
+    "actor_roles": [
+     "检验员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n4",
+    "node_type": "activity",
+    "label": "先看外观：划伤、磕碰、变色、标签、包装",
+    "actor_roles": [
+     "检验员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n5",
+    "node_type": "activity",
+    "label": "用校准过的量具量关键尺寸，数据写到检验单上",
+    "actor_roles": [
+     "检验员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n6",
+    "node_type": "decision",
+    "label": "有没有功能要求",
+    "actor_roles": [
+     "检验员"
+    ],
+    "decision_question": "这批物料有没有功能要求？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n7",
+    "node_type": "activity",
+    "label": "做功能测试，每一项写过还是没过",
+    "actor_roles": [
+     "检验员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n8",
+    "node_type": "activity",
+    "label": "把检验报告填上：批号、样本数、缺陷、测量值",
+    "actor_roles": [
+     "检验员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n9",
+    "node_type": "decision",
+    "label": "判定",
+    "actor_roles": [
+     "检验员"
+    ],
+    "decision_question": "判定结果是哪一种？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n10",
+    "node_type": "end",
+    "label": "接收",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n11",
+    "node_type": "activity",
+    "label": "通知质量经理",
+    "actor_roles": [
+     "检验员",
+     "质量经理"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n12",
+    "node_type": "wait",
+    "label": "先挂起",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   }
+  ],
+  "edges": [
+   {
+    "from": "n1",
+    "to": "n2",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n2",
+    "to": "n3",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n3",
+    "to": "n4",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n4",
+    "to": "n5",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n5",
+    "to": "n6",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n6",
+    "to": "n7",
+    "edge_type": "conditional",
+    "condition": "这批有功能要求"
+   },
+   {
+    "from": "n6",
+    "to": "n8",
+    "edge_type": "conditional",
+    "condition": "这批没有功能要求"
+   },
+   {
+    "from": "n7",
+    "to": "n8",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n8",
+    "to": "n9",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n9",
+    "to": "n10",
+    "edge_type": "conditional",
+    "condition": "判定为接收"
+   },
+   {
+    "from": "n9",
+    "to": "n11",
+    "edge_type": "conditional",
+    "condition": "判定为拒收"
+   },
+   {
+    "from": "n9",
+    "to": "n12",
+    "edge_type": "conditional",
+    "condition": "判定为挂起"
+   },
+   {
+    "from": "n11",
+    "to": "n10",
+    "edge_type": "normal",
+    "condition": null
+   }
+  ]
+ },
+ {
+  "id": "363c8b363c4c",
+  "name": "01_IQC_来料检验",
+  "status": "expert_confirmed",
+  "start_node_ids": [
+   "n1"
+  ],
+  "end_node_ids": [
+   "n16"
+  ],
+  "nodes": [
+   {
+    "node_id": "n1",
+    "node_type": "start",
+    "label": "来料到货",
+    "actor_roles": [
+     "货车司机"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "地磅秤",
+      "entity_type": "equipment",
+      "qualifier": "量程1500kg、精度0.5kg"
+     },
+     {
+      "role": "input",
+      "name": "送货车辆",
+      "entity_type": "equipment",
+      "qualifier": "到厂卸货"
+     },
+     {
+      "role": "input",
+      "name": "司机送货单",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "随车单据"
+     },
+     {
+      "role": "input",
+      "name": "入厂预约短信",
+      "entity_type": "document",
+      "document_kind": "message",
+      "qualifier": "入厂预约凭证"
+     },
+     {
+      "role": "output",
+      "name": "货物已卸到待检区的批次记录",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "写入手持PDA"
+     },
+     {
+      "role": "mechanism",
+      "name": "手持PDA",
+      "entity_type": "equipment",
+      "qualifier": "记录卸货批次"
+     },
+     {
+      "role": "control",
+      "name": "送货预约时间表",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "司机等待不超过30分钟、超时调度经理介入"
+     }
+    ]
+   },
+   {
+    "node_id": "n2",
+    "node_type": "activity",
+    "label": "收货员核对送货单与采购订单料号数量",
+    "actor_roles": [
+     "收货员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "送货单",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "收货员用来看单核对"
+     },
+     {
+      "role": "input",
+      "name": "采购订单料号数量",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "用来核对到货是否与订单一致"
+     },
+     {
+      "role": "output",
+      "name": "收货核对记录",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "收货核对的输出"
+     },
+     {
+      "role": "control",
+      "name": "外箱唛头供应商代码与系统一致",
+      "qualifier": "收货核对必须满足的一致性要求"
+     },
+     {
+      "role": "mechanism",
+      "name": "PDA扫描枪",
+      "entity_type": "equipment",
+      "qualifier": "扫码核对"
+     },
+     {
+      "role": "mechanism",
+      "name": "标签打印机",
+      "entity_type": "equipment",
+      "qualifier": "打核对标签"
+     },
+     {
+      "role": "input",
+      "name": "采购订单",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "核对的基准"
+     },
+     {
+      "role": "input",
+      "name": "外箱唛头",
+      "entity_type": "other",
+      "qualifier": "看供应商代码是否与系统一致"
+     },
+     {
+      "role": "input",
+      "name": "随货材质证书",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "后面XRF比对用"
+     },
+     {
+      "role": "control",
+      "name": "外箱唛头供应商代码必须与系统一致",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "不一致直接拒收"
+     },
+     {
+      "role": "control",
+      "name": "外箱唛头供应商代码一致性核验规定",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "唛头供应商代码与系统不一致直接拒收，任何例外须总经理签字"
+     },
+     {
+      "role": "output",
+      "name": "入库单签字版",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "收货核对产出、需签字的入库单"
+     }
+    ]
+   },
+   {
+    "node_id": "n3",
+    "node_type": "activity",
+    "label": "搬到待检区、贴黄色Hold标识",
+    "actor_roles": [
+     "收货员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "黄色Hold标识",
+      "entity_type": "other",
+      "qualifier": "贴在未检验物料上作为待检标识"
+     },
+     {
+      "role": "mechanism",
+      "name": "黄色Hold标签",
+      "entity_type": "material",
+      "qualifier": "标识待检"
+     },
+     {
+      "role": "mechanism",
+      "name": "批次条码贴纸",
+      "entity_type": "material",
+      "qualifier": "批次标识"
+     },
+     {
+      "role": "mechanism",
+      "name": "可封条周转箱",
+      "entity_type": "equipment",
+      "qualifier": "装待检料"
+     },
+     {
+      "role": "input",
+      "name": "已核对批次",
+      "entity_type": "material",
+      "qualifier": "刚核对完的货"
+     },
+     {
+      "role": "output",
+      "name": "待检批次",
+      "entity_type": "material",
+      "qualifier": "进入待检区等待抽样"
+     },
+     {
+      "role": "output",
+      "name": "ERP状态置Incoming-Hold",
+      "entity_type": "other",
+      "qualifier": "锁定不准入库"
+     },
+     {
+      "role": "control",
+      "name": "所有来料默认贴Hold，无豁免",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "贴Hold规则"
+     }
+    ]
+   },
+   {
+    "node_id": "n4",
+    "node_type": "activity",
+    "label": "按AQL抽样（新供应商II级、稳定供应商放宽）",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "新供应商II级、稳定供应商放宽",
+      "qualifier": "规定抽样水平"
+     },
+     {
+      "role": "mechanism",
+      "name": "AQL Z1.4表",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "抽样工具"
+     },
+     {
+      "role": "mechanism",
+      "name": "随机数骰子",
+      "entity_type": "equipment",
+      "qualifier": "抽样工具"
+     },
+     {
+      "role": "mechanism",
+      "name": "AQL Z1.4 第二版2020抽样表",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "定样本量"
+     },
+     {
+      "role": "input",
+      "name": "批数量",
+      "entity_type": "other",
+      "qualifier": "决定抽样量"
+     },
+     {
+      "role": "input",
+      "name": "供应商分级结果",
+      "entity_type": "other",
+      "qualifier": "决定抽样等级"
+     },
+     {
+      "role": "output",
+      "name": "抽样记录（批号、样本量、抽中序号）",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "记录抽了哪些"
+     },
+     {
+      "role": "control",
+      "name": "新供应商II级、稳定供应商放宽到I级、战略供应商可免检",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "抽样等级规则"
+     },
+     {
+      "role": "control",
+      "name": "AQL Z1.4 第二版 2020",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "新供应商 II 级，稳定供应商放宽到 I 级，战略供应商免检"
+     },
+     {
+      "role": "input",
+      "name": "抽样等级判定",
+      "entity_type": "other",
+      "qualifier": "用来确定这批走II级还是放宽到I级抽样（图上已有的『批数量』不重复记）"
+     }
+    ]
+   },
+   {
+    "node_id": "n5",
+    "node_type": "activity",
+    "label": "外观检验：划伤、磕碰、变色、标签、包装",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "外观看样图册",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "图册列出12类不可接受缺陷作为外观判定依据"
+     },
+     {
+      "role": "mechanism",
+      "name": "10倍放大镜",
+      "entity_type": "equipment",
+      "qualifier": "看细小缺陷"
+     },
+     {
+      "role": "mechanism",
+      "name": "LED强光灯",
+      "entity_type": "equipment",
+      "qualifier": "照明"
+     },
+     {
+      "role": "mechanism",
+      "name": "12类缺陷样图册（QIP-12 2023版）",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "对照判定缺陷"
+     },
+     {
+      "role": "input",
+      "name": "抽中的样本",
+      "entity_type": "material",
+      "qualifier": "被检验的件"
+     },
+     {
+      "role": "output",
+      "name": "外观检验记录（缺陷名+样图册编号）",
+      "entity_type": "document",
+      "document_kind": "inspection_result",
+      "qualifier": "记进报告"
+     },
+     {
+      "role": "control",
+      "name": "12类不可接受缺陷标准（划伤深度>0.1mm、长度>2mm、凹坑直径>1mm、变色>5mm²等）",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "判定限值"
+     },
+     {
+      "role": "control",
+      "name": "12 类不可接受缺陷样图册",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "划伤>0.1mm、长度>2mm、凹坑>1mm、变色>5mm² 命中任一即不合格"
+     },
+     {
+      "role": "mechanism",
+      "name": "判断外箱完好度是否需拆箱全检",
+      "entity_type": "capability",
+      "qualifier": "外箱1cm以上凹陷/倾斜或震动记录仪触发就直接拆箱全检而非抽检，靠老师傅对『外箱完好』的怀疑度判断，无量化阈值，新人要带6个月才能独立拍板"
+     }
+    ]
+   },
+   {
+    "node_id": "n6",
+    "node_type": "activity",
+    "label": "按检验计划用对应量具量尺寸",
+    "actor_roles": [
+     "IQC 检验员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "检验计划",
+      "entity_type": "document",
+      "document_kind": "sop",
+      "qualifier": "规定该用哪把量具"
+     },
+     {
+      "role": "control",
+      "name": "图纸",
+      "entity_type": "document",
+      "document_kind": "drawing",
+      "qualifier": "尺寸测量依据"
+     },
+     {
+      "role": "control",
+      "name": "量具校准证书",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "尺寸测量依据"
+     },
+     {
+      "role": "mechanism",
+      "name": "卡尺千分尺环规塞规",
+      "entity_type": "equipment",
+      "qualifier": "尺寸测量用的量具"
+     },
+     {
+      "role": "mechanism",
+      "name": "卡尺/千分尺/环规/塞规",
+      "entity_type": "equipment",
+      "qualifier": "均在有效校准期内"
+     },
+     {
+      "role": "mechanism",
+      "name": "校准证书电子档",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "证明量具可用"
+     },
+     {
+      "role": "input",
+      "name": "抽样件",
+      "entity_type": "material",
+      "qualifier": "被测量的件"
+     },
+     {
+      "role": "input",
+      "name": "关键尺寸清单",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "要量哪几个尺寸"
+     },
+     {
+      "role": "output",
+      "name": "尺寸实测值列表",
+      "entity_type": "document",
+      "document_kind": "inspection_result",
+      "qualifier": "记进报告"
+     },
+     {
+      "role": "control",
+      "name": "图纸公差标注",
+      "entity_type": "document",
+      "document_kind": "drawing",
+      "qualifier": "判定尺寸合格与否"
+     },
+     {
+      "role": "control",
+      "name": "量具校准证书号",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "量具有效性的依据"
+     }
+    ]
+   },
+   {
+    "node_id": "n7",
+    "node_type": "decision",
+    "label": "物料描述里有没有『不锈钢/钛/镍基/高温合金』关键词",
+    "actor_roles": [],
+    "decision_question": "物料描述里有没有『不锈钢/钛/镍基/高温合金』关键词？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "物料描述含『不锈钢/钛/镍基/高温合金』任一关键词即强制XRF",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "判断要不要走XRF这一路"
+     }
+    ]
+   },
+   {
+    "node_id": "n8",
+    "node_type": "activity",
+    "label": "用XRF枪打牌号",
+    "actor_roles": [
+     "检验员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "XRF枪",
+      "entity_type": "equipment",
+      "qualifier": "用来打牌号"
+     },
+     {
+      "role": "input",
+      "name": "材质证书",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "用来与XRF打出的牌号比对"
+     },
+     {
+      "role": "mechanism",
+      "name": "手持XRF光谱仪",
+      "entity_type": "equipment",
+      "qualifier": "每月校准一次，证书有效"
+     },
+     {
+      "role": "input",
+      "name": "量完尺寸的抽样件",
+      "entity_type": "material",
+      "qualifier": "拿来打牌号"
+     },
+     {
+      "role": "output",
+      "name": "XRF读数与材质证书对账结果",
+      "entity_type": "document",
+      "document_kind": "inspection_result",
+      "qualifier": "用于判定牌号"
+     },
+     {
+      "role": "control",
+      "name": "物料描述含关键词即强制XRF",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "强制打牌号的情形"
+     },
+     {
+      "role": "control",
+      "name": "XRF 光谱仪每月校准要求",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "每月校准一次，校准记录归档到设备档案，过期未校自动锁定不能测"
+     }
+    ]
+   },
+   {
+    "node_id": "n9",
+    "node_type": "decision",
+    "label": "XRF读数是否落在牌号±0.3%边界值",
+    "actor_roles": [
+     "检验员"
+    ],
+    "decision_question": "XRF读数是否落在牌号±0.3%边界值？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "XRF读数",
+      "entity_type": "other",
+      "qualifier": "拿读数比边界"
+     },
+     {
+      "role": "control",
+      "name": "读数相对标称牌号 ±0.3%",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "边界值判定标准"
+     },
+     {
+      "role": "output",
+      "name": "边界值命中结果（是/否）",
+      "entity_type": "other",
+      "qualifier": "决定要不要复测"
+     },
+     {
+      "role": "control",
+      "name": "XRF 边界值判定规范",
+      "entity_type": "document",
+      "document_kind": "sop",
+      "qualifier": "读数相对标称牌号 ±0.3%"
+     }
+    ]
+   },
+   {
+    "node_id": "n10",
+    "node_type": "activity",
+    "label": "质量工程师到现场用第二把枪复测并签字",
+    "actor_roles": [
+     "质量工程师"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": {
+     "enabled": true,
+     "rework_reference_node_id": "n8",
+     "condition": "XRF读数落在牌号±0.3%边界值",
+     "description": "对XRF打牌号结果做复测：质量工程师到现场用第二把枪重新测并签字"
+    },
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "第二把枪",
+      "entity_type": "equipment",
+      "qualifier": "到现场复测用"
+     },
+     {
+      "role": "mechanism",
+      "name": "第二把已校准XRF",
+      "entity_type": "equipment",
+      "qualifier": "复测用"
+     },
+     {
+      "role": "input",
+      "name": "命中边界值的样本",
+      "entity_type": "material",
+      "qualifier": "被复测的件"
+     },
+     {
+      "role": "output",
+      "name": "复测结果+工程师电子签字",
+      "entity_type": "document",
+      "document_kind": "inspection_result",
+      "qualifier": "作为牌号判定依据"
+     },
+     {
+      "role": "control",
+      "name": "工程师在场复测并签字、不可远程委托",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "签字规则"
+     }
+    ]
+   },
+   {
+    "node_id": "n11",
+    "node_type": "decision",
+    "label": "牌号是否与材质证书一致",
+    "actor_roles": [],
+    "decision_question": "牌号是否与材质证书一致？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n12",
+    "node_type": "activity",
+    "label": "把批号、样本数、缺陷、测量值记录在收货检验报告上",
+    "actor_roles": [
+     "IQC 检验员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "收货检验报告",
+      "entity_type": "document",
+      "document_kind": "inspection_result",
+      "qualifier": "登记批号、样本数、缺陷、测量值"
+     },
+     {
+      "role": "output",
+      "name": "加急备注并通知PMC",
+      "qualifier": "顾客加急物料在报告备注栏标注加急"
+     },
+     {
+      "role": "mechanism",
+      "name": "ERP-QM模块",
+      "entity_type": "system",
+      "qualifier": "填报告并出判定"
+     },
+     {
+      "role": "input",
+      "name": "外观/尺寸/XRF全部检验结果",
+      "entity_type": "document",
+      "document_kind": "inspection_result",
+      "qualifier": "汇总判定用"
+     },
+     {
+      "role": "output",
+      "name": "收货检验报告（含接收/拒收/让步判定）",
+      "entity_type": "document",
+      "document_kind": "report",
+      "qualifier": "后续放行/拒退的依据"
+     },
+     {
+      "role": "control",
+      "name": "AQL通过+尺寸全过+XRF一致",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "接收判定条件"
+     },
+     {
+      "role": "output",
+      "name": "加急通知（PMC）",
+      "entity_type": "document",
+      "document_kind": "message",
+      "qualifier": "顾客加急物料在备注栏标注并同步PMC"
+     },
+     {
+      "role": "control",
+      "name": "加急物料标注与通知要求",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "须在收货检验报告备注栏标注『加急』并同步 PMC 系统加急标记，PMC 收到后排产优先级 P0"
+     }
+    ]
+   },
+   {
+    "node_id": "n13",
+    "node_type": "decision",
+    "label": "IQC检验判定是否合格",
+    "actor_roles": [
+     "IQC"
+    ],
+    "decision_question": "IQC检验判定是否合格？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n14",
+    "node_type": "approval",
+    "label": "IQC签字放行、WMS解锁、仓库才能领",
+    "actor_roles": [
+     "IQC"
+    ],
+    "decision_question": null,
+    "sla_config": {
+     "duration": "PT60M",
+     "description": "IQC 签字后 1 小时内 WMS 解锁,签字动作 <1 分钟",
+     "type": "deadline"
+    },
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "WMS解锁",
+      "entity_type": "system",
+      "qualifier": "放行后解锁，仓库才能领用"
+     },
+     {
+      "role": "mechanism",
+      "name": "ERP电子签名",
+      "entity_type": "system",
+      "qualifier": "签字放行"
+     },
+     {
+      "role": "input",
+      "name": "收货检验报告",
+      "entity_type": "document",
+      "document_kind": "report",
+      "qualifier": "签字对象"
+     },
+     {
+      "role": "output",
+      "name": "签字后的报告",
+      "entity_type": "document",
+      "document_kind": "report",
+      "qualifier": "放行凭证"
+     },
+     {
+      "role": "output",
+      "name": "WMS解锁批次",
+      "entity_type": "other",
+      "qualifier": "解锁后仓库才能领"
+     },
+     {
+      "role": "control",
+      "name": "必须本人在场签字、他人不可代签",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "签字规则"
+     },
+     {
+      "role": "input",
+      "name": "已签字的收货检验报告",
+      "entity_type": "document",
+      "document_kind": "inspection_result",
+      "qualifier": "IQC 签字放行所依据的报告本身必须已经签过字"
+     },
+     {
+      "role": "control",
+      "name": "每批报告必须当日17:00前上传ERP，不得隔日补录",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "IQC 签字放行这一步的硬要求"
+     },
+     {
+      "role": "control",
+      "name": "质量部每周一上午抽审上周报告5%",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "报告上传后的抽审要求"
+     }
+    ]
+   },
+   {
+    "node_id": "n15",
+    "node_type": "activity",
+    "label": "收货检验报告当日17:00前上传ERP",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "收货检验报告",
+      "entity_type": "document",
+      "document_kind": "inspection_result",
+      "qualifier": "要上传的报告"
+     },
+     {
+      "role": "mechanism",
+      "name": "ERP",
+      "entity_type": "system",
+      "qualifier": "报告上传的目标系统"
+     },
+     {
+      "role": "control",
+      "name": "不得隔日补录",
+      "qualifier": "上传时限要求"
+     },
+     {
+      "role": "control",
+      "name": "检验报告上传与抽审规定",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "必须当日17:00前上传ERP，不得隔日补录；质量部每周一上午抽审上周报告5%"
+     }
+    ]
+   },
+   {
+    "node_id": "n16",
+    "node_type": "end",
+    "label": "结束",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n17",
+    "node_type": "activity",
+    "label": "挂红牌、进MRB区隔离、通知质量经理走拒退流程",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "红牌",
+      "entity_type": "other",
+      "qualifier": "不合格或牌号不对时的标识"
+     },
+     {
+      "role": "output",
+      "name": "拒退流程通知",
+      "qualifier": "通知质量经理走拒退流程"
+     }
+    ]
+   },
+   {
+    "node_id": "n18",
+    "node_type": "activity",
+    "label": "红牌14天未处置自动升级到质量总监",
+    "actor_roles": [
+     "质量总监"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "ERP定时任务",
+      "entity_type": "system",
+      "qualifier": "到期自动升级"
+     },
+     {
+      "role": "input",
+      "name": "红牌记录日期",
+      "entity_type": "other",
+      "qualifier": "算14天"
+     },
+     {
+      "role": "output",
+      "name": "升级通知到质量总监",
+      "entity_type": "document",
+      "document_kind": "message",
+      "qualifier": "提醒总监处理"
+     },
+     {
+      "role": "control",
+      "name": "红牌14天未处置自动升级",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "升级规则"
+     }
+    ]
+   },
+   {
+    "node_id": "n19",
+    "node_type": "approval",
+    "label": "MRB区隔离料重新上线，质量+工程+生产三方会签",
+    "actor_roles": [
+     "质量",
+     "工程",
+     "生产"
+    ],
+    "decision_question": null,
+    "sla_config": {
+     "duration": "PT48H",
+     "description": "MRB 三方会签 48 小时内完成,逾期升级到质量总监",
+     "type": "deadline"
+    },
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "MRB评审单（纸质+电子）",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "会签载体"
+     },
+     {
+      "role": "input",
+      "name": "MRB处置意见草稿",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "被会签的内容"
+     },
+     {
+      "role": "output",
+      "name": "三方签字后的处置决定（放行/降级/返工/报废）",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "隔离料能不能重新上线看这个"
+     },
+     {
+      "role": "control",
+      "name": "质量+工程+生产三方齐全且意见一致，缺一不生效",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "会签规则"
+     },
+     {
+      "role": "control",
+      "name": "MRB 评审制度",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "质量+工程+生产三方齐全，缺一不生效；电子签字+纸质签字双轨，任一缺失视为未签字；异常发生48小时内完成会签，逾期升级到质量总监"
+     },
+     {
+      "role": "control",
+      "name": "MRB 会签时限：异常发生48小时内完成，逾期升级到质量总监",
+      "entity_type": "other",
+      "qualifier": "会签超时自动升级"
+     },
+     {
+      "role": "control",
+      "name": "评审单电子签字+纸质签字双轨，缺一不生效",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "MRB 会签的签字有效性要求"
+     }
+    ]
+   },
+   {
+    "node_id": "n20",
+    "node_type": "activity",
+    "label": "免检件每季度抽检一次",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "免检资格动态评估表",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "质量经理每季度末在此表上签字，确认下季度维持免检/取消/收紧；连续两个季度抽检到不合格即取消免检"
+     }
+    ]
+   },
+   {
+    "node_id": "n21",
+    "node_type": "decision",
+    "label": "免检件抽检是否异常",
+    "actor_roles": [],
+    "decision_question": "免检件抽检是否异常？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n22",
+    "node_type": "activity",
+    "label": "转全检，质量经理签字",
+    "actor_roles": [
+     "质量经理"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": {
+     "enabled": true,
+     "rework_reference_node_id": "n20",
+     "condition": "免检件季度抽检出现异常",
+     "description": "由每季度抽检转为全检，需质量经理签字"
+    },
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "免检季度抽检台账",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "查抽检结果"
+     },
+     {
+      "role": "input",
+      "name": "抽检异常记录",
+      "entity_type": "document",
+      "document_kind": "inspection_result",
+      "qualifier": "触发转全检"
+     },
+     {
+      "role": "output",
+      "name": "签字后转全检的批次清单",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "后续按全检执行"
+     },
+     {
+      "role": "control",
+      "name": "质量经理签字后生效，并抄送采购",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "转全检的生效条件"
+     },
+     {
+      "role": "control",
+      "name": "转全检签字时限：抽检后3个工作日内",
+      "entity_type": "other",
+      "qualifier": "逾期影响免检资格"
+     }
+    ]
+   },
+   {
+    "node_id": "n23",
+    "node_type": "activity",
+    "label": "车间主任打特批单",
+    "actor_roles": [
+     "车间主任"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "特批单",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "顾客催料时由车间主任开出的特批单"
+     },
+     {
+      "role": "mechanism",
+      "name": "ERP特批流程",
+      "entity_type": "system",
+      "qualifier": "走特批"
+     },
+     {
+      "role": "input",
+      "name": "催料证明",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "证明顾客在催"
+     },
+     {
+      "role": "control",
+      "name": "单次特批由质量经理批，同批二次催料必须总经理批",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "批到哪一级的规则"
+     },
+     {
+      "role": "control",
+      "name": "催料特批管理办法",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "单次特批质量经理批，同批二次催料必须总经理批；2小时内出签字结果"
+     },
+     {
+      "role": "control",
+      "name": "审批时限：2 小时内出签字结果",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "顾客催料特批单的时限要求（sla_config hours=2）"
+     }
+    ]
+   },
+   {
+    "node_id": "n24",
+    "node_type": "approval",
+    "label": "质量经理签字",
+    "actor_roles": [
+     "质量经理"
+    ],
+    "decision_question": null,
+    "sla_config": {
+     "duration": "PT24H",
+     "description": "质量经理签字 1 个工作日内,逾期自动催办",
+     "type": "deadline"
+    },
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "特批单",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "需要质量经理签字的特批单"
+     },
+     {
+      "role": "control",
+      "name": "拒退必须经理签字，防止误判",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "签字环节的控制要求"
+     }
+    ]
+   },
+   {
+    "node_id": "n25",
+    "node_type": "decision",
+    "label": "特批单是否超过一张",
+    "actor_roles": [],
+    "decision_question": "特批单是否超过一张？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n26",
+    "node_type": "approval",
+    "label": "总经理签字",
+    "actor_roles": [
+     "总经理"
+    ],
+    "decision_question": null,
+    "sla_config": {
+     "duration": "PT12H",
+     "description": "总经理签字 12 小时内出结果",
+     "type": "deadline"
+    },
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n27",
+    "node_type": "activity",
+    "label": "解锁",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "ncef596",
+    "node_type": "activity",
+    "label": "判断供应商分级（新/稳定/战略）",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "供应商分级清单",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "年初由质量经理签字印发"
+     },
+     {
+      "role": "input",
+      "name": "供应商代码",
+      "entity_type": "other",
+      "qualifier": "按供应商代码查分级"
+     },
+     {
+      "role": "output",
+      "name": "分级结果（新供应商/稳定供应商/战略供应商）",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "决定后面AQL抽样的等级"
+     },
+     {
+      "role": "control",
+      "name": "由质量经理按上年绩效评定",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "分级口径"
+     },
+     {
+      "role": "control",
+      "name": "供应商分级清单",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "质量经理按上年供方绩效评定、年初签字印发，用来判定新/稳定/战略"
+     }
+    ]
+   },
+   {
+    "node_id": "nd3ed9c",
+    "node_type": "activity",
+    "label": "找对应图纸核版本",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "PLM系统图纸库",
+      "entity_type": "system",
+      "qualifier": "在线检索图纸"
+     },
+     {
+      "role": "input",
+      "name": "物料料号",
+      "entity_type": "other",
+      "qualifier": "用于检索图纸"
+     },
+     {
+      "role": "input",
+      "name": "收货单",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "核对版本用"
+     },
+     {
+      "role": "output",
+      "name": "图纸当前生效版本号及是否与采购订单标注重版本一致",
+      "entity_type": "document",
+      "document_kind": "drawing",
+      "qualifier": "给尺寸测量用对版本"
+     },
+     {
+      "role": "control",
+      "name": "图纸生效日期与采购订单日期对齐，不一致立即通知工艺工程师",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "版本核对规则"
+     }
+    ]
+   },
+   {
+    "node_id": "nec7643",
+    "node_type": "approval",
+    "label": "质量经理拒退签字",
+    "actor_roles": [
+     "质量经理"
+    ],
+    "decision_question": null,
+    "sla_config": {
+     "duration": "PT24H",
+     "description": "质量经理拒退签字 1 个工作日内",
+     "type": "deadline"
+    },
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "ERP签字模块",
+      "entity_type": "system",
+      "qualifier": "电子签字"
+     },
+     {
+      "role": "input",
+      "name": "拒收判定报告",
+      "entity_type": "document",
+      "document_kind": "report",
+      "qualifier": "作为拒退依据"
+     },
+     {
+      "role": "output",
+      "name": "签字后的退货指令",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "交给采购跟单员走退货物流"
+     },
+     {
+      "role": "control",
+      "name": "拒退必须经理签字，防止误判",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "签字规则"
+     },
+     {
+      "role": "control",
+      "name": "不合格品处置规范",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "拒退必须经理签字，防止误判；签字时限1个工作日内，逾期自动催办"
+     },
+     {
+      "role": "control",
+      "name": "审批时限：1 个工作日内签字，逾期自动催办",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "质量经理拒退签字的时限要求（sla_config hours=24）"
+     }
+    ]
+   },
+   {
+    "node_id": "nbe73e4",
+    "node_type": "approval",
+    "label": "采购跟单员签字（退货物流）",
+    "actor_roles": [
+     "采购跟单员"
+    ],
+    "decision_question": null,
+    "sla_config": {
+     "duration": "PT24H",
+     "description": "采购跟单员退货签字 1 个工作日内",
+     "type": "deadline"
+    },
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "物流系统",
+      "entity_type": "system",
+      "qualifier": "下退货物流指令"
+     },
+     {
+      "role": "mechanism",
+      "name": "退货单",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "退货凭证"
+     },
+     {
+      "role": "input",
+      "name": "质量经理签字后的拒退单",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "跟单员凭此签字"
+     },
+     {
+      "role": "output",
+      "name": "退货物流指令",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "发给物流"
+     },
+     {
+      "role": "control",
+      "name": "退物流+补料协调必须跟单员签字",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "签字规则"
+     },
+     {
+      "role": "control",
+      "name": "退货物流签字时限：1个工作日内，逾期自动催办",
+      "entity_type": "other",
+      "qualifier": "退物流+补料协调必须跟单员签字"
+     }
+    ]
+   }
+  ],
+  "edges": [
+   {
+    "from": "n1",
+    "to": "n2",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n2",
+    "to": "ncef596",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n2",
+    "to": "n20",
+    "edge_type": "conditional",
+    "condition": "该物料属于供应商免检件"
+   },
+   {
+    "from": "n3",
+    "to": "nd3ed9c",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n4",
+    "to": "n5",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n5",
+    "to": "n6",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n6",
+    "to": "n7",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n7",
+    "to": "n8",
+    "edge_type": "conditional",
+    "condition": "物料描述里含『不锈钢/钛/镍基/高温合金』关键词"
+   },
+   {
+    "from": "n7",
+    "to": "n12",
+    "edge_type": "conditional",
+    "condition": "物料描述里不含上述关键词"
+   },
+   {
+    "from": "n8",
+    "to": "n9",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n9",
+    "to": "n10",
+    "edge_type": "conditional",
+    "condition": "XRF读数落在牌号±0.3%边界值"
+   },
+   {
+    "from": "n9",
+    "to": "n11",
+    "edge_type": "conditional",
+    "condition": "XRF读数未落在牌号±0.3%边界值"
+   },
+   {
+    "from": "n10",
+    "to": "n11",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n11",
+    "to": "n17",
+    "edge_type": "conditional",
+    "condition": "牌号与材质证书不一致"
+   },
+   {
+    "from": "n11",
+    "to": "n12",
+    "edge_type": "conditional",
+    "condition": "牌号与材质证书一致"
+   },
+   {
+    "from": "n12",
+    "to": "n13",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n12",
+    "to": "n23",
+    "edge_type": "conditional",
+    "condition": "顾客催料"
+   },
+   {
+    "from": "n13",
+    "to": "n14",
+    "edge_type": "conditional",
+    "condition": "IQC判定合格"
+   },
+   {
+    "from": "n13",
+    "to": "n17",
+    "edge_type": "conditional",
+    "condition": "IQC判定不合格"
+   },
+   {
+    "from": "n14",
+    "to": "n15",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n15",
+    "to": "n16",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n17",
+    "to": "n18",
+    "edge_type": "timeout",
+    "condition": "红牌14天未处置"
+   },
+   {
+    "from": "n17",
+    "to": "n19",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n18",
+    "to": "n16",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n19",
+    "to": "n16",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n20",
+    "to": "n21",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n21",
+    "to": "n22",
+    "edge_type": "conditional",
+    "condition": "抽检异常"
+   },
+   {
+    "from": "n21",
+    "to": "n16",
+    "edge_type": "conditional",
+    "condition": "抽检正常"
+   },
+   {
+    "from": "n22",
+    "to": "n16",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n23",
+    "to": "n24",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n24",
+    "to": "n25",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n25",
+    "to": "n26",
+    "edge_type": "conditional",
+    "condition": "特批单超过一张"
+   },
+   {
+    "from": "n25",
+    "to": "n27",
+    "edge_type": "conditional",
+    "condition": "特批单不超过一张"
+   },
+   {
+    "from": "n26",
+    "to": "n27",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n27",
+    "to": "n15",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "ncef596",
+    "to": "n3",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "nd3ed9c",
+    "to": "n4",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n17",
+    "to": "nec7643",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "nec7643",
+    "to": "nbe73e4",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "nbe73e4",
+    "to": "n16",
+    "edge_type": "normal",
+    "condition": null
+   }
+  ]
+ },
+ {
+  "id": "a797ea3e77dd",
+  "name": "02_FAI_首件检验",
+  "status": "expert_confirmed",
+  "start_node_ids": [
+   "n1"
+  ],
+  "end_node_ids": [
+   "n12"
+  ],
+  "nodes": [
+   {
+    "node_id": "n1",
+    "node_type": "start",
+    "label": "开班前准备：操作工拿图纸、领料单、工艺卡片到机床前",
+    "actor_roles": [
+     "操作工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n2",
+    "node_type": "activity",
+    "label": "开动机床试运行，空跑一次确认坐标和刀具",
+    "actor_roles": [
+     "操作工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "机床",
+      "entity_type": "equipment",
+      "qualifier": "试运行、空跑用"
+     }
+    ]
+   },
+   {
+    "node_id": "n3",
+    "node_type": "activity",
+    "label": "加工第一件",
+    "actor_roles": [
+     "操作工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "首件",
+      "entity_type": "product",
+      "qualifier": "这批的第一件，后面要自检并送检"
+     },
+     {
+      "role": "control",
+      "name": "换刀换模必须重做首件",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "硬规则"
+     },
+     {
+      "role": "control",
+      "name": "刀具磨损补偿调整超过0.02mm也算重大变更",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "超过0.02mm要重做首件"
+     }
+    ]
+   },
+   {
+    "node_id": "n4",
+    "node_type": "activity",
+    "label": "操作工自己卡关键尺寸、目测外观",
+    "actor_roles": [
+     "操作工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "首件",
+      "entity_type": "product",
+      "qualifier": "被自检的实物"
+     },
+     {
+      "role": "mechanism",
+      "name": "卡关键尺寸、目测外观",
+      "entity_type": "capability",
+      "qualifier": "操作工自己先做一遍自检"
+     }
+    ]
+   },
+   {
+    "node_id": "n5",
+    "node_type": "handoff",
+    "label": "把首件送到IPQC那里",
+    "actor_roles": [
+     "操作工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "首件",
+      "entity_type": "product",
+      "qualifier": "交给IPQC检验"
+     },
+     {
+      "role": "input",
+      "name": "IPQC",
+      "entity_type": "role",
+      "qualifier": "接收首件并检验的岗位"
+     }
+    ]
+   },
+   {
+    "node_id": "n6",
+    "node_type": "activity",
+    "label": "IPQC按检验计划量关键尺寸",
+    "actor_roles": [
+     "IPQC"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "检验计划",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "按检验计划规定量哪些关键尺寸"
+     },
+     {
+      "role": "mechanism",
+      "name": "游标卡尺",
+      "entity_type": "equipment",
+      "qualifier": "量关键尺寸用"
+     },
+     {
+      "role": "mechanism",
+      "name": "千分尺",
+      "entity_type": "equipment",
+      "qualifier": "量关键尺寸用"
+     },
+     {
+      "role": "mechanism",
+      "name": "塞规",
+      "entity_type": "equipment",
+      "qualifier": "有时候用它量"
+     },
+     {
+      "role": "output",
+      "name": "关键尺寸实际值",
+      "entity_type": "other",
+      "qualifier": "量出来的实测值"
+     }
+    ]
+   },
+   {
+    "node_id": "n7",
+    "node_type": "activity",
+    "label": "拍照上传MES系统，点『首件录入』",
+    "actor_roles": [
+     "IPQC"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "关键尺寸实际值",
+      "entity_type": "other",
+      "qualifier": "录入的是实际值，不是判定"
+     },
+     {
+      "role": "mechanism",
+      "name": "MES系统",
+      "entity_type": "system",
+      "qualifier": "拍照上传并做首件录入"
+     },
+     {
+      "role": "output",
+      "name": "首件录入",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "写进MES的记录"
+     }
+    ]
+   },
+   {
+    "node_id": "n8",
+    "node_type": "decision",
+    "label": "判断首件是否合格",
+    "actor_roles": [
+     "IPQC"
+    ],
+    "decision_question": "首件全部关键尺寸是否都在公差带内？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "首件",
+      "entity_type": "product",
+      "qualifier": "被判定合格与否的对象"
+     },
+     {
+      "role": "control",
+      "name": "全部关键尺寸都在公差带内",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "判定合格的标准"
+     }
+    ]
+   },
+   {
+    "node_id": "n9",
+    "node_type": "approval",
+    "label": "IPQC审核合格就开锁，可以批量走",
+    "actor_roles": [
+     "IPQC"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "开锁",
+      "entity_type": "other",
+      "qualifier": "解锁后可以批量生产"
+     },
+     {
+      "role": "control",
+      "name": "没有首件报告系统不放行",
+      "entity_type": "other",
+      "qualifier": "MES强制的放行条件"
+     }
+    ]
+   },
+   {
+    "node_id": "n10",
+    "node_type": "activity",
+    "label": "锁机",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "锁机",
+      "entity_type": "other",
+      "qualifier": "不合格时设备被锁住"
+     }
+    ]
+   },
+   {
+    "node_id": "n11",
+    "node_type": "activity",
+    "label": "操作工调整参数重做，再做首件",
+    "actor_roles": [
+     "操作工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": {
+     "enabled": true,
+     "rework_reference_node_id": "n3",
+     "condition": "首件关键尺寸不合格",
+     "description": "锁机后操作工调整参数，重新回到加工第一件、再做首件检验"
+    },
+    "object_links": [
+     {
+      "role": "output",
+      "name": "重做的首件",
+      "entity_type": "product",
+      "qualifier": "调整参数后重新做出的首件"
+     }
+    ]
+   },
+   {
+    "node_id": "n12",
+    "node_type": "end",
+    "label": "首件检验完成",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   }
+  ],
+  "edges": [
+   {
+    "from": "n1",
+    "to": "n2",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n2",
+    "to": "n3",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n3",
+    "to": "n4",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n4",
+    "to": "n5",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n5",
+    "to": "n6",
+    "edge_type": "handoff",
+    "condition": null
+   },
+   {
+    "from": "n6",
+    "to": "n7",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n7",
+    "to": "n8",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n8",
+    "to": "n9",
+    "edge_type": "conditional",
+    "condition": "全部关键尺寸都在公差带内（审核合格）"
+   },
+   {
+    "from": "n8",
+    "to": "n10",
+    "edge_type": "conditional",
+    "condition": "有关键尺寸不在公差带内（不合格）"
+   },
+   {
+    "from": "n9",
+    "to": "n12",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n10",
+    "to": "n11",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n11",
+    "to": "n12",
+    "edge_type": "normal",
+    "condition": null
+   }
+  ]
+ },
+ {
+  "id": "62bca67f6ab4",
+  "name": "03_工序扫码",
+  "status": "expert_confirmed",
+  "start_node_ids": [
+   "n1"
+  ],
+  "end_node_ids": [
+   "n10"
+  ],
+  "nodes": [
+   {
+    "node_id": "n1",
+    "node_type": "start",
+    "label": "工件到了",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n2",
+    "node_type": "activity",
+    "label": "扫描工单条码",
+    "actor_roles": [
+     "操作员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "工单条码",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "被扫描的开工依据"
+     },
+     {
+      "role": "mechanism",
+      "name": "手持PDA扫描枪",
+      "entity_type": "equipment",
+      "qualifier": "扫码用的工具"
+     }
+    ]
+   },
+   {
+    "node_id": "n3",
+    "node_type": "activity",
+    "label": "扫描单件或批次条码",
+    "actor_roles": [
+     "操作员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "单件或批次条码",
+      "entity_type": "other",
+      "qualifier": "被扫描的实物标识"
+     },
+     {
+      "role": "mechanism",
+      "name": "手持PDA扫描枪",
+      "entity_type": "equipment",
+      "qualifier": "扫码用的工具"
+     }
+    ]
+   },
+   {
+    "node_id": "n4",
+    "node_type": "decision",
+    "label": "检查前序完成情况和当前工艺版本",
+    "actor_roles": [],
+    "decision_question": "前序是否已完成、当前工艺版本是否匹配？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "工单号和工序号的对应关系",
+      "entity_type": "other",
+      "qualifier": "开工与检查所依据的对应关系"
+     },
+     {
+      "role": "mechanism",
+      "name": "MES系统",
+      "entity_type": "system",
+      "qualifier": "承载工单状态、用于判断的系统"
+     }
+    ]
+   },
+   {
+    "node_id": "n5",
+    "node_type": "activity",
+    "label": "记录作业时间开始加工",
+    "actor_roles": [
+     "操作员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "工序开工记录",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "关联设备、操作人、物料批次"
+     }
+    ]
+   },
+   {
+    "node_id": "n6",
+    "node_type": "handoff",
+    "label": "挂起，交给班组长核对流转信息",
+    "actor_roles": [
+     "操作员",
+     "班组长"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n7",
+    "node_type": "decision",
+    "label": "班组长核对流转信息",
+    "actor_roles": [
+     "班组长"
+    ],
+    "decision_question": "核对后是改单还是退回？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "MES系统里工单状态和实物工序一致",
+      "entity_type": "other",
+      "qualifier": "核对的判断标准"
+     }
+    ]
+   },
+   {
+    "node_id": "n8",
+    "node_type": "activity",
+    "label": "改单",
+    "actor_roles": [
+     "班组长"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n9",
+    "node_type": "activity",
+    "label": "退回",
+    "actor_roles": [
+     "班组长"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n10",
+    "node_type": "end",
+    "label": "结束",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   }
+  ],
+  "edges": [
+   {
+    "from": "n1",
+    "to": "n2",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n2",
+    "to": "n3",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n3",
+    "to": "n4",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n4",
+    "to": "n5",
+    "edge_type": "conditional",
+    "condition": "检查通过（前序完成情况满足且当前工艺版本匹配）"
+   },
+   {
+    "from": "n4",
+    "to": "n6",
+    "edge_type": "conditional",
+    "condition": "前序缺失或者条码对不上"
+   },
+   {
+    "from": "n6",
+    "to": "n7",
+    "edge_type": "handoff",
+    "condition": null
+   },
+   {
+    "from": "n7",
+    "to": "n8",
+    "edge_type": "conditional",
+    "condition": "核对结果为改单"
+   },
+   {
+    "from": "n7",
+    "to": "n9",
+    "edge_type": "conditional",
+    "condition": "核对结果为退回"
+   },
+   {
+    "from": "n5",
+    "to": "n10",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n8",
+    "to": "n10",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n9",
+    "to": "n10",
+    "edge_type": "normal",
+    "condition": null
+   }
+  ]
+ },
+ {
+  "id": "101fcbcc1176",
+  "name": "04_设备预防保养",
+  "status": "expert_confirmed",
+  "start_node_ids": [
+   "n1"
+  ],
+  "end_node_ids": [
+   "n19"
+  ],
+  "nodes": [
+   {
+    "node_id": "n1",
+    "node_type": "start",
+    "label": "开始",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n2",
+    "node_type": "activity",
+    "label": "CMMS系统到点自动触发保养工单",
+    "actor_roles": [
+     "CMMS系统"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "保养工单",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "到点自动触发的保养工单"
+     },
+     {
+      "role": "mechanism",
+      "name": "CMMS系统",
+      "entity_type": "system",
+      "qualifier": "自动触发保养工单的系统"
+     }
+    ]
+   },
+   {
+    "node_id": "n3",
+    "node_type": "activity",
+    "label": "推到维修班组的PDA上",
+    "actor_roles": [
+     "CMMS系统"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "保养工单",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "从CMMS推送到PDA的保养工单"
+     },
+     {
+      "role": "mechanism",
+      "name": "PDA",
+      "entity_type": "equipment",
+      "qualifier": "维修班组的PDA"
+     }
+    ]
+   },
+   {
+    "node_id": "n4",
+    "node_type": "activity",
+    "label": "维修工接单",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "保养工单",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "从PDA上接的保养工单"
+     }
+    ]
+   },
+   {
+    "node_id": "n5",
+    "node_type": "decision",
+    "label": "设备分级",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": "设备属于哪一档？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "设备分级规定",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "判断设备分级的依据"
+     },
+     {
+      "role": "control",
+      "name": "厂家的推荐间隔",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "判断保养周期的依据"
+     }
+    ]
+   },
+   {
+    "node_id": "n6",
+    "node_type": "activity",
+    "label": "C档每月换滤芯",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n7",
+    "node_type": "activity",
+    "label": "B档季度深度保养",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n8",
+    "node_type": "activity",
+    "label": "A档半年大修",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n10",
+    "node_type": "activity",
+    "label": "核对执行资格",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "高压电工作证",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "部分保养作业需要高压电工作证"
+     }
+    ]
+   },
+   {
+    "node_id": "n11",
+    "node_type": "activity",
+    "label": "做完点检项目",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "设备运行小时数",
+      "entity_type": "other",
+      "qualifier": "保养判断的输入之一"
+     },
+     {
+      "role": "input",
+      "name": "上次保养记录",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "保养判断的输入之一"
+     },
+     {
+      "role": "mechanism",
+      "name": "扭矩扳手",
+      "entity_type": "equipment",
+      "qualifier": "保养工具"
+     },
+     {
+      "role": "mechanism",
+      "name": "振动分析仪",
+      "entity_type": "equipment",
+      "qualifier": "保养工具"
+     },
+     {
+      "role": "mechanism",
+      "name": "红外测温仪",
+      "entity_type": "equipment",
+      "qualifier": "保养工具"
+     },
+     {
+      "role": "control",
+      "name": "对应的SOP",
+      "entity_type": "document",
+      "document_kind": "sop",
+      "qualifier": "按设备分级走对应的SOP"
+     },
+     {
+      "role": "control",
+      "name": "不能只勾选完成",
+      "qualifier": "保养执行的约束"
+     }
+    ]
+   },
+   {
+    "node_id": "n12",
+    "node_type": "activity",
+    "label": "记录结果",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "保养记录",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "记录点检结果"
+     }
+    ]
+   },
+   {
+    "node_id": "n13",
+    "node_type": "activity",
+    "label": "换的耗材归档",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "换的耗材",
+      "entity_type": "material",
+      "qualifier": "被归档的耗材"
+     },
+     {
+      "role": "output",
+      "name": "归档",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "耗材更换的归档记录"
+     }
+    ]
+   },
+   {
+    "node_id": "n14",
+    "node_type": "decision",
+    "label": "检查发现隐患?",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": "检查是否发现隐患？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n15",
+    "node_type": "activity",
+    "label": "生成纠正工单",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "纠正工单",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "针对隐患的纠正工单"
+     }
+    ]
+   },
+   {
+    "node_id": "n16",
+    "node_type": "decision",
+    "label": "必要时?",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": "是否需要保持停用？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n17",
+    "node_type": "activity",
+    "label": "保持停用",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n18",
+    "node_type": "activity",
+    "label": "输出保养记录和下次保养周期",
+    "actor_roles": [
+     "维修工"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "保养记录",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "最终保养记录"
+     },
+     {
+      "role": "output",
+      "name": "下次保养周期",
+      "entity_type": "other",
+      "qualifier": "根据保养结果确定的下次保养周期"
+     }
+    ]
+   },
+   {
+    "node_id": "n19",
+    "node_type": "end",
+    "label": "结束",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   }
+  ],
+  "edges": [
+   {
+    "from": "n1",
+    "to": "n2",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n2",
+    "to": "n3",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n3",
+    "to": "n4",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n4",
+    "to": "n5",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n5",
+    "to": "n6",
+    "edge_type": "conditional",
+    "condition": "C档"
+   },
+   {
+    "from": "n5",
+    "to": "n7",
+    "edge_type": "conditional",
+    "condition": "B档"
+   },
+   {
+    "from": "n5",
+    "to": "n8",
+    "edge_type": "conditional",
+    "condition": "A档"
+   },
+   {
+    "from": "n6",
+    "to": "n10",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n7",
+    "to": "n10",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n8",
+    "to": "n10",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n10",
+    "to": "n11",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n11",
+    "to": "n12",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n12",
+    "to": "n13",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n13",
+    "to": "n14",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n14",
+    "to": "n15",
+    "edge_type": "conditional",
+    "condition": "发现隐患"
+   },
+   {
+    "from": "n14",
+    "to": "n18",
+    "edge_type": "conditional",
+    "condition": "未发现隐患"
+   },
+   {
+    "from": "n15",
+    "to": "n16",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n16",
+    "to": "n17",
+    "edge_type": "conditional",
+    "condition": "必要时"
+   },
+   {
+    "from": "n16",
+    "to": "n18",
+    "edge_type": "conditional",
+    "condition": "不需要时"
+   },
+   {
+    "from": "n17",
+    "to": "n18",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n18",
+    "to": "n19",
+    "edge_type": "normal",
+    "condition": null
+   }
+  ]
+ },
+ {
+  "id": "919292982dc2",
+  "name": "05_SPC失控响应",
+  "status": "expert_confirmed",
+  "start_node_ids": [
+   "n1"
+  ],
+  "end_node_ids": [
+   "n11"
+  ],
+  "nodes": [
+   {
+    "node_id": "n1",
+    "node_type": "start",
+    "label": "SPC控制图打点出界",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n2",
+    "node_type": "activity",
+    "label": "确认失控",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "Western Electric规则",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "判断失控的标准：7点同侧、连续6点递增、2个3西格玛外、1个超3西格玛，任一命中就算"
+     }
+    ]
+   },
+   {
+    "node_id": "n3",
+    "node_type": "decision",
+    "label": "如何隔离受影响产品？",
+    "actor_roles": [],
+    "decision_question": "停线还是挂起受影响产品？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n3a",
+    "node_type": "activity",
+    "label": "停线",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n3b",
+    "node_type": "activity",
+    "label": "把受影响的产品挂起来",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "受影响的产品",
+      "entity_type": "product",
+      "qualifier": "被挂起，不让继续生产"
+     }
+    ]
+   },
+   {
+    "node_id": "n4",
+    "node_type": "activity",
+    "label": "查特殊原因",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "不要先把控制限重算一遍把那个点消掉",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "避免掩耳盗铃，不能先消除失控点"
+     }
+    ]
+   },
+   {
+    "node_id": "n5",
+    "node_type": "activity",
+    "label": "在图上标注失控信号和采取的措施",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "控制图软件",
+      "entity_type": "system",
+      "qualifier": "用于在图上标注失控信号和措施"
+     },
+     {
+      "role": "mechanism",
+      "name": "SPC看板",
+      "entity_type": "system",
+      "qualifier": "用于展示和标注"
+     },
+     {
+      "role": "input",
+      "name": "失控信号",
+      "entity_type": "other",
+      "qualifier": "需要被标注"
+     },
+     {
+      "role": "input",
+      "name": "采取的措施",
+      "entity_type": "other",
+      "qualifier": "需要被标注"
+     }
+    ]
+   },
+   {
+    "node_id": "n6",
+    "node_type": "decision",
+    "label": "过程是否稳定？",
+    "actor_roles": [],
+    "decision_question": "过程是否稳定？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n7",
+    "node_type": "activity",
+    "label": "不能计算过程能力",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n8",
+    "node_type": "activity",
+    "label": "记录处理过程",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "处理记录",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "记录处理过程，留档"
+     }
+    ]
+   },
+   {
+    "node_id": "n9",
+    "node_type": "decision",
+    "label": "是否必要时对受影响产品100%检验？",
+    "actor_roles": [],
+    "decision_question": "是否必要时对受影响产品100%检验？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n10",
+    "node_type": "activity",
+    "label": "对受影响产品100%检验",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "受影响的产品",
+      "entity_type": "product",
+      "qualifier": "需要被100%检验"
+     }
+    ]
+   },
+   {
+    "node_id": "n11",
+    "node_type": "end",
+    "label": "输出失控响应记录和整改单",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   }
+  ],
+  "edges": [
+   {
+    "from": "n1",
+    "to": "n2",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n2",
+    "to": "n3",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n3",
+    "to": "n3a",
+    "edge_type": "conditional",
+    "condition": "停线"
+   },
+   {
+    "from": "n3",
+    "to": "n3b",
+    "edge_type": "conditional",
+    "condition": "挂起受影响产品"
+   },
+   {
+    "from": "n3a",
+    "to": "n4",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n3b",
+    "to": "n4",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n4",
+    "to": "n5",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n5",
+    "to": "n6",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n6",
+    "to": "n7",
+    "edge_type": "conditional",
+    "condition": "过程未稳定"
+   },
+   {
+    "from": "n6",
+    "to": "n8",
+    "edge_type": "conditional",
+    "condition": "过程稳定"
+   },
+   {
+    "from": "n7",
+    "to": "n8",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n8",
+    "to": "n9",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n9",
+    "to": "n10",
+    "edge_type": "conditional",
+    "condition": "必要时"
+   },
+   {
+    "from": "n9",
+    "to": "n11",
+    "edge_type": "conditional",
+    "condition": "非必要时"
+   },
+   {
+    "from": "n10",
+    "to": "n11",
+    "edge_type": "normal",
+    "condition": null
+   }
+  ]
+ },
+ {
+  "id": "ac2d0de6c05a",
+  "name": "09_日排程下达",
+  "status": "expert_confirmed",
+  "start_node_ids": [
+   "n1"
+  ],
+  "end_node_ids": [
+   "n8"
+  ],
+  "nodes": [
+   {
+    "node_id": "n1",
+    "node_type": "start",
+    "label": "日计划冻结时间到点",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n2",
+    "node_type": "activity",
+    "label": "核对班次人员、设备可用状态、工装和齐套物料",
+    "actor_roles": [
+     "车间调度"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "班次人员",
+      "entity_type": "person",
+      "qualifier": "核对班次人员"
+     },
+     {
+      "role": "input",
+      "name": "设备可用状态",
+      "entity_type": "other",
+      "qualifier": "核对设备可用状态"
+     },
+     {
+      "role": "input",
+      "name": "工装",
+      "entity_type": "equipment",
+      "qualifier": "核对工装"
+     },
+     {
+      "role": "input",
+      "name": "齐套物料",
+      "entity_type": "material",
+      "qualifier": "核对齐套物料"
+     },
+     {
+      "role": "control",
+      "name": "齐套物料表",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "核对齐套物料的判断依据"
+     }
+    ]
+   },
+   {
+    "node_id": "n3",
+    "node_type": "decision",
+    "label": "首单物料未齐判断",
+    "actor_roles": [
+     "车间调度"
+    ],
+    "decision_question": "首单物料是否未齐？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "首单物料",
+      "entity_type": "material",
+      "qualifier": "判断首单物料是否未齐"
+     },
+     {
+      "role": "control",
+      "name": "齐套物料表",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "判断依据"
+     },
+     {
+      "role": "control",
+      "name": "换型顺序约束",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "判断依据"
+     }
+    ]
+   },
+   {
+    "node_id": "n4",
+    "node_type": "activity",
+    "label": "标记待投产并寻找替代顺序",
+    "actor_roles": [
+     "车间调度"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "待投产标记",
+      "entity_type": "other",
+      "qualifier": "标记首单物料未齐的工单为待投产"
+     },
+     {
+      "role": "output",
+      "name": "替代顺序",
+      "entity_type": "other",
+      "qualifier": "寻找替代顺序用于后续分配"
+     }
+    ]
+   },
+   {
+    "node_id": "n5",
+    "node_type": "activity",
+    "label": "把工单按换型顺序分配到机台",
+    "actor_roles": [
+     "车间调度"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "input",
+      "name": "工单",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "待分配的工单"
+     },
+     {
+      "role": "control",
+      "name": "换型顺序约束",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "分配工单的判断依据"
+     },
+     {
+      "role": "mechanism",
+      "name": "APS系统",
+      "entity_type": "system",
+      "qualifier": "排程工具"
+     }
+    ]
+   },
+   {
+    "node_id": "n6",
+    "node_type": "approval",
+    "label": "交班组长复核",
+    "actor_roles": [
+     "班组长"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n7",
+    "node_type": "activity",
+    "label": "向MES下达",
+    "actor_roles": [
+     "车间调度"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "MES调度模块",
+      "entity_type": "system",
+      "qualifier": "下达工具"
+     },
+     {
+      "role": "control",
+      "name": "不允许系统显示已开工但料没到，这是红线",
+      "entity_type": "document",
+      "document_kind": "standard",
+      "qualifier": "下达红线"
+     },
+     {
+      "role": "output",
+      "name": "日派工单",
+      "entity_type": "document",
+      "document_kind": "work_order",
+      "qualifier": "明确机台、时间和责任人"
+     }
+    ]
+   },
+   {
+    "node_id": "n8",
+    "node_type": "end",
+    "label": "输出日派工单，明确机台、时间和责任人",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   }
+  ],
+  "edges": [
+   {
+    "from": "n1",
+    "to": "n2",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n2",
+    "to": "n3",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n3",
+    "to": "n4",
+    "edge_type": "conditional",
+    "condition": "发现首单物料未齐"
+   },
+   {
+    "from": "n3",
+    "to": "n5",
+    "edge_type": "conditional",
+    "condition": "未发现首单物料未齐"
+   },
+   {
+    "from": "n4",
+    "to": "n5",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n5",
+    "to": "n6",
+    "edge_type": "handoff",
+    "condition": null
+   },
+   {
+    "from": "n6",
+    "to": "n7",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n7",
+    "to": "n8",
+    "edge_type": "normal",
+    "condition": null
+   }
+  ]
+ },
+ {
+  "id": "804ed80b8a5e",
+  "name": "10_复合工序+异常",
+  "status": "expert_confirmed",
+  "start_node_ids": [
+   "n1"
+  ],
+  "end_node_ids": [
+   "n23"
+  ],
+  "nodes": [
+   {
+    "node_id": "n1",
+    "node_type": "start",
+    "label": "开始",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n2",
+    "node_type": "activity",
+    "label": "扫码开工",
+    "actor_roles": [
+     "操作员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "固定式扫描枪",
+      "entity_type": "equipment",
+      "qualifier": "工序A扫码开工用的扫描工具"
+     }
+    ]
+   },
+   {
+    "node_id": "n3",
+    "node_type": "activity",
+    "label": "加工",
+    "actor_roles": [
+     "操作员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n4",
+    "node_type": "decision",
+    "label": "加工是否超时停机",
+    "actor_roles": [],
+    "decision_question": "加工是否出现超时停机？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n5",
+    "node_type": "activity",
+    "label": "扫码报工",
+    "actor_roles": [
+     "操作员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "工序报工单",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "扫码报工产出的报工凭证"
+     },
+     {
+      "role": "mechanism",
+      "name": "固定式扫描枪",
+      "entity_type": "equipment",
+      "qualifier": "工序A扫码报工用的扫描工具"
+     }
+    ]
+   },
+   {
+    "node_id": "n6",
+    "node_type": "activity",
+    "label": "IPQC巡检",
+    "actor_roles": [
+     "IPQC"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "工艺卡片上的关键参数",
+      "entity_type": "document",
+      "document_kind": "parameter_set",
+      "qualifier": "IPQC巡检时用来判定是否合格的依据"
+     }
+    ]
+   },
+   {
+    "node_id": "n7",
+    "node_type": "decision",
+    "label": "关键参数是否符合工艺卡片要求",
+    "actor_roles": [
+     "IPQC"
+    ],
+    "decision_question": "按工艺卡片上的关键参数判断，结果是否合格？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "工艺卡片上的关键参数",
+      "entity_type": "document",
+      "document_kind": "parameter_set",
+      "qualifier": "判定合格与否必须对照的关键参数"
+     }
+    ]
+   },
+   {
+    "node_id": "n8",
+    "node_type": "activity",
+    "label": "首件录入",
+    "actor_roles": [
+     "操作员"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n9",
+    "node_type": "activity",
+    "label": "记录不良",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "不良记录",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "关键参数不合格时形成的记录"
+     }
+    ]
+   },
+   {
+    "node_id": "n10",
+    "node_type": "approval",
+    "label": "升级到班组长",
+    "actor_roles": [
+     "班组长"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n11",
+    "node_type": "approval",
+    "label": "升级到车间主管",
+    "actor_roles": [
+     "车间主管"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n12",
+    "node_type": "approval",
+    "label": "升级到生产总监",
+    "actor_roles": [
+     "生产总监"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n13",
+    "node_type": "merge",
+    "label": "工序A完成",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n14",
+    "node_type": "activity",
+    "label": "包装前清线",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n15",
+    "node_type": "activity",
+    "label": "扫码投产",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "mechanism",
+      "name": "手持PDA",
+      "entity_type": "equipment",
+      "qualifier": "工序B扫码投产用的扫描工具"
+     },
+     {
+      "role": "control",
+      "name": "包装BOM",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "工序B判断时使用的依据之一"
+     }
+    ]
+   },
+   {
+    "node_id": "n16",
+    "node_type": "activity",
+    "label": "称重",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n17",
+    "node_type": "decision",
+    "label": "称重是否超差",
+    "actor_roles": [],
+    "decision_question": "称重结果是否超差？",
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n18",
+    "node_type": "activity",
+    "label": "自动锁批次",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n19",
+    "node_type": "approval",
+    "label": "质量经理签字放行",
+    "actor_roles": [
+     "质量经理"
+    ],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n20",
+    "node_type": "merge",
+    "label": "称重环节放行",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   },
+   {
+    "node_id": "n21",
+    "node_type": "activity",
+    "label": "贴标",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "control",
+      "name": "箱唛",
+      "entity_type": "document",
+      "document_kind": "other",
+      "qualifier": "工序B判断时使用的依据之一"
+     }
+    ]
+   },
+   {
+    "node_id": "n22",
+    "node_type": "activity",
+    "label": "入库",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": [
+     {
+      "role": "output",
+      "name": "包装入库单",
+      "entity_type": "document",
+      "document_kind": "record",
+      "qualifier": "入库产生的单据"
+     },
+     {
+      "role": "output",
+      "name": "成品库位",
+      "entity_type": "other",
+      "qualifier": "入库后确定的成品存放库位"
+     }
+    ]
+   },
+   {
+    "node_id": "n23",
+    "node_type": "end",
+    "label": "结束",
+    "actor_roles": [],
+    "decision_question": null,
+    "sla_config": null,
+    "retry_semantics": null,
+    "object_links": []
+   }
+  ],
+  "edges": [
+   {
+    "from": "n1",
+    "to": "n2",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n2",
+    "to": "n3",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n3",
+    "to": "n4",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n4",
+    "to": "n5",
+    "edge_type": "conditional",
+    "condition": "加工未出现超时停机"
+   },
+   {
+    "from": "n4",
+    "to": "n10",
+    "edge_type": "conditional",
+    "condition": "加工超时停机，触发自动升级"
+   },
+   {
+    "from": "n5",
+    "to": "n6",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n6",
+    "to": "n7",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n7",
+    "to": "n8",
+    "edge_type": "conditional",
+    "condition": "关键参数符合工艺卡片要求"
+   },
+   {
+    "from": "n7",
+    "to": "n9",
+    "edge_type": "conditional",
+    "condition": "关键参数不符合工艺卡片要求"
+   },
+   {
+    "from": "n9",
+    "to": "n13",
+    "edge_type": "merge",
+    "condition": null
+   },
+   {
+    "from": "n8",
+    "to": "n13",
+    "edge_type": "merge",
+    "condition": null
+   },
+   {
+    "from": "n10",
+    "to": "n11",
+    "edge_type": "timeout",
+    "condition": "超出班组长的响应时间要求仍未处理"
+   },
+   {
+    "from": "n11",
+    "to": "n12",
+    "edge_type": "timeout",
+    "condition": "超出车间主管的响应时间要求仍未处理"
+   },
+   {
+    "from": "n12",
+    "to": "n13",
+    "edge_type": "merge",
+    "condition": null
+   },
+   {
+    "from": "n13",
+    "to": "n14",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n14",
+    "to": "n15",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n15",
+    "to": "n16",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n16",
+    "to": "n17",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n17",
+    "to": "n20",
+    "edge_type": "conditional",
+    "condition": "称重未超差"
+   },
+   {
+    "from": "n17",
+    "to": "n18",
+    "edge_type": "conditional",
+    "condition": "称重超差，自动锁批次"
+   },
+   {
+    "from": "n18",
+    "to": "n19",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n19",
+    "to": "n20",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n20",
+    "to": "n21",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n21",
+    "to": "n22",
+    "edge_type": "normal",
+    "condition": null
+   },
+   {
+    "from": "n22",
+    "to": "n23",
+    "edge_type": "normal",
+    "condition": null
+   }
+  ]
+ }
+]
