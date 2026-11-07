@@ -202,7 +202,10 @@
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [
       "crates/runtime/src/admission.rs",
-      "crates/runtime/src/store.rs"
+      "crates/runtime/src/store.rs",
+      "crates/runtime/src/registry.rs",
+      "crates/runtime/src/orchestrator.rs",
+      "crates/runtime/src/config.rs"
     ],
     "coverage": "backend",
     "cases": [],
@@ -214,7 +217,13 @@
       "RT-ADM-05",
       "RT-ADM-06",
       "RT-ADM-07",
-      "RT-ADM-08"
+      "RT-ADM-08",
+      "RT-ADM-09",
+      "RT-ADM-10",
+      "RT-ADM-11",
+      "RT-ADM-12",
+      "RT-ADM-13",
+      "RT-ADM-16"
     ]
   }
 ]

@@ -60,6 +60,13 @@ enum Step {
     Stopped,
 }
 
+/// 撤权结果
+#[derive(Debug, Clone, PartialEq)]
+pub struct RevokeReport {
+    pub epoch: u64,
+    pub aborted: Vec<String>,
+}
+
 pub struct Orchestrator {
     store: Arc<Store>,
     bus: Arc<Bus>,
@@ -71,6 +78,10 @@ pub struct Orchestrator {
     task_timeout: Duration,
     /// 正在执行的任务，用于取消
     running: Mutex<HashMap<String, AbortHandle>>,
+    /// 任务 → 正在执行它的 agent（撤权时据此中止）。拿到 agent 后、开始执行前登记，执行返回后移除
+    running_agents: Mutex<HashMap<String, String>>,
+    /// 准入账本（开启 `[admission]` 时设置一次）
+    admission: std::sync::OnceLock<Arc<crate::admission::AdmissionLedger>>,
     /// 状态写库和推送状态事件在这把锁里一起完成，保证前端收到的状态顺序与数据库一致
     /// （否则取消和执行两个线程交错时，前端可能先收到 CANCELLED 再收到 RUNNING）
     status_lock: Mutex<()>,
@@ -96,7 +107,85 @@ impl Orchestrator {
             max_review_rounds,
             task_timeout,
             running: Mutex::new(HashMap::new()),
+            running_agents: Mutex::new(HashMap::new()),
+            admission: std::sync::OnceLock::new(),
             status_lock: Mutex::new(()),
+        }
+    }
+
+    /// 开启准入（只能设置一次）
+    pub fn set_admission(&self, ledger: Arc<crate::admission::AdmissionLedger>) {
+        let _ = self.admission.set(ledger);
+    }
+
+    /// 撤销某个 agent：作废凭证（epoch 加 1），唤醒排队任务改由其他成员接手，
+    /// 并中止它正在执行的任务（状态改为 FAILED、错误码 E_AGENT_REVOKED，不交付）。
+    /// 撤权前已被接受的结果不回滚。配置文件里写的 agent 先补一条预准入记录再撤销。
+    pub fn revoke_agent(&self, agent_id: &str, reason: &str) -> Result<RevokeReport> {
+        let ledger = self
+            .admission
+            .get()
+            .context("准入未开启（[admission] enabled = false）")?;
+        if ledger.get(agent_id).is_none() {
+            let known = self.registry.cards().iter().any(|c| c.id == agent_id);
+            anyhow::ensure!(known, "未知 agent：{agent_id}");
+            ledger.preadmit(agent_id)?;
+        }
+        let started = std::time::Instant::now();
+        let epoch = ledger.revoke(agent_id, reason)?;
+        self.registry.wake();
+        let assigned: Vec<String> = self
+            .running_agents
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, a)| a.as_str() == agent_id)
+            .map(|(t, _)| t.clone())
+            .collect();
+        let mut aborted = vec![];
+        for id in assigned {
+            let Some(task) = self.store.get_task(&id)? else {
+                continue;
+            };
+            let result = TaskResult::failed_code(
+                codes::AGENT_REVOKED,
+                format!("执行该任务的 agent 已被撤权：{reason}"),
+            );
+            // 与完成走同一把状态锁和条件更新：谁先改成终态谁算数，不会互相覆盖
+            if self.finish(
+                &task,
+                &[TaskStatus::Queued, TaskStatus::Running],
+                TaskStatus::Failed,
+                Some(&result),
+                "执行的 agent 已被撤权",
+            ) {
+                if let Some(h) = self.running.lock().unwrap().remove(&id) {
+                    h.abort();
+                }
+                self.running_agents.lock().unwrap().remove(&id);
+                aborted.push(id);
+            }
+        }
+        tracing::warn!(
+            event = "admission.tasks_aborted",
+            code = codes::AGENT_REVOKED,
+            agent_id,
+            epoch,
+            aborted = aborted.len(),
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "agent 已撤权，中止其进行中的任务"
+        );
+        Ok(RevokeReport { epoch, aborted })
+    }
+
+    /// 外部 agent 的结果被接受后，记入试用期（按配置比例抽检）
+    fn note_probation(&self, agent_id: &str, task_id: &str) {
+        let Some(l) = self.admission.get() else {
+            return;
+        };
+        let sampled = l.should_sample(agent_id, task_id);
+        if let Err(e) = l.note_completed(agent_id, task_id, sampled) {
+            tracing::warn!(event = "admission.check", agent_id, task_id, error = %format!("{e:#}"), "记录试用期失败");
         }
     }
 
@@ -350,7 +439,7 @@ impl Orchestrator {
     ) -> Step {
         let lease = match self
             .registry
-            .acquire(task.role, |msg| sink.progress(msg))
+            .acquire_for(task.role, task.route.risk_level, |msg| sink.progress(msg))
             .await
         {
             Ok(l) => l,
@@ -359,12 +448,19 @@ impl Orchestrator {
                 return Step::Done(TaskResult::failed_code(e.code, e.message));
             }
         };
+        // 先登记"谁在执行"，再改成 RUNNING：看到 RUNNING 时撤权一定找得到它
+        let lease_epoch = lease.epoch;
+        self.running_agents
+            .lock()
+            .unwrap()
+            .insert(task.id.clone(), lease.agent.card().id.clone());
         let msg = if round == 0 {
             "开始执行".to_string()
         } else {
             format!("第 {round} 轮返工")
         };
         if !self.transition(task, &[TaskStatus::Queued], TaskStatus::Running, msg) {
+            self.running_agents.lock().unwrap().remove(&task.id);
             return Step::Stopped;
         }
         let deadline = *deadline.get_or_insert_with(|| Instant::now() + self.task_timeout);
@@ -383,6 +479,23 @@ impl Orchestrator {
         let elapsed_ms = started.elapsed().as_millis() as u64;
         // 名额在审查之前归还，让排队的任务尽早开始
         drop(lease);
+        self.running_agents.lock().unwrap().remove(&task.id);
+        // 凭证核对：执行期间被降级或撤权（epoch 变化）时，丢弃交回的结果，不交付
+        if !self.registry.lease_valid(&card, lease_epoch) {
+            tracing::warn!(event = "admission.result_rejected", code = codes::AGENT_REVOKED, task_id = %task.id, agent_id = %card.id, epoch = ?lease_epoch, "凭证已作废，丢弃该 agent 交回的结果");
+            let result = TaskResult::failed_code(
+                codes::AGENT_REVOKED,
+                format!("{} 的凭证已作废（降级或撤权），结果不被接受", card.name),
+            );
+            self.finish(
+                task,
+                &[TaskStatus::Running],
+                TaskStatus::Failed,
+                Some(&result),
+                "执行的 agent 凭证已作废",
+            );
+            return Step::Stopped;
+        }
         let mut result = match outcome {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => match e.downcast_ref::<AgentError>() {
@@ -402,6 +515,9 @@ impl Orchestrator {
             tracing::info!(event = "agent.run_end", task_id = %task.id, agent_id = %card.id, elapsed_ms);
             // 一次真实任务成功完成：该 agent 在一段时间内保持绿色（见 link.rs 的 ACTIVE_WINDOW）
             self.registry.links.mark_success(&card.id);
+            if card.kind == crate::admission::A2A_KIND {
+                self.note_probation(&card.id, &task.id);
+            }
         }
         result.evidence.insert(
             0,
