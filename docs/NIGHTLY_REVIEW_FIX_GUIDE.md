@@ -159,7 +159,7 @@
    6. 点 **Create**。
    7. 验证：`curl -s https://api.github.com/repos/Grant-Huang/multi-agent-conv-mvp/rules/branches/master`
       应列出 `deletion`、`non_fast_forward`、`pull_request`、`required_status_checks` 四条规则，最后一条含 6 个检查。
-      Bypass list 是否为空只能在页面上看（接口需要登录）。
+      Bypass list 是否为空只能在页面上看（接口需要登录）；2026-11-07 已由负责人在页面上确认为空。
 
    效果：直接推送 master 被拒绝；CI 没通过的 PR 不能合并；不能删除 master、不能强制推送。评审 agent 的报告 PR 在 CI 通过后仍能自动合并；修复 agent 本来就不合并，不受影响。
 
