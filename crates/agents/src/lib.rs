@@ -8,6 +8,7 @@
 //! | ACP      | 外部：任意支持 ACP 的 agent  | 一个适配器接入所有 agent      |
 //! | Remote   | 远程节点上的 agent           | 跨机器执行                    |
 
+pub mod a2a;
 pub mod acp;
 pub mod capability;
 pub mod coding;
