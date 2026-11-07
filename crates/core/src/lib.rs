@@ -262,9 +262,15 @@ pub struct TaskResult {
 }
 
 impl TaskResult {
-    /// 带错误码的失败结果，错误码写在消息开头：`[E_XXX] 说明`
+    /// 带错误码的失败结果，错误码写在消息开头：`[E_XXX] 说明`。
+    /// 消息本身已经以同一个码开头（例如内层错误的 Display 已带 `[E_XXX]`）时不再重复添加。
     pub fn failed_code(code: &str, msg: impl std::fmt::Display) -> Self {
-        Self::failed(format!("[{code}] {msg}"))
+        let text = msg.to_string();
+        let prefix = format!("[{code}]");
+        if text.starts_with(&prefix) {
+            return Self::failed(text);
+        }
+        Self::failed(format!("{prefix} {text}"))
     }
 
     pub fn failed(msg: impl Into<String>) -> Self {
@@ -643,5 +649,22 @@ mod tests {
     fn truncate_keeps_chinese_intact() {
         assert_eq!(truncate_chars("你好世界", 2), "你好…");
         assert_eq!(truncate_chars("abc", 5), "abc");
+    }
+
+    /// 回归：内层错误的 Display 已带错误码（如 `[E_LLM_HTTP] …`），外层再加同一个码会出现 `[E_X] [E_X] …`
+    #[test]
+    fn failed_code_does_not_repeat_a_code_already_in_message() {
+        // 消息已经以同一个码开头：只保留一个前缀
+        let r = TaskResult::failed_code("E_LLM_HTTP", "[E_LLM_HTTP] LLM 返回 HTTP 500");
+        assert_eq!(r.errors, vec!["[E_LLM_HTTP] LLM 返回 HTTP 500".to_string()]);
+        // 消息没有前缀：照常补上
+        let r = TaskResult::failed_code("E_LLM_HTTP", "LLM 返回 HTTP 500");
+        assert_eq!(r.errors, vec!["[E_LLM_HTTP] LLM 返回 HTTP 500".to_string()]);
+        // 消息里的其他码不影响：不同的码仍然各自保留
+        let r = TaskResult::failed_code("E_AGENT_RUNTIME", "[E_LLM_HTTP] LLM 返回 HTTP 500");
+        assert_eq!(
+            r.errors,
+            vec!["[E_AGENT_RUNTIME] [E_LLM_HTTP] LLM 返回 HTTP 500".to_string()]
+        );
     }
 }
