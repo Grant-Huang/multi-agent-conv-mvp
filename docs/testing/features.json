@@ -61,6 +61,7 @@
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [
       "web/src/components/DiagnosticsPanel.tsx",
+      "web/src/diag.test.tsx",
       "web/src/components/RouteLogPanel.tsx"
     ],
     "coverage": "browser",
