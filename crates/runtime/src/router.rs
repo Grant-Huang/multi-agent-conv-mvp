@@ -96,8 +96,14 @@ impl Router {
              3. 其他（问答、分析、计算、读写普通文件、写 Markdown 或纯文本的文档）→ general；\n\
              4. required_tools 只列 general 真正需要的工具，其他角色留空数组；\n\
              5. risk_level：只读操作为 low；会写文件或改代码为 medium；删除数据、对外发送、涉及生产环境为 high；\n\
+             {web}\
              6. reason 用一句中文说明理由。{corrections}",
             tools = if self.tool_names.is_empty() { "无".into() } else { self.tool_names.join(", ") },
+            web = if self.tool_names.iter().any(|t| t == "web_search") {
+                "5a. 任务需要最新事实、新闻、行情、选举、政策等外部信息，或要求引用公开资料 → 不是 L3：生成文档时为 L4，required_tools 必须包含 web_search（需要打开具体网页时加 web_fetch）；\n"
+            } else {
+                ""
+            },
             corrections = crate::prompts::correction_section(examples),
         )
     }
@@ -174,6 +180,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn router() -> Router {
+        router_with(&["write_file"])
+    }
+
+    fn router_with(tools: &[&str]) -> Router {
         let llm = LlmClient::new(LlmConfig {
             base_url: "http://127.0.0.1:9/v1".into(),
             api_key: String::new(),
@@ -188,7 +198,7 @@ mod tests {
         Router::new(
             llm,
             AgentRegistry::new(BTreeMap::new()),
-            vec!["write_file".into()],
+            tools.iter().map(|t| t.to_string()).collect(),
             Policy {
                 approval_risk: Risk::High,
             },
@@ -222,5 +232,26 @@ mod tests {
         );
         assert!(with.starts_with(&p));
         assert!(with.contains("delegate / coding"));
+    }
+
+    #[test]
+    fn prompt_sends_reports_needing_external_facts_to_web_search() {
+        let p =
+            router_with(&["web_search", "web_fetch", "write_file"]).system_prompt(&Role::ALL, &[]);
+        let rule = p
+            .lines()
+            .find(|l| l.contains("引用公开资料"))
+            .unwrap_or_default();
+        assert!(rule.contains("L4"), "需要外部事实的报告必须是 L4：{p}");
+        assert!(
+            rule.contains("web_search"),
+            "需要外部事实时必须带 web_search：{p}"
+        );
+        assert!(
+            !router()
+                .system_prompt(&Role::ALL, &[])
+                .contains("引用公开资料"),
+            "没有联网工具时不能要求 web_search"
+        );
     }
 }

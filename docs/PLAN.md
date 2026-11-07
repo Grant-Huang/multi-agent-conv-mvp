@@ -463,6 +463,27 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 
 ---
 
+## 研究报告流程（检索 + 章节并行）
+
+起因：长报告任务在 General 逐步循环里失败（14 步全是 web_search，未写一字）。原因是提示词与校验冲突、上下文裁剪删掉任务原文后模型重复同一查询、2.6 万 token 提示词每步首 token 超时。决定（2026-11-06 用户确认）：
+
+- Router 同时要求 `web_search` 与 `write_file` 时，General 走代码控制的固定流程，其他任务仍走逐步循环；
+- 流程：规划（模型 1 次，输出章节与查询）→ 检索（代码并行执行，去重，全文最多 `report_max_searches = 6` 次）→ 各章写作（每章模型 1 次，同时最多 `report_parallel = 3` 路）→ 汇合（代码按大纲拼装、引用编号换真实链接、生成参考资料；模型 1 次写摘要和结论）；
+- 并行放在 General 内部，章节结果用 9.6 的信封格式，以后可接编排器模板拆分；不改 orchestrator / store；
+- 过半章节成功才算完成，缺失章节在交付说明里列出，不用其他章填补；检索全部失败则任务失败，不凭记忆写；
+- `report_max_steps` 改为 `report_max_searches`（本次新增、尚未发布）；RT-REP-03 按新流程改写断言（用户已授权）。
+
+实测（35B-A3B，后台槽位同时生成）：1 路 27 tok/s，2 路 45，3 路 57，4 路 67。默认 3 路：2.1 倍吞吐并给其他后台任务留 1 个槽位。读入提示词约 300 tok/s，所以每次调用的提示词控制在约 2500 token。
+
+取消与清理：各章在同一个 tokio 任务内并发，不另起 spawn；任务被取消时请求随之丢弃，流式连接断开后 llama.cpp 停止生成；检索子进程由 `proc_group` 结束整个进程组。每次调用超时不变（首 token 45 秒，空闲 45 秒），任务总时限 900 秒。
+
+步骤（每步完成后更新本节，用户确认后进入下一步）：
+
+1. [x] 用例与红灯：CASES.md 写 RT-REP-03（改写）、05 并行上限与顺序、06 检索全失败、07 部分章节失败、08 取消、09 无效引用；写 Rust 测试并跑出业务断言失败（2026-11-06：01/02 绿；03/05/06/07/08/09 红，失败因仍走逐步循环、规划 JSON 缺 `action`）
+2. [x] 实现 `crates/agents/src/report.rs`（规划、检索、写章、汇合）与 `GeneralAgent` 分派；配置 `report_max_searches`、`report_parallel`；RT-REP 全部转绿（2026-11-06：report_flow 8/8 通过）
+3. [x] 文档同步（DESIGN 配置表与 9.5、features.json、FEATURE_MAP）；完成定义三条命令（2026-11-06：test/clippy/web build 通过；顺带加长 websearch_timeout_kills_group 启动等待以消除并行竞态，未改杀掉孙进程的断言）
+4. [x] 真实端到端：原长报告提问（2026-11-06）。General 成功写入 `reports/midterm_elections_tech_stocks_report.md`（约 26053 字）；检索 6 次且查询不重复；各 `##` 标题仅一次；正文含 https 链接、无「正文已省略」；耗时约 16.4 分钟。最终任务状态为 NEEDS_HUMAN（Reviewer 第二轮 needs_human，非超时）。后续已改为 websearch 原样返回 + 默认 search-fetch，提交前以单测为准。
+
 ## 待用户确认
 
 1. ~~M2 的第三方依赖~~（已确认：核心 ddgs + httpx；trafilatura、mcp 为可选安装）

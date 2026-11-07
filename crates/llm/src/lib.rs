@@ -101,7 +101,7 @@ fn default_temperature() -> f32 {
     0.2
 }
 fn default_timeout() -> u64 {
-    180
+    300
 }
 fn default_retries() -> u32 {
     2
@@ -338,6 +338,15 @@ impl LlmClient {
         self.priority
     }
 
+    /// 复制一个客户端，把输出上限抬到不少于 `min`。未配置时直接设为 `min`。
+    /// General 写长文用它，避免和路由、前台共用一个很小的 `max_tokens`。
+    pub fn with_at_least_max_tokens(&self, min: u32) -> Self {
+        let mut c = self.clone();
+        let cur = c.cfg.max_tokens.unwrap_or(0);
+        c.cfg.max_tokens = Some(cur.max(min));
+        c
+    }
+
     /// 复制一个使用其他模型名的客户端（按角色配置不同模型时使用）
     pub fn with_model(&self, model: &str) -> Self {
         let mut c = self.clone();
@@ -407,8 +416,8 @@ impl LlmClient {
         body
     }
 
-    /// 发一次流式请求并累积结果。超时分三段：等响应 / 首 token 之前受 `first_token` 限制，
-    /// 开始生成后每个 token 间隔受 `idle` 限制，整次请求受 `total` 限制。
+    /// 发一次流式请求并累积结果。看到第一个 token 之前，等待受 `first_token` 与 `total` 里更早的那个限制。
+    /// 已经开始输出后不再用 `total` 截断，只限制两个数据块之间的 `idle` 间隔。
     async fn stream_once<F: FnMut(&str)>(
         &self,
         req: &CallReq<'_>,
@@ -423,15 +432,14 @@ impl LlmClient {
         let first_deadline = start + first_budget;
         let total_deadline = start + t.total;
         let limit_for = |first_pending: bool| -> (TokioInstant, ErrorKind) {
-            let (mut limit, mut kind) = if first_pending {
-                (first_deadline, ErrorKind::TimeoutFirstToken)
-            } else {
-                (TokioInstant::now() + t.idle, ErrorKind::TimeoutIdle)
-            };
-            if total_deadline <= limit {
-                (limit, kind) = (total_deadline, ErrorKind::TimeoutTotal);
+            if !first_pending {
+                return (TokioInstant::now() + t.idle, ErrorKind::TimeoutIdle);
             }
-            (limit, kind)
+            if total_deadline <= first_deadline {
+                (total_deadline, ErrorKind::TimeoutTotal)
+            } else {
+                (first_deadline, ErrorKind::TimeoutFirstToken)
+            }
         };
         let timeout_error = |kind: ErrorKind| {
             let msg = match kind {
@@ -948,11 +956,12 @@ impl LlmClient {
                 Err(e) => return Err(fail(&e, raw_outputs, attempt)),
             };
             if a.finish_reason.as_deref() == Some("length") {
-                // 截断：半截 JSON 不当格式错误反馈给模型；放大一次 max_tokens 再试，仍不行就报"输出过长"
+                // 截断：放大一次 max_tokens，并把已生成的前缀交回，避免重试从另一个更短的开头重写
                 if let (false, Some(mt)) = (escalated, max_tokens.filter(|m| *m < MAX_TOKENS_CAP)) {
                     escalated = true;
                     max_tokens = Some((mt * 2).min(MAX_TOKENS_CAP));
                     attempt -= 1;
+                    let partial = strip_think(&a.text);
                     tracing::warn!(
                         event = "llm.truncated_retry",
                         code = codes::LLM_TRUNCATED,
@@ -960,8 +969,13 @@ impl LlmClient {
                         schema = schema_name,
                         from = mt,
                         to = max_tokens,
-                        "输出被截断，放大 max_tokens 重试一次"
+                        partial_chars = partial.chars().count(),
+                        "输出被截断，保留前缀并放大 max_tokens 重试一次"
                     );
+                    msgs.push(ChatMessage::assistant(partial));
+                    msgs.push(ChatMessage::user(
+                        "上面的输出被 max_tokens 截断，尚未执行。请从断点继续，输出一个完整 JSON，不要重写已有前缀。若这是在写文件，content 只放尚未写出的后续正文，并设置 mode 为 append。",
+                    ));
                     continue;
                 }
                 let e = LlmError::new(ErrorKind::Truncated, format!("输出被 max_tokens（{}）截断，放大后仍不够；请调大 [llm].max_tokens 或缩短要求输出的内容", max_tokens.map_or("未限制".to_string(), |m| m.to_string())));

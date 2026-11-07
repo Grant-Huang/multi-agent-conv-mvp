@@ -23,12 +23,12 @@ pub struct Timeouts {
 }
 
 impl Timeouts {
-    /// 默认值：连接 5s、首 token 120s、间隔 60s；前台调用期限 60s，后台不限
+    /// 默认值：连接 5s、首 token 45s、间隔 45s；前台调用期限 60s，后台不限
     pub fn defaults(total_secs: u64, priority: Priority) -> Self {
         Self {
             connect: Duration::from_secs(5),
-            first_token: Duration::from_secs(120),
-            idle: Duration::from_secs(60),
+            first_token: Duration::from_secs(45),
+            idle: Duration::from_secs(45),
             total: Duration::from_secs(total_secs.max(1)),
             deadline: (priority == Priority::Interactive).then(|| Duration::from_secs(60)),
         }
@@ -256,7 +256,7 @@ mod tests {
                 i.idle.as_secs(),
                 i.total.as_secs()
             ),
-            (5, 120, 60, 180)
+            (5, 45, 45, 180)
         );
         assert_eq!(i.deadline, Some(Duration::from_secs(60)));
         assert_eq!(Timeouts::defaults(180, Priority::Background).deadline, None);

@@ -12,8 +12,8 @@ base_url = "http://127.0.0.1:8098/v1"
 api_key = ""                       # llama.cpp 默认不需要
 model = "local"                    # llama.cpp 单模型时模型名基本被忽略
 temperature = 0.2
-max_tokens = 2048
-timeout_secs = 180
+max_tokens = 4096                  # 各角色第一次生成的输出上限。General 写长文时再提高到至少 8192
+timeout_secs = 300                  # 首 token 之前的整次上限。开始输出后不再用它截断，只看 45 秒空闲间隔
 # 结构化输出方式：
 #   json_schema  —— OpenAI 标准写法，较新的 llama.cpp 会把 schema 转成语法约束（推荐）
 #   json_object  —— llama.cpp 旧的扩展写法 {"type":"json_object","schema":...}
@@ -100,6 +100,8 @@ stream_replies = true             # 直接回答时边生成边显示
 [agents.general]
 enabled = true
 max_steps = 6                      # 工具循环最大步数
+report_max_searches = 6            # 研究报告全文检索次数上限（去重后）
+report_parallel = 3                # 研究报告同时写作的章节数（后台槽位留 1 个给其他任务）
 max_concurrent = 4                 # 同时最多执行几个任务（受本地模型并发能力限制）
 workspace_dir = "workspace/files"  # 文件工具只能读写这个目录
 websearch_command = "websearch"    # 不在 PATH 上时不注册联网工具

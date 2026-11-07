@@ -12,6 +12,7 @@ pub mod acp;
 pub mod capability;
 pub mod coding;
 pub mod general;
+pub mod report;
 pub mod mcp;
 pub mod proc_group;
 pub mod remote;

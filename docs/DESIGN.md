@@ -639,6 +639,15 @@ v2 覆盖：闲聊常识建议（18）、追问（9）、计算与时间（9）�
 
 General Agent 没有用推理服务自带的"函数调用"功能（不同小模型对它的支持差别很大），而是每一步都让模型输出 `{"action": "tool_call" | "final", "tool", "args", "answer"}`。
 
+当路由同时要求 `web_search` 与 `write_file`（研究报告）时，不走上述逐步循环，改由代码控制固定流程（实现见 `crates/agents/src/report.rs`）：
+
+1. **规划**：模型输出结构化大纲（标题、路径、各章 id/标题/范围/检索词）；章数 1–5，每章 1–2 个查询。
+2. **检索**：代码按大纲并行调用 `web_search`，查询去重，全文最多 `report_max_searches` 次；结果编号为 `[S1]`…；全部失败则任务失败，不凭记忆写。
+3. **写章**：每章一次模型调用，直接输出 Markdown；同时最多 `report_parallel` 路；失败重试 1 次后标为 missing。
+4. **汇合**：代码按大纲顺序拼装成功章节，把 `[Sn]` 换成检索到的真实链接并剔除未知编号，生成参考资料列表；模型再写一次摘要与结论；过半章节成功才算完成，缺失章节写在交付说明里，不用其他章填补。
+
+章节结果的信封字段与 9.6（`branch_id` / `status` / `missing` / `payload`）对齐，并行发生在 General 内部；编排器模板拆分仍按 9.6，研究报告暂不接入。取消任务时中止进行中的模型请求与检索子进程（`proc_group`）。
+
 ### 9.6 M4：模板拆分与输入输出 JSON
 
 本节是 M4.3 的设计，尚未改代码。线上仍是一条消息一个动作。
@@ -895,6 +904,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | `[conversation]` | `review_requests` | `reviewer` | 用户审查请求的处理方式：`reviewer` / `direct` / `auto`，见 7.7 节 |
 | | `stream_replies` | true | 直接回答时边生成边显示 |
 | `[agents.general]` | `max_steps` / `max_concurrent` / `workspace_dir` | 6 / 4 / `workspace/files` | |
+| `[agents.general]` | `report_max_searches` / `report_parallel` | 6 / 3 | 研究报告（见 9.5）：检索去重后上限；同时写作的章节数 |
 | `[agents.reviewer]` | `enabled` | true | 关闭后所有任务跳过质检 |
 | `[agents.coding]` | `command` / `args` / `workdir` / `timeout_secs` / `max_concurrent` | `codex` / 见模板 / `workspace/code` / 900 / 1 | Codex CLI |
 | `[agents.assign]` | `<角色> = "id"` 或 `["id", …]` | 空 | 执行组，见第 7.3 节 |
