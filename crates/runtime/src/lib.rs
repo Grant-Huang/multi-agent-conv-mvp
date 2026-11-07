@@ -10,6 +10,7 @@
 //!                          Store(SQLite) + Bus(事件)
 //! ```
 
+pub mod admission;
 pub mod backends;
 pub mod bus;
 pub mod composer;

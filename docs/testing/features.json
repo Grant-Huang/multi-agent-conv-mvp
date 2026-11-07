@@ -196,5 +196,25 @@
     ],
     "coverage": "backend",
     "cases": []
+  },
+  {
+    "id": "admission",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/admission.rs",
+      "crates/runtime/src/store.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-ADM-01",
+      "RT-ADM-02",
+      "RT-ADM-03",
+      "RT-ADM-04",
+      "RT-ADM-05",
+      "RT-ADM-06",
+      "RT-ADM-07",
+      "RT-ADM-08"
+    ]
   }
 ]

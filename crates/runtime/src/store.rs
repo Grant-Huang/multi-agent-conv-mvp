@@ -1,4 +1,4 @@
-//! SQLite 持久化：会话、消息、任务、事件、路由日志。
+//! SQLite 持久化：会话、消息、任务、事件、路由日志、agent 准入记录。
 //!
 //! 任务状态由 AgentNexus 自己保存（而不是放在 Harness 内存里），
 //! 服务重启后仍能看到任务历史。
@@ -122,6 +122,20 @@ CREATE TABLE IF NOT EXISTS route_logs (
     json TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+-- agent 准入（E3）：只新建表，不改已有表
+CREATE TABLE IF NOT EXISTS agent_admission (
+    agent_id TEXT PRIMARY KEY,
+    json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS admission_events (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_admission_events_agent ON admission_events(agent_id, created_at);
 "#;
 
 fn tune(conn: &Connection) -> Result<()> {
@@ -753,6 +767,69 @@ impl Store {
             .write()
             .execute("DELETE FROM nodes WHERE node_id = ?1", [node_id])?
             > 0)
+    }
+
+    // ───────────── agent 准入（E3） ─────────────
+    // 记录与审计事件以 JSON 保存，结构由 `crate::admission` 定义；这里只负责原子落库。
+
+    /// 保存一条准入记录，并在同一事务里追加审计事件（按插入顺序）
+    pub fn save_admission(
+        &self,
+        agent_id: &str,
+        record_json: &str,
+        events: &[(String, String)],
+    ) -> Result<()> {
+        let mut conn = self.write();
+        let tx = conn.transaction()?;
+        let at = now();
+        tx.execute(
+            "INSERT INTO agent_admission (agent_id, json, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(agent_id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at",
+            params![agent_id, record_json, at],
+        )?;
+        for (kind, detail) in events {
+            tx.execute(
+                "INSERT INTO admission_events (id, agent_id, kind, json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![an_core::new_id("adm"), agent_id, kind, detail, at],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// 全部准入记录的 JSON（按 agent_id 排序）
+    pub fn list_admissions(&self) -> Result<Vec<String>> {
+        let _timer = ReadTimer::new("list_admissions");
+        let conn = self.read();
+        let mut st = conn.prepare("SELECT json FROM agent_admission ORDER BY agent_id")?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        rows.map(|r| Ok(r?)).collect()
+    }
+
+    /// 某个 agent 最早的 `limit` 条审计事件，按发生顺序
+    pub fn admission_events(&self, agent_id: &str, limit: usize) -> Result<Vec<serde_json::Value>> {
+        let _timer = ReadTimer::new("admission_events");
+        let conn = self.read();
+        let mut st = conn.prepare(
+            "SELECT id, kind, json, created_at FROM admission_events WHERE agent_id = ?1 ORDER BY rowid LIMIT ?2",
+        )?;
+        let rows = st.query_map(params![agent_id, limit as i64], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (id, kind, detail, created_at) = row?;
+            Ok(serde_json::json!({
+                "id": id, "agent_id": agent_id, "kind": kind,
+                "detail": serde_json::from_str::<serde_json::Value>(&detail)?,
+                "created_at": created_at,
+            }))
+        })
+        .collect()
     }
 
     // ───────────── 路由日志 ─────────────
