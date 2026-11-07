@@ -35,9 +35,43 @@ pub fn known(tool: &str) -> bool {
             | "verification.collect"
     )
 }
+/// E1-C：基于服务层记录的 RelOS 上下文（world.relos）给出诊断输出。
+/// RelOS 只提供候选根因与证据关系，根因仍是假设；RelOS 不可用时返回 unknown，交由人工决策。
+fn relos_diagnosis(relos: &Value, candidates_key: &str, base: Value) -> (Value, &'static str) {
+    let status = relos["status"].as_str().unwrap_or("unavailable");
+    if status != "ok" {
+        return (
+            json!({"relos_status":status,"relos_reason":relos.get("reason").cloned().unwrap_or(Value::Null),"cause_status":"UNKNOWN","continue_using":false,"investigation_needed":true}),
+            "unknown",
+        );
+    }
+    let mut data = base;
+    data["candidate_causes"] = relos[candidates_key].clone();
+    data["context_relation_ids"] = relos["selected_ids"].clone();
+    data["relos_status"] = json!("ok");
+    (data, "ok")
+}
 pub fn read(c: &Case, tool: &str, now: u64) -> Result<ToolResponse> {
     let w = &c.world;
+    let relos = w.get("relos").filter(|v| v.is_object());
     let (source, ids, data, status) = match tool {
+        "maintenance.assess" if relos.is_some() => {
+            let (data, status) = relos_diagnosis(
+                relos.unwrap(),
+                "maintenance_candidates",
+                json!({"cause_status":"HYPOTHESIS","continue_using":false,"investigation_needed":true}),
+            );
+            ("RelOS", vec!["M24"], data, status)
+        }
+        "quality.assess" if relos.is_some() => {
+            // 测量值仍来自 QMS 替代件（M04），候选根因来自 RelOS（M24）
+            let (data, status) = relos_diagnosis(
+                relos.unwrap(),
+                "quality_candidates",
+                json!({"risk":"HOLD_PENDING_VALIDATION","root_cause_status":"UNKNOWN","cpk":w.get("cpk").cloned().unwrap_or(json!(1.1)),"threshold":1.33,"measurement_status":"fixture_valid"}),
+            );
+            ("QMS+RelOS", vec!["M04", "M24"], data, status)
+        }
         "topology.resolve" => (
             "MES",
             vec!["M02"],
@@ -127,8 +161,18 @@ pub fn read(c: &Case, tool: &str, now: u64) -> Result<ToolResponse> {
         source: source.into(),
         observed_at: now,
         valid_until: now + super::fixture_policy(&c.scenario).snapshot_ttl_minutes,
-        provenance: "mock".into(),
+        provenance: if source.contains("RelOS") {
+            "relos-context".into()
+        } else {
+            "mock".into()
+        },
         mock_ids: ids.into_iter().map(String::from).collect(),
-        limitations: vec!["Simulated source; not industrial validation".into()],
+        limitations: if source.contains("RelOS") {
+            vec![
+                "RelOS relation knowledge is simulated; candidates are hypotheses, not verified root causes".into(),
+            ]
+        } else {
+            vec!["Simulated source; not industrial validation".into()]
+        },
     })
 }

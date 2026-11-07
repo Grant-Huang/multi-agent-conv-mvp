@@ -33,8 +33,9 @@ tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 agent-client-protocol = { workspace = true, features = ["stdio"] }
+# E1-C：an-mom 调用 RelOS 上下文接口（工作区已有依赖，an-llm、an-agents 同样使用）
+reqwest.workspace = true
 
 [dev-dependencies]
 an-node.workspace = true
-reqwest.workspace = true
 toml.workspace = true
