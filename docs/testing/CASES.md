@@ -66,3 +66,9 @@
 | RT-MOM-03 | mom | 三个不同虚拟时刻的观测 | 查询事件 | ObservationRecorded.at 等于接收时虚拟时钟 |
 | RT-MOM-04 | mom | 下发失败进入 PARTIAL | 重放 execute | 返回失败且不重复下发 |
 | RT-MOM-05 | mom | 有运行子任务的案例被阻断 | 推进至租约到期 | 子任务 TIMED_OUT，不占用运行名额 |
+
+## 评审 R-20261107-M1（实现前定义）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-MOM-06 | mom | 案例为 CANCELLED 或 CLOSED | 对允许的故障键调用 change_world（运行时及 HTTP fault 命令） | 返回错误/4xx；案例、资源版本、事件序号及事件列表全部不变；非终态仍可注入故障 |
