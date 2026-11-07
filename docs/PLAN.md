@@ -395,8 +395,8 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
   - 问「最近、今天、近 24 小时」时，关键词里写上日期
   - 结果为空就换一次说法再搜，最多 3 次；`status=error` 读 `message`，不自动换搜索源
   - 只根据返回内容回答，末尾列出实际用到的 `url`；不要写 Python
-- [ ] **S.2 安装方式写进 `tools/websearch/README.md`**：pi 要把该目录放到它的 skill 路径下才生效。不改用户本机的 pi 配置
-- [ ] **S.3 用固定问题核对 skill 文本**：空结果、过期资料、编造来源这三类用法都在文中被禁止。不引入自动改写
+- [x] **S.2 安装方式写进 `tools/websearch/README.md`**：pi 要把该目录放到它的 skill 路径下才生效。不改用户本机的 pi 配置
+- [x] **S.3 用固定问题核对 skill 文本**：空结果、过期资料、编造来源这三类用法都在文中被禁止。不引入自动改写
 
 ## M3 接入 General agent + 搜索方案 A/B
 
@@ -429,7 +429,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 - [x] **4.1 评测样本**：F 组 5 条（`mq-01` 到 `mq-03` 全是直接回答，`mq-mix-01` / `mq-mix-02` 含必须委派的子问题）。4.3 之前混合样本仍是整条一个动作
 - [x] **4.2 直接回答**：回答提示词要求按编号逐条回答、不遗漏。`reply_prompt_numbers_each_question`、`multi_question_reply_is_numbered`
 - [ ] **4.3 混合情况**：按 `docs/DESIGN.md` 第 9.6 节实现。能串行的不拆；只有写死的模板才并行。Router 只输出 `template_id`、`deliverable`、`slots_ok`。分支和汇合的输入输出用 JSON 信封校验，缺一路记 `missing`，Composer 只转述汇合结果
-  - 设计已写入第 9.6 节，代码未改。开工前仍等确认
+  - 设计已写入第 9.6 节；模板校验与 RT-TPL-01～10 已实现，模板并行执行和 Composer 汇合尚未接入编排器
 - [ ] **4.4 验收**：F 组样本逐条覆盖率 ≥ 95%
 
 ## M5 9B vs 35B A/B
@@ -468,7 +468,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 1. ~~M2 的第三方依赖~~（已确认：核心 ddgs + httpx；trafilatura、mcp 为可选安装）
 2. M6 的压测门槛和话题集
 3. 用 35B 作评委打分是否可接受（会占用 8200 槽位）
-4. M4.3 按 `docs/DESIGN.md` 第 9.6 节改代码（设计已写入，实现未开工）
+4. M4.3 按 `docs/DESIGN.md` 第 9.6 节接入编排器（校验已实现，执行与汇合待实现）
 5. ~~M7 是否排在 M3 之前 / 统一流式 / 槽位数~~（已确认：提前并改名 pre-M3；统一流式；35B 槽位 5→6 见第 6 项；9B 下线）
 6. ~~前台借用后台槽位~~（已确认 2026-11-05：**不借用**，改为 6 槽位 = 前台 2 + 后台 4；`borrow_idle` 默认 false）
 7. ~~pre-M3.5 怎样固定 pi 的槽位~~（已确认 2026-11-05：选 A，pi 扩展 + 环境变量 `AN_LLM_SLOT`；其他 coding agent 以后各自适配，通用代理方案 C 留到连接器设计评审时再议）
@@ -490,4 +490,4 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 
 ## 工程验证体系
 
-基于远端 929301a 审查 Feature Map 与端到端验证方案，设计见 `docs/testing/DESIGN.md`，实施步骤见 `docs/testing/PLAN.md`，先定义用例再实现验证基础设施。本次不包含 M4.3 或 MOM 开发；实际结果见 `docs/testing/RESULTS.md`。
+基于远端 929301a 审查 Feature Map 与端到端验证方案，设计见 `docs/testing/DESIGN.md`，实施步骤见 `docs/testing/PLAN.md`，先定义用例再实现验证基础设施。验证基础设施阶段不包含 M4.3 或 MOM 业务开发；后续已合入模板校验和 MOM 独立模拟，分别见功能地图与 MOM 实施说明。验证基础设施的实际结果见 `docs/testing/RESULTS.md`。

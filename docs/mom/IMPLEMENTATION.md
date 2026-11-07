@@ -80,3 +80,9 @@ python3 tools/mom/smoke.py --report .tmp/mom/smoke-report.json
 SQLite 初始化通过事务创建独立 v1 表并记录 user_version；未来结构升级必须增加迁移，不支持高版本时拒绝启动。事件和状态事务提交，outbox 可补拉/标记已发布，订阅游标可持久确认；当前网页使用显式刷新和命令回执，不提供后台 SSE。未实现内容与生产替换仅以 MOCK_REGISTER 为准。
 
 最终运行记录与已知差距见 [RESULTS.md](RESULTS.md)。已将 MOM 登记到 `docs/testing/features.json`，真实 Chromium 用例见 `web/e2e/mom.spec.ts`，通过 `cd web && npm run verify` 一并运行。MOM harness 自行构建二进制、使用专用 loopback 18790 与临时数据库，结束后停止自己的服务并保存日志。
+
+## 当前实现子集与审查说明
+
+- `patch` 命令体为 `{"command":"patch","node":"quality","dependency":"maintenance"}`，仅支持受限依赖调整，不允许移除安全关卡或修改已下发计划。联锁触发后拒绝该命令。
+- `request_tool` 是拟议 Master 协议，当前 Intent 未实现；节点只使用 READY/RUNNING/SUCCEEDED/UNKNOWN/CANCELLED 子集，未实现完整 CLAIMED/WAITING_TOOL/VERIFYING 生命周期。
+- 当前 fixture 的 `production` 是合并模拟授权，覆盖 `mro.transfer`、`eam.maintenance`、`mes.reschedule`，不满足真实系统逐动作分别授权要求。该简化登记为 M20，不能作为真实审批链验收证据。

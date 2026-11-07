@@ -30,3 +30,5 @@
 | Feature | 用户目标与真实入口 | 驱动方法/判据 | 测试与边界 |
 |---|---|---|---|
 | mom | 独立 an-mom 人类看板与 Agent 机器视图 | S1 审批后下发、核验再关闭；S2 初复独立，缺证据不能关闭8D | E2E-MOM/E2E-COMPLAINT；业务系统、主模型及审批身份仍为替代件，见 MOM Mock 清单 |
+
+每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。

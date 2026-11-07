@@ -132,6 +132,13 @@
     "cases": [
       "E2E-MOM",
       "E2E-COMPLAINT"
+    ],
+    "runtime_cases": [
+      "RT-MOM-01",
+      "RT-MOM-02",
+      "RT-MOM-03",
+      "RT-MOM-04",
+      "RT-MOM-05"
     ]
   }
 ]

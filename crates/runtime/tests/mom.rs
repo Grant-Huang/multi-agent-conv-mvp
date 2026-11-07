@@ -596,3 +596,108 @@ fn clock_only_transactions_are_protected_against_stale_writers() {
     drop(b);
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn rt_mom_01_safety_interlock_rejects_all_plan_and_dispatch_entries() {
+    let mut e = s1();
+    let id = ready(&mut e);
+    let mut trip = EventInput::s1("vibration", 514);
+    trip.id = "trip-all-entries".into();
+    trip.payload = json!({"safety_trip": true});
+    e.ingest(trip).unwrap();
+    let before = serde_json::to_value(e.case(&id).unwrap()).unwrap();
+    let sequence = e.sequence();
+    assert!(e
+        .apply_intent(
+            &id,
+            Intent::ProposePatch {
+                node: "quality".into(),
+                dependency: "maintenance".into()
+            }
+        )
+        .is_err());
+    assert!(e.refresh_plan(&id).is_err());
+    assert!(e
+        .approve(
+            &id,
+            e.case(&id).unwrap().plan_revision,
+            "production",
+            "supervisor"
+        )
+        .is_err());
+    assert!(e.execute(&id, "production").is_err());
+    assert!(e.delegate(&id, "equipment_investigation", 0).is_err());
+    assert_eq!(serde_json::to_value(e.case(&id).unwrap()).unwrap(), before);
+    assert_eq!(e.sequence(), sequence);
+}
+
+#[test]
+fn rt_mom_02_terminal_cases_cannot_be_overwritten_or_emit_duplicate_events() {
+    let mut e = s1();
+    let id = ready(&mut e);
+    approve(&mut e, &id, "production");
+    e.execute(&id, "production").unwrap();
+    e.advance(520).unwrap();
+    e.close(&id).unwrap();
+    let seq = e.sequence();
+    assert!(e.cancel(&id).is_err());
+    assert!(e.close(&id).is_err());
+    assert_eq!(e.case(&id).unwrap().stage, "CLOSED");
+    assert_eq!(e.sequence(), seq);
+    let mut e = s1();
+    let id = ready(&mut e);
+    e.cancel(&id).unwrap();
+    let seq = e.sequence();
+    assert!(e.cancel(&id).is_err());
+    assert!(e.close(&id).is_err());
+    assert_eq!(e.case(&id).unwrap().stage, "CANCELLED");
+    assert_eq!(e.sequence(), seq);
+}
+
+#[test]
+fn rt_mom_03_observations_use_current_virtual_clock() {
+    let mut e = s1();
+    let id = e.ingest(EventInput::s1("order", 497)).unwrap();
+    e.ingest(EventInput::s1("vibration", 503)).unwrap();
+    e.ingest(EventInput::s1("quality", 511)).unwrap();
+    let times: Vec<_> = e
+        .events(&id, 0, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|v| v.kind == "ObservationRecorded")
+        .map(|v| v.at)
+        .collect();
+    assert_eq!(times, vec![497, 503, 511]);
+}
+
+#[test]
+fn rt_mom_04_failed_dispatch_replay_is_not_success() {
+    let mut e = s1();
+    let id = ready(&mut e);
+    e.change_world(&id, "dispatch_failure", json!(true))
+        .unwrap();
+    approve(&mut e, &id, "production");
+    e.execute(&id, "production").unwrap();
+    assert_eq!(e.case(&id).unwrap().stage, "PARTIAL");
+    let before = serde_json::to_value(e.case(&id).unwrap()).unwrap();
+    assert!(e.execute(&id, "production").is_err());
+    assert_eq!(serde_json::to_value(e.case(&id).unwrap()).unwrap(), before);
+}
+
+#[test]
+fn rt_mom_05_blocked_case_expires_running_child_lease() {
+    let mut e = s1();
+    let id = e.ingest(EventInput::s1("order", 497)).unwrap();
+    e.ingest(EventInput::s1("vibration", 503)).unwrap();
+    e.ingest(EventInput::s1("quality", 511)).unwrap();
+    e.change_world(&id, "child_timeout", json!(true)).unwrap();
+    e.delegate(&id, "equipment_investigation", 0).unwrap();
+    let lease = e.case(&id).unwrap().children[0].lease_until;
+    e.change_world(&id, "resource_conflict", json!(true))
+        .unwrap();
+    e.advance(514).unwrap();
+    assert_eq!(e.case(&id).unwrap().stage, "BLOCKED");
+    e.advance(lease).unwrap();
+    assert_eq!(e.case(&id).unwrap().stage, "BLOCKED");
+    assert_eq!(e.case(&id).unwrap().children[0].status, "TIMED_OUT");
+}
