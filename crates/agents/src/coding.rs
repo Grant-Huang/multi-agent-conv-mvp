@@ -161,6 +161,31 @@ impl CodingAgent {
         }
     }
 
+    /// 连通性探测：运行 `命令 --version`（5 秒超时）。只确认命令能正常启动，不调用模型。
+    /// 模型服务是否可用由运行时另行检查（pi 依赖的后端）。
+    pub async fn probe(&self) -> std::result::Result<(), String> {
+        if !self.card.enabled {
+            return Err(self
+                .card
+                .disabled_reason
+                .clone()
+                .unwrap_or_else(|| "未安装".into()));
+        }
+        let run = tokio::process::Command::new(&self.cfg.command)
+            .arg("--version")
+            .kill_on_drop(true)
+            .output();
+        match tokio::time::timeout(Duration::from_secs(5), run).await {
+            Ok(Ok(out)) if out.status.success() => Ok(()),
+            Ok(Ok(out)) => Err(format!(
+                "--version 退出码 {}",
+                out.status.code().unwrap_or(-1)
+            )),
+            Ok(Err(e)) => Err(format!("无法运行：{e}")),
+            Err(_) => Err("--version 超时（5 秒）".into()),
+        }
+    }
+
     /// 注入固定槽位用的后端：之后每个任务先申请后台槽位租约，再启动子进程
     pub fn with_slot_backend(mut self, backend: Arc<Backend>) -> Self {
         self.slot_backend = Some(backend);

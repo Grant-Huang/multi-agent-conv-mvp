@@ -400,6 +400,8 @@ impl Orchestrator {
             tracing::error!(event = "agent.run_failed", task_id = %task.id, agent_id = %card.id, elapsed_ms, errors = %result.errors.join(" | "));
         } else {
             tracing::info!(event = "agent.run_end", task_id = %task.id, agent_id = %card.id, elapsed_ms);
+            // 一次真实任务成功完成：该 agent 在一段时间内保持绿色（见 link.rs 的 ACTIVE_WINDOW）
+            self.registry.links.mark_success(&card.id);
         }
         result.evidence.insert(
             0,
