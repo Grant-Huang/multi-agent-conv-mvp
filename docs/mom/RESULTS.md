@@ -54,3 +54,5 @@
 测试先行证据：新增 HTTP 端点用例初次得到 `404 != 200`，实现后通过。取消用例发现尚未到期事件仍为 PENDING，修复为取消时同步标记所有未来事件；断言未放宽。浏览器检查发现主界面嵌套路由注册冲突和尾斜杠回退问题，修复后保留用例通过。界面加载时保留视图切换能力，原有交互测试仍通过。
 
 最终验证：Rust **311 passed、0 failed、2 ignored**（MOM runtime43、HTTP4）；严格 Clippy 无警告，fmt通过；前端18项通过；完整 verify **12 passed (19.5s)**，包含主界面入口、配置影响排产结果、持续事件与播放暂停。日志位于 `/workspace/.setup/mom-dynamic-*.log`，截图与JSON/JUnit位于 `web/test-results/`。没有进行真实模型、企业接口或墙钟工业调度验收。
+
+合并前主干新增 `4b3f395` 的 MOM 安全修复，已以其保护逻辑为基准整合动态队列；保留全部 rt_mom_01~05 与 HTTP 联锁断言。最终复验：Rust **317 passed、0 failed、2 ignored**（MOM Runtime48、HTTP5）；严格 Clippy、格式通过；Chromium **12 passed (18.3s)**。前端仍为18项通过。日志前缀 `mom-dynamic-merged-*`，先前311项为前一基线。
