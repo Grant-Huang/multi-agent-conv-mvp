@@ -38,4 +38,6 @@ reqwest.workspace = true
 
 [dev-dependencies]
 an-node.workspace = true
+# E3 撤权实测示例直接构造外部 agent 适配器
+an-agents.workspace = true
 toml.workspace = true

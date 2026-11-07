@@ -358,3 +358,35 @@ fn rt_adm_08_old_database_gets_admission_tables() {
     drop(store);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// RT-ADM-17（回归）：任务编号连续、只在末尾不同时，每个 agent 的抽中数也必须接近配置比例
+#[test]
+fn rt_adm_17_sampling_is_uniform_for_sequential_ids() {
+    for rate in [0.1, 0.2, 0.5] {
+        let l = ledger_with(AdmissionConfig {
+            sample_rate: rate,
+            ..AdmissionConfig::default()
+        });
+        let n = 200usize;
+        let mut total = 0usize;
+        for a in 0..40 {
+            let agent = format!("ext-{a:02}");
+            let hits = (0..n)
+                .filter(|k| l.should_sample(&agent, &format!("w-{k:04}")))
+                .count();
+            // 二项分布 B(200, rate) 的均值 ± 5 个标准差：超出即视为抽样聚集
+            let mean = n as f64 * rate;
+            let sd = (n as f64 * rate * (1.0 - rate)).sqrt();
+            assert!(
+                (hits as f64 - mean).abs() <= 5.0 * sd,
+                "rate {rate} agent {agent}: {hits}/{n}"
+            );
+            total += hits;
+        }
+        let overall = total as f64 / (40 * n) as f64;
+        assert!(
+            (overall - rate).abs() < 0.02,
+            "rate {rate}: overall {overall}"
+        );
+    }
+}
