@@ -55,6 +55,7 @@ impl Engine {
                 if changed {
                     emit(
                         c,
+                        s.now,
                         "LeaseExpired",
                         json!({"reason":"runtime restart"}),
                         events,
@@ -166,13 +167,14 @@ impl Engine {
                     for ch in &mut c.children{if ch.status=="RUNNING"{ch.status="SUPERSEDED".into();}}
                     c.stage="ASSESS".into();
                 }else{c.stage="BLOCKED".into();}
-                emit(c,"PlanInvalidated",json!({"reason":"new relevant observation"}),events);
+                emit(c, s.now,"PlanInvalidated",json!({"reason":"new relevant observation"}),events);
             }
+            if let Some(cpk)=input.payload.get("cpk") {super::simulation::validate_change("cpk",cpk)?;c.world["cpk"]=cpk.clone();}
             c.observations.push(Observation{event:input.clone(),received_at:s.now,provenance:"mock".into()});
             let evid=format!("obs:{}:{}",input.source,input.id);c.evidence.insert(evid.clone(),json!({"source":input.source,"payload":input.payload,"occurred_at":input.occurred_at,"received_at":s.now,"provenance":"mock","mock_ids":["M01"]}));
-            emit(c,"ObservationRecorded",json!({"evidence_ref":evid}),events);
-            if input.payload["safety_trip"]==true || c.world["safety_trip"]==true {c.world["safety_trip"]=json!(true);c.stage="BLOCKED".into();c.approvals.clear();emit(c,"SafetyBlocked",json!({"safety_system":"external interlock; simulator does not control equipment"}),events);}
-            else {instantiate(c,events)?;}
+            emit(c, s.now,"ObservationRecorded",json!({"evidence_ref":evid}),events);
+            if input.payload["safety_trip"]==true || c.world["safety_trip"]==true {c.world["safety_trip"]=json!(true);c.stage="BLOCKED".into();c.approvals.clear();emit(c, s.now,"SafetyBlocked",json!({"safety_system":"external interlock; simulator does not control equipment"}),events);}
+            else {instantiate(c,s.now,events)?;}
             s.seen.insert(key,id.clone());
             pump(c,s.now,events)?;
             Ok(id)
@@ -240,7 +242,7 @@ impl Engine {
             ) {
                 c.resource_version += 1;
             }
-            emit(c, "WorldChanged", json!({"key":key}), events);
+            emit(c, s.now, "WorldChanged", json!({"key":key}), events);
             Ok(())
         })
     }
@@ -251,7 +253,8 @@ impl Engine {
         );
         self.update(|s, events| {
             let c = s.cases.get_mut(id).context("unknown case")?;
-            ensure!(!c.cancelled && c.stage != "BLOCKED", "case blocked");
+            ensure_active(c)?;
+            ensure!(c.stage != "BLOCKED", "case blocked");
             ensure!(revision == c.plan_revision, "stale plan approval");
             match scope {
                 "production" => ensure!(
@@ -282,6 +285,7 @@ impl Engine {
             );
             emit(
                 c,
+                s.now,
                 "DecisionApproved",
                 json!({"scope":scope,"plan_revision":revision}),
                 events,
@@ -292,10 +296,14 @@ impl Engine {
     pub fn execute(&mut self, id: &str, scope: &str) -> Result<()> {
         self.update(|s,events|{
             let resources_busy=s.cases.iter().any(|(other,c)|other!=id&&c.world["reservations"].as_object().is_some_and(|r|!r.is_empty()));
-            let c=s.cases.get_mut(id).context("unknown case")?;ensure!(!c.cancelled&&c.stage!="BLOCKED","case blocked");
+            let c=s.cases.get_mut(id).context("unknown case")?;ensure_active(c)?;ensure!(c.stage!="BLOCKED","case blocked");
             // A completed idempotent command can be queried again even after approval expires.
             let group=format!("{}:{}:{}",c.id,c.plan_revision,scope);
-            if c.actions.values().any(|a|a.key.starts_with(&format!("{group}:"))){return Ok(());}
+            let existing: Vec<_> = c.actions.values().filter(|a|a.key.starts_with(&format!("{group}:"))).collect();
+            if !existing.is_empty() {
+                ensure!(existing.iter().all(|a| matches!(a.state.as_str(), "ACCEPTED" | "UNKNOWN" | "VERIFIED")), "existing dispatch failed; receipt reconciliation required");
+                return Ok(());
+            }
             let a=c.approvals.get(scope).context("approval required")?;
             ensure!(a.plan_revision==c.plan_revision&&s.now<=a.expires_at&&a.resource_version==c.resource_version,"approval stale or expired");
             ensure!(s.now<=c.resource_observed_at+fixture_policy(&c.scenario).snapshot_ttl_minutes,"snapshot expired");
@@ -309,7 +317,7 @@ impl Engine {
                     c.actions.insert(key.clone(),Action{key:key.clone(),tool:tool.into(),state:if failed{"FAILED"}else if c.world["lost_receipt"]==true{"UNKNOWN"}else{"ACCEPTED"}.into(),accepted_at:s.now,complete_at:s.now+2,receipt:format!("mock-op:{key}"),verification:None});
                 }
                 c.stage=if c.world["dispatch_failure"]==true {c.world["reservations"]=json!({});"PARTIAL"}else{"VERIFYING"}.into();
-                if c.stage=="PARTIAL"{emit(c,"CompensationRequired",json!({"released":"reservations","irreversible":"accepted maintenance and transfer need operator review"}),events);}
+                if c.stage=="PARTIAL"{emit(c, s.now,"CompensationRequired",json!({"released":"reservations","irreversible":"accepted maintenance and transfer need operator review"}),events);}
             }else {
                 charge_tools(c,1)?;
                 let report=if scope=="initial_response"{c.initial_report.clone()}else{c.eight_d.clone()}.context("report missing")?;
@@ -318,11 +326,15 @@ impl Engine {
                 c.outbox.push(json!({"key":key,"customer":c.customer,"report":report,"provenance":"mock","mock_ids":["M16"],"sent_at":s.now}));
                 c.stage="INVESTIGATING".into();
             }
-            emit(c,"ActionAccepted",json!({"scope":scope,"provenance":"mock"}),events);Ok(())})
+            emit(c, s.now,"ActionAccepted",json!({"scope":scope,"provenance":"mock"}),events);Ok(())})
     }
     pub fn close(&mut self, id: &str) -> Result<()> {
         self.update(|s, events| {
             let c = s.cases.get_mut(id).context("unknown case")?;
+            ensure!(
+                !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED"),
+                "case already terminal"
+            );
             let s1 = c.scenario == "s1" && c.stage == "VERIFYING";
             let s2 = c.scenario == "s2"
                 && c.eight_d
@@ -346,6 +358,7 @@ impl Engine {
             c.world["reservations"] = json!({});
             emit(
                 c,
+                s.now,
                 "CaseClosed",
                 json!({"scope":"simulated receipts only"}),
                 events,
@@ -357,10 +370,7 @@ impl Engine {
     pub fn refresh_plan(&mut self, id: &str) -> Result<()> {
         self.update(|s, events| {
             let c = s.cases.get_mut(id).context("unknown case")?;
-            ensure!(
-                !c.cancelled && c.world["safety_trip"] != true,
-                "case cancelled or safety blocked"
-            );
+            ensure_active(c)?;
             ensure!(
                 c.replans < 2 && c.budget_remaining >= c.nodes.len() as u32,
                 "refresh budget exhausted"
@@ -390,6 +400,7 @@ impl Engine {
             c.stage = "ASSESS".into();
             emit(
                 c,
+                s.now,
                 "PlanRefreshed",
                 json!({"revision":c.plan_revision}),
                 events,
@@ -405,7 +416,13 @@ impl Engine {
                 "cannot silently increase budget"
             );
             c.budget_remaining = remaining;
-            emit(c, "BudgetChanged", json!({"remaining":remaining}), events);
+            emit(
+                c,
+                s.now,
+                "BudgetChanged",
+                json!({"remaining":remaining}),
+                events,
+            );
             Ok(())
         })
     }
@@ -414,12 +431,12 @@ impl Engine {
         self.update(|s,events|{
             let global=s.cases.values().flat_map(|c|&c.children).filter(|ch|ch.status=="RUNNING").count();ensure!(global<4,"global child capacity exhausted");
             let c=s.cases.get_mut(id).context("unknown case")?;
-            ensure!(!c.cancelled&&!matches!(c.stage.as_str(),"BLOCKED"|"CLOSED"),"inactive case");
+            ensure_active(c)?;ensure!(c.stage!="BLOCKED","inactive case");
             ensure!((c.scenario=="s1"&&kind=="equipment_investigation")||(c.scenario=="s2"&&kind=="complaint_trace_investigation"),"unsupported child capability");
             ensure!(c.children.len()<2&&!c.children.iter().any(|ch|ch.status=="RUNNING"),"child quota exhausted");
             charge(c,6)?;s.next_token+=1;let token=s.next_token;
             c.children.push(Child{token,kind:kind.into(),status:"RUNNING".into(),started_at:s.now,lease_until:s.now+fixture_policy(&c.scenario).child_lease_minutes,due_at:s.now+fixture_policy(&c.scenario).child_latency_minutes,input_revision:c.plan_revision,report:None});
-            emit(c,"ChildStarted",json!({"token":token,"kind":kind,"read_only":true,"provenance":"mock","mock_ids":["M19"]}),events);Ok(token)})
+            emit(c, s.now,"ChildStarted",json!({"token":token,"kind":kind,"read_only":true,"provenance":"mock","mock_ids":["M19"]}),events);Ok(token)})
     }
     pub fn submit_child(&mut self, id: &str, token: u64, refs: Vec<String>) -> Result<()> {
         self.update(|s, events| {
@@ -438,6 +455,10 @@ impl Engine {
             }
 
             let c = s.cases.get_mut(id).context("unknown case")?;
+            ensure!(
+                !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED"),
+                "case already terminal"
+            );
             c.cancelled = true;
             c.stage = "CANCELLED".into();
             c.approvals.clear();
@@ -454,6 +475,7 @@ impl Engine {
             c.world["reservations"] = json!({});
             emit(
                 c,
+                s.now,
                 "CaseCancelled",
                 json!({"accepted_actions":"must still be reconciled; not rolled back"}),
                 events,
@@ -473,6 +495,7 @@ impl Engine {
                         "template not applicable"
                     ),
                     Intent::ProposePatch { node, dependency } => {
+                        ensure_active(c)?;
                         ensure!(c.replans < 2, "replan budget exceeded");
                         ensure!(c.budget_remaining > 0, "budget exhausted");
                         ensure!(c.actions.is_empty(), "cannot rewrite dispatched plan");
@@ -513,7 +536,13 @@ impl Engine {
                             ),
                             "unknown scope"
                         );
-                        emit(c, "DecisionRequested", json!({"scope":scope}), events);
+                        emit(
+                            c,
+                            s.now,
+                            "DecisionRequested",
+                            json!({"scope":scope}),
+                            events,
+                        );
                     }
                     Intent::SubmitSummary { evidence_refs } => {
                         ensure!(
@@ -523,6 +552,7 @@ impl Engine {
                         );
                         emit(
                             c,
+                            s.now,
                             "SummarySubmitted",
                             json!({"evidence_refs":evidence_refs,"provenance":"mock"}),
                             events,
@@ -568,7 +598,7 @@ impl Engine {
             c.plan_revision+=1;c.approvals.clear();c.resource_observed_at=s.now;
             let steps:Vec<_>=(1..=8).map(|i|json!({"step":format!("D{i}"),"status":"VERIFIED_IN_MOCK","evidence_refs":[evidence]})).collect();
             c.eight_d=Some(json!({"kind":"FORMAL_8D","formal_complete":true,"steps":steps,"provenance":"mock","limitations":["Simulated field evidence only"]}));
-            emit(c,"ComplaintVerificationRecorded",json!({"evidence_ref":evidence}),events);Ok(())})
+            emit(c, s.now,"ComplaintVerificationRecorded",json!({"evidence_ref":evidence}),events);Ok(())})
     }
     pub fn reserve_model(&mut self, id: &str) -> Result<u64> {
         self.update(|s, events| {
@@ -579,7 +609,13 @@ impl Engine {
             );
             charge(c, 1)?;
             c.model_calls += 1;
-            emit(c, "ModelCallReserved", json!({"mock_ids":["M23"]}), events);
+            emit(
+                c,
+                s.now,
+                "ModelCallReserved",
+                json!({"mock_ids":["M23"]}),
+                events,
+            );
             Ok(c.revision)
         })
     }
@@ -652,9 +688,18 @@ impl Engine {
         )
     }
 }
-pub(super) fn emit(c: &mut Case, kind: &str, payload: Value, events: &mut Emissions) {
+fn ensure_active(c: &Case) -> Result<()> {
+    ensure!(
+        !c.cancelled && !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED"),
+        "inactive case"
+    );
+    ensure!(c.world["safety_trip"] != true, "safety interlock active");
+    Ok(())
+}
+pub(super) fn emit(c: &mut Case, now: u64, kind: &str, payload: Value, events: &mut Emissions) {
+    c.updated_at = now;
     c.revision += 1;
-    events.push((c.id.clone(), kind.into(), payload, c.updated_at, c.revision));
+    events.push((c.id.clone(), kind.into(), payload, now, c.revision));
 }
 fn charge(c: &mut Case, n: u32) -> Result<()> {
     ensure!(c.budget_remaining >= n, "budget exhausted");
@@ -716,7 +761,7 @@ fn new_case(id: &str, e: &EventInput, received_at: u64) -> Case {
         cancelled: false,
     }
 }
-fn instantiate(c: &mut Case, events: &mut Emissions) -> Result<()> {
+fn instantiate(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
     if c.stage == "BLOCKED" {
         return Ok(());
     }
@@ -729,6 +774,7 @@ fn instantiate(c: &mut Case, events: &mut Emissions) -> Result<()> {
         c.stage = "BLOCKED".into();
         emit(
             c,
+            now,
             "TemplateRejected",
             json!({"reason":"unsupported feature signature"}),
             events,
@@ -779,6 +825,7 @@ fn instantiate(c: &mut Case, events: &mut Emissions) -> Result<()> {
     c.stage = "ASSESS".into();
     emit(
         c,
+        now,
         "PlanAccepted",
         json!({"template":c.template,"plan_revision":c.plan_revision}),
         events,
@@ -832,14 +879,14 @@ fn pump(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
     for id in ready {
         if charge_tools(c, 1).is_err() {
             c.stage = "BUDGET_EXHAUSTED".into();
-            emit(c, "BudgetExhausted", json!({}), events);
+            emit(c, now, "BudgetExhausted", json!({}), events);
             break;
         }
         let n = c.nodes.get_mut(&id).unwrap();
         n.status = "RUNNING".into();
         n.started_at = Some(now);
         n.due_at = Some(now + fixture_policy(&c.scenario).latency_minutes);
-        emit(c, "ToolStarted", json!({"node":id}), events);
+        emit(c, now, "ToolStarted", json!({"node":id}), events);
     }
     Ok(())
 }
@@ -857,10 +904,33 @@ fn tick(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
     for key in verified {
         emit(
             c,
+            now,
             "ActionVerified",
             json!({"key":key,"provenance":"mock"}),
             events,
         );
+    }
+    let children: Vec<_> = c
+        .children
+        .iter()
+        .filter(|ch| ch.status == "RUNNING")
+        .map(|ch| (ch.token, ch.lease_until))
+        .collect();
+    for (token, lease) in children {
+        if now >= lease {
+            c.children
+                .iter_mut()
+                .find(|ch| ch.token == token)
+                .unwrap()
+                .status = "TIMED_OUT".into();
+            emit(
+                c,
+                now,
+                "ChildTimedOut",
+                json!({"token":token,"limitations":["Investigation incomplete"]}),
+                events,
+            );
+        }
     }
     if c.cancelled || matches!(c.stage.as_str(), "CLOSED" | "BLOCKED") {
         return Ok(());
@@ -894,6 +964,7 @@ fn tick(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
             c.world["held"][&c.batch] = json!("pending validation");
             emit(
                 c,
+                now,
                 "ContainmentApplied",
                 json!({"scope":c.batch,"authorization":"fixture preauthorized quality hold","provenance":"mock","mock_ids":["M07","M20"]}),
                 events,
@@ -903,6 +974,7 @@ fn tick(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
             c.world["held"] = c.world["inventory"].clone();
             emit(
                 c,
+                now,
                 "ContainmentApplied",
                 json!({"scope":c.world["held"],"authorization":"fixture preauthorized inventory hold","provenance":"mock","mock_ids":["M07","M20"]}),
                 events,
@@ -910,6 +982,7 @@ fn tick(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
         }
         emit(
             c,
+            now,
             "EvidenceRecorded",
             json!({"node":id,"evidence_ref":eid,"status":response.status}),
             events,
@@ -925,6 +998,7 @@ fn tick(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
             .into();
             emit(
                 c,
+                now,
                 "DecisionRequested",
                 json!({"scope":"production"}),
                 events,
@@ -953,33 +1027,11 @@ fn tick(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
         c.resource_observed_at = now;
         emit(
             c,
+            now,
             "DecisionRequested",
             json!({"scope":"initial_response"}),
             events,
         );
-    }
-    let children: Vec<_> = c
-        .children
-        .iter()
-        .filter(|ch| ch.status == "RUNNING")
-        .map(|ch| (ch.token, ch.lease_until, ch.due_at))
-        .collect();
-    for (token, lease, due) in children {
-        if now >= lease {
-            c.children
-                .iter_mut()
-                .find(|ch| ch.token == token)
-                .unwrap()
-                .status = "TIMED_OUT".into();
-            emit(
-                c,
-                "ChildTimedOut",
-                json!({"token":token,"limitations":["Investigation incomplete"]}),
-                events,
-            );
-        } else {
-            let _ = due;
-        }
     }
     if c.scenario == "s2" {
         for (kind, deadline) in c.deadlines.clone() {
@@ -1006,12 +1058,12 @@ fn tick(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
                 let key = format!("{kind}:{threshold}");
                 if now >= deadline.saturating_sub(threshold) && !c.alerts.contains(&key) {
                     c.alerts.push(key.clone());
-                    emit(c, "SlaWarning", json!({"key":key}), events);
+                    emit(c, now, "SlaWarning", json!({"key":key}), events);
                 }
             }
             if now > deadline && !c.breaches.contains(&kind) {
                 c.breaches.push(kind.clone());
-                emit(c, "SlaBreached", json!({"kind":kind}), events);
+                emit(c, now, "SlaBreached", json!({"kind":kind}), events);
             }
         }
     }
@@ -1044,6 +1096,7 @@ fn submit_child(
     );
     emit(
         c,
+        now,
         "ChildReportSubmitted",
         json!({"token":token,"evidence_refs":refs}),
         events,

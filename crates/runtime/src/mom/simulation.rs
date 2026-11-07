@@ -170,7 +170,7 @@ impl Engine {
             }
             for (index,d) in config.disturbances.iter().enumerate(){queue.push(ScheduledEvent{id:format!("{batch}-fault-{index}"),due_at:start+d.after_minutes,status:"PENDING".into(),payload:ScheduledPayload::WorldChange{key:d.key.clone(),value:d.value.clone()},error:None});}
             queue.sort_by(|a,b|(a.due_at,&a.id).cmp(&(b.due_at,&b.id)));
-            emit(c,"SimulationConfigured",json!({"seed":config.seed,"name":config.name,"queued":queue.len(),"provenance":"mock"}),events);
+            emit(c,s.now,"SimulationConfigured",json!({"seed":config.seed,"name":config.name,"queued":queue.len(),"provenance":"mock"}),events);
             s.simulations.insert(id.clone(),Simulation{case_id:id.clone(),config,started_at:start,queue});Ok(())
         })?;
         Ok(id)
@@ -222,6 +222,7 @@ impl Engine {
             let c = s.cases.get_mut(id).context("case missing")?;
             emit(
                 c,
+                s.now,
                 "SimulationEventDelivered",
                 json!({"event_id":event_id,"status":status,"error":error}),
                 events,

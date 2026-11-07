@@ -47,3 +47,13 @@
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
 | E2E-MOMDYNAMIC | mom | 主界面与独立沙盘数据库 | 从主界面进入MOM，调整订单数量和seed创建持续仿真，推进、播放/暂停并查看gap | 同源入口可达；配置影响方案；事件逐步进入案例；暂停与运行状态可见；gap显示23项的真实状态而非仅ID |
+
+## 每日审查修复验收（实现前定义）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-MOM-01 | mom | S1 已触发安全联锁 | patch/refresh/approve/execute/delegate | 全部拒绝，状态、计划、动作及预算不变；HTTP 同样拒绝 |
+| RT-MOM-02 | mom | CLOSED 或 CANCELLED 案例 | 再次取消或关闭 | 终态不变，不新增终态事件 |
+| RT-MOM-03 | mom | 三个不同虚拟时刻的观测 | 查询事件 | ObservationRecorded.at 等于接收时虚拟时钟 |
+| RT-MOM-04 | mom | 下发失败进入 PARTIAL | 重放 execute | 返回失败且不重复下发 |
+| RT-MOM-05 | mom | 有运行子任务的案例被阻断 | 推进至租约到期 | 子任务 TIMED_OUT，不占用运行名额 |

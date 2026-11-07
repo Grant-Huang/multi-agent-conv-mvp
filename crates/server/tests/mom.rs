@@ -175,3 +175,50 @@ async fn configurable_simulation_queues_events_and_exposes_gap_register() {
     assert_eq!(gaps["items"].as_array().unwrap().len(), 23);
     task.abort();
 }
+
+#[tokio::test]
+async fn safety_trip_rejects_http_patch_and_dispatch_without_side_effects() {
+    let mut engine = Engine::memory().unwrap();
+    let id = engine
+        .ingest(an_runtime::mom::EventInput::s1("order", 497))
+        .unwrap();
+    engine
+        .ingest(an_runtime::mom::EventInput::s1("vibration", 503))
+        .unwrap();
+    engine
+        .ingest(an_runtime::mom::EventInput::s1("quality", 511))
+        .unwrap();
+    engine.advance(514).unwrap();
+    let mut trip = an_runtime::mom::EventInput::s1("vibration", 514);
+    trip.id = "http-safety-trip".into();
+    trip.payload = json!({"safety_trip": true});
+    engine.ingest(trip).unwrap();
+    let revision = engine.case(&id).unwrap().plan_revision;
+    let before = serde_json::to_value(engine.case(&id).unwrap()).unwrap();
+    let engine = Arc::new(Mutex::new(engine));
+    let state = mom::AppState::scripted(engine.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!(
+        "http://{}/api/mom/cases/{id}/commands",
+        listener.local_addr().unwrap()
+    );
+    let task = tokio::spawn(async move {
+        axum::serve(listener, mom::router(state)).await.unwrap();
+    });
+    let client = reqwest::Client::new();
+    for command in [
+        json!({"command":"patch", "node":"quality", "dependency":"maintenance"}),
+        json!({"command":"refresh_plan"}),
+        json!({"command":"approve", "scope":"production", "actor":"supervisor", "plan_revision":revision}),
+        json!({"command":"execute", "scope":"production"}),
+        json!({"command":"delegate", "kind":"equipment_investigation"}),
+    ] {
+        let response = client.post(&url).json(&command).send().await.unwrap();
+        assert_eq!(response.status(), 400, "command {command}");
+        assert_eq!(
+            serde_json::to_value(engine.lock().unwrap().case(&id).unwrap()).unwrap(),
+            before
+        );
+    }
+    task.abort();
+}

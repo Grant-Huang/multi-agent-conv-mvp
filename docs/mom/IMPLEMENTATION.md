@@ -95,3 +95,9 @@ SQLite 初始化通过事务创建独立 v1 表并记录 user_version；未来�
 - 自动播放为 **1 秒 = 1 个虚拟分钟**，页面默认一次播放30分钟，API最大360分钟；可暂停，且重启默认暂停。手动推进作用于全部案例，不能撤销已经受理的业务动作。
 - `/api/mom/simulations` GET 列出配置与队列，POST 新建；`/api/mom/playback` POST 控制播放；`/api/mom/gaps` GET 从统一 Mock 台账生成完整状态。主服务下 API 同样带 `/mom` 前缀。
 - 场景与队列使用现有 JSON snapshot 的兼容默认字段保存，无新增 SQL 表；旧数据库保持可读。固定 seed 与相同输入可复现同一组扰动；重放与取消有独立测试。
+
+## 当前实现子集与审查说明
+
+- `patch` 命令体为 `{"command":"patch","node":"quality","dependency":"maintenance"}`，仅支持受限依赖调整，不允许移除安全关卡或修改已下发计划。联锁触发后拒绝该命令。
+- `request_tool` 是拟议 Master 协议，当前 Intent 未实现；节点只使用 READY/RUNNING/SUCCEEDED/UNKNOWN/CANCELLED 子集，未实现完整 CLAIMED/WAITING_TOOL/VERIFYING 生命周期。
+- 当前 fixture 的 `production` 是合并模拟授权，覆盖 `mro.transfer`、`eam.maintenance`、`mes.reschedule`，不满足真实系统逐动作分别授权要求。该简化登记为 M20，不能作为真实审批链验收证据。
