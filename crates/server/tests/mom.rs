@@ -133,6 +133,50 @@ async fn malformed_commands_and_missing_cases_are_errors() {
 }
 
 #[tokio::test]
+async fn configurable_simulation_queues_events_and_exposes_gap_register() {
+    let (url, task) = server().await;
+    let client = reqwest::Client::new();
+    let r=client.post(format!("{url}/api/mom/simulations")).json(&json!({"name":"custom","scenario":"s1","seed":42,"world":{"quantity":900},"event_count":2,"event_interval_minutes":5,"disturbances":[]})).send().await.unwrap();
+    assert_eq!(
+        r.status(),
+        200,
+        "configurable simulation route must accept valid scenarios"
+    );
+    let v: Value = r.json().await.unwrap();
+    let id = v["case_id"].as_str().unwrap();
+    let sims: Value = client
+        .get(format!("{url}/api/mom/simulations"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(sims["simulations"][0]["pending"].as_u64().unwrap() >= 4);
+    let v: Value = client
+        .post(format!("{url}/api/mom/cases/{id}/commands"))
+        .json(&json!({"command":"advance","minutes":17}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["proposal"]["quantity"], 900);
+    assert_eq!(v["proposal"]["feasible"], false);
+    let gaps: Value = client
+        .get(format!("{url}/api/mom/gaps"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(gaps["items"].as_array().unwrap().len(), 23);
+    task.abort();
+}
+
+#[tokio::test]
 async fn safety_trip_rejects_http_patch_and_dispatch_without_side_effects() {
     let mut engine = Engine::memory().unwrap();
     let id = engine

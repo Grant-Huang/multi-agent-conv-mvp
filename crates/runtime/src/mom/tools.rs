@@ -58,7 +58,7 @@ pub fn read(c: &Case, tool: &str, now: u64) -> Result<ToolResponse> {
             (
                 "QMS",
                 vec!["M04"],
-                json!({"risk":"HOLD_PENDING_VALIDATION","root_cause_status":"UNKNOWN","cpk":1.1,"threshold":1.33,"measurement_status":if timeout {"UNKNOWN"}else{"fixture_valid"}}),
+                json!({"risk":"HOLD_PENDING_VALIDATION","root_cause_status":"UNKNOWN","cpk":w.get("cpk").cloned().unwrap_or(json!(1.1)),"threshold":1.33,"measurement_status":if timeout {"UNKNOWN"}else{"fixture_valid"}}),
                 if timeout { "unknown" } else { "ok" },
             )
         }

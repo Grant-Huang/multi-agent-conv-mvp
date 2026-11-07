@@ -126,12 +126,14 @@
     "sources": [
       "crates/runtime/src/mom/engine.rs",
       "crates/server/src/mom.rs",
-      "web/mom/index.html"
+      "web/mom/index.html",
+      "crates/runtime/src/mom/simulation.rs"
     ],
     "coverage": "browser",
     "cases": [
       "E2E-MOM",
-      "E2E-COMPLAINT"
+      "E2E-COMPLAINT",
+      "E2E-MOMDYNAMIC"
     ],
     "runtime_cases": [
       "RT-MOM-01",

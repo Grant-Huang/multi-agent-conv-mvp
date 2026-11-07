@@ -43,10 +43,12 @@ async fn main() -> Result<()> {
     }
     let listener = tokio::net::TcpListener::bind(address).await?;
     println!("MOM simulation listening on {address}. Domain data and approvals are fixtures.");
+    let clock = mom::spawn_clock(state.clone());
     axum::serve(listener, mom::router(state))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })
         .await?;
+    clock.abort();
     Ok(())
 }

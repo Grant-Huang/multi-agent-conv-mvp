@@ -1,5 +1,7 @@
 //! Local-only MOM simulation service. Test identities, never enterprise auth.
-use an_runtime::mom::{Engine, EventInput, Intent, Master, ScriptedMaster};
+use an_runtime::mom::{
+    gap_register, Engine, EventInput, Intent, Master, ScriptedMaster, SimulationConfig,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -46,13 +48,19 @@ fn run<T>(state: &AppState, f: impl FnOnce(&mut Engine) -> anyhow::Result<T>) ->
         .map_err(|_| err("runtime unavailable"))?;
     f(&mut e).map(Json).map_err(err)
 }
+pub fn page() -> Html<&'static str> {
+    Html(include_str!("../../../web/mom/index.html"))
+}
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route(
-            "/",
-            get(|| async { Html(include_str!("../../../web/mom/index.html")) }),
-        )
+        .route("/", get(|| async { page() }))
         .route("/api/mom/cases", get(list))
+        .route(
+            "/api/mom/simulations",
+            get(simulations).post(create_simulation),
+        )
+        .route("/api/mom/playback", post(playback))
+        .route("/api/mom/gaps", get(|| async { Json(gap_register()) }))
         .route("/api/mom/scenarios/{scenario}", post(scenario))
         .route("/api/mom/events", post(ingest))
         .route("/api/mom/cases/{id}", get(human))
@@ -62,6 +70,50 @@ pub fn router(state: AppState) -> Router {
         .route("/api/mom/cases/{id}/master", post(master))
         .layer(axum::extract::DefaultBodyLimit::max(128 * 1024))
         .with_state(state)
+}
+/// One bounded shared simulation clock per service. Shutdown owner aborts this task.
+pub fn spawn_clock(state: AppState) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut timer = tokio::time::interval(std::time::Duration::from_secs(1));
+        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            timer.tick().await;
+            let Ok(mut engine) = state.engine.lock() else {
+                break;
+            };
+            if let Err(error) = engine.playback_tick() {
+                let _ = engine.set_playback(false, 0);
+                tracing::warn!(event="task.status",task_id="mom-clock",error=%error,"MOM playback paused after error");
+            }
+        }
+    })
+}
+async fn simulations(State(s): State<AppState>) -> ApiResult<Value> {
+    run(&s, |e| Ok(e.simulations_view()))
+}
+async fn create_simulation(
+    State(s): State<AppState>,
+    Json(config): Json<SimulationConfig>,
+) -> ApiResult<Value> {
+    run(&s, |e| {
+        Ok(json!({"case_id":e.create_simulation(config)?,"provenance":"mock"}))
+    })
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlaybackRequest {
+    playing: bool,
+    #[serde(default = "playback_default")]
+    minutes: u64,
+}
+fn playback_default() -> u64 {
+    30
+}
+async fn playback(State(s): State<AppState>, Json(p): Json<PlaybackRequest>) -> ApiResult<Value> {
+    run(&s, |e| {
+        e.set_playback(p.playing, p.minutes)?;
+        Ok(e.simulations_view())
+    })
 }
 async fn list(State(s): State<AppState>) -> ApiResult<Value> {
     run(&s, |e| {

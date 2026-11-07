@@ -21,6 +21,8 @@ describe("MOM human and agent board", () => {
       let response: unknown = c;
       if (path.endsWith("/scenarios/s1")) { created = true; response = { case_id: c.case_id }; }
       else if (path === "/api/mom/cases") response = { now: 514, cases: created ? [c] : [] };
+      else if (path.endsWith("/simulations")) response = { playback: { playing: false }, simulations: [] };
+      else if (path.endsWith("/gaps")) response = { items: [], source: "register" };
       else if (path.includes("/events?")) response = [];
       else if (path.includes("/agent?")) response = { projection_seq: 12, constraints: c.constraints, next_cursor: 12 };
       return { ok: true, json: async () => response } as Response;
