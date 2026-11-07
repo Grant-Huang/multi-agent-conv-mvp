@@ -178,6 +178,8 @@ pre {
 .ticker-history {
   margin: 4px 0 0; padding: 6px 8px 6px 24px; max-height: 180px; overflow-y: auto;
   border-left: 2px solid var(--border); line-height: 1.5;
+  /* 无编号：历史是无序列表，去掉项目符号 */
+  list-style: none;
 }
 .ticker-history li { word-break: break-word; padding: 1px 0; }
 @keyframes ticker-up {

@@ -31,12 +31,12 @@ export function TaskTicker(props: { lines: string[]; running: boolean; failed?: 
         )}
       </button>
       {expanded && (
-        <ol className="ticker-history">
-          {/* 从旧到新：与执行顺序一致，最新的一行在最下面 */}
+        /* 无编号列表（ul，去掉项目符号）：从旧到新，与执行顺序一致，最新的一行在最下面 */
+        <ul className="ticker-history">
           {lines.map((l, i) => (
             <li key={i}>{l}</li>
           ))}
-        </ol>
+        </ul>
       )}
     </div>
   );

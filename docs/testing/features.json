@@ -10,7 +10,8 @@
     "coverage": "browser",
     "cases": [
       "E2E-CONV",
-      "E2E-MOBILE"
+      "E2E-MOBILE",
+      "E2E-ACK"
     ]
   },
   {
@@ -27,7 +28,8 @@
     "coverage": "browser",
     "cases": [
       "E2E-FILE",
-      "E2E-TICKER"
+      "E2E-TICKER",
+      "E2E-FAILCARD"
     ]
   },
   {
