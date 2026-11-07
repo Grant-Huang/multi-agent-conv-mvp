@@ -86,7 +86,7 @@
 | K18 | 时间预算 | 平日 60 分钟，周五 90 分钟；单条复现 10 分钟；修复 agent 单条 30 分钟 | 卡在一个问题上，一整晚什么都没交付 | `AGENTS.md`“说明超时、取消和清理策略” |
 
 **目前只靠提示词约束、没有系统强制的卡点**：K1、K5、K6 中“agent 不得推送 master”的部分，以及 K13。
-在开启分支保护（第 6 节）之前，这些卡点只是 agent 自觉遵守的规则（指南第 0 节第 2 条：“指导不是安全边界”）。
+其中“不得推送 master”和“CI 不过不能合并”已由 master 的 ruleset 强制（第 6 节）；其余部分仍只是 agent 自觉遵守的规则（指南第 0 节第 2 条：“指导不是安全边界”）。
 
 ## 4. 人怎么操作
 
@@ -143,20 +143,29 @@
 ## 6. 首次配置清单
 
 1. 合并引入本流程的 PR（Grant-Huang/multi-agent-conv-mvp#15）。
-2. **开启 master 分支保护**。以下设置项名称参照 `docs/CI_GATES.md` 第 3 节，没有对照 GitHub 官方页面核对，以页面实际显示为准：
-   1. 仓库 **Settings → Branches → Add branch protection rule**（新界面也可能叫 Add classic branch protection rule；或者用 **Settings → Rules → Rulesets** 新建规则集，效果类似）。
-   2. Branch name pattern 填 `master`。
-   3. 勾选 **Require a pull request before merging**。**暂时不要勾选** 其下的 **Require approvals** 和 **Require review from Code Owners**：单人仓库里，作者不能批准自己的 PR，勾上后任何 PR 都无法合并（PR 13 的 H4）。
-   4. 勾选 **Require status checks to pass before merging**，搜索并添加 6 个检查：`rust`、`web`、`python-websearch`、`python-tools`、`change-policy`、`security`。**Require branches to be up to date before merging** 先不勾，否则评审的报告 PR 每次都要先更新分支才能合并。
-   5. 让管理员（也就是你自己）也不能绕过。不同界面的写法不同（未对照官方文档核对，以页面为准）：
-      - 经典规则页面：通常在页面靠下、标题类似 “Rules applied to everyone including administrators” 的区域，勾选 **Do not allow bypassing the above settings**；较早的界面叫 **Include administrators**。
-      - Rulesets 页面（Settings → Rules → Rulesets）：没有这个勾选框，改为让 **Bypass list 保持为空**（不要加入 Repository admin 等角色），并把 **Enforcement status** 设为 **Active**。
-      - 都找不到时：先保存其余设置，之后用自己的账号在一个 CI 未通过的 PR 上看合并按钮。如果还能看到 “bypass rules” 之类的选项，说明管理员仍然可以绕过。
-   6. 确认 **Allow force pushes** 和 **Allow deletions** 都没有勾选。
-   7. 保存。
-   8. 验证：在任意会话里试 `git push origin HEAD:master`，应该被拒绝；打开任意 PR，底部应该列出 6 个必需检查。
+2. **开启 master 分支保护（Ruleset）**。已于 2026-11-07 完成，ruleset 名为 `master-protection`。
+   下列步骤按 GitHub 官方文档源文件核对过（`github/docs` 仓库的
+   `content/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/` 和
+   `data/reusables/repositories/rulesets-*`），重建时照做即可：
+   1. 仓库 **Settings** → 左侧 “Code, planning, and automation” 下的 **Rules** → **Rulesets** → **New ruleset** → **New branch ruleset**。
+   2. **Ruleset name** 填 `master-protection`；**Enforcement status** 从默认的 **Disabled** 改为 **Active**（⚠️ 默认是 Disabled，不改就不生效）。
+   3. **Bypass list** 保持为空，你自己也不加。
+   4. **Target branches** → **Add target** → **Include default branch**（默认分支就是 `master`）。⚠️ 不加目标就不作用于任何分支。
+   5. **Branch protections** 勾选：
+      - **Restrict deletions**（默认已勾）、**Block force pushes**（默认已勾）；
+      - **Require a pull request before merging**：**Required approvals 设为 0**，不勾 **Require review from Code Owners**（单人仓库里作者不能批准自己的 PR，要求审批会让所有 PR 无法合并）；
+      - **Require status checks to pass before merging**：**取消勾选 Require branches to be up to date before merging**（⚠️ 默认是勾上的），再点 **Add checks** 添加 `rust`、`web`、`python-websearch`、`python-tools`、`change-policy`、`security`，每项都要点 **+** 才算加上。
+      - 不要勾 **Restrict updates**：勾上后连合并 PR 也只有 bypass 名单里的人能做。
+   6. 点 **Create**。
+   7. 验证：`curl -s https://api.github.com/repos/Grant-Huang/multi-agent-conv-mvp/rules/branches/master`
+      应列出 `deletion`、`non_fast_forward`、`pull_request`、`required_status_checks` 四条规则，最后一条含 6 个检查。
+      Bypass list 是否为空只能在页面上看（接口需要登录）；2026-11-07 已由负责人在页面上确认为空。
 
-   效果：直接推送 master 被拒绝，CI 没通过的 PR 不能合并。评审 agent 的报告 PR 在 CI 通过后仍能自动合并；修复 agent 本来就不合并，不受影响。
+   效果：直接推送 master 被拒绝；CI 没通过的 PR 不能合并；不能删除 master、不能强制推送。评审 agent 的报告 PR 在 CI 通过后仍能自动合并；修复 agent 本来就不合并，不受影响。
+
+   **仍未强制的部分**：因为审批数为 0、没有要求 Code Owners 审批，`config/risk-policy.toml` 中“L3 需要负责人批准”在 GitHub 上没有被强制。
+   一个改了 `REVIEW.md` 或 `FIX.md` 的 PR，只要 CI 通过，谁有写权限都能合并。目前靠的是 agent 指令里“不得修改”“不得合并其他 PR”，以及评审 PR 的路径自检。
+   要真正强制，需要第 4 条的独立 bot 身份，之后才能打开 Code Owners 审批。
 3. **创建修复 agent 的定时任务**，建议在评审之后，例如每天 08:00（温哥华时间）。启动指令：
    ```
    你是 Grant-Huang/multi-agent-conv-mvp 的修复 agent。全程简体中文。
@@ -184,7 +193,7 @@
 
 ## 8. 已知限制
 
-1. **大部分边界只靠提示词**：开启分支保护前，agent 理论上可以直接推送 master；开启后，规则文件仍然靠 CODEOWNERS 和你的审批把关。“评审 PR 只改 `docs/review/`”目前是 agent 自检，CI 里还没有对应的检查。
+1. **大部分边界只靠提示词**：master 已有 ruleset，直接推送和 CI 未通过的合并会被拒绝；但审批数为 0，L3 文件（规则文件、CI、配置）的“负责人批准”没有被 GitHub 强制。“评审 PR 只改 `docs/review/`”目前是 agent 自检，CI 里还没有对应的检查。
 2. **两个 agent 是同一类模型**，盲区可能相同。可以定期在临时分支植入已知缺陷，看评审能抓到几个，以此衡量召回率（指南 10.11 的试点成功标准之一，尚未实施）。
 3. **评审在合并之后进行**：普通开发 PR（不是修复 agent 开的）合并前没有 AI 审查，问题会先进入 master。
 4. **你是唯一的合并通道**：几天不合并，修复 PR 就会堆积，循环停转。
