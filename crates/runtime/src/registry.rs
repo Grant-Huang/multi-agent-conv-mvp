@@ -18,7 +18,9 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use an_core::{codes, AgentAdapter, AgentCard, AgentError, Role};
+use an_core::{codes, AgentAdapter, AgentCard, AgentError, Risk, Role};
+
+use crate::admission::{AdmissionLedger, A2A_KIND};
 use tokio::sync::Notify;
 
 struct Entry {
@@ -34,6 +36,8 @@ struct Inner {
     agents: Vec<Entry>,
     /// 角色 → 执行组成员 id（按优先顺序）
     assign: BTreeMap<String, Vec<String>>,
+    /// 准入账本（开启 `[admission]` 时才有）。锁顺序：先 registry，后账本；账本从不反过来锁 registry
+    admission: Option<Arc<AdmissionLedger>>,
 }
 
 pub struct AgentRegistry {
@@ -48,6 +52,8 @@ pub struct AgentRegistry {
 pub struct Lease {
     registry: Arc<AgentRegistry>,
     pub agent: Arc<dyn AgentAdapter>,
+    /// 借出时的凭证代际（开启准入时才有）
+    pub epoch: Option<u64>,
 }
 
 impl Drop for Lease {
@@ -69,6 +75,7 @@ impl AgentRegistry {
             inner: Mutex::new(Inner {
                 agents: vec![],
                 assign,
+                admission: None,
             }),
             changed: Notify::new(),
             links: Default::default(),
@@ -130,12 +137,19 @@ impl AgentRegistry {
 
     /// 解析某角色的执行组：返回成员（按优先顺序，含不可用的），或配置错误
     fn group(inner: &Inner, role: Role) -> Result<Vec<&Entry>, AgentError> {
+        Self::group_for(inner, role, None)
+    }
+
+    /// 同 [`Self::group`]；`risk` 有值时，未配置执行组的角色优先取准入允许该风险的 agent
+    fn group_for(inner: &Inner, role: Role, risk: Option<Risk>) -> Result<Vec<&Entry>, AgentError> {
         let Some(ids) = inner.assign.get(role.as_str()) else {
-            // 没有配置执行组：第一个可用的；都不可用时返回第一个（用于给出原因）
+            // 没有配置执行组：第一个可用（且准入允许）的；都不可用时返回第一个（用于给出原因）
             let of_role = inner.agents.iter().filter(|e| e.agent.card().role == role);
             let first = of_role
                 .clone()
-                .find(|e| e.agent.card().enabled)
+                .find(|e| {
+                    e.agent.card().enabled && risk.is_none_or(|r| Self::admitted(inner, e, r))
+                })
                 .or_else(|| of_role.clone().next());
             return Ok(first.into_iter().collect());
         };
@@ -186,11 +200,14 @@ impl AgentRegistry {
         Self::group(&inner, role).map(|g| g.iter().map(|e| e.agent.card().id.clone()).collect())
     }
 
-    /// 某角色当前是否有可用的 agent
+    /// 某角色当前是否有可用的 agent（开启准入时，还要求至少允许低风险任务）
     pub fn is_enabled(&self, role: Role) -> bool {
         let inner = self.lock();
-        Self::group(&inner, role)
-            .map(|g| g.iter().any(|e| e.agent.card().enabled))
+        Self::group_for(&inner, role, Some(Risk::Low))
+            .map(|g| {
+                g.iter()
+                    .any(|e| e.agent.card().enabled && Self::admitted(&inner, e, Risk::Low))
+            })
             .unwrap_or(false)
     }
 
@@ -214,69 +231,119 @@ impl AgentRegistry {
     /// 某角色不可用的原因（Policy 拒绝路由时告诉用户）
     pub fn unavailable_reasons(&self, role: Role) -> Vec<String> {
         let inner = self.lock();
-        match Self::group(&inner, role) {
+        Self::reasons(&inner, role, Some(Risk::Low))
+    }
+
+    fn reasons(inner: &Inner, role: Role, risk: Option<Risk>) -> Vec<String> {
+        match Self::group_for(inner, role, risk) {
             Err(e) => vec![e.to_string()],
             Ok(g) if g.is_empty() => vec![format!("没有 {} 角色的 agent", role.as_str())],
             Ok(g) => g
                 .iter()
                 .map(|e| {
-                    format!(
-                        "{}：{}",
-                        e.agent.card().name,
-                        e.agent
-                            .card()
-                            .disabled_reason
+                    let card = e.agent.card();
+                    let why = if card.enabled && risk.is_some_and(|r| !Self::admitted(inner, e, r))
+                    {
+                        "未通过准入、等级不够或已被撤权".to_string()
+                    } else {
+                        card.disabled_reason
                             .clone()
                             .unwrap_or_else(|| "不可用".into())
-                    )
+                    };
+                    format!("{}：{why}", card.name)
                 })
                 .collect(),
         }
     }
 
-    /// 为某角色分配一个 agent。组内有空闲的立即返回；都在忙就排队等待（`on_wait` 只在第一次排队时调用）。
-    pub async fn acquire(
+    /// 开启准入：之后分配 agent 时按准入等级过滤
+    pub fn set_admission(&self, ledger: Arc<AdmissionLedger>) {
+        self.lock().admission = Some(ledger);
+        self.changed.notify_waiters();
+    }
+
+    /// 唤醒排队的任务重新挑选 agent（撤权、降级后调用）
+    pub fn wake(&self) {
+        self.changed.notify_waiters();
+    }
+
+    /// 准入是否允许该 agent 执行此风险的任务。
+    /// 未开启准入：总是允许；有准入记录：按等级与阶段判断；没有记录：外部（a2a）agent 不允许，配置 agent 允许。
+    fn admitted(inner: &Inner, e: &Entry, risk: Risk) -> bool {
+        let Some(l) = &inner.admission else {
+            return true;
+        };
+        let card = e.agent.card();
+        match l.get(&card.id) {
+            Some(_) => l.permits(&card.id, risk),
+            None => card.kind != A2A_KIND,
+        }
+    }
+
+    /// 借出时记录的凭证代际：未开启准入为 None；配置 agent 没有记录时按预准入记为 1
+    fn epoch_of(inner: &Inner, card: &AgentCard) -> Option<u64> {
+        inner
+            .admission
+            .as_ref()
+            .map(|l| l.get(&card.id).map(|r| r.epoch).unwrap_or(1))
+    }
+
+    /// 结果交回时核对凭证：未开启准入总是有效；有记录时 epoch 必须与当前一致且仍处于激活；
+    /// 没有记录的配置 agent 有效，外部 agent 无效
+    pub fn lease_valid(&self, card: &AgentCard, epoch: Option<u64>) -> bool {
+        let inner = self.lock();
+        let Some(l) = &inner.admission else {
+            return true;
+        };
+        match l.get(&card.id) {
+            Some(_) => epoch.is_some_and(|ep| l.credential_valid(&card.id, ep)),
+            None => card.kind != A2A_KIND,
+        }
+    }
+
+    /// 同 [`Self::acquire`]，并按准入等级过滤：只分配允许执行该风险任务的 agent。
+    /// 没有配置执行组的角色，取第一个"可用且准入允许"的 agent。
+    pub async fn acquire_for(
         self: &Arc<Self>,
         role: Role,
+        risk: Risk,
         on_wait: impl Fn(String),
     ) -> Result<Lease, AgentError> {
         let mut waited = false;
         loop {
-            // 先登记通知再检查，避免"检查完、开始等之前"刚好有 agent 空出来而错过通知
             let notified = self.changed.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
             {
                 let mut inner = self.lock();
-                let ids: Vec<String> = Self::group(&inner, role)?
+                let ids: Vec<String> = Self::group_for(&inner, role, Some(risk))?
                     .iter()
-                    .filter(|e| e.agent.card().enabled)
+                    .filter(|e| e.agent.card().enabled && Self::admitted(&inner, e, risk))
                     .map(|e| e.agent.card().id.clone())
                     .collect();
                 if ids.is_empty() {
+                    let reasons = Self::reasons(&inner, role, Some(risk));
                     drop(inner);
                     return Err(AgentError::new(
                         codes::ROUTE_NO_AGENT,
-                        format!(
-                            "没有可用的 {} agent：{}",
-                            role.as_str(),
-                            self.unavailable_reasons(role).join("；")
-                        ),
+                        format!("没有可用的 {} agent：{}", role.as_str(), reasons.join("；")),
                     ));
                 }
                 let total = ids.len();
-                // 按组内顺序找第一个有空闲名额的
                 for id in &ids {
-                    let e = inner
+                    let idx = inner
                         .agents
-                        .iter_mut()
-                        .find(|e| &e.agent.card().id == id)
+                        .iter()
+                        .position(|e| &e.agent.card().id == id)
                         .expect("刚解析出的成员");
+                    let epoch = Self::epoch_of(&inner, inner.agents[idx].agent.card());
+                    let e = &mut inner.agents[idx];
                     if e.busy < e.agent.card().max_concurrent {
                         e.busy += 1;
                         return Ok(Lease {
                             registry: self.clone(),
                             agent: e.agent.clone(),
+                            epoch,
                         });
                     }
                 }
@@ -296,9 +363,18 @@ impl AgentRegistry {
                     ));
                 }
             }
-            // 有 agent 空闲或列表变化时醒来；另外每 5 秒兜底检查一次（例如节点重新上线）
             let _ = tokio::time::timeout(Duration::from_secs(5), notified).await;
         }
+    }
+
+    /// 为某角色分配一个 agent。组内有空闲的立即返回；都在忙就排队等待（`on_wait` 只在第一次排队时调用）。
+    /// 开启准入时按最严格的标准（允许高风险）过滤；编排器按任务风险调用 [`Self::acquire_for`]。
+    pub async fn acquire(
+        self: &Arc<Self>,
+        role: Role,
+        on_wait: impl Fn(String),
+    ) -> Result<Lease, AgentError> {
+        self.acquire_for(role, Risk::High, on_wait).await
     }
 }
 

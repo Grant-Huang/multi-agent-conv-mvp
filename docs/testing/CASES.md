@@ -125,3 +125,17 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADM-07 | admission | 账本有多条记录与审计事件 | 重新打开同一数据库 | 记录完全恢复；审计事件按发生顺序列出 |
 | RT-ADM-08 | admission | 只有旧表的旧数据库 | Store::open | 自动新建准入两张表，旧数据不受影响；重复打开幂等 |
 
+## Agent 准入接入编排器（E3 第 2a 步，实现前定义）
+
+开启 `[admission]` 后：registry 只把任务分给准入等级允许该风险的 agent；配置文件里写的 agent（非 `a2a` 类型）没有记录时视为已信任；
+编排器在接受结果前核对凭证代际，撤权时中止该 agent 正在执行的任务；外部 agent 完成的任务按试用期规则抽检。未开启时行为不变。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-ADM-09 | admission | 开启准入；执行组里有未准入、Guest、Member 的外部 agent 与配置 agent | 按风险分配 agent | 未准入的外部 agent 不分配，角色不可用时报 E_ROUTE_NO_AGENT 并说明准入原因；Guest 只领低风险；配置 agent 视为已信任，租约带 epoch=1；未开启准入时行为不变 |
+| RT-ADM-10 | admission | 执行组主力与备份都是外部 agent，主力正在执行长任务 | 撤销主力 | 进行中的任务立即变为 FAILED（E_AGENT_REVOKED），不交付；执行名额归还；后续任务由备份完成 |
+| RT-ADM-11 | admission | 外部 agent 执行期间因抽检警告被降级（epoch 变化） | 任务结果交回 | 凭证已过期，结果被丢弃，任务 FAILED（E_AGENT_REVOKED）、不交付；凭证有效时结果照常接受 |
+| RT-ADM-12 | admission | 撤权与任务完成同时发生（多轮） | 并发执行 | 只有一个终态且不被覆盖；撤权报告中止了该任务 ⇒ FAILED 且无交付；COMPLETED ⇒ 恰好一次交付且不在中止清单中 |
+| RT-ADM-13 | admission | 外部 agent 完成多个任务（抽检比例 100%） | 记录试用期并回写抽检 | 完成数累加；抽中的任务进入待检清单；只能对待检清单里的任务回写结论；配置 agent 完成任务不产生准入记录 |
+| RT-ADM-16 | admission | 配置文件 | 加载与组装 | 不写 `[admission]` 时默认关闭、规则取默认值；开启后 Runtime 带准入账本；非法参数（如抽检比例 2.0）启动失败 |
+

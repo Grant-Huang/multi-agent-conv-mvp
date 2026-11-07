@@ -33,6 +33,9 @@ pub const CAPABILITY_DIMS: [&str; 6] = [
     "human_contact",
 ];
 
+/// 运行时接入的外部 agent 的 `AgentCard.kind`。其他 kind 视为配置文件里写的 agent（运维已信任）。
+pub const A2A_KIND: &str = "a2a";
+
 /// 契约中允许的角色
 const CONTRACT_ROLES: [&str; 3] = ["observer", "executor", "coordinator"];
 
@@ -143,6 +146,9 @@ pub struct Probation {
     pub warnings: u32,
     /// 已因警告降级，等待人工复核
     pub pending_review: bool,
+    /// 被抽中、等待回写结论的任务
+    #[serde(default)]
+    pub pending_checks: Vec<String>,
 }
 
 /// 一个 agent 的准入记录
@@ -307,6 +313,47 @@ fn fnv1a(parts: &[&[u8]]) -> u64 {
 
 /// 一次变更产生的审计事件：(事件名, 详情)
 type Events = Vec<(&'static str, Value)>;
+
+/// 抽检计数规则：连续不合格达到阈值记一次警告；警告达到上限时降为 Guest、
+/// 标记待人工复核，并作废旧凭证（epoch 加 1）。调用方已确认处于 Active。
+fn apply_check(
+    rec: &mut AdmissionRecord,
+    ev: &mut Events,
+    cfg: &AdmissionConfig,
+    passed: bool,
+    task_id: Option<&str>,
+) -> CheckOutcome {
+    let p = &mut rec.probation;
+    p.sampled += 1;
+    ev.push((
+        "admission.check",
+        json!({"passed": passed, "task_id": task_id}),
+    ));
+    if passed {
+        p.consecutive_failures = 0;
+        return CheckOutcome::Recorded;
+    }
+    p.failed_checks += 1;
+    p.consecutive_failures += 1;
+    if p.consecutive_failures < cfg.failures_per_warning {
+        return CheckOutcome::Recorded;
+    }
+    p.consecutive_failures = 0;
+    p.warnings += 1;
+    let warnings = p.warnings;
+    ev.push(("admission.warning", json!({"warnings": warnings})));
+    if warnings >= cfg.warnings_to_downgrade && !rec.probation.pending_review {
+        rec.granted = Some(TrustLevel::Guest);
+        rec.probation.pending_review = true;
+        rec.epoch += 1;
+        ev.push((
+            "admission.downgraded",
+            json!({"granted": "guest", "epoch": rec.epoch}),
+        ));
+        return CheckOutcome::Downgraded;
+    }
+    CheckOutcome::Warning
+}
 
 /// 准入账本：内存中的记录 + SQLite 持久化
 pub struct AdmissionLedger {
@@ -670,34 +717,53 @@ impl AdmissionLedger {
         let cfg = self.cfg.clone();
         self.update(agent_id, |rec, ev| {
             Self::expect_stage(rec, Stage::Active, "回写抽检")?;
-            let p = &mut rec.probation;
-            p.sampled += 1;
-            ev.push(("admission.check", json!({"passed": passed})));
-            if passed {
-                p.consecutive_failures = 0;
-                return Ok(CheckOutcome::Recorded);
+            Ok(apply_check(rec, ev, &cfg, passed, None))
+        })
+    }
+
+    /// 外部 agent 完成一个任务（结果已被接受）：累加完成数；被抽中时放进待检清单。
+    /// 只对走协议准入的 agent 记录；配置 agent 或未激活的 agent 直接忽略。
+    pub fn note_completed(&self, agent_id: &str, task_id: &str, sampled: bool) -> Result<()> {
+        {
+            let map = self.lock();
+            match map.get(agent_id) {
+                Some(r) if r.source == "protocol" && r.stage == Stage::Active => {}
+                _ => return Ok(()),
             }
-            p.failed_checks += 1;
-            p.consecutive_failures += 1;
-            if p.consecutive_failures < cfg.failures_per_warning {
-                return Ok(CheckOutcome::Recorded);
+        }
+        self.update(agent_id, |rec, ev| {
+            rec.probation.tasks_completed += 1;
+            if sampled && !rec.probation.pending_checks.iter().any(|t| t == task_id) {
+                rec.probation.pending_checks.push(task_id.to_string());
+                ev.push(("admission.sampled", json!({"task_id": task_id})));
             }
-            p.consecutive_failures = 0;
-            p.warnings += 1;
-            let warnings = p.warnings;
-            ev.push(("admission.warning", json!({"warnings": warnings})));
-            let already_down = rec.probation.pending_review;
-            if warnings >= cfg.warnings_to_downgrade && !already_down {
-                rec.granted = Some(TrustLevel::Guest);
-                rec.probation.pending_review = true;
-                rec.epoch += 1;
-                ev.push((
-                    "admission.downgraded",
-                    json!({"granted": "guest", "epoch": rec.epoch}),
+            Ok(())
+        })
+    }
+
+    /// 回写某个被抽中任务的抽检结论。任务必须在待检清单里，回写后移出（不能重复回写）。
+    pub fn record_check_for(
+        &self,
+        agent_id: &str,
+        task_id: &str,
+        passed: bool,
+    ) -> Result<CheckOutcome> {
+        let cfg = self.cfg.clone();
+        self.update(agent_id, |rec, ev| {
+            Self::expect_stage(rec, Stage::Active, "回写抽检")?;
+            let Some(pos) = rec
+                .probation
+                .pending_checks
+                .iter()
+                .position(|t| t == task_id)
+            else {
+                return Err(fail(
+                    codes::ADMISSION_INVALID,
+                    format!("任务 {task_id} 不在 {agent_id} 的待检清单里"),
                 ));
-                return Ok(CheckOutcome::Downgraded);
-            }
-            Ok(CheckOutcome::Warning)
+            };
+            rec.probation.pending_checks.remove(pos);
+            Ok(apply_check(rec, ev, &cfg, passed, Some(task_id)))
         })
     }
 

@@ -183,6 +183,24 @@ history_messages = 12              # 每轮带上最近多少条消息
 task_timeout_secs = 1800           # 单个任务超时：从第一次分到 agent 开始计时，排队不算
 approval_risk = "high"             # 风险达到该等级需人工审批：low / medium / high
 
+# ───── agent 准入与持续信任（E3，可选，默认关闭）─────
+# 只约束运行时接入的外部 agent（kind = "a2a"）；上面配置的 agent 视为已信任。
+# 开启后：按准入等级分配任务（Guest 只做低风险、Member 到中风险、Trusted 不限），
+# 结果交回时核对凭证代际，降级或撤权后旧凭证交回的结果不被接受。默认值取自论文 §5.2。
+# [admission]
+# enabled = true
+# sample_rate = 0.2                # 试用期抽检比例
+# failures_per_warning = 2         # 连续几次不合格记一次警告
+# warnings_to_downgrade = 3        # 累计几次警告降为 Guest
+# member_score = 60.0              # 总分达到此值推荐 Member
+# trusted_score = 80.0             # 总分达到此值推荐 Trusted（必须人工审批）
+# member_requires_approval = false
+# seed = 0
+# [admission.weights]
+# completeness = 0.3
+# conversation = 0.2
+# test = 0.5
+
 # ───── MCP：General 的轻量工具 Harness（可选）─────
 # 只启动自己信任、已安装的服务；command/args 不是 shell，不自动下载软件。
 # 实际工具 Schema 通过 MCP initialize + tools/list 获取，只开放显式列出的工具。

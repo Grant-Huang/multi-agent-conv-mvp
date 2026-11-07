@@ -70,6 +70,8 @@ pub struct Runtime {
     pub backends: Arc<Backends>,
     /// 需要后台探测连通性的 agent（ACP 与 CLI）
     pub probers: Arc<Vec<Prober>>,
+    /// agent 准入账本（`[admission] enabled = true` 时才有）
+    pub admission: Option<Arc<admission::AdmissionLedger>>,
 }
 
 /// 连通性探测的目标：只做握手或命令检查，不调用模型（探测结果写入 `registry.links`）
@@ -170,6 +172,17 @@ impl Runtime {
 
         // 注册 Agent（顺序即未配置执行组时的默认选择顺序：内置 → Codex → 本机 ACP → 节点）
         let registry = AgentRegistry::new(config.agents.assign_map()?);
+        // 准入（E3）：开启时打开账本（参数非法则启动失败），registry 按准入等级分配
+        let admission = if config.admission.enabled {
+            let ledger = Arc::new(admission::AdmissionLedger::open(
+                store.clone(),
+                config.admission.rules(),
+            )?);
+            registry.set_admission(ledger.clone());
+            Some(ledger)
+        } else {
+            None
+        };
         // 需要后台探测连通性的 agent：ACP 与 CLI（pi）
         let mut probers: Vec<Prober> = Vec::new();
         let a = &config.agents;
@@ -266,6 +279,9 @@ impl Runtime {
             o.max_review_rounds,
             Duration::from_secs(o.task_timeout_secs),
         ));
+        if let Some(l) = &admission {
+            orchestrator.set_admission(l.clone());
+        }
         let conversation = Arc::new(ConversationRuntime::new(conversation::ConversationDeps {
             llm: llm_for(LlmRole::Conversation),
             // 回复模型：没单独配置时与前台判断用同一个模型（含服务地址）
@@ -299,6 +315,7 @@ impl Runtime {
             llm: backends.client(LlmRole::Conversation),
             backends: backends.clone(),
             probers: Arc::new(probers),
+            admission,
         })
     }
 

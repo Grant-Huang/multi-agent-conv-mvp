@@ -765,7 +765,8 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 对话 | `conversation.turn`、`conversation.reply`、`conversation.reply_stream_failed`、`conversation.reply_failed`、`conversation.config` | 每轮对话一条（决策、角色、任务、尝试次数、耗时）；直接回答的生成（是否流式、字数、耗时）；启动时的审查模式 |
 | 模型 | `llm.request_failed`、`llm.format_retry`、`llm.structured_failed`、`llm.structured_ok`（debug 级别） | 请求失败、格式不合格重试、最终失败 |
 | 规则 | `policy.reject` | 没有可用 agent，拒绝派发 |
-| 准入 | `admission.preadmitted`、`admission.submitted`、`admission.clarified`、`admission.scored`、`admission.contracted`、`admission.approved`、`admission.activated`、`admission.rejected`、`admission.check`、`admission.warning`、`admission.downgraded`、`admission.revoked` | agent 准入协议（E3）每次状态变化一条，带 `agent_id`；同名事件同时写入 `admission_events` 审计表 |
+| 准入 | `admission.preadmitted`、`admission.submitted`、`admission.clarified`、`admission.scored`、`admission.contracted`、`admission.approved`、`admission.activated`、`admission.rejected`、`admission.check`、`admission.warning`、`admission.downgraded`、`admission.revoked`、`admission.sampled` | agent 准入协议（E3）每次状态变化一条，带 `agent_id`；同名事件同时写入 `admission_events` 审计表 |
+| 准入（编排器） | `admission.result_rejected`、`admission.tasks_aborted` | 凭证已作废时丢弃 agent 交回的结果（带 `task_id`、`epoch`）；撤权时中止该 agent 进行中的任务（带中止数与耗时） |
 | 任务 | `task.status`、`task.status_conflict` | 每次状态变化一条（FAILED 为 ERROR 级别，NEEDS_HUMAN 为 WARN）；状态已被改掉、这次变化被拒绝时记 `task.status_conflict`（WARN，带期望状态和实际状态） |
 | 执行组 | `pool.wait`、`pool.member_missing`（debug） | 都在忙需要排队；配置的成员还没连上 |
 | 执行 | `task.no_agent`、`agent.run_start`、`agent.run_end`、`agent.run_failed`、`agent.process_group_killed` | 分配和执行；`agent.process_group_killed` 记录子进程组被清理（`reason`：cancelled / timeout / exited_with_leftovers） |
