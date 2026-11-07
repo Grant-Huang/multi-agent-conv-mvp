@@ -205,7 +205,9 @@
       "crates/runtime/src/store.rs",
       "crates/runtime/src/registry.rs",
       "crates/runtime/src/orchestrator.rs",
-      "crates/runtime/src/config.rs"
+      "crates/runtime/src/config.rs",
+      "crates/server/src/admission_api.rs",
+      "crates/agents/src/a2a.rs"
     ],
     "coverage": "backend",
     "cases": [],
@@ -223,7 +225,9 @@
       "RT-ADM-11",
       "RT-ADM-12",
       "RT-ADM-13",
-      "RT-ADM-16"
+      "RT-ADM-16",
+      "RT-ADM-14",
+      "RT-ADM-15"
     ]
   }
 ]

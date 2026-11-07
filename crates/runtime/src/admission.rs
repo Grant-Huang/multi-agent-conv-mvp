@@ -151,6 +151,18 @@ pub struct Probation {
     pub pending_checks: Vec<String>,
 }
 
+/// 外部 agent 的接入信息（激活时提供；服务重启后据此重新注册）
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct A2aBinding {
+    /// 外部 agent 服务地址（http/https）
+    pub endpoint: String,
+    /// 执行角色：general / coding / reviewer
+    pub role: String,
+    /// 同类型的 agent 才能放进同一个执行组
+    pub agent_type: String,
+    pub max_concurrent: u32,
+}
+
 /// 一个 agent 的准入记录
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AdmissionRecord {
@@ -172,6 +184,9 @@ pub struct AdmissionRecord {
     pub probation: Probation,
     pub created_at: String,
     pub updated_at: String,
+    /// 外部 agent 的接入信息（配置 agent 为空）
+    #[serde(default)]
+    pub binding: Option<A2aBinding>,
 }
 
 /// 回写一次抽检的结果
@@ -464,6 +479,7 @@ impl AdmissionLedger {
             probation: Probation::default(),
             created_at: at.clone(),
             updated_at: at,
+            binding: None,
         };
         self.persist(
             &mut map,
@@ -524,6 +540,7 @@ impl AdmissionLedger {
             created_at: at.clone(),
             updated_at: at,
             claim: Some(claim.clone()),
+            binding: None,
         };
         self.persist(
             &mut map,
@@ -681,6 +698,45 @@ impl AdmissionLedger {
                 json!({"epoch": rec.epoch, "granted": rec.granted}),
             ));
             Ok(rec.epoch)
+        })
+    }
+
+    /// 记录外部 agent 的接入信息（S5 签约后、激活前或激活后均可更新）
+    pub fn set_binding(&self, agent_id: &str, b: A2aBinding) -> Result<()> {
+        self.update(agent_id, |rec, ev| {
+            if !matches!(rec.stage, Stage::Contracted | Stage::Active) {
+                return Err(fail(
+                    codes::ADMISSION_STATE,
+                    format!("签约后才能登记接入信息，当前阶段 {:?}", rec.stage),
+                ));
+            }
+            if !(b.endpoint.starts_with("http://") || b.endpoint.starts_with("https://")) {
+                return Err(fail(
+                    codes::ADMISSION_INVALID,
+                    "接入地址必须以 http:// 或 https:// 开头",
+                ));
+            }
+            if !matches!(b.role.as_str(), "general" | "coding" | "reviewer") {
+                return Err(fail(
+                    codes::ADMISSION_INVALID,
+                    "角色只能是 general / coding / reviewer",
+                ));
+            }
+            if !(1..=16).contains(&b.max_concurrent) {
+                return Err(fail(
+                    codes::ADMISSION_INVALID,
+                    "max_concurrent 必须在 1–16 之间",
+                ));
+            }
+            if !valid_agent_id(&b.agent_type) {
+                return Err(fail(codes::ADMISSION_INVALID, "agent_type 格式不合法"));
+            }
+            ev.push((
+                "admission.bound",
+                json!({"endpoint": b.endpoint, "role": b.role}),
+            ));
+            rec.binding = Some(b);
+            Ok(())
         })
     }
 

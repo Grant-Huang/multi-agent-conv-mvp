@@ -16,7 +16,9 @@
 //! | POST | /api/nodes/pair | 配对节点 `{"address", "code"}` |
 //! | DELETE | /api/nodes/{id} | 解除配对 |
 //! | GET  | /api/diagnostics | 诊断：最近的问题、按错误码统计、agent 与节点状态 |
+//! | GET/POST | /api/admission/... | agent 准入（E3，开启 `[admission]` 时才有，见 `admission_api`） |
 
+pub mod admission_api;
 pub mod mom;
 pub mod mom_relos;
 
@@ -41,7 +43,7 @@ use tokio_stream::StreamExt;
 type AppState = Arc<Runtime>;
 
 /// 统一错误响应：`{"error": "..."}`
-pub struct AppError(StatusCode, String);
+pub struct AppError(pub StatusCode, pub String);
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
@@ -86,6 +88,7 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/nodes/pair", post(pair_node))
         .route("/api/nodes/{id}", axum::routing::delete(unpair_node))
         .route("/api/diagnostics", get(diagnostics))
+        .merge(admission_api::routes())
         .with_state(rt)
 }
 
