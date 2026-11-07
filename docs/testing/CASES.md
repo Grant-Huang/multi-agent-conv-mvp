@@ -41,3 +41,9 @@
 | RT-TPL-08 | templates | parts 分支缺席；history 分支 payload 字段不全 | 汇合 | 两路都记为 missing，缺失原因非空，payload 为空，不用其他路数据填补；complete 为 false |
 | RT-TPL-09 | templates | 信封的 branch_id 不在模板中；同一 branch_id 出现两次 | 汇合 | 两种情况都整体报错，不生成汇合输入 |
 | RT-TPL-10 | templates | 后端 llama_cpp 配置 background_slots=[2,3,4,5]；openai 配置 max_inflight=8、reserved_interactive=1；openai 不限并发 | 读取 background_capacity | 分别为 4、7、不限（None） |
+
+## MOM 可配置持续仿真（实现前定义）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| E2E-MOMDYNAMIC | mom | 主界面与独立沙盘数据库 | 从主界面进入MOM，调整订单数量和seed创建持续仿真，推进、播放/暂停并查看gap | 同源入口可达；配置影响方案；事件逐步进入案例；暂停与运行状态可见；gap显示23项的真实状态而非仅ID |

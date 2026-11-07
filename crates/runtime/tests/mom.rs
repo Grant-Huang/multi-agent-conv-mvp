@@ -596,3 +596,139 @@ fn clock_only_transactions_are_protected_against_stale_writers() {
     drop(b);
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn dynamic_simulation_is_seeded_and_applies_timed_world_changes() {
+    let config = SimulationConfig {
+        name: "seeded".into(),
+        scenario: "s1".into(),
+        seed: 42,
+        world: std::collections::BTreeMap::from([("quantity".into(), json!(900))]),
+        event_count: 2,
+        event_interval_minutes: 5,
+        disturbances: vec![Disturbance {
+            after_minutes: 18,
+            key: "resources_available".into(),
+            value: json!(false),
+        }],
+    };
+    let mut a = Engine::memory().unwrap();
+    let mut b = Engine::memory().unwrap();
+    let id = a.create_simulation(config.clone()).unwrap();
+    b.create_simulation(config).unwrap();
+    assert_eq!(a.simulations_view(), b.simulations_view());
+    a.advance(514).unwrap();
+    assert_eq!(
+        a.case(&id).unwrap().proposal.as_ref().unwrap()["quantity"],
+        900
+    );
+    a.advance(515).unwrap();
+    assert_eq!(a.case(&id).unwrap().world["resources_available"], false);
+    assert!(a.simulations_view()["simulations"][0]["queue"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v["status"] == "APPLIED"));
+}
+#[test]
+fn playback_is_bounded_pausable_and_paused_after_restart() {
+    let path = std::env::temp_dir().join(format!("mom-{}.db", an_core::new_id("playback")));
+    let id;
+    {
+        let mut e = Engine::open(&path).unwrap();
+        id = e.create_simulation(SimulationConfig::default()).unwrap();
+        e.set_playback(true, 2).unwrap();
+        e.playback_tick().unwrap();
+        assert_eq!(e.now(), 498);
+    }
+    let mut e = Engine::open(&path).unwrap();
+    assert_eq!(e.simulations_view()["playback"]["playing"], false);
+    e.playback_tick().unwrap();
+    assert_eq!(e.now(), 498);
+    e.set_playback(true, 1).unwrap();
+    e.playback_tick().unwrap();
+    assert_eq!(e.now(), 499);
+    assert_eq!(e.simulations_view()["playback"]["playing"], false);
+    assert_eq!(e.simulations_view()["simulations"][0]["case_id"], id);
+    drop(e);
+    std::fs::remove_file(path).unwrap();
+}
+#[test]
+fn invalid_simulation_cannot_mutate_world_or_bypass_approval() {
+    let mut e = Engine::memory().unwrap();
+    let cfg = SimulationConfig {
+        event_count: 33,
+        ..SimulationConfig::default()
+    };
+    assert!(e.create_simulation(cfg).is_err());
+    assert!(e.case_ids().is_empty());
+    let mut cfg = SimulationConfig::default();
+    cfg.world.insert("held".into(), json!({"B77":0}));
+    assert!(e.create_simulation(cfg).is_err());
+    let mut cfg = SimulationConfig::default();
+    cfg.world.insert("resources_available".into(), json!("yes"));
+    assert!(e.create_simulation(cfg).is_err());
+    assert!(e.set_playback(true, 361).is_err());
+    let id = e.create_simulation(SimulationConfig::default()).unwrap();
+    e.advance(514).unwrap();
+    assert!(e.execute(&id, "production").is_err());
+}
+#[test]
+fn seed_changes_generated_events_without_fabricating_real_evidence() {
+    let mut a = Engine::memory().unwrap();
+    let mut b = Engine::memory().unwrap();
+    let c = SimulationConfig::default();
+    let mut other = c.clone();
+    other.seed = 99;
+    a.create_simulation(c).unwrap();
+    b.create_simulation(other).unwrap();
+    let x = a.simulations_view();
+    let y = b.simulations_view();
+    assert_ne!(x["simulations"][0]["queue"], y["simulations"][0]["queue"]);
+    let gaps = gap_register();
+    assert_eq!(gaps["items"].as_array().unwrap().len(), 23);
+    assert!(gaps["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|v| v["verified"] == false));
+}
+#[test]
+fn cancelled_simulation_does_not_deliver_future_events() {
+    let mut e = Engine::memory().unwrap();
+    let id = e.create_simulation(SimulationConfig::default()).unwrap();
+    e.cancel(&id).unwrap();
+    e.advance(530).unwrap();
+    assert_eq!(e.case(&id).unwrap().observations.len(), 1);
+    assert!(e.simulations_view()["simulations"][0]["queue"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|v| v["status"] == "CANCELLED"));
+}
+
+#[test]
+fn dynamic_queue_survives_restart_without_duplicate_observations() {
+    let path = std::env::temp_dir().join(format!("mom-{}.db", an_core::new_id("queue-recovery")));
+    let id;
+    {
+        let mut e = Engine::open(&path).unwrap();
+        id = e
+            .create_simulation(SimulationConfig {
+                event_count: 1,
+                ..SimulationConfig::default()
+            })
+            .unwrap();
+        e.advance(504).unwrap();
+        assert_eq!(e.case(&id).unwrap().observations.len(), 2);
+    }
+    let mut e = Engine::open(&path).unwrap();
+    e.advance(520).unwrap();
+    let count = e.case(&id).unwrap().observations.len();
+    assert_eq!(count, 4);
+    e.advance(520).unwrap();
+    assert_eq!(count, e.case(&id).unwrap().observations.len());
+    assert_eq!(e.simulations_view()["simulations"][0]["pending"], 0);
+    drop(e);
+    std::fs::remove_file(path).unwrap();
+}

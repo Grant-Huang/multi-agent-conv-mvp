@@ -61,6 +61,37 @@ async fn main() -> Result<()> {
     }
 
     let mut app = an_server::api(rt.clone());
+    // Fixture identities must never become public production authorization.
+    let mut mom_clock = None;
+    if config
+        .server
+        .bind
+        .parse::<std::net::SocketAddr>()
+        .is_ok_and(|a| a.ip().is_loopback())
+    {
+        let db = std::path::Path::new(&config.server.db_path).with_extension("mom.db");
+        let state = an_server::mom::AppState::scripted(Arc::new(std::sync::Mutex::new(
+            an_runtime::mom::Engine::open(db)?,
+        )));
+        mom_clock = Some(an_server::mom::spawn_clock(state.clone()));
+        app = app
+            .route(
+                "/mom/",
+                axum::routing::get(|| async { an_server::mom::page() }),
+            )
+            .nest("/mom", an_server::mom::router(state));
+    } else {
+        // Explain the unavailable entry instead of falling back to the chat SPA.
+        app = app.route(
+            "/mom/",
+            axum::routing::get(|| async {
+                (
+                    axum::http::StatusCode::FORBIDDEN,
+                    "MOM 模拟审批仅在 loopback 监听下启用；企业身份与权限尚未接入。",
+                )
+            }),
+        );
+    }
     // 如果前端已经构建（web/dist），一并提供静态页面
     let static_dir = &config.server.static_dir;
     if static_dir.join("index.html").exists() {
@@ -87,5 +118,8 @@ async fn main() -> Result<()> {
     }
     tracing::info!(event = "server.started", bind = %config.server.bind, "AgentNexus 已启动：http://{}", config.server.bind);
     axum::serve(listener, app.layer(TraceLayer::new_for_http())).await?;
+    if let Some(clock) = mom_clock {
+        clock.abort();
+    }
     Ok(())
 }

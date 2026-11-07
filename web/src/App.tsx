@@ -280,6 +280,7 @@ export default function App() {
       <aside className="sidebar" aria-label="会话列表">
         <div className="brand">AgentNexus <span>MVP</span></div>
         <button className="btn primary" onClick={newConversation}>＋ 新会话</button>
+        <a className="btn" href="/mom/">MOM 运营沙盘</a>
         <nav className="conv-list">
           {conversations.map((c) => (
             <button
