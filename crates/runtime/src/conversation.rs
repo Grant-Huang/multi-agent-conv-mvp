@@ -388,8 +388,9 @@ impl ConversationRuntime {
                 )?;
                 log.task_id = Some(task.id.clone());
                 let reply = if route.policy.auto_execute {
+                    // 完整显示用户意图（只压缩连续空白），不再截断：用户要求能看到自己的完整要求
                     let intent = goal.split_whitespace().collect::<Vec<_>>().join(" ");
-                    format!("明白，我来根据您的要求做：{}", truncate_chars(&intent, 80))
+                    format!("明白，我来根据您的要求做：{}", intent)
                 } else {
                     format!(
                         "这个任务被判定为需要人工审批（{}）。请在任务面板中确认后我再开始执行。",

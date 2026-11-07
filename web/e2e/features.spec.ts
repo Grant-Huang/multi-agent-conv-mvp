@@ -181,3 +181,14 @@ test('E2E-FAILCARD: 失败任务的执行历史从旧到新、无编号，失败
   await expect(page.locator('main .task-reason')).toHaveCount(0);
   await expect(page.locator('main .task-status.s-failed')).toHaveCount(0);
 });
+
+test('E2E-ACK: 简短回复完整显示用户意图，不截断', async ({ page }) => {
+  // 超过 80 字的意图，结尾带标记：截断时标记会丢失
+  const goal = '写验证报告：' + '请覆盖中期选举对科技股的影响，并逐条列出依据来源；'.repeat(4) + '结尾标记ACK-END';
+  expect(goal.length).toBeGreaterThan(80);
+  const out = await send(page, goal);
+  await complete(page, out.task.id);
+  const ack = page.locator('main .msg.assistant').first().locator('.bubble');
+  await expect(ack).toContainText('结尾标记ACK-END');
+  await expect(ack).not.toContainText('…');
+});
