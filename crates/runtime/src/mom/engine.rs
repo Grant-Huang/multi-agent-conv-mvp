@@ -230,6 +230,10 @@ impl Engine {
         ensure!(ALLOWED.contains(&key), "unknown fault injection");
         self.update(|s, events| {
             let c = s.cases.get_mut(id).context("unknown case")?;
+            ensure!(
+                !c.cancelled && !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED"),
+                "case already terminal"
+            );
             c.world[key] = value;
             if matches!(
                 key,

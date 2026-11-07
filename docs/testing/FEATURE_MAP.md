@@ -40,3 +40,5 @@ RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS �
 专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
 
 每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。
+
+R-20261107-M1：终态案例拒绝手动故障注入；RT-MOM-10（runtime 集成）与 `server/tests/mom.rs::terminal_cases_reject_http_fault_without_mutating_state`（HTTP）覆盖 CANCELLED/CLOSED，拒绝后世界、资源版本、事件序号和事件列表不变。非终态故障注入保持可用。运行证据见 [修复证据](evidence/r-20261107-m1.md)；本条不代表浏览器故障路径已验证。

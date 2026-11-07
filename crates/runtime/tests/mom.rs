@@ -938,3 +938,45 @@ fn rt_mom_09_without_relos_diagnosis_is_unchanged_mock() {
     assert_eq!(ev["source"], "EAM");
     assert_eq!(ev["mock_ids"], json!(["M03"]));
 }
+
+#[test]
+fn rt_mom_10_terminal_cases_reject_manual_world_changes_without_events() {
+    for closed in [false, true] {
+        let mut e = s1();
+        let id = ready(&mut e);
+        if closed {
+            approve(&mut e, &id, "production");
+            e.execute(&id, "production").unwrap();
+            e.advance(520).unwrap();
+            e.close(&id).unwrap();
+        } else {
+            e.cancel(&id).unwrap();
+        }
+        let before = serde_json::to_value(e.case(&id).unwrap()).unwrap();
+        let sequence = e.sequence();
+        let events = serde_json::to_value(e.events(&id, 0, 1000).unwrap()).unwrap();
+        for (key, value) in [
+            ("resources_available", json!(false)),
+            ("history", json!("changed")),
+            ("cpk", json!(0.5)),
+        ] {
+            assert!(
+                e.change_world(&id, key, value).is_err(),
+                "terminal case accepted {key}"
+            );
+            assert_eq!(e.sequence(), sequence);
+            assert_eq!(serde_json::to_value(e.case(&id).unwrap()).unwrap(), before);
+            assert_eq!(
+                serde_json::to_value(e.events(&id, 0, 1000).unwrap()).unwrap(),
+                events
+            );
+        }
+    }
+    let mut e = s1();
+    let id = ready(&mut e);
+    let sequence = e.sequence();
+    e.change_world(&id, "resources_available", json!(false))
+        .unwrap();
+    assert_eq!(e.case(&id).unwrap().world["resources_available"], false);
+    assert!(e.sequence() > sequence);
+}
