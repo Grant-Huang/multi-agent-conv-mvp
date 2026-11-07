@@ -151,7 +151,9 @@
       "crates/runtime/src/mom/engine.rs",
       "crates/server/src/mom.rs",
       "web/mom/index.html",
-      "crates/runtime/src/mom/simulation.rs"
+      "crates/runtime/src/mom/simulation.rs",
+      "crates/runtime/src/mom/tools.rs",
+      "crates/server/src/mom_relos.rs"
     ],
     "coverage": "browser",
     "cases": [
@@ -164,7 +166,11 @@
       "RT-MOM-02",
       "RT-MOM-03",
       "RT-MOM-04",
-      "RT-MOM-05"
+      "RT-MOM-05",
+      "RT-MOM-06",
+      "RT-MOM-07",
+      "RT-MOM-08",
+      "RT-MOM-09"
     ]
   },
   {

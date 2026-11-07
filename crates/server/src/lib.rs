@@ -18,6 +18,7 @@
 //! | GET  | /api/diagnostics | 诊断：最近的问题、按错误码统计、agent 与节点状态 |
 
 pub mod mom;
+pub mod mom_relos;
 
 use std::convert::Infallible;
 use std::sync::Arc;

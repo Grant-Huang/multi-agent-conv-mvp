@@ -686,7 +686,7 @@ fn seed_changes_generated_events_without_fabricating_real_evidence() {
     let y = b.simulations_view();
     assert_ne!(x["simulations"][0]["queue"], y["simulations"][0]["queue"]);
     let gaps = gap_register();
-    assert_eq!(gaps["items"].as_array().unwrap().len(), 23);
+    assert_eq!(gaps["items"].as_array().unwrap().len(), 24);
     assert!(gaps["items"]
         .as_array()
         .unwrap()
@@ -836,4 +836,105 @@ fn rt_mom_05_blocked_case_expires_running_child_lease() {
     e.advance(lease).unwrap();
     assert_eq!(e.case(&id).unwrap().stage, "BLOCKED");
     assert_eq!(e.case(&id).unwrap().children[0].status, "TIMED_OUT");
+}
+
+// ─── E1-C：RelOS 关系上下文接入（RT-MOM-06～09，实现前定义） ─────────────────
+
+/// 服务层从 RelOS 取回并记录的上下文（与 an-server 写入 world.relos 的结构一致）
+fn relos_ok() -> serde_json::Value {
+    json!({
+        "status": "ok",
+        "source": "RelOS /v1/context/compile",
+        "maintenance_candidates": [
+            {"cause": "FM-SPINDLE-BEARING", "confidence": 0.82, "relation_id": "rel-1"}
+        ],
+        "quality_candidates": [
+            {"cause": "FM-SPINDLE-BEARING", "confidence": 0.74, "relation_id": "rel-2"}
+        ],
+        "selected_ids": ["rel-1", "rel-2"],
+        "context_tokens": 640
+    })
+}
+
+fn s1_with_relos(e: &mut Engine, relos: serde_json::Value) -> String {
+    let id = e.ingest(EventInput::s1("order", 497)).unwrap();
+    e.change_world(&id, "relos", relos).unwrap();
+    e.ingest(EventInput::s1("vibration", 503)).unwrap();
+    e.ingest(EventInput::s1("quality", 511)).unwrap();
+    e.advance(514).unwrap();
+    id
+}
+
+#[test]
+fn rt_mom_06_relos_context_feeds_diagnosis_with_provenance() {
+    let mut e = s1();
+    let id = s1_with_relos(&mut e, relos_ok());
+    let c = e.case(&id).unwrap();
+    let m = &c.nodes["maintenance"];
+    assert_eq!(m.status, "SUCCEEDED");
+    let out = m.output.as_ref().unwrap();
+    assert_eq!(out["candidate_causes"][0]["cause"], "FM-SPINDLE-BEARING");
+    assert_eq!(out["context_relation_ids"], json!(["rel-1", "rel-2"]));
+    // 根因仍是假设：RelOS 只提供候选与证据，不代替诊断结论
+    assert_eq!(out["cause_status"], "HYPOTHESIS");
+    let ev = &c.evidence[&m.evidence_refs[0]];
+    assert_eq!(ev["source"], "RelOS");
+    assert_eq!(ev["mock_ids"], json!(["M24"]));
+    let q = &c.nodes["quality"];
+    assert_eq!(q.status, "SUCCEEDED");
+    assert_eq!(
+        q.output.as_ref().unwrap()["candidate_causes"][0]["relation_id"],
+        "rel-2"
+    );
+    // 审批门槛不变：没有批准就没有任何下发
+    assert!(c.actions.is_empty());
+    assert_eq!(c.stage, "WAITING_HUMAN");
+}
+
+#[test]
+fn rt_mom_07_relos_unavailable_degrades_to_unknown_without_dispatch() {
+    for status in ["unavailable", "timeout", "empty"] {
+        let mut e = s1();
+        let id = s1_with_relos(&mut e, json!({"status": status, "reason": "test"}));
+        let c = e.case(&id).unwrap();
+        assert_eq!(c.nodes["maintenance"].status, "UNKNOWN", "{status}");
+        assert_eq!(c.nodes["quality"].status, "UNKNOWN", "{status}");
+        let out = c.nodes["maintenance"].output.as_ref().unwrap();
+        assert_eq!(out["relos_status"], status);
+        // 与诊断超时相同的安全默认：不继续使用可疑设备，不自动下发
+        assert_eq!(
+            c.proposal.as_ref().unwrap()["exclude_assets"],
+            json!(["CNC-XX"])
+        );
+        assert!(c.actions.is_empty());
+        assert!(e.execute(&id, "production").is_err());
+    }
+}
+
+#[test]
+fn rt_mom_08_relos_payload_is_validated() {
+    let mut e = s1();
+    let id = e.ingest(EventInput::s1("order", 497)).unwrap();
+    assert!(e.change_world(&id, "relos", json!(true)).is_err());
+    assert!(e
+        .change_world(&id, "relos", json!({"status": "maybe"}))
+        .is_err());
+    let huge = "x".repeat(70_000);
+    assert!(e
+        .change_world(&id, "relos", json!({"status": "ok", "note": huge}))
+        .is_err());
+    assert!(e.change_world(&id, "relos", relos_ok()).is_ok());
+}
+
+#[test]
+fn rt_mom_09_without_relos_diagnosis_is_unchanged_mock() {
+    let mut e = s1();
+    let id = ready(&mut e);
+    let c = e.case(&id).unwrap();
+    let out = c.nodes["maintenance"].output.as_ref().unwrap();
+    assert_eq!(out["condition"], "WARNING");
+    assert!(out.get("candidate_causes").is_none());
+    let ev = &c.evidence[&c.nodes["maintenance"].evidence_refs[0]];
+    assert_eq!(ev["source"], "EAM");
+    assert_eq!(ev["mock_ids"], json!(["M03"]));
 }
