@@ -15,4 +15,9 @@ needs_review: boolean,
 /**
  * 规则命中说明，例如 "high risk requires approval"
  */
-notes: Array<string>, };
+notes: Array<string>, 
+/**
+ * 裁决时该角色执行组的可用成员（显示名，主力在前）。审批卡片据此告诉用户任务会交给谁。
+ * 旧数据没有这个字段，读出来为空。
+ */
+candidates?: Array<string>, };

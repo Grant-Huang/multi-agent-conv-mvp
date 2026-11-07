@@ -226,7 +226,7 @@ pre {
   display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer;
   width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left;
 }
-.task-head .role { font-size: 12px; color: var(--muted); }
+.task-head .role { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .task-head .goal { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task-body { padding: 0 10px 10px; }
 .actions { display: flex; gap: 6px; margin-bottom: 6px; }
@@ -292,3 +292,13 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
 /* 流式回答末尾的光标 */
 .cursor { display: inline-block; margin-left: 1px; animation: blink 1s steps(1) infinite; color: var(--muted); }
 @keyframes blink { 50% { opacity: 0; } }
+
+/* 待批准说明：批准前告诉用户交给谁、预计工具、触发规则、是否审查 */
+.approval-info {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; margin: 0;
+  font-size: 12.5px; padding: 6px 8px; border-left: 2px solid var(--border);
+}
+.approval-info dt { color: var(--muted); white-space: nowrap; }
+.approval-info dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.approval-info .candidate { display: inline-block; margin-right: 8px; }
+.approval-info code { margin-right: 4px; }

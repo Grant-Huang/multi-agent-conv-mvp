@@ -13,6 +13,8 @@
 | E2E-TICKER | tasks | 受控模型让 General 写文件；另一会话让它挂起 | 完成后检查走马灯位置、展开历史；再发挂起任务看运行指示，取消 | 走马灯挂在简短回复下，最终正文在其后；收起显示最新一行，展开从旧到新且无“第 N 步”；背景与正文一致、字体更小；运行中行尾有动画 SVG，结束后消失 |
 | E2E-FAILCARD | tasks | 受控模型对该任务返回 500，General 出错 | 发送后等任务 FAILED，展开走马灯历史 | 收起行显示失败原因；历史从旧到新、无编号列表；末尾即失败原因；不再有单独错误段和“失败”状态行 |
 | E2E-ACK | conversation | 发送超过 80 字、结尾带标记的任务要求 | 等任务完成，检查第一条简短回复 | 简短回复完整包含用户意图（含结尾标记），不出现省略号 |
+| E2E-ASSIGN | assignment | 受控模型让 General 写文件 | 等任务完成，看右侧任务卡标题，再展开 | 标题行含执行者 General Agent；详情“执行者”节显示 General Agent、主力、本机 |
+| E2E-APPROVEINFO | approval | 模型将任务判为 high | 发送后、批准前查看对话区的待批准卡片 | 卡片写明将交给 General Agent、预计工具 write_file、触发规则“风险等级 High”，并有“批准执行”按钮 |
 
 每次输出日志、测试结果和截图；失败保留 trace。正向通过只证明这些路径，未覆盖功能在地图中明确标注。另用校验器测试注入重复 ID、未知用例、缺文档和缺测试，确认地图失配确实失败。
 
@@ -66,6 +68,18 @@
 | RT-MOM-03 | mom | 三个不同虚拟时刻的观测 | 查询事件 | ObservationRecorded.at 等于接收时虚拟时钟 |
 | RT-MOM-04 | mom | 下发失败进入 PARTIAL | 重放 execute | 返回失败且不重复下发 |
 | RT-MOM-05 | mom | 有运行子任务的案例被阻断 | 推进至租约到期 | 子任务 TIMED_OUT，不占用运行名额 |
+
+## 执行者与审批说明（Runtime 集成层，实现前定义）
+
+任务记录里的执行者（agent、执行组中的位置、排队时长）与 Policy 给出的候选执行者。测试函数前缀 `rt_assign_NN_`，在 `crates/runtime/tests/assignment.rs`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-ASSIGN-01 | assignment | 只有一个 general agent | 提交任务并等完成 | assignment 为该 agent（id、显示名、接入方式、位置），member_index=0、group_size=1、round=0 |
+| RT-ASSIGN-02 | assignment | 执行组 [a, b]，各并发 1 | 同时提交两个任务，等两者都 RUNNING | 进入 RUNNING 时已有 assignment；一个是 a（0/2），一个是 b（1/2） |
+| RT-ASSIGN-03 | assignment | 唯一 agent 并发 1，前一个任务占用 300ms | 再提交一个任务并等完成 | 第二个任务 waited_ms ≥ 200；第一个任务 waited_ms < 200 |
+| RT-ASSIGN-04 | assignment | 旧库 tasks 表没有 assignment_json，policy_json 没有 candidates | 打开数据库并读取旧任务 | 自动补列且可重复打开；旧任务其他字段不变，assignment 为空，candidates 为空 |
+| RT-ASSIGN-05 | approval | 执行组 [a, b]，高风险路由 | Policy 裁决 | 需审批；candidates 依次为 a、b 的“显示名（接入方式，位置）”；旧格式裁决可读出且 candidates 为空 |
 
 ## MOM × RelOS 关系上下文接入（E1-C，实现前定义）
 

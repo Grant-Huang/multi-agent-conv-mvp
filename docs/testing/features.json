@@ -37,11 +37,37 @@
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [
       "crates/runtime/src/policy.rs",
-      "web/src/components/ChatView.tsx"
+      "web/src/components/ChatView.tsx",
+      "web/src/components/ApprovalInfo.tsx"
     ],
     "coverage": "browser",
     "cases": [
-      "E2E-APPROVE"
+      "E2E-APPROVE",
+      "E2E-APPROVEINFO"
+    ],
+    "runtime_cases": [
+      "RT-ASSIGN-05"
+    ]
+  },
+  {
+    "id": "assignment",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/registry.rs",
+      "crates/runtime/src/orchestrator.rs",
+      "crates/runtime/src/store.rs",
+      "web/src/components/AssignmentLine.tsx",
+      "web/src/components/TaskPanel.tsx"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-ASSIGN"
+    ],
+    "runtime_cases": [
+      "RT-ASSIGN-01",
+      "RT-ASSIGN-02",
+      "RT-ASSIGN-03",
+      "RT-ASSIGN-04"
     ]
   },
   {

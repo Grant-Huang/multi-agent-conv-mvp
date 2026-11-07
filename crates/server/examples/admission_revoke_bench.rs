@@ -166,6 +166,7 @@ async fn main() -> Result<()> {
             auto_execute: true,
             needs_review: false,
             notes: vec![],
+            candidates: vec![],
         };
         let a = orch.submit(&conv, "长任务", "", route(), policy.clone())?;
         let running = wait_running(&store, &a.id).await;

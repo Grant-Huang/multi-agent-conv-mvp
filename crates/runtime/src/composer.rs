@@ -173,9 +173,11 @@ mod tests {
                 auto_execute: true,
                 needs_review: true,
                 notes: vec![],
+                candidates: vec![],
             },
             result: None,
             review: None,
+            assignment: None,
             created_at: "".into(),
             updated_at: "".into(),
         }

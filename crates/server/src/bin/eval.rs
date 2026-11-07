@@ -198,9 +198,11 @@ fn fake_task(t: &ActiveTask) -> TaskRecord {
             auto_execute: true,
             needs_review: false,
             notes: vec![],
+            candidates: vec![],
         },
         result: None,
         review: None,
+        assignment: None,
         created_at: an_core::now(),
         updated_at: an_core::now(),
     }

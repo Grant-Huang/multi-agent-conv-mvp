@@ -69,6 +69,8 @@ impl Policy {
             auto_execute,
             needs_review,
             notes,
+            // 审批卡片据此告诉用户任务会交给谁（执行组顺序，主力在前）
+            candidates: registry.candidates(route.execution_role),
         })
     }
 }

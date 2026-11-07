@@ -156,6 +156,7 @@ fn auto() -> PolicyVerdict {
         auto_execute: true,
         needs_review: false,
         notes: vec![],
+        candidates: vec![],
     }
 }
 

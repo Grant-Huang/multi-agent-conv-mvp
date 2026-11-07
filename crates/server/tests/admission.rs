@@ -186,6 +186,7 @@ async fn rt_adm_14_admission_http_end_to_end() {
                 auto_execute: true,
                 needs_review: false,
                 notes: vec![],
+                candidates: vec![],
             },
         )
         .unwrap();
