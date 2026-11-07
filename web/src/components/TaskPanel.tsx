@@ -6,7 +6,9 @@ import type { TaskRecord } from "../bindings/TaskRecord";
 import type { TaskStatus } from "../bindings/TaskStatus";
 import { ROLE_LABEL, roleLabel, STATUS_LABEL } from "../labels";
 import { useIncomingDetail } from "../refresh";
+import { ApprovalInfo } from "./ApprovalInfo";
 import { ArtifactList } from "./ArtifactList";
+import { AssignmentLine } from "./AssignmentLine";
 import { ConfirmButton } from "./ConfirmButton";
 import type { TaskActionKind } from "./ChatView";
 
@@ -76,7 +78,11 @@ function TaskCard(props: {
       {/* 标题是真正的按钮：可以用键盘展开，并告知屏幕阅读器展开状态 */}
       <button type="button" className="task-head" aria-expanded={open} onClick={onToggle}>
         <StatusBadge status={task.status} />
-        <span className="role">{roleLabel(task.role)}</span>
+        <span className="role">
+          {roleLabel(task.role)}
+          {/* 执行者：标题行就能看到是哪个 agent 在做（尚未分配时只显示角色） */}
+          {task.assignment && <> · {task.assignment.agent_name}</>}
+        </span>
         <span className="goal" title={task.goal}>{task.goal}</span>
       </button>
 
@@ -91,6 +97,18 @@ function TaskCard(props: {
             )}
             {messageId && <MisrouteForm messageId={messageId} role={task.role} busy={busy} />}
           </div>
+
+          {awaitingApproval && (
+            <Section title="批准前请确认">
+              <ApprovalInfo task={d} />
+            </Section>
+          )}
+
+          {d.assignment && (
+            <Section title="执行者">
+              <AssignmentLine a={d.assignment} />
+            </Section>
+          )}
 
           <Section title="路由">
             <div className="kv">

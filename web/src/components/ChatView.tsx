@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import type { Message } from "../bindings/Message";
 import type { TaskRecord } from "../bindings/TaskRecord";
 import { taskStatusLine } from "../labels";
+import { ApprovalInfo } from "./ApprovalInfo";
 import { ArtifactList } from "./ArtifactList";
 import { ConfirmButton } from "./ConfirmButton";
 import { TaskTicker } from "./TaskTicker";
@@ -52,6 +53,8 @@ const MessageRow = memo(function MessageRow(props: {
               <div className={`task-status s-${task.status.toLowerCase()}`}>{taskStatusLine(task, rank)}</div>
             )}
             {/* 等待批准：直接在对话里给出操作，不需要去右侧面板找 */}
+            {/* 批准前先说明会交给谁、预计用什么、为什么要批 */}
+            {task.status === "NEEDS_HUMAN" && !task.result && <ApprovalInfo task={task} />}
             {task.status === "NEEDS_HUMAN" && !task.result && onAct && (
               <div className="task-actions">
                 <button type="button" className="btn primary small" disabled={busy} onClick={() => onAct("approve", task.id)}>

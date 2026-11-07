@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use an_core::{codes, AgentAdapter, AgentCard, AgentError, Role};
 use tokio::sync::Notify;
@@ -48,6 +48,21 @@ pub struct AgentRegistry {
 pub struct Lease {
     registry: Arc<AgentRegistry>,
     pub agent: Arc<dyn AgentAdapter>,
+    /// 在执行组可用成员中的位置：0 = 主力，之后是备份
+    pub member_index: usize,
+    /// 分配时执行组的可用成员数
+    pub group_size: usize,
+    /// 从开始申请到拿到名额等了多久（没排队时接近 0）
+    pub waited: Duration,
+}
+
+/// agent 给人看的名称："名称（接入方式，位置）"；节点 agent 的名称里已带机器名，只补接入方式
+pub fn display_name(card: &AgentCard) -> String {
+    if card.kind == "node" {
+        format!("{}（{}）", card.name, card.kind)
+    } else {
+        format!("{}（{}，{}）", card.name, card.kind, card.location)
+    }
 }
 
 impl Drop for Lease {
@@ -194,6 +209,19 @@ impl AgentRegistry {
             .unwrap_or(false)
     }
 
+    /// 某角色执行组里当前可用的成员（显示名，按组内顺序，主力在前）。执行组配置错误时为空
+    pub fn candidates(&self, role: Role) -> Vec<String> {
+        let inner = self.lock();
+        Self::group(&inner, role)
+            .map(|g| {
+                g.iter()
+                    .filter(|e| e.agent.card().enabled)
+                    .map(|e| display_name(e.agent.card()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// 有可用 agent 的角色
     pub fn enabled_roles(&self) -> Vec<Role> {
         Role::ALL
@@ -240,6 +268,7 @@ impl AgentRegistry {
         role: Role,
         on_wait: impl Fn(String),
     ) -> Result<Lease, AgentError> {
+        let started = Instant::now();
         let mut waited = false;
         loop {
             // 先登记通知再检查，避免"检查完、开始等之前"刚好有 agent 空出来而错过通知
@@ -266,7 +295,7 @@ impl AgentRegistry {
                 }
                 let total = ids.len();
                 // 按组内顺序找第一个有空闲名额的
-                for id in &ids {
+                for (index, id) in ids.iter().enumerate() {
                     let e = inner
                         .agents
                         .iter_mut()
@@ -277,6 +306,9 @@ impl AgentRegistry {
                         return Ok(Lease {
                             registry: self.clone(),
                             agent: e.agent.clone(),
+                            member_index: index,
+                            group_size: total,
+                            waited: started.elapsed(),
                         });
                     }
                 }

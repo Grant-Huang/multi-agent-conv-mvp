@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use an_core::{
-    now, Conversation, Message, PolicyVerdict, ReviewVerdict, RouteLog, TaskEvent, TaskRecord,
-    TaskResult, TaskStatus,
+    now, Assignment, Conversation, Message, PolicyVerdict, ReviewVerdict, RouteLog, TaskEvent,
+    TaskRecord, TaskResult, TaskStatus,
 };
 use anyhow::{anyhow, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension, Row};
@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     review_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    context TEXT NOT NULL DEFAULT ''
+    context TEXT NOT NULL DEFAULT '',
+    assignment_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_conv ON tasks(conversation_id, created_at);
 CREATE TABLE IF NOT EXISTS events (
@@ -300,6 +301,15 @@ impl Store {
         )?;
         if has_context == 0 {
             conn.execute_batch("ALTER TABLE tasks ADD COLUMN context TEXT NOT NULL DEFAULT ''")?;
+        }
+        // 兼容旧库：tasks 表补 assignment_json 列（执行者；旧任务为 NULL）
+        let has_assignment: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'assignment_json'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_assignment == 0 {
+            conn.execute_batch("ALTER TABLE tasks ADD COLUMN assignment_json TEXT")?;
         }
         // 内存库不能跨连接共享，读写仍走同一条。文件库另开只读连接，写的时候读不用等。
         let read = if path == Path::new(":memory:") {
@@ -601,6 +611,15 @@ impl Store {
         Ok(())
     }
 
+    /// 记录执行者（每轮拿到 agent 时写入，返工轮覆盖之前的）
+    pub fn set_task_assignment(&self, id: &str, assignment: &Assignment) -> Result<()> {
+        self.write().execute(
+            "UPDATE tasks SET assignment_json = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, serde_json::to_string(assignment)?, now()],
+        )?;
+        Ok(())
+    }
+
     pub fn set_task_review(&self, id: &str, review: &ReviewVerdict) -> Result<()> {
         self.write().execute(
             "UPDATE tasks SET review_json = ?2, updated_at = ?3 WHERE id = ?1",
@@ -792,7 +811,7 @@ fn lock_writer(
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-const TASK_SELECT: &str = "SELECT id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at FROM tasks";
+const TASK_SELECT: &str = "SELECT id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, assignment_json FROM tasks";
 
 /// 把一行 tasks 记录还原成 TaskRecord（JSON 列解析失败时返回 Err）
 fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Result<TaskRecord>> {
@@ -802,6 +821,7 @@ fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Result<TaskRecord>> {
     let policy: String = r.get(6)?;
     let result: Option<String> = r.get(7)?;
     let review: Option<String> = r.get(8)?;
+    let assignment: Option<String> = r.get(11)?;
     let (id, conversation_id, goal, created_at, updated_at): (
         String,
         String,
@@ -820,6 +840,7 @@ fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Result<TaskRecord>> {
             policy: serde_json::from_str::<PolicyVerdict>(&policy)?,
             result: result.map(|s| serde_json::from_str(&s)).transpose()?,
             review: review.map(|s| serde_json::from_str(&s)).transpose()?,
+            assignment: assignment.map(|s| serde_json::from_str(&s)).transpose()?,
             created_at,
             updated_at,
         })
@@ -1379,9 +1400,11 @@ mod tests {
                 auto_execute: true,
                 needs_review: false,
                 notes: vec![],
+                candidates: vec![],
             },
             result: None,
             review: None,
+            assignment: None,
             created_at: now(),
             updated_at: now(),
         }

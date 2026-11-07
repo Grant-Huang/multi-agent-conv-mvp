@@ -195,6 +195,11 @@ pub struct PolicyVerdict {
     pub needs_review: bool,
     /// 规则命中说明，例如 "high risk requires approval"
     pub notes: Vec<String>,
+    /// 裁决时该角色执行组的可用成员（显示名，主力在前）。审批卡片据此告诉用户任务会交给谁。
+    /// 旧数据没有这个字段，读出来为空。
+    #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub candidates: Vec<String>,
 }
 
 // ───────────────────────── Agent 能力注册 ─────────────────────────
@@ -356,8 +361,35 @@ pub struct TaskRecord {
     pub policy: PolicyVerdict,
     pub result: Option<TaskResult>,
     pub review: Option<ReviewVerdict>,
+    /// 实际执行者（最近一轮）。尚未分配 agent 时为 None
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub assignment: Option<Assignment>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// 执行组把任务分给了谁：每轮执行（含返工）拿到 agent 时写入，最近一轮覆盖之前的
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Assignment {
+    /// agent 唯一标识，例如 "general"、"hermes@office-pc"
+    pub agent_id: String,
+    /// 能力卡片上的显示名
+    pub agent_name: String,
+    /// 接入方式：builtin / cli / acp / node
+    pub kind: String,
+    /// 所在机器："本机" 或节点名称
+    pub location: String,
+    /// 在执行组中的位置：0 = 主力，之后是备份
+    pub member_index: u32,
+    /// 执行组当时的可用成员数；1 表示没有备份
+    pub group_size: u32,
+    /// 这一轮排队等待 agent 的时长
+    #[ts(type = "number")]
+    pub waited_ms: u64,
+    /// 0 = 首轮执行，N = 第 N 轮返工
+    pub round: u32,
 }
 
 /// 每次路由的完整日志：用于调试和积累评测集

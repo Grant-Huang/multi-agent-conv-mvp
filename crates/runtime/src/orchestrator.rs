@@ -25,8 +25,8 @@ use std::time::Duration;
 
 use an_agents::ReviewerAgent;
 use an_core::{
-    codes, now, AgentError, EventSink, Evidence, PolicyVerdict, ReviewVerdict, RouteDecision,
-    TaskRecord, TaskResult, TaskSpec, TaskStatus, Verdict, WorkerStatus,
+    codes, now, AgentError, Assignment, EventSink, Evidence, PolicyVerdict, ReviewVerdict,
+    RouteDecision, TaskRecord, TaskResult, TaskSpec, TaskStatus, Verdict, WorkerStatus,
 };
 use anyhow::{bail, Context, Result};
 use tokio::task::AbortHandle;
@@ -34,7 +34,7 @@ use tokio::time::Instant;
 
 use crate::bus::Bus;
 use crate::composer::Composer;
-use crate::registry::AgentRegistry;
+use crate::registry::{display_name, AgentRegistry};
 use crate::store::{Store, ACTIVE_STATUSES};
 
 /// 结束任务时允许的起点：执行中、审查中，或排队时就出错（例如没有可用 agent）
@@ -184,6 +184,7 @@ impl Orchestrator {
             policy,
             result: None,
             review: None,
+            assignment: None,
             created_at: ts.clone(),
             updated_at: ts,
         };
@@ -359,6 +360,22 @@ impl Orchestrator {
                 return Step::Done(TaskResult::failed_code(e.code, e.message));
             }
         };
+        let card = lease.agent.card().clone();
+        // 先记下执行者，再改成 RUNNING：前端收到 RUNNING 事件刷新任务时就能看到是谁在做。
+        // 写库失败只记日志，不影响执行（和写交付消息失败的处理一致）。
+        let assignment = Assignment {
+            agent_id: card.id.clone(),
+            agent_name: card.name.clone(),
+            kind: card.kind.clone(),
+            location: card.location.clone(),
+            member_index: lease.member_index as u32,
+            group_size: lease.group_size as u32,
+            waited_ms: lease.waited.as_millis() as u64,
+            round,
+        };
+        if let Err(e) = self.store.set_task_assignment(&task.id, &assignment) {
+            tracing::error!(task_id = %task.id, error = %e, "写入执行者失败");
+        }
         let msg = if round == 0 {
             "开始执行".to_string()
         } else {
@@ -369,15 +386,10 @@ impl Orchestrator {
         }
         let deadline = *deadline.get_or_insert_with(|| Instant::now() + self.task_timeout);
 
-        let card = lease.agent.card().clone();
         // 节点 agent 的名称里已经带了机器名，不再重复
-        let place = if card.kind == "node" {
-            card.kind.clone()
-        } else {
-            format!("{}，{}", card.kind, card.location)
-        };
-        sink.progress(format!("由 {} 执行（{place}）", card.name));
-        tracing::info!(event = "agent.run_start", task_id = %task.id, agent_id = %card.id, kind = %card.kind, location = %card.location);
+        let shown = display_name(&card);
+        sink.progress(format!("由 {shown} 执行"));
+        tracing::info!(event = "agent.run_start", task_id = %task.id, agent_id = %card.id, kind = %card.kind, location = %card.location, member_index = lease.member_index, group_size = lease.group_size, waited_ms = assignment.waited_ms);
         let started = std::time::Instant::now();
         let outcome = tokio::time::timeout_at(deadline, lease.agent.run(spec, sink.clone())).await;
         let elapsed_ms = started.elapsed().as_millis() as u64;
@@ -407,7 +419,7 @@ impl Orchestrator {
             0,
             Evidence {
                 kind: "executed_by".into(),
-                content: format!("{}（{place}）", card.name),
+                content: shown,
             },
         );
         Step::Done(result)
@@ -659,6 +671,7 @@ mod tests {
             auto_execute,
             needs_review: false,
             notes: vec!["测试".into()],
+            candidates: vec![],
         }
     }
 

@@ -7,7 +7,8 @@
 | conversation | 左侧“＋ 新会话”；中间输入框“输入消息” | 发问候、刷新重读、切换会话；最终消息 ID/内容一致，无串入和 think 泄漏 | E2E-CONV、E2E-ACK；多问题质量仍需实际模型验收 |
 | navigation | 窄屏顶部“☰ 会话”打开左栏抽屉 | 创建/选择会话后抽屉关闭，发送框可用 | E2E-MOBILE；非固定坐标定位 |
 | tasks | 对话中的任务状态/产物，右侧“任务”卡片；简短回复下的走马灯（收起显示最新一行，展开从旧到新，运行中行尾动画） | 真实文件工具写入、质检 pass、COMPLETED；下载字节与 artifact、磁盘一致；走马灯位置、顺序、背景与运行指示 | E2E-FILE、E2E-TICKER、E2E-FAILCARD；进程成功不等于验收通过 |
-| approval | 对话中“批准执行”，或展开任务卡 | 高风险先 NEEDS_HUMAN、没有 result；点击后才执行 | E2E-APPROVE；不批准真实危险操作 |
+| approval | 对话中“批准执行”，或展开任务卡；批准按钮上方的审批说明 | 高风险先 NEEDS_HUMAN、没有 result；点击后才执行；批准前写明将交给谁（执行组顺序）、预计工具、触发规则 | E2E-APPROVE、E2E-APPROVEINFO、RT-ASSIGN-05；预计工具是 Router 预估，不是硬限制；不批准真实危险操作 |
+| assignment | 右侧“任务”卡片标题行的执行者；展开后的“执行者”节 | 任务记录执行的 agent、主力 / 备份（执行组位置）、排队时长、返工轮次；进入 RUNNING 时已写入；旧库自动补列 | E2E-ASSIGN、RT-ASSIGN-01 至 RT-ASSIGN-04；多节点真实执行组未在浏览器覆盖 |
 | cancellation | 执行中“取消任务”，或卡片“取消” | 先点变“确认取消”，第二次才 CANCELLED，API 状态一致 | E2E-CANCEL；三秒超时恢复由已有组件测试保护 |
 | observability | 右侧底部“开发者模式：关”切开，再点击“诊断”“路由日志” | 诊断显示真实后端；路由日志匹配本次消息，可展开模型原文 | E2E-DIAG；复制剪贴板尚待完整浏览器验证 |
 | agent-links | 左下角连接状态：绿=已连通可调用（握手成功，或 10 分钟内有成功调用）；灰=已配置未连通；红=不可用；灰红的原因在悬停提示里 | 内置 agent 始终绿；命令不存在为红；能启动但握手失败为灰；健康接口每个 agent 带 link.status | 单元：runtime link.rs 状态规则；HTTP：server/tests/e2e.rs agent_links_are_red_when_missing_and_grey_when_not_connected；组件：web/src/health.test.tsx；真实 ACP 握手与模型调用未在沙箱验证 |

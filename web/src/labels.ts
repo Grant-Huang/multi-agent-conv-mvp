@@ -42,3 +42,17 @@ export function taskStatusLine(task: Pick<TaskRecord, "status" | "role">, rank: 
       return STATUS_LABEL[task.status];
   }
 }
+
+/**
+ * 执行者在执行组中的位置："主力" / "备份 N"；组内只有一个成员时注明没有备份。
+ * member_index 从 0 开始，0 是主力。
+ */
+export function memberLabel(memberIndex: number, groupSize: number): string {
+  if (memberIndex === 0) return groupSize > 1 ? `主力（共 ${groupSize} 个）` : "主力（无备份）";
+  return `备份 ${memberIndex}（共 ${groupSize} 个）`;
+}
+
+/** 排队时长：不足 0.1 秒视为没有排队，返回空串 */
+export function waitedLabel(ms: number): string {
+  return ms < 100 ? "" : `排队 ${(ms / 1000).toFixed(1)}s`;
+}

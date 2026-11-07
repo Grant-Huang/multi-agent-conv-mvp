@@ -192,3 +192,28 @@ test('E2E-ACK: 简短回复完整显示用户意图，不截断', async ({ page 
   await expect(ack).toContainText('结尾标记ACK-END');
   await expect(ack).not.toContainText('…');
 });
+
+test('E2E-ASSIGN: 任务卡显示执行者', async ({ page }) => {
+  const out = await send(page, '写执行者验证报告');
+  await complete(page, out.task.id);
+  const card = page.locator('.task-card').filter({ hasText: '写执行者验证报告' });
+  // 标题行（不展开）就能看到是哪个 agent 在做
+  await expect(card.locator('.task-head')).toContainText('General Agent');
+  await card.locator('.task-head').click();
+  const section = card.locator('section.section').filter({ has: page.getByRole('heading', { name: '执行者', exact: true }) });
+  await expect(section).toContainText('General Agent');
+  await expect(section).toContainText('主力');
+  await expect(section).toContainText('本机');
+});
+
+test('E2E-APPROVEINFO: 待批准卡片说明交给谁、预计用什么、为什么要批', async ({ page }) => {
+  const out = await send(page, '审批说明验证');
+  expect(out.task.status).toBe('NEEDS_HUMAN');
+  // 对话区的待批准卡片，批准前就能看到
+  const info = page.locator('main .approval-info');
+  await expect(info).toContainText('将交给');
+  await expect(info).toContainText('General Agent');
+  await expect(info).toContainText('write_file');
+  await expect(info).toContainText('风险等级 High');
+  await expect(page.locator('main').getByRole('button', { name: '批准执行', exact: true })).toBeVisible();
+});
