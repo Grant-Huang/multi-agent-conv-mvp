@@ -172,7 +172,7 @@ async fn configurable_simulation_queues_events_and_exposes_gap_register() {
         .json()
         .await
         .unwrap();
-    assert_eq!(gaps["items"].as_array().unwrap().len(), 23);
+    assert_eq!(gaps["items"].as_array().unwrap().len(), 24);
     task.abort();
 }
 

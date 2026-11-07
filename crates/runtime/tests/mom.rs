@@ -686,7 +686,7 @@ fn seed_changes_generated_events_without_fabricating_real_evidence() {
     let y = b.simulations_view();
     assert_ne!(x["simulations"][0]["queue"], y["simulations"][0]["queue"]);
     let gaps = gap_register();
-    assert_eq!(gaps["items"].as_array().unwrap().len(), 23);
+    assert_eq!(gaps["items"].as_array().unwrap().len(), 24);
     assert!(gaps["items"]
         .as_array()
         .unwrap()
