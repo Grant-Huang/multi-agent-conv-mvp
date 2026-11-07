@@ -106,8 +106,50 @@ async fn health(State(rt): State<AppState>) -> Json<serde_json::Value> {
             "structured_mode": cfg.structured_mode,
         },
         "backends": backends,
-        "agents": rt.registry.cards(),
+        "agents": agent_links(&rt),
     }))
+}
+
+/// 每个 agent 的卡片，附加 `link`：绿（connected）/ 灰（configured）/ 红（unavailable）及原因
+fn agent_links(rt: &Runtime) -> Vec<serde_json::Value> {
+    let now = std::time::Instant::now();
+    rt.registry
+        .cards()
+        .into_iter()
+        .map(|card| {
+            let state = rt.registry.links.state(&card.id);
+            // 内置 agent 在进程内运行，始终可用；节点的在线状态由心跳决定；
+            // ACP / CLI 由握手探测和成功调用记录决定
+            let (status, reason) = match card.kind.as_str() {
+                "builtin" => (
+                    an_runtime::link::LinkStatus::Connected,
+                    "内置，随服务运行".to_string(),
+                ),
+                "node" if card.enabled => (
+                    an_runtime::link::LinkStatus::Connected,
+                    "节点在线".to_string(),
+                ),
+                _ => {
+                    let status = an_runtime::link::link_status(now, card.enabled, &state);
+                    let reason = match status {
+                        an_runtime::link::LinkStatus::Unavailable => card
+                            .disabled_reason
+                            .clone()
+                            .unwrap_or_else(|| "未安装".into()),
+                        an_runtime::link::LinkStatus::Connected => "已连通".into(),
+                        an_runtime::link::LinkStatus::Configured => match &state.last_probe {
+                            Some((_, Err(e))) => format!("未连通：{e}"),
+                            _ => "尚未探测到连通".into(),
+                        },
+                    };
+                    (status, reason)
+                }
+            };
+            let mut v = serde_json::to_value(&card).unwrap_or_else(|_| json!({}));
+            v["link"] = json!({ "status": status, "reason": reason });
+            v
+        })
+        .collect()
 }
 
 async fn agents(State(rt): State<AppState>) -> Json<Vec<an_core::AgentCard>> {

@@ -40,6 +40,8 @@ pub struct AgentRegistry {
     inner: Mutex<Inner>,
     /// 有 agent 空闲出来或 agent 列表变化时通知排队的任务
     changed: Notify,
+    /// 连接状态（绿 / 灰 / 红）：成功调用与后台探测写入，健康接口读取
+    pub links: crate::link::LinkRegistry,
 }
 
 /// 占用一个 agent 的执行名额；drop 时自动归还
@@ -69,6 +71,7 @@ impl AgentRegistry {
                 assign,
             }),
             changed: Notify::new(),
+            links: Default::default(),
         })
     }
 

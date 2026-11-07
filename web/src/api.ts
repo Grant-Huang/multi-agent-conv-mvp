@@ -62,8 +62,16 @@ export interface Health {
     structured_mode: string;
   };
   backends: BackendStatus[];
-  agents: AgentCard[];
+  agents: AgentWithLink[];
 }
+
+/** 连接状态：connected 绿（已连通且可调用）、configured 灰（已配置但未连通）、unavailable 红（不可用） */
+export interface AgentLink {
+  status: "connected" | "configured" | "unavailable";
+  reason: string;
+}
+
+export type AgentWithLink = AgentCard & { link?: AgentLink };
 
 export interface TaskDetail {
   task: TaskRecord;

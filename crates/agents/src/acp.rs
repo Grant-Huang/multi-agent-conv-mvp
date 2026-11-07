@@ -223,7 +223,42 @@ impl AcpAgent {
     pub fn is_installed(&self) -> bool {
         self.resolved.is_some()
     }
+
+    /// 连通性探测：启动子进程，只做 `initialize` 与 `session/new`，**不发送任务、不调用模型**。
+    /// 超时或握手失败返回原因；探测结束时连接关闭，子进程随之结束（与任务执行的清理方式一致）。
+    pub async fn probe(&self) -> std::result::Result<(), String> {
+        let Some(command) = self.resolved.clone() else {
+            return Err("未安装".into());
+        };
+        let cwd = self.workdir.clone();
+        let _ = tokio::fs::create_dir_all(&cwd).await;
+        let process = acp::AcpAgent::new(
+            AcpAgentConfig::new(command)
+                .args(self.cfg.args.clone())
+                .envs(self.cfg.env.clone()),
+        );
+        let handshake = acp::Client.v1().name("agentnexus-probe").connect_with(
+            process,
+            async move |cx: ConnectionTo<Agent>| {
+                cx.send_request(InitializeRequest::new(ProtocolVersion::V1))
+                    .block_task()
+                    .await?;
+                cx.send_request(NewSessionRequest::new(cwd))
+                    .block_task()
+                    .await?;
+                Ok(())
+            },
+        );
+        match tokio::time::timeout(Duration::from_secs(PROBE_TIMEOUT_SECS), handshake).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(format!("握手失败：{e}")),
+            Err(_) => Err(format!("握手超时（{PROBE_TIMEOUT_SECS} 秒）")),
+        }
+    }
 }
+
+/// 探测握手的超时时间（秒）
+pub const PROBE_TIMEOUT_SECS: u64 = 10;
 
 /// 执行过程中收集到的信息
 #[derive(Default)]
