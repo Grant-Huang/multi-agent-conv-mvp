@@ -23,6 +23,8 @@ pub struct AppState {
     pub master: Arc<dyn Master>,
     slots: Arc<Semaphore>,
     active: Arc<Mutex<BTreeSet<String>>>,
+    /// E1-C：配置后，S1 创建前从 RelOS 取回关系上下文（见 `mom_relos`）；未配置时完全使用 Mock
+    pub relos: Option<Arc<crate::mom_relos::RelosClient>>,
 }
 impl AppState {
     pub fn scripted(engine: Arc<Mutex<Engine>>) -> Self {
@@ -31,7 +33,13 @@ impl AppState {
             master: Arc::new(ScriptedMaster),
             slots: Arc::new(Semaphore::new(4)),
             active: Arc::new(Mutex::new(BTreeSet::new())),
+            relos: None,
         }
+    }
+    /// 启用 RelOS 上下文（`base_url` 例如 `http://127.0.0.1:8000`）。
+    pub fn with_relos(mut self, base_url: &str) -> anyhow::Result<Self> {
+        self.relos = Some(Arc::new(crate::mom_relos::RelosClient::new(base_url)?));
+        Ok(self)
     }
 }
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<Value>)>;
@@ -158,15 +166,32 @@ async fn ingest(State(s): State<AppState>, Json(event): Json<EventInput>) -> Api
     run(&s, |e| Ok(json!({"case_id":e.ingest(event)?})))
 }
 async fn scenario(State(s): State<AppState>, Path(kind): Path<String>) -> ApiResult<Value> {
+    let suffix = an_core::new_id("fixture");
+    // RelOS 上下文在加锁前异步取回（5 秒超时），失败时得到带原因的 status，不阻断案例创建
+    let relos_context = match (&s.relos, kind.as_str()) {
+        (Some(client), "s1") => Some(
+            client
+                .fetch(&crate::mom_relos::RelosQuery {
+                    asset: "CNC-XX",
+                    line: "Line-B",
+                    batch: &suffix,
+                })
+                .await,
+        ),
+        _ => None,
+    };
     let result = run(&s, |e| {
         anyhow::ensure!(kind == "s1" || kind == "s2", "unknown scenario");
-        let suffix = an_core::new_id("fixture");
         let base = e.now().max(if kind == "s1" { 497 } else { 540 });
         let id = if kind == "s1" {
             let mut first = EventInput::s1("order", base);
             first.id = format!("{suffix}-order");
             first.batch = suffix.clone();
             let id = e.ingest(first)?;
+            if let Some(context) = relos_context {
+                // 作为观测写入，引擎记录 WorldChanged 事件；诊断工具只读这条记录
+                e.change_world(&id, "relos", context)?;
+            }
             for (k, delta) in [("vibration", 6), ("quality", 14)] {
                 e.advance(base + delta)?;
                 let mut x = EventInput::s1(k, base + delta);

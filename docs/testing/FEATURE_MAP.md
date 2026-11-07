@@ -35,6 +35,8 @@
 
 MOM 增量：主界面左侧 **MOM 运营沙盘** → 同源 `/mom/`；配置持续仿真与播放暂停、事件队列和完整 gap 详情由 E2E-MOMDYNAMIC 验证。独立8790服务仍保留。两者均为明确标识的模拟模式。
 
+RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS 不可用时的安全降级、上下文写入校验与未启用时的兼容；HTTP-MOM-RELOS-01/02（`crates/server/tests/mom.rs`）用桩 RelOS 与无人监听地址验证 an-mom 的端到端调用。RelOS 知识为仿真数据（台账 M24）。
+
 每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。
 
-R-20261107-M1：终态案例拒绝手动故障注入；RT-MOM-06（runtime 集成）与 `server/tests/mom.rs::terminal_cases_reject_http_fault_without_mutating_state`（HTTP）覆盖 CANCELLED/CLOSED，拒绝后世界、资源版本、事件序号和事件列表不变。非终态故障注入保持可用。运行证据见 [修复证据](evidence/r-20261107-m1.md)；本条不代表浏览器故障路径已验证。
+R-20261107-M1：终态案例拒绝手动故障注入；RT-MOM-10（runtime 集成）与 `server/tests/mom.rs::terminal_cases_reject_http_fault_without_mutating_state`（HTTP）覆盖 CANCELLED/CLOSED，拒绝后世界、资源版本、事件序号和事件列表不变。非终态故障注入保持可用。运行证据见 [修复证据](evidence/r-20261107-m1.md)；本条不代表浏览器故障路径已验证。

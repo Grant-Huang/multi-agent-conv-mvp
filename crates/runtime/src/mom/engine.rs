@@ -225,6 +225,7 @@ impl Engine {
             "capacity_xz",
             "root_cause_verified",
             "effectiveness_verified",
+            "relos",
         ];
         ensure!(ALLOWED.contains(&key), "unknown fault injection");
         self.update(|s, events| {
