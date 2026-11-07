@@ -17,6 +17,7 @@ pub mod config;
 pub mod conv_lock;
 pub mod conversation;
 pub mod dream;
+pub mod link;
 pub mod mom;
 pub mod nodes;
 pub mod orchestrator;
@@ -66,6 +67,50 @@ pub struct Runtime {
     pub llm: LlmClient,
     /// 后端与路由（角色 → 后端 → 地址 / 模型 / 限流方式）
     pub backends: Arc<Backends>,
+    /// 需要后台探测连通性的 agent（ACP 与 CLI）
+    pub probers: Arc<Vec<Prober>>,
+}
+
+/// 连通性探测的目标：只做握手或命令检查，不调用模型（探测结果写入 `registry.links`）
+#[derive(Clone)]
+pub enum Prober {
+    Acp(Arc<AcpAgent>),
+    /// CLI agent（pi）；`backend` 为它依赖的本地模型后端名，有的话还要求该后端已连通
+    Cli {
+        agent: Arc<CodingAgent>,
+        backend: Option<String>,
+    },
+}
+
+/// 对所有探测目标各探测一次，结果写入 `registry.links`
+pub async fn probe_agents(registry: &AgentRegistry, backends: &Backends, probers: &[Prober]) {
+    let status = backends.status().await;
+    for p in probers {
+        let (id, result) = match p {
+            Prober::Acp(a) => {
+                let id = an_core::AgentAdapter::card(a.as_ref()).id.clone();
+                (id, a.probe().await)
+            }
+            Prober::Cli { agent, backend } => {
+                let id = an_core::AgentAdapter::card(agent.as_ref()).id.clone();
+                let mut result = agent.probe().await;
+                if result.is_ok() {
+                    if let Some(name) = backend {
+                        // pi 依赖的模型服务也要可用，否则不能算已连通
+                        let up = status
+                            .iter()
+                            .find(|b| &b.name == name)
+                            .is_some_and(|b| b.ok);
+                        if !up {
+                            result = Err(format!("模型服务 {name} 未连通"));
+                        }
+                    }
+                }
+                (id, result)
+            }
+        };
+        registry.links.record_probe(&id, result);
+    }
 }
 
 impl Runtime {
@@ -124,6 +169,8 @@ impl Runtime {
 
         // 注册 Agent（顺序即未配置执行组时的默认选择顺序：内置 → Codex → 本机 ACP → 节点）
         let registry = AgentRegistry::new(config.agents.assign_map()?);
+        // 需要后台探测连通性的 agent：ACP 与 CLI（pi）
+        let mut probers: Vec<Prober> = Vec::new();
         let a = &config.agents;
         let mut tool_names = vec![];
         let mut capabilities = vec![];
@@ -169,9 +216,14 @@ impl Runtime {
             if let Some(reason) = &card.disabled_reason {
                 tracing::warn!(event = "agent.not_installed", code = an_core::codes::AGENT_NOT_INSTALLED, agent_id = %card.id, "{} 不可用：{reason}", card.name);
             }
-            registry.register(Arc::new(coding));
+            let coding = Arc::new(coding);
+            probers.push(Prober::Cli {
+                agent: coding.clone(),
+                backend: a.coding.cfg.backend.clone(),
+            });
+            registry.register(coding);
         }
-        register_acp_agents(&registry, &config);
+        probers.extend(register_acp_agents(&registry, &config));
         // 执行组配置立即校验一次（节点上的 agent 可能稍后才连上，所以只对已知成员校验）
         for role in Role::ALL {
             if let Err(e) = registry.group_ids(role) {
@@ -241,12 +293,30 @@ impl Runtime {
             diagnostics,
             llm: backends.client(LlmRole::Conversation),
             backends: backends.clone(),
+            probers: Arc::new(probers),
         })
     }
 
     /// 启动后台任务：节点心跳、局域网发现。由 main 在 tokio 运行时中调用
+    /// 立即对所有 ACP / CLI agent 做一次连通性探测（测试与手动刷新用）
+    pub async fn refresh_links(&self) {
+        probe_agents(&self.registry, &self.backends, &self.probers).await;
+    }
+
     pub fn start_background(&self) {
         self.backends.spawn_probes();
+        // 连通性探测：启动时一次，之后每 PROBE_INTERVAL 一次；只做握手或命令检查，不调用模型
+        let (registry, backends, probers) = (
+            self.registry.clone(),
+            self.backends.clone(),
+            self.probers.clone(),
+        );
+        tokio::spawn(async move {
+            loop {
+                probe_agents(&registry, &backends, &probers).await;
+                tokio::time::sleep(link::PROBE_INTERVAL).await;
+            }
+        });
         self.nodes
             .start_heartbeat(Duration::from_secs(self.config.nodes.refresh_secs.max(3)));
         if self.config.nodes.discovery {
@@ -257,27 +327,33 @@ impl Runtime {
 
 /// 注册 ACP agent：先注册自定义配置，再注册本机已安装的预设（id 相同时自定义优先）。
 /// 未安装的预设不注册，避免界面里出现一堆不可用的 agent；自定义的即使未安装也注册，方便看到原因。
-fn register_acp_agents(registry: &AgentRegistry, config: &AppConfig) {
+/// 返回注册成功的 ACP agent 的探测目标（供后台探测连通性）
+fn register_acp_agents(registry: &AgentRegistry, config: &AppConfig) -> Vec<Prober> {
     // 未指定工作目录时：coding 角色用代码目录，其他角色用文件工作目录
     let default_workdir = |role: Role| match role {
         Role::Coding => config.agents.coding.cfg.workdir.clone(),
         _ => config.agents.general.workspace_dir.clone(),
     };
+    let mut probers = Vec::new();
     for cfg in &config.acp.agents {
-        let agent = AcpAgent::new(cfg.clone(), default_workdir(cfg.role));
+        let agent = Arc::new(AcpAgent::new(cfg.clone(), default_workdir(cfg.role)));
         if !agent.is_installed() {
             tracing::warn!(event = "agent.not_installed", code = an_core::codes::AGENT_NOT_INSTALLED, agent_id = %cfg.id, "ACP agent 不可用：{}", agent_reason(&agent));
         }
-        registry.register(Arc::new(agent));
+        if registry.register(agent.clone()) {
+            probers.push(Prober::Acp(agent));
+        }
     }
     if config.acp.auto_detect {
         for cfg in acp::presets() {
-            let agent = AcpAgent::new(cfg.clone(), default_workdir(cfg.role));
-            if agent.is_installed() && registry.register(Arc::new(agent)) {
+            let agent = Arc::new(AcpAgent::new(cfg.clone(), default_workdir(cfg.role)));
+            if agent.is_installed() && registry.register(agent.clone()) {
                 tracing::info!(event = "agent.detected", agent_id = %cfg.id, role = cfg.role.as_str(), "自动发现 ACP agent");
+                probers.push(Prober::Acp(agent));
             }
         }
     }
+    probers
 }
 
 fn agent_reason(agent: &AcpAgent) -> String {

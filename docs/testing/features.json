@@ -140,5 +140,17 @@
       "RT-MOM-04",
       "RT-MOM-05"
     ]
+  },
+  {
+    "id": "agent-links",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/link.rs",
+      "crates/server/src/lib.rs",
+      "crates/agents/src/acp.rs",
+      "web/src/App.tsx"
+    ],
+    "coverage": "backend",
+    "cases": []
   }
 ]

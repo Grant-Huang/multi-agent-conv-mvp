@@ -353,7 +353,7 @@ export default function App() {
 const KIND_LABEL: Record<string, string> = { builtin: "内置", cli: "CLI", acp: "ACP", node: "节点" };
 
 /** 左下角：LLM 连接状态和 Agent 可用状态。不可用的原因直接显示，不依赖悬停提示 */
-function HealthBox({ health }: { health: Health | null }) {
+export function HealthBox({ health }: { health: Health | null }) {
   const [open, setOpen] = useState(false);
   if (!health) return <div className="health"><span className="dot bad" /> 后端未连接</div>;
   return (
@@ -372,15 +372,19 @@ function HealthBox({ health }: { health: Health | null }) {
           </div>
         ))
       )}
-      {/* 每个 agent 一行：名称 + 角色 + 接入方式；不可用时直接写出原因 */}
-      {health.agents.map((a) => (
-        <div key={a.id} className="agent-row">
-          <span className={`dot ${a.enabled ? "ok" : "bad"}`} />
-          {a.name}
-          <span className="agent-meta">{roleLabel(a.role)} · {KIND_LABEL[a.kind] ?? a.kind}</span>
-          {!a.enabled && a.disabled_reason && <div className="bad-text agent-reason">{a.disabled_reason}</div>}
-        </div>
-      ))}
+      {/* 每个 agent 一行：名称 + 角色 + 接入方式。绿=已连通可调用，灰=已配置未连通，红=不可用；灰红的原因在悬停提示里 */}
+      {health.agents.map((a) => {
+        const status = a.link?.status ?? (a.enabled ? "connected" : "unavailable");
+        const dot = status === "connected" ? "ok" : status === "configured" ? "idle" : "bad";
+        return (
+          <div key={a.id} className="agent-row" title={a.link?.reason}>
+            <span className={`dot ${dot}`} />
+            {a.name}
+            <span className="agent-meta">{roleLabel(a.role)} · {KIND_LABEL[a.kind] ?? a.kind}</span>
+            {!a.enabled && a.disabled_reason && <div className="bad-text agent-reason">{a.disabled_reason}</div>}
+          </div>
+        );
+      })}
       {open && (
         <div className="health-detail">
           {(health.backends ?? []).map((b) => (

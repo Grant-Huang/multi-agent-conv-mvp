@@ -1236,3 +1236,44 @@ async fn turn_completes_without_disconnect() {
         "对照组也应有助手消息"
     );
 }
+
+/// agent 连接状态：命令不存在为红（unavailable）；能启动但握手失败为灰（configured）。
+/// 绿色（connected）需要握手成功或近期有成功调用，由 runtime 的 link 单元测试覆盖。
+#[tokio::test]
+async fn agent_links_are_red_when_missing_and_grey_when_not_connected() {
+    let config = r#"
+[llm]
+base_url = "http://127.0.0.1:9/v1"
+model = "m"
+[acp]
+auto_detect = false
+[[acp.agents]]
+id = "missing"
+command = "definitely-not-installed-agent-xyz"
+role = "coding"
+[[acp.agents]]
+id = "silent"
+command = "true"
+role = "coding"
+"#;
+    let (base, rt) = serve_runtime(std::path::Path::new(":memory:"), config).await;
+    rt.refresh_links().await;
+    let health: serde_json::Value = reqwest::get(format!("{base}/api/health"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let agents = health["agents"].as_array().unwrap();
+    let status = |id: &str| {
+        agents
+            .iter()
+            .find(|a| a["id"] == id)
+            .unwrap_or_else(|| panic!("健康接口里缺少 agent {id}"))["link"]["status"]
+            .clone()
+    };
+    assert_eq!(status("missing"), "unavailable");
+    assert_eq!(status("silent"), "configured");
+    // 内置 agent 在进程内运行，不需要探测：始终绿色
+    assert_eq!(status("general"), "connected");
+}

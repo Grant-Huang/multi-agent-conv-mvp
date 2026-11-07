@@ -106,6 +106,8 @@ pre {
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 .dot.ok { background: var(--ok); }
 .dot.bad { background: var(--bad); }
+/* 灰：已配置但未连通 */
+.dot.idle { background: var(--muted); }
 .bad-text { color: var(--bad); }
 .warn-text { color: var(--warn); }
 

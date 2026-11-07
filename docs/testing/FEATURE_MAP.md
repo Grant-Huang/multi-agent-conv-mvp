@@ -10,6 +10,7 @@
 | approval | 对话中“批准执行”，或展开任务卡 | 高风险先 NEEDS_HUMAN、没有 result；点击后才执行 | E2E-APPROVE；不批准真实危险操作 |
 | cancellation | 执行中“取消任务”，或卡片“取消” | 先点变“确认取消”，第二次才 CANCELLED，API 状态一致 | E2E-CANCEL；三秒超时恢复由已有组件测试保护 |
 | observability | 右侧底部“开发者模式：关”切开，再点击“诊断”“路由日志” | 诊断显示真实后端；路由日志匹配本次消息，可展开模型原文 | E2E-DIAG；复制剪贴板尚待完整浏览器验证 |
+| agent-links | 左下角连接状态：绿=已连通可调用（握手成功，或 10 分钟内有成功调用）；灰=已配置未连通；红=不可用；灰红的原因在悬停提示里 | 内置 agent 始终绿；命令不存在为红；能启动但握手失败为灰；健康接口每个 agent 带 link.status | 单元：runtime link.rs 状态规则；HTTP：server/tests/e2e.rs agent_links_are_red_when_missing_and_grey_when_not_connected；组件：web/src/health.test.tsx；真实 ACP 握手与模型调用未在沙箱验证 |
 | nodes | “节点”→按地址添加/发现节点→配对；解除也两步确认 | 以测试节点核对授权、执行、解除后的不可用状态 | 现有 server/tests/e2e.rs node_flow/ACP；真实 LAN 未覆盖 |
 | feedback | 展开可匹配用户消息的任务→“派错了”→动作/角色/说明→保存 | POST /api/feedback 信封、持久化记录；非法动作/角色被拒；导出仅为草稿 | 现有 misroute 组件及 Rust HTTP 测试；本次无模板纠正字段 |
 | templates | 当前无界面入口（M4.3 尚未接入编排器） | 模板校验、Router 拆分决定、分支信封与汇合输入在 Runtime 集成层验证 | RT-TPL-01 至 RT-TPL-10；Rust 集成测试与单元测试；并行执行与 Composer 汇合回复未实现 |
