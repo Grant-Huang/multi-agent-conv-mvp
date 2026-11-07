@@ -53,6 +53,12 @@
 | RT-REP-09 | reports | 规划与检索只有 [S1]；受控模型在第1章写了不存在的 [S9] | 执行任务 | Succeeded；正文无 `[S9]`；参考资料只有检索到的真实链接 |
 | RT-TPL-10 | templates | 后端 llama_cpp 配置 background_slots=[2,3,4,5]；openai 配置 max_inflight=8、reserved_interactive=1；openai 不限并发 | 读取 background_capacity | 分别为 4、7、不限（None） |
 
+## MOM 可配置持续仿真（实现前定义）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| E2E-MOMDYNAMIC | mom | 主界面与独立沙盘数据库 | 从主界面进入MOM，调整订单数量和seed创建持续仿真，推进、播放/暂停并查看gap | 同源入口可达；配置影响方案；事件逐步进入案例；暂停与运行状态可见；gap显示24项的真实状态而非仅ID |
+
 ## 每日审查修复验收（实现前定义）
 
 | Case | Feature | Given | When | Then |
@@ -74,3 +80,84 @@
 | RT-ASSIGN-03 | assignment | 唯一 agent 并发 1，前一个任务占用 300ms | 再提交一个任务并等完成 | 第二个任务 waited_ms ≥ 200；第一个任务 waited_ms < 200 |
 | RT-ASSIGN-04 | assignment | 旧库 tasks 表没有 assignment_json，policy_json 没有 candidates | 打开数据库并读取旧任务 | 自动补列且可重复打开；旧任务其他字段不变，assignment 为空，candidates 为空 |
 | RT-ASSIGN-05 | approval | 执行组 [a, b]，高风险路由 | Policy 裁决 | 需审批；candidates 依次为 a、b 的“显示名（接入方式，位置）”；旧格式裁决可读出且 candidates 为空 |
+
+## MOM × RelOS 关系上下文接入（E1-C，实现前定义）
+
+an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS `POST /v1/context/compile`（5 秒超时、不重试），
+把结果作为观测写入 `world.relos`（有 WorldChanged 事件留痕）；诊断工具只读取已记录的观测，引擎仍可确定性重放。
+未启用时行为与原有 Mock 完全相同。RelOS 中的知识目前为仿真数据，不代表真实工厂诊断。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-MOM-06 | mom | S1 案例已记录 RelOS 上下文（status=ok，含候选根因与关系 ID） | 推进到诊断节点执行 | maintenance/quality 节点成功，输出候选根因与关系 ID，cause_status 仍为 HYPOTHESIS；证据来源为 RelOS、mock_ids=M24；未批准前无任何下发 |
+| RT-MOM-07 | mom | RelOS 不可用 / 超时 / 返回空 | 推进到诊断节点执行 | 两个诊断节点 UNKNOWN 并带 relos_status；方案排除可疑设备；无下发，未批准的 execute 被拒绝 |
+| RT-MOM-08 | mom | 写入 world.relos | 非对象、未知 status、超过 64KB | 拒绝写入；合法上下文可写入 |
+| RT-MOM-09 | mom | 未启用 RelOS | 正常运行 S1 | 诊断输出与原有 Mock 一致（来源 EAM、M03） |
+| HTTP-MOM-RELOS-01 | mom | an-mom 配置桩 RelOS | POST /api/mom/scenarios/s1 | 请求以 CNC-XX 为中心、含 Line-B 锚点与预算；Agent 视图中诊断节点带桩返回的候选根因与关系 ID |
+| HTTP-MOM-RELOS-02 | mom | RelOS 地址无人监听 | POST /api/mom/scenarios/s1 | 10 秒内返回；案例照常创建，诊断 UNKNOWN、relos_status=unavailable，进入人工决策 |
+
+## 评审 R-20261107-M1（实现前定义）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-MOM-10 | mom | 案例为 CANCELLED 或 CLOSED | 对允许的故障键调用 change_world（运行时及 HTTP fault 命令） | 返回错误/4xx；案例、资源版本、事件序号及事件列表全部不变；非终态仍可注入故障 |
+
+## 专家工作流节点绑定与模板晋升（E1-C 方案 B，实现前定义）
+
+把 data-collection 中"专家确认"的工作流图（`fixtures/mom/expert/workflows.json`）编译为带节点绑定的工作流模板：
+每个节点按确定性规则 R1–R8 得到执行者（agent / human / system / agent_then_human / structural / unbound）、领域、工具、
+技能与闸门；相邻同领域的 agent 节点合并为一段。只做编译、校验和统计，不接入编排器执行。
+绑定未经专家确认的模板不晋升。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-BIND-01 | mom | 审批节点（带角色、SLA 时限、超时边） | 绑定 | 执行者为 human；闸门类型 approval，审批人=角色、时限取自 SLA、升级对象取自超时边；永不为 agent/system（R1） |
+| RT-BIND-02 | mom | 机制为设备，或标签为物理动作（搬、贴、复测、停线…） | 绑定 | 执行者为 human 工作项（R2） |
+| RT-BIND-03 | mom | 机制为系统（ERP/MES…），标签分读操作与写操作 | 绑定 | 执行者为 agent，工具为归一后的系统 ID；写操作同时列入 write_tools 并带 action_approval 闸门（R3） |
+| RT-BIND-04 | mom | 判断节点：有明确阈值/关键词，或没有 | 绑定 | 有明确规则时为 system（确定性规则）；否则为 agent_then_human（R4/R5） |
+| RT-BIND-05 | mom | 节点带控制文档与执行角色 | 绑定 | 控制文档成为技能；角色映射到领域（检验员→质量、维修工→设备、计划员→计划…）（R6/R7） |
+| RT-BIND-06 | mom | 无角色、无链接、看不出动作；或系统不在工具清单 | 绑定 | 执行者为 unbound 并给出原因，不猜测（R8） |
+| RT-BIND-07 | mom | 质量 agent→质量 agent→人工→质量 agent 的串行链 | 分段 | 前两个合并为一段（步骤按顺序），人工节点单独成段，之后另起一段；条件边保留为段间路由 |
+| RT-BIND-08 | mom | 9 条真实专家工作流 | 全部编译并统计 | 每个节点恰好一张绑定卡、恰好属于一段；审批节点全为 human；所有模板通过校验；未经专家确认的模板一律不晋升；报告合计与逐条一致 |
+| RT-BIND-09 | mom | 人为构造的错误模板（段间有环、写工具无闸门、工具不在清单、审批绑成 agent、节点遗漏） | 校验 | 每种错误都被拒绝并给出原因 |
+| RT-BIND-10 | mom | 标签以信息动作开头但含物理词（"输出保养记录"）；含"自动"的动作；有信息动作但无角色 | 绑定 | 开头的信息动作优先，判为 agent；系统自动动作判为 system（R4）；无角色的信息工作判为 agent 并要求专家补充领域，而不是 unbound |
+
+## Agent 准入与持续信任（E3 第 1 步：协议核心与持久化，实现前定义）
+
+论文 §5.2 的七步协议（S1 提交 Agent Card → S2 澄清 → S3 能力测试 → S4 加权打分 → S5 契约 → S6 人工审批 → S7 激活与试用期）的确定性核心。
+等级、抽样、警告、降级、撤权全部由程序决定；本步只实现账本与持久化，不接入编排器（接入见 E3 第 2 步）。
+配置文件里写的 agent 视为运维已信任（预准入为 Trusted）。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-ADM-01 | admission | 外部 agent 提交 Card | 按 S1→S7 推进，或跳步、答非所问 | 只能按顺序推进，跳步返回 E_ADMISSION_STATE；Card 自相矛盾（声明可派生子任务却无最大深度、未声明工作语言等）时生成澄清问题；回答数与问题数不符被拒；非法 agent_id 或未知能力维度被拒 |
+| RT-ADM-02 | admission | S3 给出完整度、对话质量、测试三项分数 | S4 打分 | 默认权重 30/20/50 计算 0–100 总分；≥60 推荐 Member、≥80 推荐 Trusted；推荐等级不超过申请等级；权重可配置 |
+| RT-ADM-03 | admission | 契约已签 | S6/S7 激活 | Trusted 未经人工审批不能激活；Guest 无需审批；Member 默认无需审批、配置要求时必须审批；激活签发凭证代际 epoch=1 |
+| RT-ADM-04 | admission | 已激活 agent 完成大量任务 | 判定是否抽检 | 同一 seed、agent、任务结果确定；1 万个任务的抽中率在 0.17–0.23（默认 20%）；换 seed 抽中集合不同 |
+| RT-ADM-05 | admission | 试用期抽检结论回写 | 连续不合格 / 合格穿插 / 累计警告 | 连续 2 次不合格记 1 次警告，合格清零连续计数；累计 3 次警告降为 Guest 并标记待人工复核，epoch 加 1，旧凭证失效，不再允许中风险任务 |
+| RT-ADM-06 | admission | 已激活或预准入的 agent | 撤权 | 阶段变为 Revoked，epoch 加 1；旧凭证失效；不再允许任何风险等级；之后回写抽检被拒 |
+| RT-ADM-07 | admission | 账本有多条记录与审计事件 | 重新打开同一数据库 | 记录完全恢复；审计事件按发生顺序列出 |
+| RT-ADM-08 | admission | 只有旧表的旧数据库 | Store::open | 自动新建准入两张表，旧数据不受影响；重复打开幂等 |
+| RT-ADM-17 | admission | 多个 agent，各自的任务编号连续且只在末尾几位不同（如 w-000…w-039） | 判定是否抽检 | 每个 agent 的抽中数都落在二项分布的合理范围内（不会全抽或全不抽）；所有 agent 合计的抽中率接近配置比例（回归：哈希高位混合不足导致抽样聚集） |
+
+## Agent 准入接入编排器（E3 第 2a 步，实现前定义）
+
+开启 `[admission]` 后：registry 只把任务分给准入等级允许该风险的 agent；配置文件里写的 agent（非 `a2a` 类型）没有记录时视为已信任；
+编排器在接受结果前核对凭证代际，撤权时中止该 agent 正在执行的任务；外部 agent 完成的任务按试用期规则抽检。未开启时行为不变。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-ADM-09 | admission | 开启准入；执行组里有未准入、Guest、Member 的外部 agent 与配置 agent | 按风险分配 agent | 未准入的外部 agent 不分配，角色不可用时报 E_ROUTE_NO_AGENT 并说明准入原因；Guest 只领低风险；配置 agent 视为已信任，租约带 epoch=1；未开启准入时行为不变 |
+| RT-ADM-10 | admission | 执行组主力与备份都是外部 agent，主力正在执行长任务 | 撤销主力 | 进行中的任务立即变为 FAILED（E_AGENT_REVOKED），不交付；执行名额归还；后续任务由备份完成 |
+| RT-ADM-11 | admission | 外部 agent 执行期间因抽检警告被降级（epoch 变化） | 任务结果交回 | 凭证已过期，结果被丢弃，任务 FAILED（E_AGENT_REVOKED）、不交付；凭证有效时结果照常接受 |
+| RT-ADM-12 | admission | 撤权与任务完成同时发生（多轮） | 并发执行 | 只有一个终态且不被覆盖；撤权报告中止了该任务 ⇒ FAILED 且无交付；COMPLETED ⇒ 恰好一次交付且不在中止清单中 |
+| RT-ADM-13 | admission | 外部 agent 完成多个任务（抽检比例 100%） | 记录试用期并回写抽检 | 完成数累加；抽中的任务进入待检清单；只能对待检清单里的任务回写结论；配置 agent 完成任务不产生准入记录 |
+| RT-ADM-16 | admission | 配置文件 | 加载与组装 | 不写 `[admission]` 时默认关闭、规则取默认值；开启后 Runtime 带准入账本；非法参数（如抽检比例 2.0）启动失败 |
+
+## Agent 准入 HTTP 接口与外部 agent 适配器（E3 第 2b 步，实现前定义）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-ADM-14 | admission | 开启准入的服务与一个桩外部 agent | 通过 `/api/admission/*` 走完 S1→S7（含审批）、派发任务、撤权、重启 | 每步返回正确结果；顺序错误返回 409、输入非法返回 400、未知 agent 返回 404；激活后外部 agent 出现在 /api/agents（kind=a2a）并完成任务；撤权返回新 epoch；重启后已激活的外部 agent 自动重新注册；未开启准入时这些接口返回 404 |
+| RT-ADM-15 | admission | 外部 agent 的 HTTP 服务 | 适配器执行任务 | 请求带 task_id、goal、context 与风险；成功结果映射为 Succeeded 并附"外部 agent 输出未经核实"的证据；HTTP 错误、无效 JSON、超时都返回带错误码的失败；非 http(s) 地址被拒 |
+

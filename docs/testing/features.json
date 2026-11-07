@@ -87,6 +87,7 @@
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [
       "web/src/components/DiagnosticsPanel.tsx",
+      "web/src/diag.test.tsx",
       "web/src/components/RouteLogPanel.tsx"
     ],
     "coverage": "browser",
@@ -175,19 +176,39 @@
     "sources": [
       "crates/runtime/src/mom/engine.rs",
       "crates/server/src/mom.rs",
-      "web/mom/index.html"
+      "web/mom/index.html",
+      "crates/runtime/src/mom/simulation.rs",
+      "crates/runtime/src/mom/tools.rs",
+      "crates/server/src/mom_relos.rs",
+      "crates/runtime/src/mom/binding.rs"
     ],
     "coverage": "browser",
     "cases": [
       "E2E-MOM",
-      "E2E-COMPLAINT"
+      "E2E-COMPLAINT",
+      "E2E-MOMDYNAMIC"
     ],
     "runtime_cases": [
       "RT-MOM-01",
       "RT-MOM-02",
       "RT-MOM-03",
       "RT-MOM-04",
-      "RT-MOM-05"
+      "RT-MOM-05",
+      "RT-MOM-06",
+      "RT-MOM-07",
+      "RT-MOM-08",
+      "RT-MOM-09",
+      "RT-MOM-10",
+      "RT-BIND-01",
+      "RT-BIND-02",
+      "RT-BIND-03",
+      "RT-BIND-04",
+      "RT-BIND-05",
+      "RT-BIND-06",
+      "RT-BIND-07",
+      "RT-BIND-08",
+      "RT-BIND-09",
+      "RT-BIND-10"
     ]
   },
   {
@@ -201,5 +222,39 @@
     ],
     "coverage": "backend",
     "cases": []
+  },
+  {
+    "id": "admission",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/admission.rs",
+      "crates/runtime/src/store.rs",
+      "crates/runtime/src/registry.rs",
+      "crates/runtime/src/orchestrator.rs",
+      "crates/runtime/src/config.rs",
+      "crates/server/src/admission_api.rs",
+      "crates/agents/src/a2a.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-ADM-01",
+      "RT-ADM-02",
+      "RT-ADM-03",
+      "RT-ADM-04",
+      "RT-ADM-05",
+      "RT-ADM-06",
+      "RT-ADM-07",
+      "RT-ADM-08",
+      "RT-ADM-09",
+      "RT-ADM-10",
+      "RT-ADM-11",
+      "RT-ADM-12",
+      "RT-ADM-13",
+      "RT-ADM-16",
+      "RT-ADM-14",
+      "RT-ADM-15",
+      "RT-ADM-17"
+    ]
   }
 ]

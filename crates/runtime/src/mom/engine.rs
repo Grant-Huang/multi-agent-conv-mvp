@@ -7,10 +7,10 @@ use std::{
     path::Path,
 };
 
-type Emissions = Vec<(String, String, Value, u64, u64)>;
+pub(super) type Emissions = Vec<(String, String, Value, u64, u64)>;
 pub struct Engine {
     db: Connection,
-    state: Snapshot,
+    pub(super) state: Snapshot,
     sequence: u64,
 }
 impl Engine {
@@ -43,6 +43,7 @@ impl Engine {
             sequence,
         };
         e.update(|s, events| {
+            super::simulation::pause_on_recovery(s);
             for c in s.cases.values_mut() {
                 let mut changed = false;
                 for ch in &mut c.children {
@@ -65,7 +66,7 @@ impl Engine {
         })?;
         Ok(e)
     }
-    fn update<T>(
+    pub(super) fn update<T>(
         &mut self,
         f: impl FnOnce(&mut Snapshot, &mut Emissions) -> Result<T>,
     ) -> Result<T> {
@@ -168,6 +169,7 @@ impl Engine {
                 }else{c.stage="BLOCKED".into();}
                 emit(c, s.now,"PlanInvalidated",json!({"reason":"new relevant observation"}),events);
             }
+            if let Some(cpk)=input.payload.get("cpk") {super::simulation::validate_change("cpk",cpk)?;c.world["cpk"]=cpk.clone();}
             c.observations.push(Observation{event:input.clone(),received_at:s.now,provenance:"mock".into()});
             let evid=format!("obs:{}:{}",input.source,input.id);c.evidence.insert(evid.clone(),json!({"source":input.source,"payload":input.payload,"occurred_at":input.occurred_at,"received_at":s.now,"provenance":"mock","mock_ids":["M01"]}));
             emit(c, s.now,"ObservationRecorded",json!({"evidence_ref":evid}),events);
@@ -179,6 +181,17 @@ impl Engine {
         })
     }
     pub fn advance(&mut self, to: u64) -> Result<()> {
+        ensure!(
+            to >= self.now() && to - self.now() <= 100_000,
+            "invalid advance horizon"
+        );
+        for now in self.now()..=to {
+            self.advance_clock(now)?;
+            self.deliver_scheduled(now)?;
+        }
+        Ok(())
+    }
+    fn advance_clock(&mut self, to: u64) -> Result<()> {
         ensure!(to >= self.state.now, "virtual clock cannot reverse");
         ensure!(to - self.state.now <= 100_000, "advance horizon too large");
         self.update(|s, events| {
@@ -192,7 +205,9 @@ impl Engine {
         })
     }
     pub fn change_world(&mut self, id: &str, key: &str, value: Value) -> Result<()> {
+        super::simulation::validate_change(key, &value)?;
         const ALLOWED: &[&str] = &[
+            "cpk",
             "resources_available",
             "certified",
             "tool_available",
@@ -210,10 +225,15 @@ impl Engine {
             "capacity_xz",
             "root_cause_verified",
             "effectiveness_verified",
+            "relos",
         ];
         ensure!(ALLOWED.contains(&key), "unknown fault injection");
         self.update(|s, events| {
             let c = s.cases.get_mut(id).context("unknown case")?;
+            ensure!(
+                !c.cancelled && !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED"),
+                "case already terminal"
+            );
             c.world[key] = value;
             if matches!(
                 key,
@@ -431,6 +451,14 @@ impl Engine {
     }
     pub fn cancel(&mut self, id: &str) -> Result<()> {
         self.update(|s, events| {
+            if let Some(sim) = s.simulations.get_mut(id) {
+                for item in &mut sim.queue {
+                    if item.status == "PENDING" {
+                        item.status = "CANCELLED".into();
+                    }
+                }
+            }
+
             let c = s.cases.get_mut(id).context("unknown case")?;
             ensure!(
                 !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED"),
@@ -673,7 +701,7 @@ fn ensure_active(c: &Case) -> Result<()> {
     ensure!(c.world["safety_trip"] != true, "safety interlock active");
     Ok(())
 }
-fn emit(c: &mut Case, now: u64, kind: &str, payload: Value, events: &mut Emissions) {
+pub(super) fn emit(c: &mut Case, now: u64, kind: &str, payload: Value, events: &mut Emissions) {
     c.updated_at = now;
     c.revision += 1;
     events.push((c.id.clone(), kind.into(), payload, now, c.revision));

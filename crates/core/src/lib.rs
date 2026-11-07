@@ -555,6 +555,13 @@ pub mod codes {
     pub const ACP_STOP: &str = "E_ACP_STOP";
     pub const REVIEW_FAILED: &str = "E_REVIEW_FAILED";
     pub const TASK_TIMEOUT: &str = "E_TASK_TIMEOUT";
+    // agent 准入（E3）
+    /// 准入协议步骤顺序不对（例如未澄清就打分）
+    pub const ADMISSION_STATE: &str = "E_ADMISSION_STATE";
+    /// 准入输入不合法（agent_id、能力维度、分数范围等）
+    pub const ADMISSION_INVALID: &str = "E_ADMISSION_INVALID";
+    /// agent 已被撤权或凭证代际已作废，结果不被接受
+    pub const AGENT_REVOKED: &str = "E_AGENT_REVOKED";
     // 节点
     pub const NODE_UNREACHABLE: &str = "E_NODE_UNREACHABLE";
     pub const NODE_AUTH: &str = "E_NODE_AUTH";

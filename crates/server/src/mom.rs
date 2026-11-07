@@ -1,5 +1,7 @@
 //! Local-only MOM simulation service. Test identities, never enterprise auth.
-use an_runtime::mom::{Engine, EventInput, Intent, Master, ScriptedMaster};
+use an_runtime::mom::{
+    gap_register, Engine, EventInput, Intent, Master, ScriptedMaster, SimulationConfig,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -21,6 +23,8 @@ pub struct AppState {
     pub master: Arc<dyn Master>,
     slots: Arc<Semaphore>,
     active: Arc<Mutex<BTreeSet<String>>>,
+    /// E1-C：配置后，S1 创建前从 RelOS 取回关系上下文（见 `mom_relos`）；未配置时完全使用 Mock
+    pub relos: Option<Arc<crate::mom_relos::RelosClient>>,
 }
 impl AppState {
     pub fn scripted(engine: Arc<Mutex<Engine>>) -> Self {
@@ -29,7 +33,13 @@ impl AppState {
             master: Arc::new(ScriptedMaster),
             slots: Arc::new(Semaphore::new(4)),
             active: Arc::new(Mutex::new(BTreeSet::new())),
+            relos: None,
         }
+    }
+    /// 启用 RelOS 上下文（`base_url` 例如 `http://127.0.0.1:8000`）。
+    pub fn with_relos(mut self, base_url: &str) -> anyhow::Result<Self> {
+        self.relos = Some(Arc::new(crate::mom_relos::RelosClient::new(base_url)?));
+        Ok(self)
     }
 }
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<Value>)>;
@@ -46,13 +56,19 @@ fn run<T>(state: &AppState, f: impl FnOnce(&mut Engine) -> anyhow::Result<T>) ->
         .map_err(|_| err("runtime unavailable"))?;
     f(&mut e).map(Json).map_err(err)
 }
+pub fn page() -> Html<&'static str> {
+    Html(include_str!("../../../web/mom/index.html"))
+}
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route(
-            "/",
-            get(|| async { Html(include_str!("../../../web/mom/index.html")) }),
-        )
+        .route("/", get(|| async { page() }))
         .route("/api/mom/cases", get(list))
+        .route(
+            "/api/mom/simulations",
+            get(simulations).post(create_simulation),
+        )
+        .route("/api/mom/playback", post(playback))
+        .route("/api/mom/gaps", get(|| async { Json(gap_register()) }))
         .route("/api/mom/scenarios/{scenario}", post(scenario))
         .route("/api/mom/events", post(ingest))
         .route("/api/mom/cases/{id}", get(human))
@@ -62,6 +78,50 @@ pub fn router(state: AppState) -> Router {
         .route("/api/mom/cases/{id}/master", post(master))
         .layer(axum::extract::DefaultBodyLimit::max(128 * 1024))
         .with_state(state)
+}
+/// One bounded shared simulation clock per service. Shutdown owner aborts this task.
+pub fn spawn_clock(state: AppState) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut timer = tokio::time::interval(std::time::Duration::from_secs(1));
+        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            timer.tick().await;
+            let Ok(mut engine) = state.engine.lock() else {
+                break;
+            };
+            if let Err(error) = engine.playback_tick() {
+                let _ = engine.set_playback(false, 0);
+                tracing::warn!(event="task.status",task_id="mom-clock",error=%error,"MOM playback paused after error");
+            }
+        }
+    })
+}
+async fn simulations(State(s): State<AppState>) -> ApiResult<Value> {
+    run(&s, |e| Ok(e.simulations_view()))
+}
+async fn create_simulation(
+    State(s): State<AppState>,
+    Json(config): Json<SimulationConfig>,
+) -> ApiResult<Value> {
+    run(&s, |e| {
+        Ok(json!({"case_id":e.create_simulation(config)?,"provenance":"mock"}))
+    })
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlaybackRequest {
+    playing: bool,
+    #[serde(default = "playback_default")]
+    minutes: u64,
+}
+fn playback_default() -> u64 {
+    30
+}
+async fn playback(State(s): State<AppState>, Json(p): Json<PlaybackRequest>) -> ApiResult<Value> {
+    run(&s, |e| {
+        e.set_playback(p.playing, p.minutes)?;
+        Ok(e.simulations_view())
+    })
 }
 async fn list(State(s): State<AppState>) -> ApiResult<Value> {
     run(&s, |e| {
@@ -106,15 +166,32 @@ async fn ingest(State(s): State<AppState>, Json(event): Json<EventInput>) -> Api
     run(&s, |e| Ok(json!({"case_id":e.ingest(event)?})))
 }
 async fn scenario(State(s): State<AppState>, Path(kind): Path<String>) -> ApiResult<Value> {
+    let suffix = an_core::new_id("fixture");
+    // RelOS 上下文在加锁前异步取回（5 秒超时），失败时得到带原因的 status，不阻断案例创建
+    let relos_context = match (&s.relos, kind.as_str()) {
+        (Some(client), "s1") => Some(
+            client
+                .fetch(&crate::mom_relos::RelosQuery {
+                    asset: "CNC-XX",
+                    line: "Line-B",
+                    batch: &suffix,
+                })
+                .await,
+        ),
+        _ => None,
+    };
     let result = run(&s, |e| {
         anyhow::ensure!(kind == "s1" || kind == "s2", "unknown scenario");
-        let suffix = an_core::new_id("fixture");
         let base = e.now().max(if kind == "s1" { 497 } else { 540 });
         let id = if kind == "s1" {
             let mut first = EventInput::s1("order", base);
             first.id = format!("{suffix}-order");
             first.batch = suffix.clone();
             let id = e.ingest(first)?;
+            if let Some(context) = relos_context {
+                // 作为观测写入，引擎记录 WorldChanged 事件；诊断工具只读这条记录
+                e.change_world(&id, "relos", context)?;
+            }
             for (k, delta) in [("vibration", 6), ("quality", 14)] {
                 e.advance(base + delta)?;
                 let mut x = EventInput::s1(k, base + delta);

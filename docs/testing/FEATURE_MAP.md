@@ -16,6 +16,7 @@
 | feedback | 展开可匹配用户消息的任务→“派错了”→动作/角色/说明→保存 | POST /api/feedback 信封、持久化记录；非法动作/角色被拒；导出仅为草稿 | 现有 misroute 组件及 Rust HTTP 测试；本次无模板纠正字段 |
 | reports | 对话中要求“写报告并引用公开资料/最新信息”，General 后台执行 | 同时要求 web_search+write_file 时走代码控制流程：规划→检索（≤6、去重）→章节并行写作→汇合；过半章成功才完成；无效引用剔除；取消后不再请求。仅要求 web_search 时仍走逐步循环（先搜后写） | RT-REP-01 至 RT-REP-09（Rust 集成测试，受控模型）；Router 提示词与重复追加为单元测试；真实模型质量与搜索时效需实际 E2E 验收 |
 | templates | 当前无界面入口（M4.3 尚未接入编排器） | 模板校验、Router 拆分决定、分支信封与汇合输入在 Runtime 集成层验证 | RT-TPL-01 至 RT-TPL-10；Rust 集成测试与单元测试；并行执行与 Composer 汇合回复未实现 |
+| admission | 无界面入口；HTTP `/api/admission/*`（开启 `[admission]` 时才有） | S1→S7 顺序、澄清问题、加权打分与等级、人工审批闸门、确定性抽检、警告与降级、撤权与凭证代际、重启恢复、旧库自动建表；按等级分配、凭证过期结果丢弃、撤权中止进行中任务并由备份接手、外部 agent 试用期记录；HTTP 接口走完准入流程、激活后注册外部 agent（kind=a2a）并完成任务、重启后自动重新注册、未开启时 404；外部 agent HTTP 适配器 | RT-ADM-01 至 RT-ADM-17；实验工具：`cargo run -p an-runtime --example admission_replay`（用正式账本回放 A1/A2/A3）、`cargo run -p an-server --example admission_revoke_bench`（撤权实测）；Rust 集成测试；未接入网页界面，S2/S3 的大模型澄清与评分由实验脚本完成 |
 | tools-evals | 聊天委派工具；终端 websearch、an-eval、dream | 计算/文件/CLI证据、JSON错误、逐条评分和失败草稿；不自动改主评测集 | 现有 Rust/Python 测试；真实搜索时效与模型质量另验 |
 
 应用为单页布局，网页没有 /tasks、/settings 或 /templates/run 路径。API 以 crates/server/src/lib.rs 为准；状态和中文文案见 web/src/labels.ts。
@@ -34,4 +35,12 @@
 |---|---|---|---|
 | mom | 独立 an-mom 人类看板与 Agent 机器视图 | S1 审批后下发、核验再关闭；S2 初复独立，缺证据不能关闭8D | E2E-MOM/E2E-COMPLAINT；业务系统、主模型及审批身份仍为替代件，见 MOM Mock 清单 |
 
+MOM 增量：主界面左侧 **MOM 运营沙盘** → 同源 `/mom/`；配置持续仿真与播放暂停、事件队列和完整 gap 详情由 E2E-MOMDYNAMIC 验证。独立8790服务仍保留。两者均为明确标识的模拟模式。
+
+RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS 不可用时的安全降级、上下文写入校验与未启用时的兼容；HTTP-MOM-RELOS-01/02（`crates/server/tests/mom.rs`）用桩 RelOS 与无人监听地址验证 an-mom 的端到端调用。RelOS 知识为仿真数据（台账 M24）。
+
+专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
+
 每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。
+
+R-20261107-M1：终态案例拒绝手动故障注入；RT-MOM-10（runtime 集成）与 `server/tests/mom.rs::terminal_cases_reject_http_fault_without_mutating_state`（HTTP）覆盖 CANCELLED/CLOSED，拒绝后世界、资源版本、事件序号和事件列表不变。非终态故障注入保持可用。运行证据见 [修复证据](evidence/r-20261107-m1.md)；本条不代表浏览器故障路径已验证。

@@ -5,6 +5,18 @@ import { useEffect, useState } from "react";
 import { api, type Diagnostics } from "../api";
 import { refreshStats } from "../refresh";
 
+/** 一个槽位的状态：占用者、是否正在生成。不显示 llama 的 id_task：它是服务端累计的请求编号，不是任务数，也不是 token 数 */
+export function SlotRow({ slot }: { slot: Diagnostics["backends"][number]["slots"][number] }) {
+  return (
+    <div className="kv">
+      <span className={`dot ${slot.server_busy || slot.holder ? "bad" : "ok"}`} />
+      槽位 {slot.id}（{slot.class}）
+      {slot.holder ? ` 占用：${slot.holder}` : " 空闲"}
+      {slot.server_busy ? " · 正在生成" : ""}
+    </div>
+  );
+}
+
 export function DiagnosticsPanel({ refreshTick }: { refreshTick: number }) {
   const [d, setD] = useState<Diagnostics | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,13 +74,7 @@ export function DiagnosticsPanel({ refreshTick }: { refreshTick: number }) {
               </div>
             )}
             {b.slots.map((s) => (
-              <div key={s.id} className="kv">
-                <span className={`dot ${s.server_busy || s.holder ? "bad" : "ok"}`} />
-                槽位 {s.id}（{s.class}）
-                {s.holder ? ` 占用：${s.holder}` : " 空闲"}
-                {s.server_busy ? " · 正在生成" : ""}
-                {s.tasks != null ? ` · 已处理 ${s.tasks} 个任务` : ""}
-              </div>
+              <SlotRow key={s.id} slot={s} />
             ))}
             <div className="kv muted">
               调度：在途 {b.scheduler.inflight}

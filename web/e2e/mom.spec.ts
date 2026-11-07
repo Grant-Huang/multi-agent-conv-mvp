@@ -67,3 +67,22 @@ test('E2E-COMPLAINT: initial response before root cause and incomplete 8D',async
   await expect(page.locator('#content h2').first()).not.toContainText('CLOSED');
   await page.screenshot({path:test.info().outputPath('mom-complaint.png'),fullPage:true});
 });
+
+test('E2E-MOMDYNAMIC: main entry and configurable continuous simulation',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('link',{name:'MOM 运营沙盘'}).click();
+  await expect(page).toHaveURL(/\/mom\/$/);
+  await expect(page.getByRole('heading',{name:'MOM 运营公告板'})).toBeVisible();
+  await page.getByText('配置持续仿真',{exact:true}).click();
+  await page.getByLabel('订单数量').fill('900');await page.getByLabel('随机种子').fill('42');
+  await page.getByLabel('持续事件数量').fill('2');await page.getByLabel('事件间隔（仿真分钟）').fill('10');
+  await page.getByRole('button',{name:'创建配置仿真'}).click();
+  await expect(page.locator('#content h2').first()).toContainText('COLLECTING');
+  await expect(page.locator('#content')).toContainText('M01');
+  await expect(page.locator('#content')).toContainText('MES/QMS/EAM/WMS');
+  for(let i=0;i<4;i++){await page.getByRole('button',{name:'推进 5 分钟'}).click();await expect(page.locator('#error')).toBeEmpty();}
+  await expect(page.getByRole('heading',{name:'排产方案与影响'}).locator('..')).toContainText('"quantity": 900');
+  await page.getByRole('button',{name:'播放 30 分钟'}).click();await expect(page.locator('#playback-state')).toContainText('播放中');
+  await page.getByRole('button',{name:'暂停仿真'}).click();await expect(page.locator('#playback-state')).toContainText('已暂停');
+  await page.screenshot({path:test.info().outputPath('mom-dynamic.png'),fullPage:true});
+});

@@ -190,6 +190,7 @@ name = "an-server"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
+ "an-agents",
  "an-core",
  "an-llm",
  "an-node",

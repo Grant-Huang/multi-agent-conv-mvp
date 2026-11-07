@@ -41,6 +41,66 @@ pub struct AppConfig {
     /// Explicitly configured MCP servers; discovery occurs before Runtime assembly.
     #[serde(default)]
     pub mcp: McpSection,
+    /// agent 准入与持续信任（E3）；默认关闭，关闭时行为与以前完全相同
+    #[serde(default)]
+    pub admission: AdmissionSection,
+}
+
+/// `[admission]`：外部 agent 的准入规则。默认值取自论文 §5.2。
+/// 配置文件里写的 agent（内置、Codex、ACP、已配对节点）视为运维已信任，不走协议。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AdmissionSection {
+    pub enabled: bool,
+    /// 打分权重：完整度 / 对话质量 / 能力测试
+    pub weights: crate::admission::Weights,
+    /// 总分达到此值推荐 Member
+    pub member_score: f64,
+    /// 总分达到此值推荐 Trusted
+    pub trusted_score: f64,
+    /// 试用期抽检比例（0–1）
+    pub sample_rate: f64,
+    /// 连续几次不合格记一次警告
+    pub failures_per_warning: u32,
+    /// 累计几次警告降为 Guest
+    pub warnings_to_downgrade: u32,
+    /// Member 是否也必须人工审批（Trusted 总是必须）
+    pub member_requires_approval: bool,
+    /// 抽检种子
+    pub seed: u64,
+}
+
+impl Default for AdmissionSection {
+    fn default() -> Self {
+        let d = crate::admission::AdmissionConfig::default();
+        Self {
+            enabled: false,
+            weights: d.weights,
+            member_score: d.member_score,
+            trusted_score: d.trusted_score,
+            sample_rate: d.sample_rate,
+            failures_per_warning: d.failures_per_warning,
+            warnings_to_downgrade: d.warnings_to_downgrade,
+            member_requires_approval: d.member_requires_approval,
+            seed: d.seed,
+        }
+    }
+}
+
+impl AdmissionSection {
+    /// 转成账本使用的规则（校验在打开账本时进行）
+    pub fn rules(&self) -> crate::admission::AdmissionConfig {
+        crate::admission::AdmissionConfig {
+            weights: self.weights,
+            member_score: self.member_score,
+            trusted_score: self.trusted_score,
+            sample_rate: self.sample_rate,
+            failures_per_warning: self.failures_per_warning,
+            warnings_to_downgrade: self.warnings_to_downgrade,
+            member_requires_approval: self.member_requires_approval,
+            seed: self.seed,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

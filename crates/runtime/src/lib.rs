@@ -10,6 +10,7 @@
 //!                          Store(SQLite) + Bus(事件)
 //! ```
 
+pub mod admission;
 pub mod backends;
 pub mod bus;
 pub mod composer;
@@ -34,7 +35,7 @@ use std::time::Duration;
 use an_agents::{acp, AcpAgent, CodingAgent, GeneralAgent, ReviewerAgent, ToolRegistry};
 use an_core::Role;
 use an_llm::LlmClient;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::backends::{Backends, LlmRole};
 use crate::bus::Bus;
@@ -69,6 +70,8 @@ pub struct Runtime {
     pub backends: Arc<Backends>,
     /// 需要后台探测连通性的 agent（ACP 与 CLI）
     pub probers: Arc<Vec<Prober>>,
+    /// agent 准入账本（`[admission] enabled = true` 时才有）
+    pub admission: Option<Arc<admission::AdmissionLedger>>,
 }
 
 /// 连通性探测的目标：只做握手或命令检查，不调用模型（探测结果写入 `registry.links`）
@@ -169,6 +172,25 @@ impl Runtime {
 
         // 注册 Agent（顺序即未配置执行组时的默认选择顺序：内置 → Codex → 本机 ACP → 节点）
         let registry = AgentRegistry::new(config.agents.assign_map()?);
+        // 准入（E3）：开启时打开账本（参数非法则启动失败），registry 按准入等级分配
+        let admission = if config.admission.enabled {
+            let ledger = Arc::new(admission::AdmissionLedger::open(
+                store.clone(),
+                config.admission.rules(),
+            )?);
+            registry.set_admission(ledger.clone());
+            // 服务重启：已激活的外部 agent 按登记的接入信息重新注册
+            for rec in ledger.list() {
+                if rec.stage == admission::Stage::Active {
+                    if let Some(agent) = a2a_agent(&rec, config.orchestrator.task_timeout_secs)? {
+                        registry.register(agent);
+                    }
+                }
+            }
+            Some(ledger)
+        } else {
+            None
+        };
         // 需要后台探测连通性的 agent：ACP 与 CLI（pi）
         let mut probers: Vec<Prober> = Vec::new();
         let a = &config.agents;
@@ -265,6 +287,9 @@ impl Runtime {
             o.max_review_rounds,
             Duration::from_secs(o.task_timeout_secs),
         ));
+        if let Some(l) = &admission {
+            orchestrator.set_admission(l.clone());
+        }
         let conversation = Arc::new(ConversationRuntime::new(conversation::ConversationDeps {
             llm: llm_for(LlmRole::Conversation),
             // 回复模型：没单独配置时与前台判断用同一个模型（含服务地址）
@@ -298,7 +323,24 @@ impl Runtime {
             llm: backends.client(LlmRole::Conversation),
             backends: backends.clone(),
             probers: Arc::new(probers),
+            admission,
         })
+    }
+
+    /// 把已激活的外部 agent 注册进 registry（准入 HTTP 接口激活后调用；已注册时不重复）
+    pub fn register_a2a(&self, agent_id: &str) -> Result<()> {
+        let ledger = self
+            .admission
+            .as_ref()
+            .context("准入未开启（[admission] enabled = false）")?;
+        let rec = ledger
+            .get(agent_id)
+            .with_context(|| format!("未知 agent：{agent_id}"))?;
+        anyhow::ensure!(rec.stage == admission::Stage::Active, "agent 尚未激活");
+        let agent = a2a_agent(&rec, self.config.orchestrator.task_timeout_secs)?
+            .context("该 agent 没有登记接入信息")?;
+        self.registry.register(agent);
+        Ok(())
     }
 
     /// 启动后台任务：节点心跳、局域网发现。由 main 在 tokio 运行时中调用
@@ -365,4 +407,35 @@ fn agent_reason(agent: &AcpAgent) -> String {
         .disabled_reason
         .clone()
         .unwrap_or_default()
+}
+
+/// 由准入记录中的接入信息构造外部 agent 适配器；没有接入信息时返回 None
+fn a2a_agent(
+    rec: &admission::AdmissionRecord,
+    timeout_secs: u64,
+) -> Result<Option<Arc<an_agents::a2a::A2aHttpAgent>>> {
+    let Some(b) = &rec.binding else {
+        return Ok(None);
+    };
+    let role = match b.role.as_str() {
+        "coding" => Role::Coding,
+        "reviewer" => Role::Reviewer,
+        _ => Role::General,
+    };
+    let name = rec
+        .claim
+        .as_ref()
+        .map(|c| c.name.clone())
+        .unwrap_or_else(|| rec.agent_id.clone());
+    Ok(Some(Arc::new(an_agents::a2a::A2aHttpAgent::new(
+        an_agents::a2a::A2aSpec {
+            id: rec.agent_id.clone(),
+            name,
+            role,
+            agent_type: b.agent_type.clone(),
+            endpoint: b.endpoint.clone(),
+            max_concurrent: b.max_concurrent,
+            timeout: Duration::from_secs(timeout_secs.max(1)),
+        },
+    )?)))
 }

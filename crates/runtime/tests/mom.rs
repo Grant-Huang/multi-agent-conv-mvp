@@ -598,6 +598,142 @@ fn clock_only_transactions_are_protected_against_stale_writers() {
 }
 
 #[test]
+fn dynamic_simulation_is_seeded_and_applies_timed_world_changes() {
+    let config = SimulationConfig {
+        name: "seeded".into(),
+        scenario: "s1".into(),
+        seed: 42,
+        world: std::collections::BTreeMap::from([("quantity".into(), json!(900))]),
+        event_count: 2,
+        event_interval_minutes: 5,
+        disturbances: vec![Disturbance {
+            after_minutes: 18,
+            key: "resources_available".into(),
+            value: json!(false),
+        }],
+    };
+    let mut a = Engine::memory().unwrap();
+    let mut b = Engine::memory().unwrap();
+    let id = a.create_simulation(config.clone()).unwrap();
+    b.create_simulation(config).unwrap();
+    assert_eq!(a.simulations_view(), b.simulations_view());
+    a.advance(514).unwrap();
+    assert_eq!(
+        a.case(&id).unwrap().proposal.as_ref().unwrap()["quantity"],
+        900
+    );
+    a.advance(515).unwrap();
+    assert_eq!(a.case(&id).unwrap().world["resources_available"], false);
+    assert!(a.simulations_view()["simulations"][0]["queue"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v["status"] == "APPLIED"));
+}
+#[test]
+fn playback_is_bounded_pausable_and_paused_after_restart() {
+    let path = std::env::temp_dir().join(format!("mom-{}.db", an_core::new_id("playback")));
+    let id;
+    {
+        let mut e = Engine::open(&path).unwrap();
+        id = e.create_simulation(SimulationConfig::default()).unwrap();
+        e.set_playback(true, 2).unwrap();
+        e.playback_tick().unwrap();
+        assert_eq!(e.now(), 498);
+    }
+    let mut e = Engine::open(&path).unwrap();
+    assert_eq!(e.simulations_view()["playback"]["playing"], false);
+    e.playback_tick().unwrap();
+    assert_eq!(e.now(), 498);
+    e.set_playback(true, 1).unwrap();
+    e.playback_tick().unwrap();
+    assert_eq!(e.now(), 499);
+    assert_eq!(e.simulations_view()["playback"]["playing"], false);
+    assert_eq!(e.simulations_view()["simulations"][0]["case_id"], id);
+    drop(e);
+    std::fs::remove_file(path).unwrap();
+}
+#[test]
+fn invalid_simulation_cannot_mutate_world_or_bypass_approval() {
+    let mut e = Engine::memory().unwrap();
+    let cfg = SimulationConfig {
+        event_count: 33,
+        ..SimulationConfig::default()
+    };
+    assert!(e.create_simulation(cfg).is_err());
+    assert!(e.case_ids().is_empty());
+    let mut cfg = SimulationConfig::default();
+    cfg.world.insert("held".into(), json!({"B77":0}));
+    assert!(e.create_simulation(cfg).is_err());
+    let mut cfg = SimulationConfig::default();
+    cfg.world.insert("resources_available".into(), json!("yes"));
+    assert!(e.create_simulation(cfg).is_err());
+    assert!(e.set_playback(true, 361).is_err());
+    let id = e.create_simulation(SimulationConfig::default()).unwrap();
+    e.advance(514).unwrap();
+    assert!(e.execute(&id, "production").is_err());
+}
+#[test]
+fn seed_changes_generated_events_without_fabricating_real_evidence() {
+    let mut a = Engine::memory().unwrap();
+    let mut b = Engine::memory().unwrap();
+    let c = SimulationConfig::default();
+    let mut other = c.clone();
+    other.seed = 99;
+    a.create_simulation(c).unwrap();
+    b.create_simulation(other).unwrap();
+    let x = a.simulations_view();
+    let y = b.simulations_view();
+    assert_ne!(x["simulations"][0]["queue"], y["simulations"][0]["queue"]);
+    let gaps = gap_register();
+    assert_eq!(gaps["items"].as_array().unwrap().len(), 24);
+    assert!(gaps["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|v| v["verified"] == false));
+}
+#[test]
+fn cancelled_simulation_does_not_deliver_future_events() {
+    let mut e = Engine::memory().unwrap();
+    let id = e.create_simulation(SimulationConfig::default()).unwrap();
+    e.cancel(&id).unwrap();
+    e.advance(530).unwrap();
+    assert_eq!(e.case(&id).unwrap().observations.len(), 1);
+    assert!(e.simulations_view()["simulations"][0]["queue"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|v| v["status"] == "CANCELLED"));
+}
+
+#[test]
+fn dynamic_queue_survives_restart_without_duplicate_observations() {
+    let path = std::env::temp_dir().join(format!("mom-{}.db", an_core::new_id("queue-recovery")));
+    let id;
+    {
+        let mut e = Engine::open(&path).unwrap();
+        id = e
+            .create_simulation(SimulationConfig {
+                event_count: 1,
+                ..SimulationConfig::default()
+            })
+            .unwrap();
+        e.advance(504).unwrap();
+        assert_eq!(e.case(&id).unwrap().observations.len(), 2);
+    }
+    let mut e = Engine::open(&path).unwrap();
+    e.advance(520).unwrap();
+    let count = e.case(&id).unwrap().observations.len();
+    assert_eq!(count, 4);
+    e.advance(520).unwrap();
+    assert_eq!(count, e.case(&id).unwrap().observations.len());
+    assert_eq!(e.simulations_view()["simulations"][0]["pending"], 0);
+    drop(e);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn rt_mom_01_safety_interlock_rejects_all_plan_and_dispatch_entries() {
     let mut e = s1();
     let id = ready(&mut e);
@@ -700,4 +836,147 @@ fn rt_mom_05_blocked_case_expires_running_child_lease() {
     e.advance(lease).unwrap();
     assert_eq!(e.case(&id).unwrap().stage, "BLOCKED");
     assert_eq!(e.case(&id).unwrap().children[0].status, "TIMED_OUT");
+}
+
+// ─── E1-C：RelOS 关系上下文接入（RT-MOM-06～09，实现前定义） ─────────────────
+
+/// 服务层从 RelOS 取回并记录的上下文（与 an-server 写入 world.relos 的结构一致）
+fn relos_ok() -> serde_json::Value {
+    json!({
+        "status": "ok",
+        "source": "RelOS /v1/context/compile",
+        "maintenance_candidates": [
+            {"cause": "FM-SPINDLE-BEARING", "confidence": 0.82, "relation_id": "rel-1"}
+        ],
+        "quality_candidates": [
+            {"cause": "FM-SPINDLE-BEARING", "confidence": 0.74, "relation_id": "rel-2"}
+        ],
+        "selected_ids": ["rel-1", "rel-2"],
+        "context_tokens": 640
+    })
+}
+
+fn s1_with_relos(e: &mut Engine, relos: serde_json::Value) -> String {
+    let id = e.ingest(EventInput::s1("order", 497)).unwrap();
+    e.change_world(&id, "relos", relos).unwrap();
+    e.ingest(EventInput::s1("vibration", 503)).unwrap();
+    e.ingest(EventInput::s1("quality", 511)).unwrap();
+    e.advance(514).unwrap();
+    id
+}
+
+#[test]
+fn rt_mom_06_relos_context_feeds_diagnosis_with_provenance() {
+    let mut e = s1();
+    let id = s1_with_relos(&mut e, relos_ok());
+    let c = e.case(&id).unwrap();
+    let m = &c.nodes["maintenance"];
+    assert_eq!(m.status, "SUCCEEDED");
+    let out = m.output.as_ref().unwrap();
+    assert_eq!(out["candidate_causes"][0]["cause"], "FM-SPINDLE-BEARING");
+    assert_eq!(out["context_relation_ids"], json!(["rel-1", "rel-2"]));
+    // 根因仍是假设：RelOS 只提供候选与证据，不代替诊断结论
+    assert_eq!(out["cause_status"], "HYPOTHESIS");
+    let ev = &c.evidence[&m.evidence_refs[0]];
+    assert_eq!(ev["source"], "RelOS");
+    assert_eq!(ev["mock_ids"], json!(["M24"]));
+    let q = &c.nodes["quality"];
+    assert_eq!(q.status, "SUCCEEDED");
+    assert_eq!(
+        q.output.as_ref().unwrap()["candidate_causes"][0]["relation_id"],
+        "rel-2"
+    );
+    // 审批门槛不变：没有批准就没有任何下发
+    assert!(c.actions.is_empty());
+    assert_eq!(c.stage, "WAITING_HUMAN");
+}
+
+#[test]
+fn rt_mom_07_relos_unavailable_degrades_to_unknown_without_dispatch() {
+    for status in ["unavailable", "timeout", "empty"] {
+        let mut e = s1();
+        let id = s1_with_relos(&mut e, json!({"status": status, "reason": "test"}));
+        let c = e.case(&id).unwrap();
+        assert_eq!(c.nodes["maintenance"].status, "UNKNOWN", "{status}");
+        assert_eq!(c.nodes["quality"].status, "UNKNOWN", "{status}");
+        let out = c.nodes["maintenance"].output.as_ref().unwrap();
+        assert_eq!(out["relos_status"], status);
+        // 与诊断超时相同的安全默认：不继续使用可疑设备，不自动下发
+        assert_eq!(
+            c.proposal.as_ref().unwrap()["exclude_assets"],
+            json!(["CNC-XX"])
+        );
+        assert!(c.actions.is_empty());
+        assert!(e.execute(&id, "production").is_err());
+    }
+}
+
+#[test]
+fn rt_mom_08_relos_payload_is_validated() {
+    let mut e = s1();
+    let id = e.ingest(EventInput::s1("order", 497)).unwrap();
+    assert!(e.change_world(&id, "relos", json!(true)).is_err());
+    assert!(e
+        .change_world(&id, "relos", json!({"status": "maybe"}))
+        .is_err());
+    let huge = "x".repeat(70_000);
+    assert!(e
+        .change_world(&id, "relos", json!({"status": "ok", "note": huge}))
+        .is_err());
+    assert!(e.change_world(&id, "relos", relos_ok()).is_ok());
+}
+
+#[test]
+fn rt_mom_09_without_relos_diagnosis_is_unchanged_mock() {
+    let mut e = s1();
+    let id = ready(&mut e);
+    let c = e.case(&id).unwrap();
+    let out = c.nodes["maintenance"].output.as_ref().unwrap();
+    assert_eq!(out["condition"], "WARNING");
+    assert!(out.get("candidate_causes").is_none());
+    let ev = &c.evidence[&c.nodes["maintenance"].evidence_refs[0]];
+    assert_eq!(ev["source"], "EAM");
+    assert_eq!(ev["mock_ids"], json!(["M03"]));
+}
+
+#[test]
+fn rt_mom_10_terminal_cases_reject_manual_world_changes_without_events() {
+    for closed in [false, true] {
+        let mut e = s1();
+        let id = ready(&mut e);
+        if closed {
+            approve(&mut e, &id, "production");
+            e.execute(&id, "production").unwrap();
+            e.advance(520).unwrap();
+            e.close(&id).unwrap();
+        } else {
+            e.cancel(&id).unwrap();
+        }
+        let before = serde_json::to_value(e.case(&id).unwrap()).unwrap();
+        let sequence = e.sequence();
+        let events = serde_json::to_value(e.events(&id, 0, 1000).unwrap()).unwrap();
+        for (key, value) in [
+            ("resources_available", json!(false)),
+            ("history", json!("changed")),
+            ("cpk", json!(0.5)),
+        ] {
+            assert!(
+                e.change_world(&id, key, value).is_err(),
+                "terminal case accepted {key}"
+            );
+            assert_eq!(e.sequence(), sequence);
+            assert_eq!(serde_json::to_value(e.case(&id).unwrap()).unwrap(), before);
+            assert_eq!(
+                serde_json::to_value(e.events(&id, 0, 1000).unwrap()).unwrap(),
+                events
+            );
+        }
+    }
+    let mut e = s1();
+    let id = ready(&mut e);
+    let sequence = e.sequence();
+    e.change_world(&id, "resources_available", json!(false))
+        .unwrap();
+    assert_eq!(e.case(&id).unwrap().world["resources_available"], false);
+    assert!(e.sequence() > sequence);
 }

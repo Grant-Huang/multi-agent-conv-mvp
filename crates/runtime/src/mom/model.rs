@@ -155,6 +155,10 @@ pub struct BoardEvent {
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Snapshot {
+    #[serde(default)]
+    pub simulations: BTreeMap<String, super::Simulation>,
+    #[serde(default)]
+    pub playback: super::Playback,
     pub now: u64,
     pub cases: BTreeMap<String, Case>,
     pub seen: BTreeMap<String, String>,
