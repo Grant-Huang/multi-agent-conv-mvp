@@ -36,7 +36,8 @@ const MessageRow = memo(function MessageRow(props: {
 }) {
   const { m, task, tickerTask, rank, lines, busy, onAct } = props;
   // 有进度或仍在运行时才显示走马灯；没有任务的消息不显示
-  const showTicker = !!tickerTask && (isRunning(tickerTask) || lines.length > 0);
+  // 失败任务也显示走马灯：失败原因就是历史的最后一行
+  const showTicker = !!tickerTask && (isRunning(tickerTask) || lines.length > 0 || tickerTask.status === "FAILED");
   return (
     <div className={`msg ${m.role}`}>
       <div className={m.role === "user" ? "bubble" : "bubble md"}>
@@ -46,7 +47,10 @@ const MessageRow = memo(function MessageRow(props: {
         )}
         {task && (
           <div className="task-live">
-            <div className={`task-status s-${task.status.toLowerCase()}`}>{taskStatusLine(task, rank)}</div>
+            {/* 失败时状态已并入走马灯历史的最后一行，不再单独显示"失败"行 */}
+            {task.status !== "FAILED" && (
+              <div className={`task-status s-${task.status.toLowerCase()}`}>{taskStatusLine(task, rank)}</div>
+            )}
             {/* 等待批准：直接在对话里给出操作，不需要去右侧面板找 */}
             {task.status === "NEEDS_HUMAN" && !task.result && onAct && (
               <div className="task-actions">
@@ -71,9 +75,6 @@ const MessageRow = memo(function MessageRow(props: {
                 />
               </div>
             )}
-            {task.status === "FAILED" && task.result?.errors.length ? (
-              <div className="task-reason">{task.result.errors.join("；")}</div>
-            ) : null}
             {task.result && <ArtifactList artifacts={task.result.artifacts} summary={task.result.summary} />}
           </div>
         )}
@@ -94,6 +95,18 @@ function isRunning(task: TaskRecord): boolean {
 function artifactStamp(task: TaskRecord | null): string {
   if (!task?.result) return "";
   return `${task.result.summary.length}|${task.result.errors.length}|${task.result.artifacts.map((a) => `${a.kind}:${a.name}:${a.content.length}`).join("|")}`;
+}
+
+/**
+ * 失败任务：历史末尾的"任务结束：FAILED"换成失败原因本身，原因并入历史，不再单独显示。
+ * 没有终态行时直接追加；非失败任务原样返回。
+ */
+function withFailure(lines: string[], task: TaskRecord): string[] {
+  const errors = task.result?.errors ?? [];
+  if (task.status !== "FAILED" || errors.length === 0) return lines;
+  const reason = errors.join("；");
+  if (lines.at(-1)?.startsWith("任务结束")) return [...lines.slice(0, -1), reason];
+  return [...lines, reason];
 }
 
 function queueRank(task: TaskRecord, tasks: TaskRecord[]): number | null {
@@ -227,7 +240,7 @@ export function ChatView(props: {
               task={task}
               tickerTask={tickerTask}
               rank={task ? queueRank(task, tasks) : null}
-              lines={tickerTask && tid ? notes[tid] ?? EMPTY_LINES : EMPTY_LINES}
+              lines={tickerTask && tid ? withFailure(notes[tid] ?? EMPTY_LINES, tickerTask) : EMPTY_LINES}
               busy={!!task && busyTask === task.id}
               onAct={props.onTaskAction ? act : undefined}
             />

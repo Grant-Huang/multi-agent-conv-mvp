@@ -32,6 +32,12 @@ const model=http.createServer(async(req,res)=>{
     }else if(schema==='route_decision') {
       result={task_class:'L4',execution_role:'general',required_tools:['write_file'],risk_level:goal.includes('审批')?'high':'medium',reason:'受控验证路由'};
     }else if(schema==='general_step') {
+      // 失败验证：模型服务返回 500，General 出错，任务以 FAILED 结束（用于失败卡片用例）
+      if(messages[1]?.content.includes('失败验证任务')) {
+        res.writeHead(500,{'content-type':'text/plain'});
+        res.end('受控失败');
+        return;
+      }
       if(messages[1]?.content.includes('慢验证任务')) {
         const timer=setTimeout(()=>res.end(),120_000);
         res.on('close',()=>{clearTimeout(timer);modelLog.write(JSON.stringify({event:'slow-disconnected'})+'\n');});

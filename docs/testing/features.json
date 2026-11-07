@@ -27,7 +27,8 @@
     "coverage": "browser",
     "cases": [
       "E2E-FILE",
-      "E2E-TICKER"
+      "E2E-TICKER",
+      "E2E-FAILCARD"
     ]
   },
   {

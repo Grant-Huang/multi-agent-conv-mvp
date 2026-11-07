@@ -148,3 +148,36 @@ test('E2E-TICKER: 简短回复后接走马灯，历史从旧到新且不带步�
   await expect.poll(async () => (await (await page.request.get(`/api/tasks/${slow.task.id}`)).json()).task.status).toBe('CANCELLED');
   await expect(page.locator('main .ticker-spin')).toHaveCount(0);
 });
+
+test('E2E-FAILCARD: 失败任务的执行历史从旧到新、无编号，失败原因并入历史末尾', async ({ page }) => {
+  const out = await send(page, '失败验证任务');
+  await expect.poll(async () => (await (await page.request.get(`/api/tasks/${out.task.id}`)).json()).task.status).toBe('FAILED');
+  const detail = await (await page.request.get(`/api/tasks/${out.task.id}`)).json();
+  const reason: string = detail.task.result.errors.join('；');
+  expect(reason.length).toBeGreaterThan(0);
+
+  // 期望的历史：非助手事件按时间顺序、相邻重复只留一条；末尾的"任务结束：FAILED"换成失败原因
+  const expected: string[] = [];
+  for (const e of detail.events as Array<{ kind: string; message: string }>) {
+    if (e.kind === 'assistant_message' || !e.message.trim()) continue;
+    if (expected.at(-1) !== e.message) expected.push(e.message);
+  }
+  expected[expected.length - 1] = reason;
+
+  // 走马灯挂在简短回复下，失败态；收起时那一行只显示历史的最新一条（即失败原因）
+  const ticker = page.locator('main .msg.assistant').first().locator('.bubble .ticker');
+  await expect(ticker).toHaveClass(/is-failed/);
+  const line = ticker.locator('.ticker-line');
+  await expect(line.locator('.ticker-text')).toHaveText(expected.at(-1)!);
+
+  // 展开：从旧到新，无编号列表（UL 且不显示序号）
+  await line.click();
+  const items = await ticker.locator('.ticker-history li').allTextContents();
+  expect(items).toEqual(expected);
+  expect(await ticker.locator('.ticker-history').evaluate((el) => el.tagName)).toBe('UL');
+  expect(await ticker.locator('.ticker-history').evaluate((el) => getComputedStyle(el).listStyleType)).toBe('none');
+
+  // 不再有单独的错误段和"失败"状态行
+  await expect(page.locator('main .task-reason')).toHaveCount(0);
+  await expect(page.locator('main .task-status.s-failed')).toHaveCount(0);
+});
