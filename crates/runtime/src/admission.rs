@@ -326,6 +326,13 @@ fn fnv1a(parts: &[&[u8]]) -> u64 {
     h
 }
 
+/// splitmix64 的收尾混合：每一位输入都影响每一位输出
+fn mix64(mut z: u64) -> u64 {
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
+}
+
 /// 一次变更产生的审计事件：(事件名, 详情)
 type Events = Vec<(&'static str, Value)>;
 
@@ -762,8 +769,9 @@ impl AdmissionLedger {
             agent_id.as_bytes(),
             task_id.as_bytes(),
         ]);
-        // 取高 53 位映射到 [0, 1)
-        let u = (h >> 11) as f64 / (1u64 << 53) as f64;
+        // FNV 的高位对末尾字节变化不敏感（编号连续时会成片抽中或成片漏掉），
+        // 先用 splitmix64 的收尾步骤把各位充分混合，再取高 53 位映射到 [0, 1)
+        let u = (mix64(h) >> 11) as f64 / (1u64 << 53) as f64;
         u < self.cfg.sample_rate
     }
 
