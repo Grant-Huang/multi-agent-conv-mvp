@@ -331,7 +331,8 @@ impl ConversationRuntime {
             }
             TurnDecision::Delegate { task_goal } => {
                 let goal = task_goal.clone();
-                self.delegate(log, started, decision, &goal, &ctx).await
+                self.delegate(log, started, decision, &goal, &ctx, None)
+                    .await
             }
             TurnDecision::FollowUp {
                 task_id,
@@ -351,10 +352,9 @@ impl ConversationRuntime {
                         self.finish(log, started, Some(decision.clone()), None, &msg)
                     }
                     FollowUpKind::Supplement => {
-                        // MVP 做法：取消旧任务，用合并后的目标重新路由和派发
-                        self.orchestrator.cancel(task_id)?;
+                        // 先路由并校验补充要求，成功后才取消旧任务。
                         let goal = format!("{}\n\n补充要求：{}", old.goal, change);
-                        self.delegate(log, started, decision.clone(), &goal, &ctx)
+                        self.delegate(log, started, decision.clone(), &goal, &ctx, Some(task_id))
                             .await
                     }
                 }
@@ -370,6 +370,7 @@ impl ConversationRuntime {
         decision: TurnDecision,
         goal: &str,
         ctx: &str,
+        replaces_task: Option<&str>,
     ) -> Result<TurnOutcome> {
         let conversation_id = log.conversation_id.clone();
         let examples = self.store.similar_feedback(goal, 5).unwrap_or_default();
@@ -379,6 +380,9 @@ impl ConversationRuntime {
                 log.attempts += route.attempts;
                 log.route_decision = Some(route.decision.clone());
                 log.policy = Some(route.policy.clone());
+                if let Some(task_id) = replaces_task {
+                    self.orchestrator.cancel(task_id)?;
+                }
                 let task = self.orchestrator.submit(
                     &conversation_id,
                     goal,

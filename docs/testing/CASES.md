@@ -161,3 +161,10 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADM-14 | admission | 开启准入的服务与一个桩外部 agent | 通过 `/api/admission/*` 走完 S1→S7（含审批）、派发任务、撤权、重启 | 每步返回正确结果；顺序错误返回 409、输入非法返回 400、未知 agent 返回 404；激活后外部 agent 出现在 /api/agents（kind=a2a）并完成任务；撤权返回新 epoch；重启后已激活的外部 agent 自动重新注册；未开启准入时这些接口返回 404 |
 | RT-ADM-15 | admission | 外部 agent 的 HTTP 服务 | 适配器执行任务 | 请求带 task_id、goal、context 与风险；成功结果映射为 Succeeded 并附"外部 agent 输出未经核实"的证据；HTTP 错误、无效 JSON、超时都返回带错误码的失败；非 http(s) 地址被拒 |
 
+
+## R-FIRST-05 补充要求路由（实现前定义）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-CONV-01 | conversation | 已有待审批任务 | 补充要求的路由遇到传输失败、格式失败或 Policy 拒绝 | 旧任务完整状态和事件不变，不新增任务 |
+| RT-CONV-02 | conversation | 已有待审批任务 | 补充要求路由和 Policy 校验成功 | 只路由一次，取消旧任务，使用合并目标创建待审批新任务 |

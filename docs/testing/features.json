@@ -12,6 +12,10 @@
       "E2E-CONV",
       "E2E-MOBILE",
       "E2E-ACK"
+    ],
+    "runtime_cases": [
+      "RT-CONV-01",
+      "RT-CONV-02"
     ]
   },
   {
