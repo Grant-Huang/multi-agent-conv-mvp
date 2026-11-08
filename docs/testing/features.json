@@ -260,5 +260,16 @@
       "RT-ADM-15",
       "RT-ADM-17"
     ]
+  },
+  {
+    "id": "mom-workbench-prototype",
+    "document": "docs/mom/prototype/README.md",
+    "sources": [
+      "docs/mom/prototype/index.html",
+      "docs/mom/prototype/check-entries.cjs"
+    ],
+    "coverage": "manual",
+    "cases": [],
+    "note": "独立模拟原型由check-entries/check/check-nodes执行浏览器检查；不计为生产Web集成覆盖。用例P-MOM-*见CASES.md。"
   }
 ]
