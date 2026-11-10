@@ -390,3 +390,46 @@ fn rt_adm_17_sampling_is_uniform_for_sequential_ids() {
         );
     }
 }
+
+#[test]
+fn rt_adm_18_active_binding_is_immutable_and_contracted_rebinding_is_allowed() {
+    let l = ledger();
+    l.submit(claim("binding-guard", TrustLevel::Trusted))
+        .unwrap();
+    l.clarify("binding-guard", vec![]).unwrap();
+    l.score("binding-guard", scores(1.0, 1.0, 1.0)).unwrap();
+    l.contract("binding-guard", contract()).unwrap();
+    l.approve("binding-guard", "supervisor").unwrap();
+    let binding = |endpoint: &str| A2aBinding {
+        endpoint: endpoint.into(),
+        role: "general".into(),
+        agent_type: "ext".into(),
+        max_concurrent: 1,
+    };
+    l.set_binding("binding-guard", binding("https://first.example/run"))
+        .unwrap();
+    l.set_binding("binding-guard", binding("https://good.example/run"))
+        .unwrap();
+    assert_eq!(l.get("binding-guard").unwrap().stage, Stage::Contracted);
+    assert_eq!(
+        l.get("binding-guard").unwrap().binding.unwrap().endpoint,
+        "https://good.example/run"
+    );
+    l.activate("binding-guard").unwrap();
+    let before = serde_json::to_value(l.get("binding-guard").unwrap()).unwrap();
+    let events = l.events("binding-guard", 100).unwrap();
+    assert!(
+        l.set_binding("binding-guard", binding("https://other.example/run"))
+            .is_err(),
+        "已激活 agent 不得改写 binding"
+    );
+    assert_eq!(
+        serde_json::to_value(l.get("binding-guard").unwrap()).unwrap(),
+        before
+    );
+    assert_eq!(
+        l.events("binding-guard", 100).unwrap(),
+        events,
+        "拒绝操作不得新增 admission.bound"
+    );
+}
