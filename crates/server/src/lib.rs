@@ -19,6 +19,7 @@
 //! | GET/POST | /api/admission/... | agent 准入（E3，开启 `[admission]` 时才有，见 `admission_api`） |
 
 pub mod admission_api;
+pub mod host_guard;
 pub mod mom;
 pub mod mom_relos;
 

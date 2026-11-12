@@ -181,3 +181,10 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | P-MOM-RETURN | 列表筛选后进入事项，再返回 | 原范围、维度、分组和滚动位置保留；不回到笼统首页 |
 | P-MOM-VIEWS | 查看任务及资源 | 已完成任务默认折叠，受阻展开；资源支持全部摘要、六维聚焦及缺口／全貌 |
 | P-MOM-CONTEXT | 在A输入草稿、切至C、再回A | 不混入A内容，回A恢复草稿；交接仅引用当前事项 |
+
+## HTTP Host 防护（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-01 | http-host | 启动真实 agentnexus/an-mom 二进制，恶意 Host 请求写入口、页面、API、SSE、同源 MOM | 请求在业务副作用前返回403；业务记录不变；转发头不能绕过 |
+| RT-HOST-02 | http-host | 本机 IPv4/localhost/IPv6 authority、错误端口、伪装域名、非法/缺失/重复 Host | 合法且端口匹配才允许；其余400或403 |

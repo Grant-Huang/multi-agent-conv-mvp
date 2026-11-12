@@ -52,3 +52,7 @@ R-FIRST-05：补充要求先完成 Router/Policy 校验，再取消旧任务并�
 | Feature | 用户路径 | 验证及边界 |
 |---|---|---|
 | mom-workbench-prototype | 看板／任务／资源＋范围切换 → 统一事项 → 处理进展、条件、决定、交接 | P-MOM-*；独立浏览器检查check-entries/check/check-nodes，证据见docs/mom/prototype/README.md；模拟状态，不计入生产接口与权限集成覆盖 |
+
+## HTTP 请求 Host 防护
+
+`http-host`：正式 agentnexus/an-mom 在组装所有路由与静态 fallback 后统一应用 host_guard::protect，允许精确 localhost/127.0.0.1/[::1] 且端口匹配实际监听端口；不信任转发头。RT-HOST-01/02（`server/tests/host_guard.rs`）启动真实二进制，覆盖恶意 Host、写入无副作用、静态页、API、SSE、同源 MOM、合法 IPv6 authority 与非法/重复 Host。不是浏览器 DNS 重绑定复现，也不是完整身份认证。证据见 [R-20261106-S1](evidence/r-20261106-s1.md)。
