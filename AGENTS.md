@@ -5,6 +5,7 @@
 
 ## 开始前
 1. 读 `docs/DESIGN.md`（架构）和 `docs/PLAN.md`（当前里程碑）。
+   MOM 业务工作台的 UI / UE 设计与开发还须遵守 [主界面设计原则](docs/mom/UI_UX_PRINCIPLES.md)，其场景验收要求作为界面变更评审基线。
 2. 需求没有验收条件时，先提问，不要开始写代码。
 3. 查看 `git status` 和 `git diff`，确认不会覆盖用户未提交的改动。
 
