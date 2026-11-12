@@ -289,5 +289,21 @@
       "RT-GIT-04",
       "RT-GIT-05"
     ]
+  },
+  {
+    "id": "http-host",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/server/src/host_guard.rs",
+      "crates/server/src/main.rs",
+      "crates/server/src/bin/an-mom.rs",
+      "crates/server/tests/host_guard.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-HOST-01",
+      "RT-HOST-02"
+    ]
   }
 ]

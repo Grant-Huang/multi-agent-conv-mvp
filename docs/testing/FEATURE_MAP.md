@@ -57,3 +57,7 @@ R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不
 ## Git 改动证据
 
 `git-evidence`：ACP/Coding 共用 `util.rs`；快照和兜底均在私有索引采集，不修改用户暂存区。RT-GIT-01～05（`crates/agents/tests/git_evidence.rs`）覆盖暂存边界、空仓库、链接 worktree、并发、失败及取消清理。失败明确返回证据不可用。每条 Git 命令期限30秒，复用进程组终止并回收后释放临时目录；不是浏览器测试。证据见 [R-FIRST-06](evidence/r-first-06.md)。
+
+## HTTP 请求 Host 防护
+
+`http-host`：正式 agentnexus/an-mom 在组装所有路由与静态 fallback 后统一应用 host_guard::protect，允许精确 localhost/127.0.0.1/[::1] 且端口匹配实际监听端口；不信任转发头。RT-HOST-01/02（`server/tests/host_guard.rs`）启动真实二进制，覆盖恶意 Host、写入无副作用、静态页、API、SSE、同源 MOM、合法 IPv6 authority 与非法/重复 Host。不是浏览器 DNS 重绑定复现，也不是完整身份认证。证据见 [R-20261106-S1](evidence/r-20261106-s1.md)。

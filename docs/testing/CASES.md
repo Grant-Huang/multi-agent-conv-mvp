@@ -198,3 +198,10 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-GIT-03 | git-evidence | 带空格路径的链接 worktree，并发兜底采集及快照 | 两次证据完整，真实索引不变 |
 | RT-GIT-04 | git-evidence | Git 索引损坏，采集失败 | 明确报告证据不可用，不改变原索引，不伪报无改动 |
 | RT-GIT-05 | git-evidence | 快照的 Git clean filter 正在运行时取消采集 | 有界终止本次进程组、回收私有索引目录；真实索引不变 |
+
+## HTTP Host 防护（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-01 | http-host | 启动真实 agentnexus/an-mom 二进制，恶意 Host 请求写入口、页面、API、SSE、同源 MOM | 请求在业务副作用前返回403；业务记录不变；转发头不能绕过 |
+| RT-HOST-02 | http-host | 本机 IPv4/localhost/IPv6 authority、错误端口、伪装域名、非法/缺失/重复 Host | 合法且端口匹配才允许；其余400或403 |

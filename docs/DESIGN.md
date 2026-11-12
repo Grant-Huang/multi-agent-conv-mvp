@@ -945,6 +945,12 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 
 ---
 
+### 13.1 本机 HTTP authority 边界
+
+正式主服务与独立 MOM 在最终监听入口统一校验 Host：只允许 localhost、127.0.0.1、[::1]，端口必须匹配实际监听端口（省略端口仅在80允许）。缺失、重复、非法 Host、非白名单域名或 URI authority 不一致时，在所有 handler/静态页面/SSE 前返回403和 E_HTTP_HOST；HTTP 解析器也可能先返回400。转发头不参与准入。HTTP/2 仅在启用该协议的服务中可使用 :authority；当前二进制依赖仅启用 HTTP/1。
+
+不新增远程域名例外或配置；远程/反向代理访问须先给定精确 authority 并另行审定配置，不能以伪造转发头放行。直接使用库路由构造器的自定义嵌入服务须在最终路由上调用 host_guard::protect 并传入 listener.local_addr().port()。该措施不提供调用者身份认证，不能代替准入审批权限。
+
 ## 14. 测试
 
 | 层级 | 覆盖内容 |

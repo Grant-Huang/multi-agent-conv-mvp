@@ -117,7 +117,11 @@ async fn main() -> Result<()> {
         tracing::info!(event = "log.file", dir = %d.display(), "JSON 日志目录（用于自动排查）");
     }
     tracing::info!(event = "server.started", bind = %config.server.bind, "AgentNexus 已启动：http://{}", config.server.bind);
-    axum::serve(listener, app.layer(TraceLayer::new_for_http())).await?;
+    let app = an_server::host_guard::protect(
+        app.layer(TraceLayer::new_for_http()),
+        listener.local_addr()?.port(),
+    );
+    axum::serve(listener, app).await?;
     if let Some(clock) = mom_clock {
         clock.abort();
     }
