@@ -708,15 +708,10 @@ impl AdmissionLedger {
         })
     }
 
-    /// 记录外部 agent 的接入信息（S5 签约后、激活前或激活后均可更新）
+    /// 记录外部 agent 的接入信息（仅 S5 签约后、S7 激活前可登记或更新）
     pub fn set_binding(&self, agent_id: &str, b: A2aBinding) -> Result<()> {
         self.update(agent_id, |rec, ev| {
-            if !matches!(rec.stage, Stage::Contracted | Stage::Active) {
-                return Err(fail(
-                    codes::ADMISSION_STATE,
-                    format!("签约后才能登记接入信息，当前阶段 {:?}", rec.stage),
-                ));
-            }
+            Self::expect_stage(rec, Stage::Contracted, "登记接入信息")?;
             if !(b.endpoint.starts_with("http://") || b.endpoint.starts_with("https://")) {
                 return Err(fail(
                     codes::ADMISSION_INVALID,

@@ -1030,3 +1030,7 @@ flowchart LR
 - mdns-sd（纯 Rust 的 mDNS 实现）：https://github.com/keepsimple1/mdns-sd
 - tracing-appender（日志文件按天滚动）：https://github.com/tokio-rs/tracing
 - AgentNexus 前期设计讨论记录
+
+## 准入接入信息阶段约束（R-20261110-H1）
+
+外部 agent 的 binding 只允许在 Contracted 阶段登记或重登记；进入 Active 后不得通过重复 activate 就地修改 endpoint、角色、agent_type 或 max_concurrent。所有调用入口统一由 AdmissionLedger::set_binding 的状态守卫拒绝，在写记录和 admission.bound 事件前返回阶段错误（HTTP 409）。该修复不提供调用者身份认证或 endpoint 网络白名单；这两类权限/安全策略另待方案确认。
