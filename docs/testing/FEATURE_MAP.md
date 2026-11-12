@@ -53,3 +53,7 @@ R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不
 | Feature | 用户路径 | 验证及边界 |
 |---|---|---|
 | mom-workbench-prototype | 看板／任务／资源＋范围切换 → 统一事项 → 处理进展、条件、决定、交接 | P-MOM-*；独立浏览器检查check-entries/check/check-nodes，证据见docs/mom/prototype/README.md；模拟状态，不计入生产接口与权限集成覆盖 |
+
+## Git 改动证据
+
+`git-evidence`：ACP/Coding 共用 `util.rs`；快照和兜底均在私有索引采集，不修改用户暂存区。RT-GIT-01～05（`crates/agents/tests/git_evidence.rs`）覆盖暂存边界、空仓库、链接 worktree、并发、失败及取消清理。失败明确返回证据不可用。每条 Git 命令期限30秒，复用进程组终止并回收后释放临时目录；不是浏览器测试。证据见 [R-FIRST-06](evidence/r-first-06.md)。

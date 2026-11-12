@@ -272,5 +272,22 @@
     "coverage": "manual",
     "cases": [],
     "note": "独立模拟原型由check-entries/check/check-nodes执行浏览器检查；不计为生产Web集成覆盖。用例P-MOM-*见CASES.md。"
+  },
+  {
+    "id": "git-evidence",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/util.rs",
+      "crates/agents/tests/git_evidence.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-GIT-01",
+      "RT-GIT-02",
+      "RT-GIT-03",
+      "RT-GIT-04",
+      "RT-GIT-05"
+    ]
   }
 ]
