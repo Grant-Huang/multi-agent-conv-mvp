@@ -2,6 +2,8 @@
 
 日期：2026-11-05（America/Vancouver）。状态：A 层模拟实现已落地，未连接生产系统。运行方式及实施边界见 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
 
+人类工作台的导航、事项闭环、DAG 交互及 AI 会话边界遵守 [UI / UE 设计原则](UI_UX_PRINCIPLES.md)。该文档为界面开发约束，不代表目标能力已实现。
+
 ## 1. 目标与范围
 
 用两条业务流程拉动共同架构：S1 插单、设备与质量多扰动；S2 重大客户投诉。默认一个 Master 负责解释、编排建议和统一交互，运行时控制状态、权限、关卡、预算；仅对耗时、专业、可独立交付的调查按需启动子 Agent。公告板提供同一事实版本的 agent 视图和人类视图。Mock 与真实能力逐项登记在 [MOCK_REGISTER.md](MOCK_REGISTER.md)，测试计划见 [TEST_PLAN.md](TEST_PLAN.md)。
