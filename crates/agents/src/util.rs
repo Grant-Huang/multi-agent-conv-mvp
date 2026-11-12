@@ -1,6 +1,9 @@
 //! Agent 之间共用的小工具：命令查找、`~` 展开、git 改动证据收集。
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::AsyncReadExt;
 
 use an_core::{truncate_chars, Artifact, Evidence};
 use tokio::process::Command;
@@ -68,17 +71,96 @@ async fn git(workdir: &Path, args: &[&str]) -> Option<String> {
     git_with_index(workdir, None, args).await
 }
 
-/// 同上；`index` 指定时使用这个临时暂存区文件，不影响仓库自己的暂存区
-async fn git_with_index(workdir: &Path, index: Option<&Path>, args: &[&str]) -> Option<String> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C").arg(workdir).args(args);
-    if let Some(index) = index {
-        cmd.env("GIT_INDEX_FILE", index);
+/// 私有目录避免索引文件名竞争；最后一个 Git 操作退出后才删除 index/lock。
+struct PrivateIndex {
+    dir: PathBuf,
+}
+impl PrivateIndex {
+    async fn copy_from(workdir: &Path) -> Option<Arc<Self>> {
+        let dir = std::env::temp_dir().join(an_core::new_id("an-git-index"));
+        std::fs::create_dir(&dir).ok()?;
+        let index = Arc::new(Self { dir });
+        let path = git(workdir, &["rev-parse", "--git-path", "index"]).await?;
+        match std::fs::copy(workdir.join(path.trim()), index.path()) {
+            Ok(_) => Some(index),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(index),
+            Err(_) => None,
+        }
     }
-    let out = cmd.output().await.ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).to_string())
+    fn path(&self) -> PathBuf {
+        self.dir.join("index")
+    }
+}
+impl Drop for PrivateIndex {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+struct CancelGit(Option<tokio::sync::oneshot::Sender<()>>);
+impl Drop for CancelGit {
+    fn drop(&mut self) {
+        if let Some(tx) = self.0.take() {
+            let _ = tx.send(());
+        }
+    }
+}
+
+/// 每条命令最多30秒；调用方取消后由拥有索引的任务终止并回收进程，再释放目录。
+async fn git_with_index(
+    workdir: &Path,
+    index: Option<&Arc<PrivateIndex>>,
+    args: &[&str],
+) -> Option<String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(workdir)
+        .args(args)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    if let Some(index) = index {
+        cmd.env("GIT_INDEX_FILE", index.path());
+    }
+    crate::proc_group::configure(&mut cmd);
+    let lease = index.cloned();
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    let _cancel = CancelGit(Some(tx));
+    tokio::spawn(async move {
+        let _lease = lease;
+        let mut child = crate::proc_group::GroupChild::spawn(&mut cmd, "git-evidence").ok()?;
+        let mut stdout = child.child_mut().stdout.take()?;
+        let mut bytes = Vec::new();
+        let result = {
+            let operation = async {
+                tokio::try_join!(
+                    async {
+                        let status = child.wait().await;
+                        child.kill_leftovers();
+                        status
+                    },
+                    stdout.read_to_end(&mut bytes)
+                )
+                .ok()
+            };
+            tokio::select! {
+                r = operation => r,
+                _ = tokio::time::sleep(Duration::from_secs(30)) => None,
+                _ = &mut rx => None,
+            }
+        };
+        if result.is_none() {
+            child.terminate("cancelled_or_timeout").await;
+        }
+        result.and_then(|(status, _)| {
+            status
+                .success()
+                .then(|| String::from_utf8_lossy(&bytes).to_string())
+        })
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 /// 给工作区（含未跟踪文件，遵守 .gitignore）拍快照，返回 git 树对象的哈希。
@@ -86,19 +168,13 @@ async fn git_with_index(workdir: &Path, index: Option<&Path>, args: &[&str]) -> 
 /// 不是 git 仓库或 git 出错时返回 None。
 pub async fn snapshot_worktree(workdir: &Path) -> Option<String> {
     git(workdir, &["rev-parse", "--is-inside-work-tree"]).await?;
-    let tmp_index = std::env::temp_dir().join(an_core::new_id("an-git-index"));
-    // 从仓库暂存区复制一份作为起点，git 可以复用其中的文件状态缓存，大仓库也很快
-    if let Some(p) = git(workdir, &["rev-parse", "--git-path", "index"]).await {
-        let real_index = workdir.join(p.trim());
-        let _ = tokio::fs::copy(&real_index, &tmp_index).await;
-    }
+    let tmp_index = PrivateIndex::copy_from(workdir).await?;
     let tree = match git_with_index(workdir, Some(&tmp_index), &["add", "-A"]).await {
         Some(_) => git_with_index(workdir, Some(&tmp_index), &["write-tree"])
             .await
             .map(|s| s.trim().to_string()),
         None => None,
     };
-    let _ = tokio::fs::remove_file(&tmp_index).await;
     tree.filter(|t| !t.is_empty())
 }
 
@@ -126,20 +202,47 @@ pub async fn collect_git_changes(
         Some(_) => snapshot_worktree(workdir).await,
         None => None,
     };
-    let (stat, diff) = match (baseline, after.as_deref()) {
-        (Some(before), Some(after)) => (
+    // 所有 fallback 的读写都使用同一私有索引，保留既有 staged/unstaged 边界。
+    let fallback = if baseline.is_some() && after.is_some() {
+        None
+    } else {
+        PrivateIndex::copy_from(workdir).await
+    };
+    let (stat, diff, names) = match (baseline, after.as_deref(), fallback.as_ref()) {
+        (Some(before), Some(after), _) => (
             git(workdir, &["diff", "--stat", before, after]).await,
             git(workdir, &["diff", before, after]).await,
+            git(
+                workdir,
+                &["diff", "--name-only", "--diff-filter=ACMR", before, after],
+            )
+            .await,
         ),
-        _ => {
-            // intent-to-add：让新建的未跟踪文件也出现在 diff 里（不会真正暂存内容）
-            let _ = git(workdir, &["add", "-N", "."]).await;
+        (_, _, Some(index))
+            if git_with_index(workdir, Some(index), &["add", "-N", "."])
+                .await
+                .is_some() =>
+        {
             (
-                git(workdir, &["diff", "--stat"]).await,
-                git(workdir, &["diff"]).await,
+                git_with_index(workdir, Some(index), &["diff", "--stat"]).await,
+                git_with_index(workdir, Some(index), &["diff"]).await,
+                git_with_index(
+                    workdir,
+                    Some(index),
+                    &["diff", "--name-only", "--diff-filter=ACMR"],
+                )
+                .await,
             )
         }
+        _ => (None, None, None),
     };
+    if stat.is_none() || diff.is_none() || names.is_none() {
+        evidence.push(Evidence {
+            kind: "git_diff_stat".into(),
+            content: "Git 证据不可用：采集失败、超时或无法建立私有索引".into(),
+        });
+        return (evidence, artifacts);
+    }
     if let Some(stat) = stat {
         evidence.push(Evidence {
             kind: "git_diff_stat".into(),
@@ -157,16 +260,6 @@ pub async fn collect_git_changes(
             content: truncate_chars(&diff, 20000),
         });
     }
-    let names = match (baseline, after.as_deref()) {
-        (Some(before), Some(after)) => {
-            git(
-                workdir,
-                &["diff", "--name-only", "--diff-filter=ACMR", before, after],
-            )
-            .await
-        }
-        _ => git(workdir, &["diff", "--name-only", "--diff-filter=ACMR"]).await,
-    };
     if let Some(names) = names {
         for rel in names
             .lines()

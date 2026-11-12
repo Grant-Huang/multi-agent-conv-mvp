@@ -445,6 +445,8 @@ sequenceDiagram
 
 `web_search` / `web_fetch` 调用的搜索命令用同样的方式管理。每次清理记一条 `agent.process_group_killed`。
 
+Git 证据采集：快照及兜底均复制到独立临时索引，遵守忽略规则、保留真实暂存区。兜底保留相对于现有索引的 diff 语义，可能包含任务开始前已有改动，不代表 HEAD 的完整差异。失败返回“Git 证据不可用”。每条 Git 命令最多30秒，超时/取消复用进程组清理；清理任务持有临时目录直到进程退出，不写回真实索引。Windows 仍仅保证直接子进程清理。
+
 ### 7.6 质检与返工
 
 | 任务 | 是否质检 |
@@ -1036,3 +1038,7 @@ flowchart LR
 - mdns-sd（纯 Rust 的 mDNS 实现）：https://github.com/keepsimple1/mdns-sd
 - tracing-appender（日志文件按天滚动）：https://github.com/tokio-rs/tracing
 - AgentNexus 前期设计讨论记录
+
+## 准入接入信息阶段约束（R-20261110-H1）
+
+外部 agent 的 binding 只允许在 Contracted 阶段登记或重登记；进入 Active 后不得通过重复 activate 就地修改 endpoint、角色、agent_type 或 max_concurrent。所有调用入口统一由 AdmissionLedger::set_binding 的状态守卫拒绝，在写记录和 admission.bound 事件前返回阶段错误（HTTP 409）。该修复不提供调用者身份认证或 endpoint 网络白名单；这两类权限/安全策略另待方案确认。

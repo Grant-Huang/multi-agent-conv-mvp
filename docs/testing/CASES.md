@@ -169,6 +169,13 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-CONV-01 | conversation | 已有待审批任务 | 补充要求的路由遇到传输失败、格式失败或 Policy 拒绝 | 旧任务完整状态和事件不变，不新增任务 |
 | RT-CONV-02 | conversation | 已有待审批任务 | 补充要求路由和 Policy 校验成功 | 只路由一次，取消旧任务，使用合并目标创建待审批新任务 |
 
+## R-20261110-H1 已激活接入地址不可变（实现前定义）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-ADM-18 | admission | Trusted 已签约且已审批 | Contracted 登记/重登记 binding，然后激活再改 binding | Contracted 操作成功；Active 修改被拒绝，完整记录（含 epoch/binding）及审计事件不变 |
+| HTTP-ADM-BIND-01 | admission | Trusted 已激活且 binding=good | 再 POST /activate 提交不同 endpoint/role/type/concurrency | 返回 409，完整记录、事件及注册卡片不变，无新增 admission.bound |
+
 ## MOM 三入口独立原型（非生产集成）
 
 以下由 `docs/mom/prototype/check-entries.cjs` 驱动，不计入生产 Web 浏览器覆盖；既有节点和会话断言继续由 `check-nodes.cjs`、`check.cjs` 保护，导航定位随三入口契约调整，业务断言不减少。
@@ -181,6 +188,16 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | P-MOM-RETURN | 列表筛选后进入事项，再返回 | 原范围、维度、分组和滚动位置保留；不回到笼统首页 |
 | P-MOM-VIEWS | 查看任务及资源 | 已完成任务默认折叠，受阻展开；资源支持全部摘要、六维聚焦及缺口／全貌 |
 | P-MOM-CONTEXT | 在A输入草稿、切至C、再回A | 不混入A内容，回A恢复草稿；交接仅引用当前事项 |
+
+## Git 证据采集的索引隔离（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-GIT-01 | git-evidence | staged/unstaged/untracked/ignored/intent-to-add，触发兜底采集 | 真实索引字节、cached diff、标记和文件不变，未跟踪文件进入证据，忽略文件不进入 |
+| RT-GIT-02 | git-evidence | 空仓库无索引，兜底采集 | 获得新文件证据，不创建真实索引 |
+| RT-GIT-03 | git-evidence | 带空格路径的链接 worktree，并发兜底采集及快照 | 两次证据完整，真实索引不变 |
+| RT-GIT-04 | git-evidence | Git 索引损坏，采集失败 | 明确报告证据不可用，不改变原索引，不伪报无改动 |
+| RT-GIT-05 | git-evidence | 快照的 Git clean filter 正在运行时取消采集 | 有界终止本次进程组、回收私有索引目录；真实索引不变 |
 
 ## HTTP Host 防护（实现前定义）
 

@@ -255,3 +255,71 @@ async fn rt_adm_14_admission_http_end_to_end() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn active_agent_reactivation_returns_conflict_without_binding_or_event_changes() {
+    use an_runtime::admission::{Contract, Scores};
+    let rt = Arc::new(
+        Runtime::new(
+            config(true),
+            Store::open(std::path::Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let l = rt.admission.as_ref().unwrap();
+    l.submit(serde_json::from_value(claim("binding-http")).unwrap())
+        .unwrap();
+    l.clarify("binding-http", vec![]).unwrap();
+    l.score(
+        "binding-http",
+        Scores {
+            completeness: 1.0,
+            conversation: 1.0,
+            test: 1.0,
+        },
+    )
+    .unwrap();
+    l.contract(
+        "binding-http",
+        Contract {
+            role: "executor".into(),
+            working_language: "zh".into(),
+            context_scope: vec![],
+            allowed_tools: vec![],
+        },
+    )
+    .unwrap();
+    l.approve("binding-http", "supervisor").unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = an_server::api(rt.clone());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let api = Api {
+        base: format!("http://{addr}"),
+        http: reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap(),
+    };
+    let endpoint = "/api/admission/agents/binding-http/activate";
+    let good = json!({"endpoint":"https://good.example/run","role":"general","agent_type":"ext","max_concurrent":1});
+    let (status, value) = api.post(endpoint, good).await;
+    assert_eq!(status, 200, "{value}");
+    let (status, before) = api.get("/api/admission/agents/binding-http").await;
+    assert_eq!(status, 200);
+    let cards = serde_json::to_value(rt.registry.cards()).unwrap();
+    let changed = json!({"endpoint":"https://other.example/run","role":"coding","agent_type":"other","max_concurrent":2});
+    let (status, _) = api.post(endpoint, changed).await;
+    assert_eq!(status, 409);
+    let (status, after) = api.get("/api/admission/agents/binding-http").await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        after, before,
+        "409 响应不能改写已批准 binding 或新增审计事件"
+    );
+    assert_eq!(serde_json::to_value(rt.registry.cards()).unwrap(), cards);
+    server.abort();
+    let _ = server.await;
+}

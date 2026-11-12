@@ -47,11 +47,16 @@ R-20261107-M1：终态案例拒绝手动故障注入；RT-MOM-10（runtime 集�
 
 R-FIRST-05：补充要求先完成 Router/Policy 校验，再取消旧任务并创建替代任务。RT-CONV-01/02 位于 `crates/server/tests/supplement_routing.rs`，使用受控模型与真实 Runtime/SQLite；覆盖传输失败、格式失败、Policy 拒绝时旧任务状态/事件不变，以及成功时合并目标后替换。证据见 [R-FIRST-05](evidence/r-first-05.md)。本组不是浏览器验证；取消与新任务持久化之间尚非原子事务。
 
+R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不允许就地改写接入地址、角色、类型或并发。RT-ADM-18 为 Runtime 集成；`server/tests/admission.rs::active_agent_reactivation_returns_conflict_without_binding_or_event_changes` 为 HTTP 回归，验证重复 activate 返回 409 且记录、审计事件、注册卡片不变。证据见 [R-20261110-H1](evidence/r-20261110-h1.md)；不代表准入接口已经有身份认证或 endpoint 网络白名单。
 ## MOM 独立设计原型
 
 | Feature | 用户路径 | 验证及边界 |
 |---|---|---|
 | mom-workbench-prototype | 看板／任务／资源＋范围切换 → 统一事项 → 处理进展、条件、决定、交接 | P-MOM-*；独立浏览器检查check-entries/check/check-nodes，证据见docs/mom/prototype/README.md；模拟状态，不计入生产接口与权限集成覆盖 |
+
+## Git 改动证据
+
+`git-evidence`：ACP/Coding 共用 `util.rs`；快照和兜底均在私有索引采集，不修改用户暂存区。RT-GIT-01～05（`crates/agents/tests/git_evidence.rs`）覆盖暂存边界、空仓库、链接 worktree、并发、失败及取消清理。失败明确返回证据不可用。每条 Git 命令期限30秒，复用进程组终止并回收后释放临时目录；不是浏览器测试。证据见 [R-FIRST-06](evidence/r-first-06.md)。
 
 ## HTTP 请求 Host 防护
 
