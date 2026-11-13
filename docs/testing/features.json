@@ -297,13 +297,16 @@
       "crates/server/src/host_guard.rs",
       "crates/server/src/main.rs",
       "crates/server/src/bin/an-mom.rs",
-      "crates/server/tests/host_guard.rs"
+      "crates/server/tests/host_guard.rs",
+      "crates/server/tests/host_diagnostics.rs"
     ],
     "coverage": "backend",
     "cases": [],
     "runtime_cases": [
       "RT-HOST-01",
-      "RT-HOST-02"
+      "RT-HOST-02",
+      "RT-HOST-03",
+      "RT-HOST-04"
     ]
   }
 ]

@@ -540,6 +540,8 @@ pub mod codes {
     pub const LLM_SLOTS_MISMATCH: &str = "W_LLM_SLOTS_MISMATCH";
     pub const LLM_CONTEXT_TRIM: &str = "W_LLM_CONTEXT_TRIM";
     pub const LLM_RETRY: &str = "W_LLM_RETRY";
+    // HTTP 请求准入（不代表调用者身份认证）
+    pub const HTTP_HOST: &str = "E_HTTP_HOST";
     // 路由与执行组
     pub const ROUTE_NO_AGENT: &str = "E_ROUTE_NO_AGENT";
     pub const POOL_CONFIG: &str = "E_POOL_CONFIG";

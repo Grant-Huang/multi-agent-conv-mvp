@@ -3,7 +3,7 @@ use axum::{
     extract::Request,
     http::{uri::Authority, StatusCode},
     middleware::{self, Next},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Router,
 };
 
@@ -30,6 +30,34 @@ fn allowed(authority: &str, port: u16) -> bool {
         }
 }
 
+/// 请求尚未进入 handler、也尚无 task_id；只记录用于排查的最小摘要。
+fn rejected(request: &Request) -> Response {
+    let host = request
+        .headers()
+        .get("host")
+        .map(|h| {
+            String::from_utf8_lossy(h.as_bytes())
+                .chars()
+                .take(100)
+                .collect::<String>()
+        })
+        .unwrap_or_default();
+    tracing::warn!(
+        event = "http.host_rejected",
+        code = an_core::codes::HTTP_HOST,
+        task_id = "",
+        method = %request.method(),
+        path = request.uri().path(),
+        host = %host,
+        "HTTP Host 请求已拒绝"
+    );
+    (
+        StatusCode::FORBIDDEN,
+        format!("{}: Host 不被允许", an_core::codes::HTTP_HOST),
+    )
+        .into_response()
+}
+
 /// Protect the complete router using the actual bound port (including bind port 0).
 /// No forwarded headers or implicit remote/sidecar exceptions are trusted.
 pub fn protect(app: Router, port: u16) -> Router {
@@ -39,13 +67,10 @@ pub fn protect(app: Router, port: u16) -> Router {
             let host = match values.as_slice() {
                 [h] => match h.to_str() {
                     Ok(h) => Some(h),
-                    Err(_) => {
-                        return (StatusCode::FORBIDDEN, "E_HTTP_HOST: Host 不被允许")
-                            .into_response()
-                    }
+                    Err(_) => return rejected(&request),
                 },
                 [] => None,
-                _ => return (StatusCode::FORBIDDEN, "E_HTTP_HOST: Host 不被允许").into_response(),
+                _ => return rejected(&request),
             };
             let uri_authority = request.uri().authority().map(Authority::as_str);
             // HTTP/2 may supply only :authority; HTTP/1 still requires exactly one Host.
@@ -56,7 +81,7 @@ pub fn protect(app: Router, port: u16) -> Router {
                 _ => None,
             };
             if !authority.is_some_and(|a| allowed(a, port)) {
-                return (StatusCode::FORBIDDEN, "E_HTTP_HOST: Host 不被允许").into_response();
+                return rejected(&request);
             }
             next.run(request).await
         },
