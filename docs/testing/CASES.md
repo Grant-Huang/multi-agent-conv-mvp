@@ -205,3 +205,18 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|
 | RT-HOST-01 | http-host | 启动真实 agentnexus/an-mom 二进制，恶意 Host 请求写入口、页面、API、SSE、同源 MOM | 请求在业务副作用前返回403；业务记录不变；转发头不能绕过 |
 | RT-HOST-02 | http-host | 本机 IPv4/localhost/IPv6 authority、错误端口、伪装域名、非法/缺失/重复 Host | 合法且端口匹配才允许；其余400或403 |
+
+## Host 拒绝事件可观测性（实现前定义，R-20261113-L1）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-03 | http-host | 正式主服务收到恶意长Host的POST（带敏感请求体/认证头/查询串） | 403且无业务副作用；诊断与JSON各有一条WARN http.host_rejected / E_HTTP_HOST；method/path正确，Host最多100字符，不记录其他敏感输入；合法请求不新增拒绝事件 |
+| RT-HOST-04 | http-host | 独立an-mom收到相同恶意POST | 403，JSON日志有WARN与统一错误码及截断Host；合法本机请求仍可访问且案例未创建 |
+
+## R-20261113-L1 预审回归（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-05 | http-host | an-mom工作目录的logs是普通文件，启动并发送非法Host | 正常监听，原文件不变；降级提示及Host拒绝均输出控制台，403不变 |
+| RT-HOST-06 | http-host | 主服务/独立MOM收到约60KB路径且Host非法 | 403；JSON中path最多200字符、单条记录小于2KB；主服务诊断同样限长 |
+| RT-HOST-07 | http-host | 主服务遇到同一日志目录冲突 | 不panic；保留控制台及内存诊断，不覆盖原文件 |

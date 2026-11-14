@@ -745,7 +745,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | **JSON 日志文件** | 程序、脚本、AI | 一行一条记录，字段固定；按天分文件：`logs/agentnexus.jsonl.2026-11-05`，节点在 `~/.agentnexus-node/logs/an-node.jsonl.*` |
 | **诊断接口** | 人和程序 | `GET /api/diagnostics`（节点：`/node/diagnostics`）：最近 100 条问题、按错误码统计、执行组状态、节点状态、模型连通性。界面「诊断」页显示的就是它 |
 
-内存中保留最近 500 条 WARN / ERROR，供诊断接口查询。
+内存中保留最近 500 条 WARN / ERROR，供诊断接口查询。文件日志初始化失败时不阻止服务启动，保留控制台与内存诊断，并记录 `log.file_unavailable`（WARN）；本次进程不自动重试文件日志。
 
 ### 10.2 每条记录的固定字段
 
@@ -763,9 +763,10 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 
 | 模块 | 事件 | 什么时候记录 |
 |---|---|---|
-| 启动 | `server.started`、`log.file`、`agent.registered`、`agent.detected`、`agent.not_installed`、`pool.resolved`、`pool.invalid`、`config.unknown_key`、`task.interrupted`、`llm.connected`、`llm.unreachable` | 启动时的状态和配置问题 |
+| 启动 | `server.started`、`log.file`、`log.file_unavailable`、`agent.registered`、`agent.detected`、`agent.not_installed`、`pool.resolved`、`pool.invalid`、`config.unknown_key`、`task.interrupted`、`llm.connected`、`llm.unreachable` | 启动时的状态和配置问题 |
 | 对话 | `conversation.turn`、`conversation.reply`、`conversation.reply_stream_failed`、`conversation.reply_failed`、`conversation.config` | 每轮对话一条（决策、角色、任务、尝试次数、耗时）；直接回答的生成（是否流式、字数、耗时）；启动时的审查模式 |
 | 模型 | `llm.request_failed`、`llm.format_retry`、`llm.structured_failed`、`llm.structured_ok`（debug 级别） | 请求失败、格式不合格重试、最终失败 |
+| HTTP入口 | `http.host_rejected` | Host 校验拒绝时记录 WARN，带 `code=E_HTTP_HOST`、`method`、不含查询串且最多200字符的 `path` 摘要、最多100字符的首个 `host` 摘要；请求尚无任务，`task_id` 为空。不记录请求体或其他请求头；独立 MOM 使用 `logs/an-mom.jsonl.*` |
 | 规则 | `policy.reject` | 没有可用 agent，拒绝派发 |
 | 准入 | `admission.preadmitted`、`admission.submitted`、`admission.clarified`、`admission.scored`、`admission.contracted`、`admission.approved`、`admission.activated`、`admission.rejected`、`admission.check`、`admission.warning`、`admission.downgraded`、`admission.revoked`、`admission.sampled`、`admission.bound` | agent 准入协议（E3）每次状态变化一条，带 `agent_id`；同名事件同时写入 `admission_events` 审计表 |
 | 准入（编排器） | `admission.result_rejected`、`admission.tasks_aborted` | 凭证已作废时丢弃 agent 交回的结果（带 `task_id`、`epoch`）；撤权时中止该 agent 进行中的任务（带中止数与耗时） |
@@ -805,6 +806,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | `W_LLM_SLOTS_MISMATCH` | 配置的 `slots` 和 llama-server 实际槽位数（`-np`）不一致 | 改 `[backends.*] slots` 或重启 llama-server，使两边一致 |
 | `W_LLM_CONTEXT_TRIM` | 提示词超过上下文预算，已裁剪（丢旧历史 / 长消息保留头尾） | 看 `llm.context_trim`：丢了几条、截断了几条；经常出现说明会话太长或 `context_tokens` 太小 |
 | `W_LLM_RETRY` | 模型调用失败，已按退避重试 | 偶尔出现正常；频繁出现看 `llm.call` 的 `outcome` |
+| `E_HTTP_HOST` | HTTP authority 不在允许范围内（403） | 检查本机 Host 与实际监听端口；查看 `http.host_rejected`。不以放宽规则解决，不代表身份认证失败 |
 | `E_ROUTE_NO_AGENT` | 这类工作没有可用的 agent | 看错误信息里每个成员的原因：未安装、节点离线…… |
 | `E_POOL_CONFIG` | 执行组配置错误 | 成员类型或角色不一致；或 `[agents.assign]` 角色名写错 |
 | `W_POOL_WAIT` | 执行组都在忙，任务排队 | 经常出现说明需要加备份或调大并发 |
