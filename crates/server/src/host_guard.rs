@@ -42,12 +42,13 @@ fn rejected(request: &Request) -> Response {
                 .collect::<String>()
         })
         .unwrap_or_default();
+    let path: String = request.uri().path().chars().take(200).collect();
     tracing::warn!(
         event = "http.host_rejected",
         code = an_core::codes::HTTP_HOST,
         task_id = "",
         method = %request.method(),
-        path = request.uri().path(),
+        path = %path,
         host = %host,
         "HTTP Host 请求已拒绝"
     );

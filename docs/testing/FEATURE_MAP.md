@@ -63,3 +63,5 @@ R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不
 `http-host`：正式 agentnexus/an-mom 在组装所有路由与静态 fallback 后统一应用 host_guard::protect，允许精确 localhost/127.0.0.1/[::1] 且端口匹配实际监听端口；不信任转发头。RT-HOST-01/02（`server/tests/host_guard.rs`）启动真实二进制，覆盖恶意 Host、写入无副作用、静态页、API、SSE、同源 MOM、合法 IPv6 authority 与非法/重复 Host。不是浏览器 DNS 重绑定复现，也不是完整身份认证。证据见 [R-20261106-S1](evidence/r-20261106-s1.md)。
 
 R-20261113-L1：RT-HOST-03/04（`crates/server/tests/host_diagnostics.rs`）用正式二进制验证主服务诊断与JSON、独立MOM JSON的WARN `http.host_rejected` / `E_HTTP_HOST`，Host最多100字符、不记录请求体/其他请求头/查询串，且合法请求不新增拒绝事件。只补观测性、常量与文档，放行条件和403响应保持。证据见 [R-20261113-L1](evidence/r-20261113-l1.md)。
+
+R-20261113-L1预审补充：RT-HOST-05/07覆盖独立MOM和主服务日志目录冲突时的控制台/内存诊断降级，原logs文件不变；RT-HOST-06覆盖约60KB拒绝路径在JSON和主服务诊断中截断到200字符，403与准入规则保持。共用日志初始化使用可失败builder，不改公开配置；证据见 [11-14预审修复](evidence/r-20261113-l1-pre-review-20261114.md)。

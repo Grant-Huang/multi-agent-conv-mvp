@@ -298,7 +298,9 @@
       "crates/server/src/main.rs",
       "crates/server/src/bin/an-mom.rs",
       "crates/server/tests/host_guard.rs",
-      "crates/server/tests/host_diagnostics.rs"
+      "crates/server/tests/host_diagnostics.rs",
+      "crates/server/tests/host_log_limits.rs",
+      "crates/observe/src/lib.rs"
     ],
     "coverage": "backend",
     "cases": [],
@@ -306,7 +308,10 @@
       "RT-HOST-01",
       "RT-HOST-02",
       "RT-HOST-03",
-      "RT-HOST-04"
+      "RT-HOST-04",
+      "RT-HOST-05",
+      "RT-HOST-06",
+      "RT-HOST-07"
     ]
   }
 ]
