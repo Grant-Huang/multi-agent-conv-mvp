@@ -65,3 +65,5 @@ R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不
 R-20261113-L1：RT-HOST-03/04（`crates/server/tests/host_diagnostics.rs`）用正式二进制验证主服务诊断与JSON、独立MOM JSON的WARN `http.host_rejected` / `E_HTTP_HOST`，Host最多100字符、不记录请求体/其他请求头/查询串，且合法请求不新增拒绝事件。只补观测性、常量与文档，放行条件和403响应保持。证据见 [R-20261113-L1](evidence/r-20261113-l1.md)。
 
 R-20261113-L1预审补充：RT-HOST-05/07覆盖独立MOM和主服务日志目录冲突时的控制台/内存诊断降级，原logs文件不变；RT-HOST-06覆盖约60KB拒绝路径在JSON和主服务诊断中截断到200字符，403与准入规则保持。共用日志初始化使用可失败builder，不改公开配置；证据见 [11-14预审修复](evidence/r-20261113-l1-pre-review-20261114.md)。
+
+R-20261113-L1 11-15预审补充：RT-HOST-08验证文件日志降级时不再误报log.file；RT-HOST-09为正常目录成功提示的正向基线，控制台/JSON各一条且目录正确。成功事件由共用init在writer及订阅器安装后发出，不新增公开接口；证据见 [11-15预审修复](evidence/r-20261113-l1-pre-review-20261115.md)。

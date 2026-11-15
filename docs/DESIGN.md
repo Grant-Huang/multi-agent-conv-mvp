@@ -745,7 +745,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | **JSON 日志文件** | 程序、脚本、AI | 一行一条记录，字段固定；按天分文件：`logs/agentnexus.jsonl.2026-11-05`，节点在 `~/.agentnexus-node/logs/an-node.jsonl.*` |
 | **诊断接口** | 人和程序 | `GET /api/diagnostics`（节点：`/node/diagnostics`）：最近 100 条问题、按错误码统计、执行组状态、节点状态、模型连通性。界面「诊断」页显示的就是它 |
 
-内存中保留最近 500 条 WARN / ERROR，供诊断接口查询。文件日志初始化失败时不阻止服务启动，保留控制台与内存诊断，并记录 `log.file_unavailable`（WARN）；本次进程不自动重试文件日志。
+内存中保留最近 500 条 WARN / ERROR，供诊断接口查询。文件日志初始化失败时不阻止服务启动，保留控制台与内存诊断，并记录 `log.file_unavailable`（WARN）；本次进程不自动重试文件日志。`log.file` 由共用日志组件仅在文件writer和订阅器安装成功后记录一次，表示初始化时文件日志可用；未启用、降级或重复初始化不记录该成功事件。服务监听就绪仍以 `server.started` 为准。
 
 ### 10.2 每条记录的固定字段
 

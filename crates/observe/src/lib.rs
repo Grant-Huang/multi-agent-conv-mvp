@@ -195,14 +195,20 @@ pub fn init(app: &str, cfg: &LogConfig) -> (Arc<Diagnostics>, LogGuard) {
     };
 
     // 其他代码（例如测试框架）可能已经设置过全局日志，忽略"已初始化"的错误
-    let _ = tracing_subscriber::registry()
+    let installed = tracing_subscriber::registry()
         .with(console)
         .with(file_layer)
         .with(DiagnosticsLayer(diagnostics.clone()))
-        .try_init();
+        .try_init()
+        .is_ok();
     if let Some(error) = file_error {
         tracing::warn!(event = "log.file_unavailable", task_id = "", error = %error,
             "文件日志不可用，已降级为控制台和内存诊断");
+    }
+    // Announce the file only after this subscriber and its writer are active.
+    if let Some(dir) = cfg.dir.as_ref().filter(|_| installed && guard.is_some()) {
+        tracing::info!(event = "log.file", task_id = "", dir = %dir.display(),
+            "JSON 日志目录（用于自动排查）");
     }
     (diagnostics, LogGuard { _file: guard })
 }

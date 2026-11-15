@@ -203,3 +203,57 @@ async fn rt_host_06_large_rejected_path_is_bounded_in_json_and_diagnostics() {
         }
     }
 }
+
+#[tokio::test]
+async fn rt_host_08_failed_file_logging_does_not_announce_json_directory() {
+    let s = Server::start(false, true).await;
+    let _ = s.get("/api/diagnostics").await;
+    let console = std::fs::read_to_string(s.dir.join("console.txt")).unwrap();
+    assert!(console.contains("log.file_unavailable"));
+    assert!(
+        !console
+            .lines()
+            .any(|line| line.contains("event=\"log.file\"")),
+        "文件日志已降级时不得宣称JSON日志目录可用：{console}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(s.dir.join("logs")).unwrap(),
+        "preserve existing file"
+    );
+}
+
+#[tokio::test]
+async fn rt_host_09_active_file_logging_announces_json_directory_once() {
+    let s = Server::start(false, false).await;
+    let _ = s.get("/api/diagnostics").await;
+    let console = std::fs::read_to_string(s.dir.join("console.txt")).unwrap();
+    assert_eq!(
+        console
+            .lines()
+            .filter(|line| line.contains("event=\"log.file\""))
+            .count(),
+        1,
+        "正常文件日志应恰好宣告一次实际目录：{console}"
+    );
+    assert!(!console.contains("log.file_unavailable"));
+    let mut records = vec![];
+    for _ in 0..100 {
+        records = std::fs::read_dir(s.dir.join("logs"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter_map(|entry| std::fs::read_to_string(entry.path()).ok())
+            .flat_map(|text| {
+                text.lines()
+                    .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|record| record["event"] == "log.file")
+            .collect();
+        if !records.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(records.len(), 1, "目录可用事件必须真正写入JSON日志");
+    assert_eq!(records[0]["dir"], "logs");
+}

@@ -220,3 +220,10 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-HOST-05 | http-host | an-mom工作目录的logs是普通文件，启动并发送非法Host | 正常监听，原文件不变；降级提示及Host拒绝均输出控制台，403不变 |
 | RT-HOST-06 | http-host | 主服务/独立MOM收到约60KB路径且Host非法 | 403；JSON中path最多200字符、单条记录小于2KB；主服务诊断同样限长 |
 | RT-HOST-07 | http-host | 主服务遇到同一日志目录冲突 | 不panic；保留控制台及内存诊断，不覆盖原文件 |
+
+## R-20261113-L1 11-15 预审回归（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-08 | http-host | 主服务配置logs目录但该路径是普通文件，启动并请求诊断 | 保留降级WARN，不宣告log.file，不覆盖原文件 |
+| RT-HOST-09 | http-host | 主服务文件日志目录正常，启动并请求诊断（正向基线补录） | 控制台与JSON恰好各有一条log.file及正确目录，没有降级WARN |
