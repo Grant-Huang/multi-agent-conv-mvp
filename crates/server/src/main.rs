@@ -113,9 +113,6 @@ async fn main() -> Result<()> {
             tracing::info!(event = "pool.resolved", role = role.as_str(), members = ?ids, "执行组");
         }
     }
-    if let Some(d) = &log_dir {
-        tracing::info!(event = "log.file", dir = %d.display(), "JSON 日志目录（用于自动排查）");
-    }
     tracing::info!(event = "server.started", bind = %config.server.bind, "AgentNexus 已启动：http://{}", config.server.bind);
     let app = an_server::host_guard::protect(
         app.layer(TraceLayer::new_for_http()),
