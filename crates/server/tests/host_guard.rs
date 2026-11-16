@@ -1,4 +1,6 @@
 //! Real production entry points, including static fallback and nested MOM.
+#[path = "support/service_readiness.rs"]
+mod service_readiness;
 use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -20,6 +22,7 @@ impl Drop for Server {
 }
 impl Server {
     async fn start(mom: bool) -> Self {
+        let _startup = service_readiness::startup_guard().await;
         let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = reserve.local_addr().unwrap().port();
         let dir = std::env::temp_dir().join(an_core::new_id("host-guard"));
@@ -37,26 +40,24 @@ impl Server {
             std::fs::write(dir.join("config.toml"),format!("[server]\nbind='127.0.0.1:{port}'\ndb_path='app.db'\nstatic_dir='static'\n[llm]\nbase_url='http://127.0.0.1:1/v1'\nmodel='test'\ntimeout_secs=1\nmax_retries=0\n[nodes]\ndiscovery=false\n[logging]\ndir=''\n")).unwrap();
             cmd.arg("config.toml");
         }
+        let output = std::fs::File::create(dir.join("console.txt")).unwrap();
         drop(reserve);
         let child = cmd
             .current_dir(&dir)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .env_remove("RUST_LOG")
+            .env("NO_COLOR", "1")
+            .stdout(Stdio::from(output.try_clone().unwrap()))
+            .stderr(Stdio::from(output))
             .spawn()
             .unwrap();
         let mut s = Self { child, dir, port };
-        tokio::time::timeout(Duration::from_secs(15), async {
-            loop {
-                assert!(s.child.try_wait().unwrap().is_none(), "服务应正常启动");
-                if tokio::net::TcpStream::connect(("127.0.0.1", port))
-                    .await
-                    .is_ok()
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(30)).await;
-            }
-        })
+        service_readiness::wait_for_service(
+            &mut s.child,
+            &s.dir.join("console.txt"),
+            port,
+            mom,
+            Duration::from_secs(15),
+        )
         .await
         .unwrap();
         s
@@ -155,4 +156,38 @@ async fn rt_host_02_strict_authority_and_real_listener_port() {
             "必须拒绝缺失/重复 Host：{out}"
         );
     }
+}
+
+#[tokio::test]
+async fn rt_host_11_host_guard_rejects_foreign_listener_as_child_readiness() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let dir = std::env::temp_dir().join(an_core::new_id("foreign-listener"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let console = dir.join("console.txt");
+    std::fs::write(&console, "").unwrap();
+    // A live child that has not started a service; exec avoids leaving grandchildren.
+    let mut child = Command::new("sh")
+        .args(["-c", "exec sleep 5"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let result = service_readiness::wait_for_service(
+        &mut child,
+        &console,
+        port,
+        false,
+        Duration::from_millis(150),
+    )
+    .await;
+    let alive = child.try_wait().unwrap().is_none();
+    let _ = child.kill();
+    let _ = child.wait();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(alive, "自己的子进程仍活着但尚未启动服务");
+    assert!(
+        result.is_err(),
+        "不得因别人的监听套接字而宣布自己的服务就绪：{result:?}"
+    );
 }
