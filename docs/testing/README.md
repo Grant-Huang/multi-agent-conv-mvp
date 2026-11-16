@@ -35,3 +35,7 @@ web/test-results/results.json、junit.xml、cases 下截图/失败 trace，playw
 新增/改变功能先写 CASES 与可执行 E2E，再改实现；测试定稿后不为迎合实现改断言或跳过。不同层级分别记录：浏览器 E2E、HTTP E2E、Runtime 集成、组件/单元、真实外部依赖。校验器测试会故意输入非法地图确认能失败。
 
 方案实施与本次实测结果见 RESULTS.md；持续维护时重复 npm run test:map 和相关浏览器用例。
+
+## 子进程HTTP服务就绪
+
+预留端口后释放再启动子进程时，不能仅凭TCP连接成功判定就绪。测试须确认自身子进程的监听日志或可靠的服务身份，并检查子进程仍存活；独立捕获输出并保留失败诊断。`server/tests/support/service_readiness.rs`在同一测试二进制内只串行化端口预留至自身监听确认的交接窗口，后续业务请求仍并行；不以`--test-threads=1`或重试业务断言掩盖竞争。每次启动有期限，结束kill/wait自身子进程并清理临时目录。
