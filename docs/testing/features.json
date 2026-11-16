@@ -300,7 +300,8 @@
       "crates/server/tests/host_guard.rs",
       "crates/server/tests/host_diagnostics.rs",
       "crates/server/tests/host_log_limits.rs",
-      "crates/observe/src/lib.rs"
+      "crates/observe/src/lib.rs",
+      "crates/server/tests/support/service_readiness.rs"
     ],
     "coverage": "backend",
     "cases": [],
@@ -313,7 +314,8 @@
       "RT-HOST-06",
       "RT-HOST-07",
       "RT-HOST-08",
-      "RT-HOST-09"
+      "RT-HOST-09",
+      "RT-HOST-10"
     ]
   }
 ]

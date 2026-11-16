@@ -227,3 +227,9 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|
 | RT-HOST-08 | http-host | 主服务配置logs目录但该路径是普通文件，启动并请求诊断 | 保留降级WARN，不宣告log.file，不覆盖原文件 |
 | RT-HOST-09 | http-host | 主服务文件日志目录正常，启动并请求诊断（正向基线补录） | 控制台与JSON恰好各有一条log.file及正确目录，没有降级WARN |
+
+## 子进程就绪身份验证（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-10 | http-host | 端口由其他监听者占用，自己的子进程仍活着但没有监听日志 | 不得报告自己的服务已就绪；原RT-HOST-03～09断言保持；host_log_limits连续50次0失败 |

@@ -1,4 +1,6 @@
 //! Regression for PR #70 pre-review: logging must not prevent startup or amplify paths.
+#[path = "support/service_readiness.rs"]
+mod service_readiness;
 use serde_json::Value;
 use std::{
     path::PathBuf,
@@ -21,6 +23,7 @@ impl Drop for Server {
 }
 impl Server {
     async fn start(mom: bool, logs_file: bool) -> Self {
+        let _startup = service_readiness::startup_guard().await;
         let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = reserve.local_addr().unwrap().port();
         let dir = std::env::temp_dir().join(an_core::new_id("host-log-limits"));
@@ -50,23 +53,13 @@ impl Server {
             .spawn()
             .unwrap();
         let mut s = Self { child, dir, port };
-        tokio::time::timeout(Duration::from_secs(15), async {
-            loop {
-                let exited = s.child.try_wait().unwrap();
-                assert!(
-                    exited.is_none(),
-                    "日志不可用时服务必须继续启动，不能panic：{exited:?}; {}",
-                    std::fs::read_to_string(s.dir.join("console.txt")).unwrap()
-                );
-                if tokio::net::TcpStream::connect(("127.0.0.1", port))
-                    .await
-                    .is_ok()
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        })
+        service_readiness::wait_for_service(
+            &mut s.child,
+            &s.dir.join("console.txt"),
+            port,
+            mom,
+            Duration::from_secs(15),
+        )
         .await
         .unwrap();
         s
@@ -256,4 +249,38 @@ async fn rt_host_09_active_file_logging_announces_json_directory_once() {
     }
     assert_eq!(records.len(), 1, "目录可用事件必须真正写入JSON日志");
     assert_eq!(records[0]["dir"], "logs");
+}
+
+#[tokio::test]
+async fn rt_host_10_foreign_listener_cannot_satisfy_child_readiness() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let dir = std::env::temp_dir().join(an_core::new_id("foreign-listener"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let console = dir.join("console.txt");
+    std::fs::write(&console, "").unwrap();
+    // A live child that has not started a service; exec avoids leaving grandchildren.
+    let mut child = Command::new("sh")
+        .args(["-c", "exec sleep 5"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let result = service_readiness::wait_for_service(
+        &mut child,
+        &console,
+        port,
+        false,
+        Duration::from_millis(150),
+    )
+    .await;
+    let alive = child.try_wait().unwrap().is_none();
+    let _ = child.kill();
+    let _ = child.wait();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(alive, "自己的子进程仍活着但尚未启动服务");
+    assert!(
+        result.is_err(),
+        "不得因别人的监听套接字而宣布自己的服务就绪：{result:?}"
+    );
 }

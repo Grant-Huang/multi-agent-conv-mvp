@@ -1,4 +1,6 @@
 //! Real binary HTTP/JSON-log regression; no model, browser, or remote node.
+#[path = "support/service_readiness.rs"]
+mod service_readiness;
 use serde_json::{json, Value};
 use std::{
     path::PathBuf,
@@ -21,6 +23,7 @@ impl Drop for Server {
 }
 impl Server {
     async fn start(mom: bool) -> Self {
+        let _startup = service_readiness::startup_guard().await;
         let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = reserve.local_addr().unwrap().port();
         let dir = std::env::temp_dir().join(an_core::new_id("host-diagnostics"));
@@ -36,27 +39,24 @@ impl Server {
             std::fs::write(dir.join("config.toml"), format!("[server]\nbind='127.0.0.1:{port}'\ndb_path='app.db'\n[llm]\nbase_url='http://127.0.0.1:1/v1'\nmodel='test'\ntimeout_secs=1\nmax_retries=0\n[nodes]\ndiscovery=false\n[acp]\nauto_detect=false\n[logging]\ndir='logs'\n")).unwrap();
             cmd.arg("config.toml");
         }
+        let output = std::fs::File::create(dir.join("console.txt")).unwrap();
         drop(reserve);
         let child = cmd
             .current_dir(&dir)
             .env_remove("RUST_LOG")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .env("NO_COLOR", "1")
+            .stdout(Stdio::from(output.try_clone().unwrap()))
+            .stderr(Stdio::from(output))
             .spawn()
             .unwrap();
         let mut s = Self { child, dir, port };
-        tokio::time::timeout(Duration::from_secs(15), async {
-            loop {
-                assert!(s.child.try_wait().unwrap().is_none(), "服务必须正常启动");
-                if tokio::net::TcpStream::connect(("127.0.0.1", port))
-                    .await
-                    .is_ok()
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        })
+        service_readiness::wait_for_service(
+            &mut s.child,
+            &s.dir.join("console.txt"),
+            port,
+            mom,
+            Duration::from_secs(15),
+        )
         .await
         .unwrap();
         s
