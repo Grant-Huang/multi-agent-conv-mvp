@@ -69,3 +69,4 @@ R-20261113-L1预审补充：RT-HOST-05/07覆盖独立MOM和主服务日志目录
 R-20261113-L1 11-15预审补充：RT-HOST-08验证文件日志降级时不再误报log.file；RT-HOST-09为正常目录成功提示的正向基线，控制台/JSON各一条且目录正确。成功事件由共用init在writer及订阅器安装后发出，不新增公开接口；证据见 [11-15预审修复](evidence/r-20261113-l1-pre-review-20261115.md)。
 
 R-20261113-L1 11-16预审：RT-HOST-10确定性验证其他监听者不能满足自己的子进程就绪。host_log_limits/host_diagnostics共用support/service_readiness.rs，等待独立捕获的自身监听日志、存活状态与端口连接；只串行化启动交接。原业务断言不变，host_log_limits连续50次默认并行验证。证据见[evidence/r-20261113-l1-pre-review-20261116.md](evidence/r-20261113-l1-pre-review-20261116.md)。
+R-20261116-L1：RT-HOST-11确定性验证外国监听者不能满足自身子进程就绪。host_guard共用support/service_readiness.rs，确认独立捕获的自身监听日志、Child存活及端口；只串行化启动交接，原RT-HOST-01/02断言不变，连续100次默认并行验证。证据见[evidence/r-20261116-l1.md](evidence/r-20261116-l1.md)。

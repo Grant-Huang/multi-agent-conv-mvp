@@ -233,3 +233,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | Case | Feature | Given / When | Then |
 |---|---|---|---|
 | RT-HOST-10 | http-host | 端口由其他监听者占用，自己的子进程仍活着但没有监听日志 | 不得报告自己的服务已就绪；原RT-HOST-03～09断言保持；host_log_limits连续50次0失败 |
+## R-20261116-L1 子进程就绪（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-11 | http-host | 其他监听者占目标端口，自己的子进程活着却无监听日志 | 不得误报自己的服务就绪；RT-HOST-01/02断言不变；host_guard连续100次默认并行执行0失败 |
