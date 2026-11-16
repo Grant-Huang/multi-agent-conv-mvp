@@ -31,6 +31,14 @@ async fn main() -> Result<()> {
         address.ip().is_loopback(),
         "MOM simulator must bind loopback: fixture identities are not production authentication"
     );
+    // 与主服务共用日志/诊断层，拒绝请求也必须能被定位。
+    let (_diagnostics, _log_guard) = an_observe::init(
+        "an-mom",
+        &an_observe::LogConfig {
+            dir: Some(PathBuf::from("logs")),
+            level: "info".into(),
+        },
+    );
     if let Some(parent) = db.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
