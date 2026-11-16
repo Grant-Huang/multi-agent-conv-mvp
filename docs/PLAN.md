@@ -572,7 +572,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 ### 步骤（每步独立验收；高风险步骤先单独给方案）
 
 - [x] **AG.0 补充自动发现预设**（2026-11-16 用户批准并完成）：`claude`（claude-agent-acp）、`codex-acp`、`cursor`（cursor-agent acp，不认通用名 agent）、`zcode`（zcode-acp-server），均为 coding，追加在原有预设之后。RT-ACPD-01～05（`crates/runtime/tests/acp_discovery.rs`）；证据见 `docs/testing/evidence/ag-0.md`。真实握手需在用户本机验证
-- [ ] **AG.1 目录元数据与只读接口**（方案待批准，涉及 `acp.rs` 的握手检测，属于高风险）
+- [x] **AG.1 目录元数据与只读接口**（2026-11-16 用户批准并完成；RT-AGCAT-01～09，证据见 `docs/testing/evidence/ag-1.md`）
   - 目录元数据：新增 `crates/agents/src/catalog.rs`，按预设 id 提供显示名、一句话用途、安装步骤（按平台）、登录方式、依赖说明（文字）、文档链接。**不改 `AcpConfig`**，所以不新增 `config.toml` 字段。
   - 依赖检查：第一版**不新增"运行 node --version"之类的子进程**，依赖只以文字说明；缺依赖由握手失败时进程的错误输出推断（见下）。原设计中的 check 接口取消。
   - 握手检测分类：`AcpAgent::probe()` 的返回从"字符串错误"改为"分类 + 原始详情"。规则：

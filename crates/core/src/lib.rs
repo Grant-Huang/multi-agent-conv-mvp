@@ -231,6 +231,93 @@ pub struct AgentCard {
     pub disabled_reason: Option<String>,
 }
 
+// ───────────────────────── Agent 目录与握手检测（AG.1）─────────────────────────
+
+/// 安装或准备步骤中的一步（给用户看的引导）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct InstallStep {
+    /// 适用平台："all" / "macos" / "linux" / "windows"
+    pub platform: String,
+    /// 这一步做什么（中文说明）
+    pub text: String,
+    /// 需要用户在终端执行的命令（可复制）；纯说明性步骤为空
+    pub command: Option<String>,
+}
+
+/// 目录中一个 agent 在本机的状态
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum CatalogStatus {
+    /// 找不到启动命令
+    NotInstalled,
+    /// 命令已安装，但没有注册（例如关闭了自动发现）
+    Installed,
+    /// 已注册为可用的 agent（自动发现或用户配置）
+    Registered,
+}
+
+/// 目录中的一项：预设 agent 的说明 + 本机状态
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CatalogItem {
+    /// 预设 id（与 agent 卡片 id 相同）
+    pub id: String,
+    pub name: String,
+    /// 一句话用途
+    pub purpose: String,
+    pub role: Role,
+    /// 启动命令与参数（预设值）
+    pub command: String,
+    pub args: Vec<String>,
+    /// 安装与准备步骤（按顺序）
+    pub install: Vec<InstallStep>,
+    /// 登录方式说明；不需要登录时为空
+    pub login: Option<String>,
+    /// 依赖要求（文字说明，例如"Node.js ≥ 22"）
+    pub requirements: Vec<String>,
+    pub docs_url: Option<String>,
+    pub status: CatalogStatus,
+    /// 已注册时的连接状态：connected / configured / unavailable
+    pub link_status: Option<String>,
+    /// 连接状态的原因说明
+    pub link_reason: Option<String>,
+}
+
+/// 握手检测的结果分类
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ProbeKind {
+    /// 握手成功
+    Ok,
+    /// 找不到命令（不会启动进程）
+    NotInstalled,
+    /// agent 要求先登录（ACP 错误码 -32000）
+    NeedsLogin,
+    /// 进程因缺少运行依赖退出（例如找不到 node）
+    MissingDependency,
+    /// 其他握手失败
+    HandshakeFailed,
+    /// 超时未完成握手
+    Timeout,
+}
+
+/// 一次握手检测的结果
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProbeOutcome {
+    pub id: String,
+    pub kind: ProbeKind,
+    /// 给用户看的中文结论
+    pub summary: String,
+    /// 建议的下一步；成功时为空
+    pub next_step: Option<String>,
+    /// 原始错误详情（含错误输出末尾，有长度上限），给专业用户和诊断用
+    pub detail: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ToolInfo {

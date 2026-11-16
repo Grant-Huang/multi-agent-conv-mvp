@@ -11,6 +11,7 @@
 //! ```
 
 pub mod admission;
+pub mod agent_catalog;
 pub mod backends;
 pub mod bus;
 pub mod composer;
@@ -72,6 +73,8 @@ pub struct Runtime {
     pub probers: Arc<Vec<Prober>>,
     /// agent 准入账本（`[admission] enabled = true` 时才有）
     pub admission: Option<Arc<admission::AdmissionLedger>>,
+    /// 握手检测接口的并发闸门（AG.1）
+    pub probe_gate: Arc<agent_catalog::ProbeGate>,
 }
 
 /// 连通性探测的目标：只做握手或命令检查，不调用模型（探测结果写入 `registry.links`）
@@ -324,6 +327,7 @@ impl Runtime {
             backends: backends.clone(),
             probers: Arc::new(probers),
             admission,
+            probe_gate: Arc::default(),
         })
     }
 

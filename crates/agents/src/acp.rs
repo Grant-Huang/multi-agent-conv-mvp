@@ -32,7 +32,7 @@ use acp::{AcpAgentConfig, Agent};
 use agent_client_protocol as acp;
 use an_core::{
     codes, truncate_chars, AgentAdapter, AgentCard, AgentError, Artifact, EventSink, Evidence,
-    Role, TaskResult, TaskSpec, WorkerStatus,
+    ProbeKind, ProbeOutcome, Role, TaskResult, TaskSpec, WorkerStatus,
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -265,11 +265,35 @@ impl AcpAgent {
         self.resolved.is_some()
     }
 
+    /// 本 agent 的配置（只读）
+    pub fn config(&self) -> &AcpConfig {
+        &self.cfg
+    }
+
     /// 连通性探测：启动子进程，只做 `initialize` 与 `session/new`，**不发送任务、不调用模型**。
     /// 超时或握手失败返回原因；探测结束时连接关闭，子进程随之结束（与任务执行的清理方式一致）。
+    ///
+    /// 返回值和错误文字与以前相同（后台探测写入连接状态用）；需要分类结果时用 [`Self::probe_detailed`]。
     pub async fn probe(&self) -> std::result::Result<(), String> {
+        let out = self
+            .probe_detailed(Duration::from_secs(PROBE_TIMEOUT_SECS))
+            .await;
+        probe_result(&out)
+    }
+
+    /// 带分类的连通性探测（AG.1）。子进程的启动、握手和清理方式与 [`Self::probe`] 完全相同：
+    /// - 找不到命令：直接返回 `not_installed`，不启动进程；
+    /// - 超过 `timeout`：丢弃连接，SDK 结束 agent 的整个进程组，返回 `timeout`；
+    /// - 握手出错：按 ACP 错误码和进程错误输出分类（见 [`classify_probe_error`]）。
+    pub async fn probe_detailed(&self, timeout: Duration) -> ProbeOutcome {
+        let id = self.cfg.id.clone();
         let Some(command) = self.resolved.clone() else {
-            return Err("未安装".into());
+            return probe_outcome(
+                id,
+                ProbeKind::NotInstalled,
+                None,
+                self.cfg.install_hint.clone(),
+            );
         };
         let cwd = self.workdir.clone();
         let _ = tokio::fs::create_dir_all(&cwd).await;
@@ -290,11 +314,135 @@ impl AcpAgent {
                 Ok(())
             },
         );
-        match tokio::time::timeout(Duration::from_secs(PROBE_TIMEOUT_SECS), handshake).await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(e)) => Err(format!("握手失败：{e}")),
-            Err(_) => Err(format!("握手超时（{PROBE_TIMEOUT_SECS} 秒）")),
+        match tokio::time::timeout(timeout, handshake).await {
+            Ok(Ok(())) => probe_outcome(id, ProbeKind::Ok, None, None),
+            Ok(Err(e)) => {
+                let detail = error_detail(&e);
+                let kind = classify_probe_error(e.code == acp::ErrorCode::AUTH_REQUIRED, &detail);
+                probe_outcome(id, kind, Some(detail), None)
+            }
+            Err(_) => probe_outcome(
+                id,
+                ProbeKind::Timeout,
+                Some(format!("{} 秒内没有完成握手", timeout.as_secs())),
+                None,
+            ),
         }
+    }
+}
+
+/// 把分类结果转成连接状态使用的文字结果（与以前 `probe()` 的错误文字一致）
+pub fn probe_result(out: &ProbeOutcome) -> std::result::Result<(), String> {
+    match out.kind {
+        ProbeKind::Ok => Ok(()),
+        ProbeKind::NotInstalled => Err("未安装".into()),
+        ProbeKind::Timeout => Err(format!("握手超时（{PROBE_TIMEOUT_SECS} 秒）")),
+        _ => Err(format!(
+            "握手失败：{}",
+            out.detail.clone().unwrap_or_else(|| out.summary.clone())
+        )),
+    }
+}
+
+/// 错误详情最多保留的字符数（取末尾：进程错误输出最后几行最有用）
+const PROBE_DETAIL_MAX_CHARS: usize = 2000;
+
+/// 缺少运行依赖时，进程错误输出里常见的特征（统一按小写比较）。
+/// 只收录明确指向"缺少程序 / 版本不够"的写法；`node:internal` 之类任何 Node 报错都会带的文字不算。
+const MISSING_DEPENDENCY_PATTERNS: &[&str] = &[
+    "env: node",
+    "node: no such file",
+    "node: not found",
+    "node: command not found",
+    "requires node",
+    "unsupported engine",
+    "err_unknown_builtin_module",
+    "command not found",
+    ": not found",
+];
+
+/// 握手失败的分类：
+/// - ACP 错误码 -32000（协议定义的 auth_required）→ 需要登录；
+/// - 错误详情含缺依赖特征 → 缺依赖；
+/// - 其余 → 握手失败。
+pub fn classify_probe_error(auth_required: bool, detail: &str) -> ProbeKind {
+    if auth_required {
+        return ProbeKind::NeedsLogin;
+    }
+    let lower = detail.to_lowercase();
+    if MISSING_DEPENDENCY_PATTERNS
+        .iter()
+        .any(|p| lower.contains(p))
+    {
+        ProbeKind::MissingDependency
+    } else {
+        ProbeKind::HandshakeFailed
+    }
+}
+
+/// 把 SDK 错误转成详情文字：消息 + 附加数据（进程非零退出时附加数据里有错误输出末尾）
+fn error_detail(e: &acp::Error) -> String {
+    let mut text = e.to_string();
+    match &e.data {
+        Some(serde_json::Value::String(s)) if !text.contains(s.as_str()) => {
+            text.push('：');
+            text.push_str(s);
+        }
+        Some(v) if !v.is_null() && !v.is_string() => {
+            text.push('：');
+            text.push_str(&v.to_string());
+        }
+        _ => {}
+    }
+    tail_chars(&text, PROBE_DETAIL_MAX_CHARS)
+}
+
+/// 只保留末尾 `max` 个字符
+fn tail_chars(s: &str, max: usize) -> String {
+    let n = s.chars().count();
+    if n <= max {
+        s.to_string()
+    } else {
+        format!("…{}", s.chars().skip(n - max).collect::<String>())
+    }
+}
+
+/// 按分类生成给用户看的结论和下一步
+fn probe_outcome(
+    id: String,
+    kind: ProbeKind,
+    detail: Option<String>,
+    install_hint: Option<String>,
+) -> ProbeOutcome {
+    let (summary, next_step): (&str, Option<String>) = match kind {
+        ProbeKind::Ok => ("已连通：握手成功", None),
+        ProbeKind::NotInstalled => (
+            "本机找不到这个 agent 的启动命令",
+            Some(install_hint.unwrap_or_else(|| "安装后再点重新检测".into())),
+        ),
+        ProbeKind::NeedsLogin => (
+            "agent 要求先登录",
+            Some("在终端运行该 agent 的登录命令完成登录，然后重新检测".into()),
+        ),
+        ProbeKind::MissingDependency => (
+            "agent 启动时缺少运行依赖",
+            Some("按错误详情安装缺少的程序（例如 Node.js），然后重新检测".into()),
+        ),
+        ProbeKind::Timeout => (
+            "agent 没有在规定时间内完成握手",
+            Some("确认启动命令和参数是 ACP 模式；首次启动较慢时可以稍后重试".into()),
+        ),
+        ProbeKind::HandshakeFailed => (
+            "握手失败",
+            Some("查看错误详情，确认启动命令和参数正确".into()),
+        ),
+    };
+    ProbeOutcome {
+        id,
+        kind,
+        summary: summary.into(),
+        next_step,
+        detail,
     }
 }
 
@@ -705,6 +853,46 @@ mod tests {
         assert!(p
             .iter()
             .any(|c| c.id == "hermes" && c.role == Role::General));
+    }
+
+    /// 握手失败的分类规则
+    #[test]
+    fn probe_errors_are_classified() {
+        assert_eq!(
+            classify_probe_error(true, "anything"),
+            ProbeKind::NeedsLogin
+        );
+        assert_eq!(
+            classify_probe_error(
+                false,
+                "Process exited with exit status: 127: env: node: No such file or directory"
+            ),
+            ProbeKind::MissingDependency
+        );
+        assert_eq!(
+            classify_probe_error(false, "TypeError [ERR_UNKNOWN_BUILTIN_MODULE]: node:sqlite"),
+            ProbeKind::MissingDependency
+        );
+        // 任何 Node 报错都会带 node:internal，不能据此判为缺依赖
+        assert_eq!(
+            classify_probe_error(
+                false,
+                "Error: boom\n    at node:internal/main:1:1\nNode.js v22.1.0"
+            ),
+            ProbeKind::HandshakeFailed
+        );
+        assert_eq!(
+            classify_probe_error(false, "connection closed"),
+            ProbeKind::HandshakeFailed
+        );
+    }
+
+    #[test]
+    fn detail_keeps_the_tail() {
+        let s = format!("{}END", "x".repeat(3000));
+        let t = tail_chars(&s, 10);
+        assert!(t.ends_with("END") && t.chars().count() == 11);
+        assert_eq!(tail_chars("short", 10), "short");
     }
 
     /// 新增预设的命令和参数与各自文档一致；Cursor 只认 cursor-agent，不认通用名 agent

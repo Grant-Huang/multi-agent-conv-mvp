@@ -779,6 +779,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 执行组 | `pool.wait`、`pool.member_missing`（debug） | 都在忙需要排队；配置的成员还没连上 |
 | 执行 | `task.no_agent`、`agent.run_start`、`agent.run_end`、`agent.run_failed`、`agent.process_group_killed` | 分配和执行；`agent.process_group_killed` 记录子进程组被清理（`reason`：cancelled / timeout / exited_with_leftovers） |
 | ACP | `acp.permission`、`acp.finished`、`acp.handshake_failed`、`acp.runtime_error`、`acp.timeout` | |
+| Agent 目录 | `agent.probe` | 通过 `/api/agents/probe` 做的一次握手检测：`agent_id`、分类 `kind`、是否已注册 |
 | 质检 | `review.verdict`、`review.failed` | |
 | 节点（AgentNexus 侧） | `discovery.found`、`discovery.removed`、`discovery.unavailable`、`node.paired`、`node.pair_failed`、`node.unpaired`、`node.online`、`node.offline`、`node.auth_failed`、`node.run_start`、`node.run_end` | 上线 / 离线只在状态变化时记录，避免刷屏 |
 | 节点（节点侧） | `node.advertised`、`node.advertise_failed`、`node.code_rotated`、`node.paired`、`node.pair_failed`、`node.auth_failed`、`node.busy`、`node.run_start`、`node.run_end`、`node.run_failed`、`node.run_cancelled`、`node.state_save_failed` | |
@@ -883,6 +884,8 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | GET | `/api/events?conversation_id=` | 实时事件流（SSE） |
 | GET | `/api/nodes` | 发现的节点 + 已配对节点 |
 | POST | `/api/nodes/pair` | 配对 `{"address", "code"}`；地址可以只写 IP，会自动补成 `http://IP:7788` |
+| GET | `/api/agents/catalog` | 预设 agent 目录：用途、安装步骤、登录方式、依赖说明，以及本机状态（未安装 / 已安装未注册 / 已注册）和连接状态（AG.1，只读） |
+| POST | `/api/agents/probe` | 握手检测 `{"id"}`（只接受 id，多余字段返回 422）：目录内或已注册的 ACP agent；结果分类 ok / not_installed / needs_login / missing_dependency / handshake_failed / timeout；其他 id 返回 404。超时 10 秒，同一 agent 不并发，全局最多 2 个（AG.1，只读） |
 | DELETE | `/api/nodes/{id}` | 解除配对 |
 | GET | `/api/diagnostics` | 诊断 |
 

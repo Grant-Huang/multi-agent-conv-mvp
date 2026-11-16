@@ -69,6 +69,8 @@ pub fn api(rt: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/agents", get(agents))
+        .route("/api/agents/catalog", get(agent_catalog))
+        .route("/api/agents/probe", post(probe_agent))
         .route("/api/capabilities", get(capabilities))
         .route(
             "/api/conversations",
@@ -159,6 +161,40 @@ fn agent_links(rt: &Runtime) -> Vec<serde_json::Value> {
 
 async fn agents(State(rt): State<AppState>) -> Json<Vec<an_core::AgentCard>> {
     Json(rt.registry.cards())
+}
+
+/// Agent 目录（AG.1，只读）：全部预设 + 本机状态；已注册的附上与健康接口相同规则的连接状态
+async fn agent_catalog(State(rt): State<AppState>) -> Json<Vec<an_core::CatalogItem>> {
+    let links = agent_links(&rt);
+    let mut items = rt.agent_catalog();
+    for item in &mut items {
+        if item.status != an_core::CatalogStatus::Registered {
+            continue;
+        }
+        if let Some(link) = links.iter().find(|l| l["id"] == item.id.as_str()) {
+            item.link_status = link["link"]["status"].as_str().map(String::from);
+            item.link_reason = link["link"]["reason"].as_str().map(String::from);
+        }
+    }
+    Json(items)
+}
+
+/// 握手检测的请求体：只接受 agent id。多余字段（例如 command）直接拒绝，不会被执行。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProbeRequest {
+    id: String,
+}
+
+/// 握手检测（AG.1，只读）：目录内或已注册的 ACP agent；其他 id 返回 404
+async fn probe_agent(
+    State(rt): State<AppState>,
+    Json(req): Json<ProbeRequest>,
+) -> ApiResult<an_core::ProbeOutcome> {
+    rt.probe_agent(&req.id)
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found(&format!("可检测的 ACP agent `{}`", req.id)))
 }
 
 #[derive(Deserialize)]

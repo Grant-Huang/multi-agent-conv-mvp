@@ -7,6 +7,7 @@
 //! 4. 回复一段文字，正常结束。
 //!
 //! 特殊指令（便于测试）：含"稍慢"时执行约 1.5 秒；含"慢"时先睡 30 秒；含"拒绝"时以 refusal 结束。
+//! 环境变量 `AN_MOCK_ACP_AUTH=required`：新建会话时返回 ACP 的 auth_required 错误（-32000），模拟"需要先登录"。
 //!
 //! 体验方式（config.toml）：
 //! ```toml
@@ -151,6 +152,10 @@ async fn main() -> acp::Result<()> {
         )
         .on_receive_request(
             async move |req: NewSessionRequest, responder, _cx| {
+                // 模拟未登录：协议规定用 -32000（auth_required）拒绝新建会话
+                if std::env::var("AN_MOCK_ACP_AUTH").as_deref() == Ok("required") {
+                    return responder.respond_with_error(acp::Error::auth_required());
+                }
                 let id = format!("mock-{}", std::process::id());
                 s_new.lock().unwrap().insert(id.clone(), req.cwd.clone());
                 responder.respond(NewSessionResponse::new(SessionId::new(id)))

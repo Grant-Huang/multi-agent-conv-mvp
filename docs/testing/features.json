@@ -323,5 +323,29 @@
       "RT-ACPD-04",
       "RT-ACPD-05"
     ]
+  },
+  {
+    "id": "agent-catalog",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/catalog.rs",
+      "crates/agents/src/acp.rs",
+      "crates/runtime/src/agent_catalog.rs",
+      "crates/server/src/lib.rs",
+      "crates/server/src/bin/mock_acp_agent.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGCAT-01",
+      "RT-AGCAT-02",
+      "RT-AGCAT-03",
+      "RT-AGCAT-04",
+      "RT-AGCAT-05",
+      "RT-AGCAT-06",
+      "RT-AGCAT-07",
+      "RT-AGCAT-08",
+      "RT-AGCAT-09"
+    ]
   }
 ]

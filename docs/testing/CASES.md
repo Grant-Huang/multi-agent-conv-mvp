@@ -217,3 +217,19 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ACPD-03 | acp-discovery | 用户在 [[acp.agents]] 写了 id = "claude"（不同命令、名称、角色），预设命令也已安装 | 只有一张 claude 卡片，名称和角色取用户配置 |
 | RT-ACPD-04 | acp-discovery | PATH 为空目录、HOME 为空目录（系统固定目录无法隔离） | 构造 Runtime 不报错；4 个新预设的卡片出现与否和"命令能否被找到"一致：找不到就不出现 |
 | RT-ACPD-05 | acp-discovery | 读取预设清单；PATH 同时有 opencode 和 claude-agent-acp | 前三个预设仍是 opencode、hermes、pi，命令与参数不变，新预设排在其后；opencode 与 claude 都被注册 |
+
+## Agent 目录与握手检测（AG.1，实现前定义）
+
+只读：`GET /api/agents/catalog` 列出预设目录及状态；`POST /api/agents/probe {"id"}` 对目录内或已注册的 ACP agent 握手并分类。不写配置。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGCAT-01 | agent-catalog | PATH 隔离：claude-agent-acp 已安装且自动发现开启；codex-acp 未安装 | 目录含全部 7 个预设；claude 为 registered 并带连接状态；codex-acp 为 not_installed |
+| RT-AGCAT-02 | agent-catalog | 读目录 | 每项都有名称、用途、角色、启动命令和至少一条安装步骤 |
+| RT-AGCAT-03 | agent-catalog | 已注册的假 ACP agent 握手正常 | kind = ok |
+| RT-AGCAT-04 | agent-catalog | 假 ACP agent 在新建会话时返回 -32000（auth_required） | kind = needs_login，并给出下一步说明 |
+| RT-AGCAT-05 | agent-catalog | 脚本向错误输出写 "env: node: No such file or directory" 后以 127 退出 | kind = missing_dependency；detail 含该错误输出 |
+| RT-AGCAT-06 | agent-catalog | 脚本记录 pid 后长时间不响应 | 约 10 秒后 kind = timeout；该进程已结束 |
+| RT-AGCAT-07 | agent-catalog | 目录内预设未安装 | kind = not_installed，立即返回 |
+| RT-AGCAT-08 | agent-catalog | 未知 id、非 ACP agent（general）；请求体附带 command 字段 | 未知和非 ACP 返回 404；带 command 的请求被拒绝，命令未被执行 |
+| RT-AGCAT-09 | agent-catalog | 检测已注册 agent 成功 | 健康接口中该 agent 的连接状态变为 connected |
