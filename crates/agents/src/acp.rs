@@ -125,6 +125,15 @@ pub enum PermissionMode {
 /// - opencode：`opencode acp`（https://opencode.ai/docs/acp）
 /// - Hermes Agent：`hermes acp`（https://hermes-agent.nousresearch.com/docs/user-guide/features/acp）
 /// - pi：本身不支持 ACP，需要第三方适配器 pi-acp（成熟度较低）
+/// - Claude Code：官方适配器 `claude-agent-acp`（npm 包 `@agentclientprotocol/claude-agent-acp`，
+///   原 `@zed-industries/claude-code-acp` 已改名）
+/// - Codex：适配器 `codex-acp`（npm 包 `@agentclientprotocol/codex-acp`，原 `@zed-industries/codex-acp` 已改名）。
+///   id 用 `codex-acp`，避开内置 Codex CLI 卡片的 id `codex`
+/// - Cursor：Cursor CLI 原生支持 `agent acp`（https://cursor.com/docs/cli/acp）。
+///   `agent` 这个名字太通用，容易误认，所以只认安装器同时提供的 `cursor-agent`（与 `agent` 是同一个程序）
+/// - ZCode：本身不支持 ACP，需要社区桥接 `zcode-acp-server`（npm 同名包，需要 Node ≥ 22）
+///
+/// 新预设一律追加在末尾：每个角色默认用第一个可用的 agent，追加不会改变已有用户的默认选择顺序。
 pub fn presets() -> Vec<AcpConfig> {
     let preset =
         |id: &str, name: &str, command: &str, args: &[&str], role: Role, hint: &str| AcpConfig {
@@ -165,6 +174,38 @@ pub fn presets() -> Vec<AcpConfig> {
             &[],
             Role::Coding,
             "需安装 pi 和第三方适配器 pi-acp",
+        ),
+        preset(
+            "claude",
+            "Claude Code",
+            "claude-agent-acp",
+            &[],
+            Role::Coding,
+            "需先安装并登录 Claude Code，再运行 npm i -g @agentclientprotocol/claude-agent-acp",
+        ),
+        preset(
+            "codex-acp",
+            "Codex（ACP）",
+            "codex-acp",
+            &[],
+            Role::Coding,
+            "需先运行 codex login，再运行 npm i -g @agentclientprotocol/codex-acp",
+        ),
+        preset(
+            "cursor",
+            "Cursor CLI",
+            "cursor-agent",
+            &["acp"],
+            Role::Coding,
+            "需安装 Cursor CLI 并运行 agent login，见 https://cursor.com/docs/cli/acp",
+        ),
+        preset(
+            "zcode",
+            "ZCode（经 zcode-acp-server 桥接）",
+            "zcode-acp-server",
+            &[],
+            Role::Coding,
+            "需 Node ≥ 22、已安装 zcode 并用 ZCode App 登录，再运行 npm i -g zcode-acp-server",
         ),
     ]
 }
@@ -664,5 +705,27 @@ mod tests {
         assert!(p
             .iter()
             .any(|c| c.id == "hermes" && c.role == Role::General));
+    }
+
+    /// 新增预设的命令和参数与各自文档一致；Cursor 只认 cursor-agent，不认通用名 agent
+    #[test]
+    fn new_presets_use_documented_commands() {
+        let p = presets();
+        let get = |id: &str| p.iter().find(|c| c.id == id).unwrap();
+        let cmd = |id: &str| (get(id).command.clone(), get(id).args.clone());
+        assert_eq!(cmd("claude"), ("claude-agent-acp".into(), vec![]));
+        assert_eq!(cmd("codex-acp"), ("codex-acp".into(), vec![]));
+        assert_eq!(
+            cmd("cursor"),
+            ("cursor-agent".into(), vec!["acp".to_string()])
+        );
+        assert_eq!(cmd("zcode"), ("zcode-acp-server".into(), vec![]));
+        assert!(p.iter().all(|c| c.command != "agent"));
+        // id 不能与内置 Codex CLI 卡片（id = codex）冲突
+        assert!(p.iter().all(|c| c.id != "codex"));
+        for id in ["claude", "codex-acp", "cursor", "zcode"] {
+            assert_eq!(get(id).role, Role::Coding);
+            assert!(get(id).install_hint.is_some());
+        }
     }
 }

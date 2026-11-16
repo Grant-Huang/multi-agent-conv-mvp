@@ -305,5 +305,23 @@
       "RT-HOST-01",
       "RT-HOST-02"
     ]
+  },
+  {
+    "id": "acp-discovery",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/acp.rs",
+      "crates/runtime/src/lib.rs",
+      "crates/agents/src/util.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-ACPD-01",
+      "RT-ACPD-02",
+      "RT-ACPD-03",
+      "RT-ACPD-04",
+      "RT-ACPD-05"
+    ]
   }
 ]

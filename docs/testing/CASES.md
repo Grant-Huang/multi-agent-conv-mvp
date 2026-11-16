@@ -205,3 +205,15 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|
 | RT-HOST-01 | http-host | 启动真实 agentnexus/an-mom 二进制，恶意 Host 请求写入口、页面、API、SSE、同源 MOM | 请求在业务副作用前返回403；业务记录不变；转发头不能绕过 |
 | RT-HOST-02 | http-host | 本机 IPv4/localhost/IPv6 authority、错误端口、伪装域名、非法/缺失/重复 Host | 合法且端口匹配才允许；其余400或403 |
+
+## ACP 自动发现预设（AG.0，实现前定义）
+
+新增 4 个内置预设：`claude`（claude-agent-acp）、`codex-acp`（codex-acp）、`cursor`（cursor-agent acp）、`zcode`（zcode-acp-server），角色都是 coding。用临时目录中的假可执行文件模拟"已安装"，只检查文件、不运行。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-ACPD-01 | acp-discovery | PATH 只含临时目录，里面有 claude-agent-acp、codex-acp、cursor-agent、zcode-acp-server；auto_detect = true，构造 Runtime | 注册表出现 claude、codex-acp、cursor、zcode 四张卡片：kind=acp、role=coding、agent_type 等于 id、enabled=true |
+| RT-ACPD-02 | acp-discovery | PATH 里只有一个无关的 `agent` 可执行文件，没有 cursor-agent | 不出现 cursor 卡片 |
+| RT-ACPD-03 | acp-discovery | 用户在 [[acp.agents]] 写了 id = "claude"（不同命令、名称、角色），预设命令也已安装 | 只有一张 claude 卡片，名称和角色取用户配置 |
+| RT-ACPD-04 | acp-discovery | PATH 为空目录、HOME 为空目录（系统固定目录无法隔离） | 构造 Runtime 不报错；4 个新预设的卡片出现与否和"命令能否被找到"一致：找不到就不出现 |
+| RT-ACPD-05 | acp-discovery | 读取预设清单；PATH 同时有 opencode 和 claude-agent-acp | 前三个预设仍是 opencode、hermes、pi，命令与参数不变，新预设排在其后；opencode 与 claude 都被注册 |

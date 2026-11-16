@@ -358,6 +358,12 @@ COMPLETED、FAILED、CANCELLED 是终点，进入后不会再变。
 | `opencode` | `opencode acp` | coding |
 | `hermes` | `hermes acp` | general |
 | `pi` | `pi-acp`（第三方适配器，较不成熟） | coding |
+| `claude` | `claude-agent-acp`（npm `@agentclientprotocol/claude-agent-acp`） | coding |
+| `codex-acp` | `codex-acp`（npm `@agentclientprotocol/codex-acp`；id 避开内置 Codex CLI 的 `codex`） | coding |
+| `cursor` | `cursor-agent acp`（Cursor CLI 原生；不认通用名 `agent`，避免误认） | coding |
+| `zcode` | `zcode-acp-server`（社区桥接，需要 Node ≥ 22） | coding |
+
+新预设追加在末尾。每个角色默认用第一个可用的 agent（内置 → Codex → ACP），所以已有用户的默认选择不变；但没有装 Codex 和 opencode、只装了新预设的用户，coding 默认会落到排在最前的那个新预设上。
 
 查找范围：PATH，以及 `~/.npm-global/bin`、`~/.local/bin`、`~/.opencode/bin`、`~/.bun/bin`、`~/.cargo/bin`、`~/.hermes/bin`、`/opt/homebrew/bin`、`/usr/local/bin`。只检查文件是否存在，**不会运行它**。
 

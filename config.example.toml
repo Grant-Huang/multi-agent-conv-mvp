@@ -141,7 +141,8 @@ timeout_secs = 900
 # general = ["hermes@mac-mini", "hermes@office-pc"]
 
 # ───── 通过 ACP（Agent Client Protocol）接入外部 agent ─────
-# 新手什么都不用配：本机装了 opencode / hermes / pi-acp，启动时会被自动发现。
+# 新手什么都不用配：本机装了 opencode / hermes / pi-acp / claude-agent-acp / codex-acp /
+# cursor-agent / zcode-acp-server，启动时会被自动发现（id 见 docs/DESIGN.md 7.2）。
 [acp]
 auto_detect = true
 
