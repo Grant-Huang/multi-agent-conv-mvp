@@ -61,3 +61,5 @@ R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不
 ## HTTP 请求 Host 防护
 
 `http-host`：正式 agentnexus/an-mom 在组装所有路由与静态 fallback 后统一应用 host_guard::protect，允许精确 localhost/127.0.0.1/[::1] 且端口匹配实际监听端口；不信任转发头。RT-HOST-01/02（`server/tests/host_guard.rs`）启动真实二进制，覆盖恶意 Host、写入无副作用、静态页、API、SSE、同源 MOM、合法 IPv6 authority 与非法/重复 Host。不是浏览器 DNS 重绑定复现，也不是完整身份认证。证据见 [R-20261106-S1](evidence/r-20261106-s1.md)。
+
+R-20261116-L1：RT-HOST-11确定性验证外国监听者不能满足自身子进程就绪。host_guard共用support/service_readiness.rs，确认独立捕获的自身监听日志、Child存活及端口；只串行化启动交接，原RT-HOST-01/02断言不变，连续100次默认并行验证。证据见[evidence/r-20261116-l1.md](evidence/r-20261116-l1.md)。

@@ -205,3 +205,9 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|
 | RT-HOST-01 | http-host | 启动真实 agentnexus/an-mom 二进制，恶意 Host 请求写入口、页面、API、SSE、同源 MOM | 请求在业务副作用前返回403；业务记录不变；转发头不能绕过 |
 | RT-HOST-02 | http-host | 本机 IPv4/localhost/IPv6 authority、错误端口、伪装域名、非法/缺失/重复 Host | 合法且端口匹配才允许；其余400或403 |
+
+## R-20261116-L1 子进程就绪（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-11 | http-host | 其他监听者占目标端口，自己的子进程活着却无监听日志 | 不得误报自己的服务就绪；RT-HOST-01/02断言不变；host_guard连续100次默认并行执行0失败 |
