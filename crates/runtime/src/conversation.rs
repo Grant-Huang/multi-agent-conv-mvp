@@ -86,7 +86,23 @@ struct RawTurn {
     change: String,
 }
 
-fn turn_schema() -> Value {
+/// `reason_first`：FT 实验 A，不思考时让模型先写简短的判断依据（放在第一个字段）
+fn turn_schema(reason_first: bool) -> Value {
+    if reason_first {
+        return json!({
+            "type": "object",
+            "properties": {
+                "reason": { "type": "string", "maxLength": crate::router::REASON_MAX_CHARS },
+                "action": { "type": "string", "enum": ["respond", "clarify", "delegate", "follow_up"] },
+                "question": { "type": "string" },
+                "task_goal": { "type": "string" },
+                "task_id": { "type": "string" },
+                "follow_up_kind": { "type": "string", "enum": ["supplement", "cancel", ""] },
+                "change": { "type": "string" }
+            },
+            "required": ["reason", "action", "question", "task_goal", "task_id", "follow_up_kind", "change"]
+        });
+    }
     json!({
         "type": "object",
         "properties": {
@@ -209,19 +225,69 @@ impl ConversationRuntime {
             });
         }
         // 先拿到扁平结构，再转换（转换中的校验错误会触发重试）
-        let active_owned = active.to_vec();
-        let raw = self
-            .llm
-            .chat_json::<RawTurn, _>(&messages, "turn_decision", &turn_schema(), move |r| {
-                to_decision(r, &active_owned).map(|_| ())
-            })
-            .await?;
+        let validate = |r: &RawTurn| to_decision(r, active).map(|_| ());
+        let front = self.llm.front_options();
+        let schema = turn_schema(front.reason_first);
+        let raw = if front.thinking_escalation {
+            // FT 实验 D：不思考只试一次；格式或业务校验不合格（例如 delegate 但目标为空）就开思考重判一次
+            let started = std::time::Instant::now();
+            let first = self
+                .llm
+                .with_max_retries(0)
+                .chat_json::<RawTurn, _>(&messages, "turn_decision", &schema, validate)
+                .await;
+            match first {
+                Err(e) if e.code == an_core::codes::LLM_FORMAT => {
+                    let think = self
+                        .llm
+                        .with_thinking()
+                        .chat_json::<RawTurn, _>(&messages, "turn_decision", &schema, validate)
+                        .await;
+                    let total_ms = started.elapsed().as_millis() as u64;
+                    tracing::info!(
+                        event = "llm.escalated",
+                        schema = "turn_decision",
+                        reason = "format",
+                        fast_ms = e.latency_ms,
+                        total_ms,
+                        ok = think.is_ok(),
+                        "前台判断可疑，已开思考重判"
+                    );
+                    let mut raw_outputs = e.raw_outputs;
+                    match think {
+                        Ok(s) => {
+                            raw_outputs.extend(s.raw_outputs);
+                            Structured {
+                                value: s.value,
+                                raw_outputs,
+                                attempts: e.attempts + s.attempts,
+                                latency_ms: total_ms,
+                                escalated: Some("format".into()),
+                            }
+                        }
+                        Err(mut t) => {
+                            raw_outputs.extend(t.raw_outputs);
+                            t.raw_outputs = raw_outputs;
+                            t.attempts += e.attempts;
+                            t.latency_ms = total_ms;
+                            return Err(t);
+                        }
+                    }
+                }
+                other => other?,
+            }
+        } else {
+            self.llm
+                .chat_json::<RawTurn, _>(&messages, "turn_decision", &schema, validate)
+                .await?
+        };
         let value = to_decision(&raw.value, active).expect("已在校验中通过");
         Ok(Structured {
             value,
             raw_outputs: raw.raw_outputs,
             attempts: raw.attempts,
             latency_ms: raw.latency_ms,
+            escalated: raw.escalated,
         })
     }
 

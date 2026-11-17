@@ -772,6 +772,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 启动 | `server.started`、`log.file`、`agent.registered`、`agent.detected`、`agent.not_installed`、`pool.resolved`、`pool.invalid`、`config.unknown_key`、`task.interrupted`、`llm.connected`、`llm.unreachable` | 启动时的状态和配置问题 |
 | 对话 | `conversation.turn`、`conversation.reply`、`conversation.reply_stream_failed`、`conversation.reply_failed`、`conversation.config` | 每轮对话一条（决策、角色、任务、尝试次数、耗时）；直接回答的生成（是否流式、字数、耗时）；启动时的审查模式 |
 | 模型 | `llm.request_failed`、`llm.format_retry`、`llm.structured_failed`、`llm.structured_ok`（debug 级别） | 请求失败、格式不合格重试、最终失败 |
+| 前台提速 | `llm.escalated`、`route.risk_raised` | 不思考的判断可疑、开思考重判一次（`schema`、`reason`：format / high_risk / no_agent、`fast_ms`、`total_ms`）；规则把路由风险调高 |
 | 规则 | `policy.reject` | 没有可用 agent，拒绝派发 |
 | 准入 | `admission.preadmitted`、`admission.submitted`、`admission.clarified`、`admission.scored`、`admission.contracted`、`admission.approved`、`admission.activated`、`admission.rejected`、`admission.check`、`admission.warning`、`admission.downgraded`、`admission.revoked`、`admission.sampled`、`admission.bound` | agent 准入协议（E3）每次状态变化一条，带 `agent_id`；同名事件同时写入 `admission_events` 审计表 |
 | 准入（编排器） | `admission.result_rejected`、`admission.tasks_aborted` | 凭证已作废时丢弃 agent 交回的结果（带 `task_id`、`epoch`）；撤权时中止该 agent 进行中的任务（带中止数与耗时） |
@@ -919,6 +920,8 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | `[models]` | `conversation` / `reply` / `router` / `general` / `reviewer` | 空 | 按角色指定模型；`reply` 不填时与 `conversation` 相同 |
 | `[conversation]` | `review_requests` | `reviewer` | 用户审查请求的处理方式：`reviewer` / `direct` / `auto`，见 7.7 节 |
 | | `stream_replies` | true | 直接回答时边生成边显示 |
+| | `risk_rules` | false | 前台提速实验 B：路由后按关键词把风险只升不降（见 PLAN 的 FT 一节） |
+| `[backends.<名>]` | `front_structured_thinking` / `front_reason_first` / `front_thinking_escalation` | 不写 | 前台判断不思考；不思考时先写依据（A）；可疑时开思考重判一次（D）。A、D 只在关思考时生效 |
 | `[agents.general]` | `max_steps` / `max_concurrent` / `workspace_dir` | 6 / 4 / `workspace/files` | |
 | `[agents.general]` | `report_max_searches` / `report_parallel` | 6 / 3 | 研究报告（见 9.5）：检索去重后上限；同时写作的章节数 |
 | `[agents.reviewer]` | `enabled` | true | 关闭后所有任务跳过质检 |

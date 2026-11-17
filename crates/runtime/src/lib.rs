@@ -273,14 +273,17 @@ impl Runtime {
         nodes.load_saved()?;
 
         let o = &config.orchestrator;
-        let router = Arc::new(Router::new(
-            llm_for(LlmRole::Router),
-            registry.clone(),
-            tool_names,
-            Policy {
-                approval_risk: o.approval_risk,
-            },
-        ));
+        let router = Arc::new(
+            Router::new(
+                llm_for(LlmRole::Router),
+                registry.clone(),
+                tool_names,
+                Policy {
+                    approval_risk: o.approval_risk,
+                },
+            )
+            .with_risk_rules(config.conversation.risk_rules),
+        );
         let orchestrator = Arc::new(Orchestrator::new(
             store.clone(),
             bus.clone(),

@@ -9,6 +9,9 @@
 //!   --tag 标签                           只跑带这个标签的样本（可重复）
 //!   --limit N                            只跑前 N 条
 //!   --label 名称                         结果文件名里的标记，例如模型名
+//!   --variant E0..E5                     FT 前台提速实验的配置组合（只在内存里覆盖，不改配置文件）：
+//!       E0 开思考（基线）  E1 关思考  E2 关思考+A  E3 关思考+A+B  E4 关思考+A+B+D  E5 开思考+B
+//!       A = front_reason_first，B = [conversation] risk_rules，D = front_thinking_escalation
 //! ```
 //!
 //! 数据集格式（每行一个 JSON，`//` 开头的行是注释）：
@@ -149,6 +152,9 @@ struct CaseResult {
     error_type: Option<String>,
     turn_ms: u64,
     route_ms: u64,
+    /// FT 实验 D：前台判断 / 路由是否开思考重判，值为触发原因
+    turn_escalated: Option<String>,
+    route_escalated: Option<String>,
     attempts: u32,
     calls: u32,
     error: Option<String>,
@@ -247,6 +253,56 @@ struct Args {
     tags: Vec<String>,
     limit: Option<usize>,
     label: Option<String>,
+    variant: Option<String>,
+}
+
+/// FT 实验组合：(关思考, A 先写理由, B 规则判风险, D 开思考重判)
+fn variant_flags(v: &str) -> Option<(bool, bool, bool, bool)> {
+    Some(match v {
+        "E0" => (false, false, false, false),
+        "E1" => (true, false, false, false),
+        "E2" => (true, true, false, false),
+        "E3" => (true, true, true, false),
+        "E4" => (true, true, true, true),
+        "E5" => (false, false, true, false),
+        _ => return None,
+    })
+}
+
+/// 在内存里按实验组合覆盖配置：作用于全部后端（这几个开关只影响 conversation / router 两个角色）。
+/// 没写 [backends] 时，按运行时同样的方式用 [llm] 合成 default 后端再覆盖。
+fn apply_variant(config: &mut AppConfig, v: &str) -> Result<()> {
+    let (off, a, b, d) =
+        variant_flags(v).with_context(|| format!("--variant 只能是 E0 到 E5，收到 {v}"))?;
+    if config.backends.is_empty() {
+        let u = &config.models.base_urls;
+        if [
+            &u.conversation,
+            &u.reply,
+            &u.router,
+            &u.general,
+            &u.reviewer,
+        ]
+        .iter()
+        .any(|x| x.is_some())
+        {
+            bail!("--variant 需要 [backends] 写法；当前配置用的是旧写法 [models.base_urls]");
+        }
+        config.backends.insert(
+            "default".into(),
+            an_llm::BackendConfig {
+                base_url: config.llm.base_url.clone(),
+                ..Default::default()
+            },
+        );
+    }
+    for spec in config.backends.values_mut() {
+        spec.front_structured_thinking = off.then_some(false);
+        spec.front_reason_first = a.then_some(true);
+        spec.front_thinking_escalation = d.then_some(true);
+    }
+    config.conversation.risk_rules = b;
+    Ok(())
 }
 
 fn local_date() -> String {
@@ -312,6 +368,7 @@ fn parse_args() -> Result<Args> {
         tags: vec![],
         limit: None,
         label: None,
+        variant: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(x) = it.next() {
@@ -325,6 +382,7 @@ fn parse_args() -> Result<Args> {
             "--tag" => a.tags.push(it.next().context("--tag 需要一个值")?),
             "--limit" => a.limit = Some(it.next().context("--limit 需要一个值")?.parse()?),
             "--label" => a.label = Some(it.next().context("--label 需要一个值")?),
+            "--variant" => a.variant = Some(it.next().context("--variant 需要一个值")?),
             o if o.starts_with("--") => bail!("无法识别的参数 {o}"),
             _ => pos.push(x),
         }
@@ -356,6 +414,10 @@ async fn main() -> Result<()> {
     let mut config = AppConfig::load(&args.config)?;
     if let Some(m) = args.review_mode {
         config.conversation.review_requests = m;
+    }
+    if let Some(v) = &args.variant {
+        apply_variant(&mut config, v)?;
+        println!("实验组合：{v}");
     }
     let mode = config.conversation.review_requests;
     let rt = Runtime::with_mcp_diagnostics(
@@ -421,6 +483,7 @@ async fn main() -> Result<()> {
             Ok(d) => {
                 r.turn_ms = t0.elapsed().as_millis() as u64;
                 r.attempts += d.attempts;
+                r.turn_escalated = d.escalated;
                 r.raw_outputs.extend(d.raw_outputs);
                 r.got_action = Some(action_name(&d.value).into());
                 match &d.value {
@@ -437,6 +500,7 @@ async fn main() -> Result<()> {
                         match rt.router.route(task_goal, "", &examples).await {
                             Ok(route) => {
                                 r.attempts += route.attempts;
+                                r.route_escalated = route.escalated;
                                 r.raw_outputs.extend(route.raw_outputs);
                                 r.got_role = Some(route.decision.execution_role.as_str().into());
                                 r.got_class = Some(format!("{:?}", route.decision.task_class));
@@ -445,6 +509,7 @@ async fn main() -> Result<()> {
                             }
                             Err(f) => {
                                 r.attempts += f.attempts;
+                                r.route_escalated = f.escalated;
                                 r.raw_outputs.extend(f.raw_outputs);
                                 // Policy 拒绝时模型的选择仍然有效（例如 coding 没有可用 agent），照常评分
                                 if let Some(d) = f.decision {
@@ -676,6 +741,47 @@ async fn main() -> Result<()> {
         );
     }
     println!("\n格式重试样本：{retried}    最终出错样本：{failed}");
+    // FT 实验 D：开思考重判的样本数，以及重判 / 未重判样本各自的总延迟（判断 + 路由）
+    let mut esc_ms: Vec<u64> = vec![];
+    let mut plain_ms: Vec<u64> = vec![];
+    let mut esc_reasons: BTreeMap<String, usize> = BTreeMap::new();
+    for r in &results {
+        let reasons: Vec<&String> = [&r.turn_escalated, &r.route_escalated]
+            .into_iter()
+            .flatten()
+            .collect();
+        if reasons.is_empty() {
+            plain_ms.push(r.turn_ms + r.route_ms);
+        } else {
+            esc_ms.push(r.turn_ms + r.route_ms);
+            for x in reasons {
+                *esc_reasons.entry(x.clone()).or_default() += 1;
+            }
+        }
+    }
+    esc_ms.sort_unstable();
+    plain_ms.sort_unstable();
+    let mut all_ms: Vec<u64> = results.iter().map(|r| r.turn_ms + r.route_ms).collect();
+    all_ms.sort_unstable();
+    println!(
+        "开思考重判样本：{}（{:.1}%）  原因：{:?}",
+        esc_ms.len(),
+        if n == 0 {
+            0.0
+        } else {
+            esc_ms.len() as f64 * 100.0 / n as f64
+        },
+        esc_reasons
+    );
+    println!(
+        "整轮（判断 + 路由）P50 / P95：{} / {} ms    其中重判样本 {} / {} ms，未重判样本 {} / {} ms",
+        percentile(&all_ms, 0.5),
+        percentile(&all_ms, 0.95),
+        percentile(&esc_ms, 0.5),
+        percentile(&esc_ms, 0.95),
+        percentile(&plain_ms, 0.5),
+        percentile(&plain_ms, 0.95)
+    );
     println!(
         "判断延迟 P50 / P95：{} / {} ms    路由延迟 P50 / P95：{} / {} ms",
         percentile(&turn, 0.5),
@@ -691,6 +797,7 @@ async fn main() -> Result<()> {
     let label = args
         .label
         .clone()
+        .or_else(|| args.variant.as_ref().map(|v| format!("FT-{v}")))
         .unwrap_or_else(|| model.replace(['/', ' ', ':'], "_"));
     let base = dir.join(format!("{stamp}-{label}-{}", mode.as_str()));
     let mut f = std::fs::File::create(base.with_extension("jsonl"))?;
@@ -702,6 +809,7 @@ async fn main() -> Result<()> {
         "model": model,
         "label": label,
         "review_mode": mode.as_str(),
+        "variant": args.variant,
         "dataset": args.dataset,
         "cases": n,
         "pass": rate(passed, n),
@@ -719,6 +827,13 @@ async fn main() -> Result<()> {
         "failed": failed,
         "turn_ms": { "p50": percentile(&turn, 0.5), "p95": percentile(&turn, 0.95) },
         "route_ms": { "p50": percentile(&route, 0.5), "p95": percentile(&route, 0.95) },
+        "total_ms": { "p50": percentile(&all_ms, 0.5), "p95": percentile(&all_ms, 0.95) },
+        "escalated": {
+            "cases": esc_ms.len(),
+            "reasons": esc_reasons,
+            "ms": { "p50": percentile(&esc_ms, 0.5), "p95": percentile(&esc_ms, 0.95) },
+            "plain_ms": { "p50": percentile(&plain_ms, 0.5), "p95": percentile(&plain_ms, 0.95) },
+        },
     });
     std::fs::write(
         base.with_extension("summary.json"),
@@ -763,6 +878,24 @@ mod tests {
         );
         assert_eq!(classify_error("delegate", None).as_deref(), Some("error"));
         assert_eq!(classify_error("respond", Some("respond")), None);
+    }
+
+    #[test]
+    fn ft_variants_apply_to_all_backends() {
+        let (mut c, _) =
+            AppConfig::parse("[llm]\nbase_url = \"http://x/v1\"\nmodel = \"m\"").unwrap();
+        apply_variant(&mut c, "E4").unwrap();
+        let s = &c.backends["default"];
+        assert_eq!(s.front_structured_thinking, Some(false));
+        assert_eq!(s.front_reason_first, Some(true));
+        assert_eq!(s.front_thinking_escalation, Some(true));
+        assert!(c.conversation.risk_rules);
+        apply_variant(&mut c, "E0").unwrap();
+        let s = &c.backends["default"];
+        assert_eq!(s.front_structured_thinking, None);
+        assert_eq!(s.front_thinking_escalation, None);
+        assert!(!c.conversation.risk_rules);
+        assert!(apply_variant(&mut c, "E9").is_err());
     }
 
     #[test]

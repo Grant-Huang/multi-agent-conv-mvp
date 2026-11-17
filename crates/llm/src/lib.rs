@@ -143,6 +143,8 @@ pub struct Structured<T> {
     pub raw_outputs: Vec<String>,
     pub attempts: u32,
     pub latency_ms: u64,
+    /// 是否经过"开思考重判"（FT，D）；值为触发原因，例如 format / high_risk / no_agent
+    pub escalated: Option<String>,
 }
 
 /// 结构化调用失败时也带上原始输出，便于写日志
@@ -175,6 +177,17 @@ pub struct LlmClient {
     timeouts: Timeouts,
     /// 为 true 时，带 `response_format` 的请求关闭思考。直接回答（没有 response_format）不受影响。
     disable_structured_thinking: bool,
+    /// 前台判断不思考时的附加做法（FT）：只在 `disable_structured_thinking` 为 true 时由后端配置打开
+    front: FrontOptions,
+}
+
+/// 前台判断不思考时的附加做法（FT 实验，默认全关）
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrontOptions {
+    /// A：结构化输出的第一个字段为简短的判断依据
+    pub reason_first: bool,
+    /// D：结果可疑时开思考重判一次
+    pub thinking_escalation: bool,
 }
 
 /// 一次调用的请求内容（`messages` 之外的参数）
@@ -277,6 +290,7 @@ impl LlmClient {
             priority: Priority::Interactive,
             timeouts,
             disable_structured_thinking: false,
+            front: FrontOptions::default(),
         })
     }
 
@@ -328,6 +342,37 @@ impl LlmClient {
 
     pub fn structured_thinking_disabled(&self) -> bool {
         self.disable_structured_thinking
+    }
+
+    /// 设置前台附加做法。只有在已关闭结构化思考时才生效（开着思考时 A、D 没有意义）。
+    pub fn with_front_options(&self, front: FrontOptions) -> Self {
+        let mut c = self.clone();
+        c.front = if c.disable_structured_thinking {
+            front
+        } else {
+            FrontOptions::default()
+        };
+        c
+    }
+
+    /// 当前生效的前台附加做法
+    pub fn front_options(&self) -> FrontOptions {
+        self.front
+    }
+
+    /// 复制一个恢复思考的客户端（D：重判时使用）。附加做法一并清掉，避免重判再触发重判。
+    pub fn with_thinking(&self) -> Self {
+        let mut c = self.clone();
+        c.disable_structured_thinking = false;
+        c.front = FrontOptions::default();
+        c
+    }
+
+    /// 复制一个格式重试次数不同的客户端（D：不思考的第一次只试一次，不合格就交给思考重判）
+    pub fn with_max_retries(&self, n: u32) -> Self {
+        let mut c = self.clone();
+        c.cfg.max_retries = n;
+        c
     }
 
     pub fn role(&self) -> &str {
@@ -1000,6 +1045,7 @@ impl LlmClient {
                         raw_outputs,
                         attempts: attempt,
                         latency_ms: started.elapsed().as_millis() as u64,
+                        escalated: None,
                     });
                 }
                 Err(e) => {

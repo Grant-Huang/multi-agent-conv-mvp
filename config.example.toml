@@ -86,6 +86,10 @@ max_retries = 2                    # 输出不合格时把错误反馈给模型�
 # deadline_secs（前台调用含重试的期限，默认 60，0 = 不限）、
 # extra_body = { chat_template_kwargs = { enable_thinking = false } }（附加到该后端的每一次调用）
 # front_structured_thinking = false（只关闭 conversation / router 结构化请求的思考，直接回答和后台任务不变）
+# 以下两项是前台提速实验（FT，见 docs/PLAN.md），只在 front_structured_thinking = false 时生效，默认不开：
+# front_reason_first = true（A：先写不超过 40 字的判断依据再给结论）
+# front_thinking_escalation = true（D：格式不合格、风险 high、角色没有可用 agent 时开思考重判一次）
+# 用 an-eval 对比时不必改这里：cargo run --release --bin an-eval -- config.toml --variant E4
 
 # ───── 前台行为 ─────
 [conversation]
@@ -95,6 +99,8 @@ max_retries = 2                    # 输出不合格时把错误反馈给模型�
 #   auto     —— 短内容直接回答；长内容（约 30 行 / 1500 字以上）、文件、仓库交给后台
 review_requests = "reviewer"
 stream_replies = true             # 直接回答时边生成边显示
+# 前台提速实验（FT）B：路由后按规则把风险只升不降（删除 / 对外发送 / 部署 → high，写文件 / 改代码 → 至少 medium）。默认不开
+# risk_rules = true
 
 # ───── Agents ─────
 [agents.general]
