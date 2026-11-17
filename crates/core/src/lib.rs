@@ -157,6 +157,52 @@ pub enum TurnDecision {
         kind: FollowUpKind,
         change: String,
     },
+    /// 管理助手本身（AG.4，开关 `[conversation] agent_management` 打开时才会出现）：
+    /// 接入 / 设为默认 / 停用 / 恢复 / 查看 / 撤销。后续流程全部由代码完成，生成卡片
+    ManageAgents {
+        op: AgentOp,
+        /// 哪个助手；没说是哪个时为空（随后给选择卡）
+        agent_id: String,
+        /// 负责什么；没说时为 None
+        role: Option<Role>,
+    },
+}
+
+/// 管理助手的操作（AG.4）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum AgentOp {
+    Connect,
+    SetDefault,
+    Disable,
+    Enable,
+    List,
+    Undo,
+}
+
+impl AgentOp {
+    pub const ALL: [AgentOp; 6] = [
+        AgentOp::Connect,
+        AgentOp::SetDefault,
+        AgentOp::Disable,
+        AgentOp::Enable,
+        AgentOp::List,
+        AgentOp::Undo,
+    ];
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AgentOp::Connect => "connect",
+            AgentOp::SetDefault => "set_default",
+            AgentOp::Disable => "disable",
+            AgentOp::Enable => "enable",
+            AgentOp::List => "list",
+            AgentOp::Undo => "undo",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|o| o.as_str() == s)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -320,6 +366,71 @@ pub struct ProbeOutcome {
     pub next_step: Option<String>,
     /// 原始错误详情（含错误输出末尾，有长度上限），给专业用户和诊断用
     pub detail: Option<String>,
+}
+
+// ───────────────────────── 对话里的卡片（AG.4）─────────────────────────
+
+/// 选择卡里的一个候选助手
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ChoiceOption {
+    pub id: String,
+    pub name: String,
+    pub purpose: String,
+    pub role: Role,
+    /// 本机是否已安装（没安装的点了会先看到安装步骤）
+    pub installed: bool,
+}
+
+/// 对话里的卡片：由代码按结构化数据生成，前端组件渲染（不渲染模型生成的 HTML）。
+/// 卡片存在消息的 `card_json` 列；送给模型的历史只用消息正文，卡片数据（含确认凭证）不进模型上下文。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export)]
+pub enum ChatCard {
+    /// 发现卡：本机有哪些助手
+    Discovery { items: Vec<CatalogItem> },
+    /// 选择卡：没说是哪个助手时让用户点选
+    Choice {
+        op: AgentOp,
+        role: Option<Role>,
+        options: Vec<ChoiceOption>,
+    },
+    /// 引导卡：安装步骤
+    Guide { item: CatalogItem },
+    /// 确认卡：提议的说明与一次性确认凭证
+    Confirm {
+        proposal_id: String,
+        kind: String,
+        summary: String,
+        warnings: Vec<String>,
+        before: String,
+        after: String,
+        /// 一次性确认凭证（只给界面；不进模型上下文）
+        token: String,
+        expires_in_secs: u64,
+        /// 将会执行的命令（接入时才有）
+        command: Option<String>,
+        /// pending / applied / expired
+        state: String,
+    },
+    /// 结果卡
+    Result {
+        ok: bool,
+        summary: String,
+        probes: Vec<ProbeOutcome>,
+        error: Option<String>,
+    },
+}
+
+/// 消息 + 卡片（消息列表接口返回它；`Message` 本身不变）
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MessageView {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub message: Message,
+    pub card: Option<ChatCard>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

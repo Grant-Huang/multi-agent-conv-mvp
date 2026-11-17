@@ -12,6 +12,7 @@
 
 pub mod admission;
 pub mod agent_catalog;
+pub mod agent_chat;
 pub mod agent_config;
 pub mod backends;
 pub mod bus;
@@ -78,6 +79,8 @@ pub struct Runtime {
     pub probe_gate: Arc<agent_catalog::ProbeGate>,
     /// 托管配置（AG.2）
     pub agent_config: Arc<agent_config::AgentConfigManager>,
+    /// 管理助手（AG.4）：HTTP 接口和对话里的向导共用
+    pub agents: Arc<agent_chat::AgentAdmin>,
 }
 
 /// 连通性探测的目标：只做握手或命令检查，不调用模型（探测结果写入 `registry.links`）
@@ -346,7 +349,18 @@ impl Runtime {
         if let Some(l) = &admission {
             orchestrator.set_admission(l.clone());
         }
+        let probers = Arc::new(ProberSet::new(probers));
+        let agents = Arc::new(agent_chat::AgentAdmin {
+            config: config.clone(),
+            registry: registry.clone(),
+            probers: probers.clone(),
+            manager: agent_config.clone(),
+            store: store.clone(),
+            bus: bus.clone(),
+        });
         let conversation = Arc::new(ConversationRuntime::new(conversation::ConversationDeps {
+            // 对话里管理助手（AG.4）：开关打开时才把向导交给前台
+            agents: config.conversation.agent_management.then(|| agents.clone()),
             llm: llm_for(LlmRole::Conversation),
             // 回复模型：没单独配置时与前台判断用同一个模型（含服务地址）
             reply_llm: llm_for(LlmRole::Reply),
@@ -378,10 +392,11 @@ impl Runtime {
             diagnostics,
             llm: backends.client(LlmRole::Conversation),
             backends: backends.clone(),
-            probers: Arc::new(ProberSet::new(probers)),
+            probers,
             admission,
             probe_gate: Arc::default(),
             agent_config,
+            agents,
         })
     }
 

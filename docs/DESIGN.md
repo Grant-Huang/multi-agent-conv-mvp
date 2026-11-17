@@ -635,6 +635,7 @@ flowchart LR
 | 评测集 | 条数 | 用途 |
 |---|---|---|
 | `evals/routing-v1.jsonl` | 26 | 第一次评测用的集合，保留用于和 27B 基线对比 |
+| `evals/agents.jsonl` | 90 | AG.4 对话里管理助手（正例 54、反例 36），由 `evals/make_agents_dataset.py` 生成；用 `an-eval ... --agent-management` 跑；动作、agent_op、agent_id 都对才算对，门槛 96% |
 | `evals/routing.jsonl`（v2） | 90 | 主评测集，由 `evals/make_dataset.py` 生成 |
 
 v2 覆盖：闲聊常识建议（18）、追问（9）、计算与时间（9）、文件与文档（12）、改代码（12）、高风险（4）、审查请求（12，期望随审查模式变化）、跟进进行中的任务（8）、多轮对话（6）。样本可以带对话历史、进行中的任务，以及不同审查模式下的不同期望。
@@ -879,7 +880,8 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | GET | `/api/health` | 模型连通性、agent 列表 |
 | GET | `/api/agents` | agent 能力卡片 |
 | GET / POST | `/api/conversations` | 会话列表 / 新建 |
-| GET / POST | `/api/conversations/{id}/messages` | 消息列表 / 发消息 `{"text"}` |
+| GET / POST | `/api/conversations/{id}/messages` | 消息列表 / 发消息 `{"text"}`。列表里每条消息多一个 `card`（AG.4 对话里的卡片：发现 / 选择 / 引导 / 确认 / 结果；没有卡片为 null）。卡片存在 `messages.card_json`，送给模型的历史只用 `content`，卡片数据（含确认凭证）不进模型上下文 |
+| POST | `/api/conversations/{id}/agent-proposals` | 在会话里生成确认卡（AG.4：选择卡点选、结果卡撤销时用），请求体同 `/api/agents/proposals`；只校验不写配置，确认仍要凭证。从对话发起的提议确认后，结果卡写回原会话，原确认卡标记为 applied / expired |
 | GET | `/api/tasks?conversation_id=` | 任务列表 |
 | GET | `/api/tasks/{id}` | 任务详情 + 事件 |
 | POST | `/api/tasks/{id}/cancel`、`/approve` | 取消 / 批准 |
@@ -889,6 +891,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | POST | `/api/nodes/pair` | 配对 `{"address", "code"}`；地址可以只写 IP，会自动补成 `http://IP:7788` |
 | GET | `/api/agents/catalog` | 预设 agent 目录：用途、安装步骤、登录方式、依赖说明，以及本机状态（未安装 / 已安装未注册 / 已注册）和连接状态（AG.1，只读） |
 | POST | `/api/agents/probe` | 握手检测 `{"id"}`（只接受 id，多余字段返回 422）：目录内或已注册的 ACP agent；结果分类 ok / not_installed / needs_login / missing_dependency / handshake_failed / timeout；其他 id 返回 404。超时 10 秒，同一 agent 不并发，全局最多 2 个（AG.1，只读） |
+| GET | `/api/agents/config` | 托管配置概况（AG.3，只读）：托管内容、能否撤销、config.toml 里写了的 agent 和角色、当前执行组、托管文件读取错误 |
 | POST | `/api/agents/proposals` | 提议修改 agent 配置（AG.2）：`{"kind": "add_preset" / "add_custom" / "set_default" / "disable" / "enable" / "remove" / "revert", ...}`。只校验不写入，返回说明、警告、修改前后的托管文件内容和一次性确认凭证（10 分钟有效）。与 config.toml 冲突、没有可撤销版本、托管文件损坏时返回 409；请求不合格（例如环境变量写了明文值、执行组类型不一致）返回 422 |
 | POST | `/api/agents/proposals/{id}/apply` | 确认提议 `{"token"}`：凭证错误 403、过期 410；成功后写入托管文件 `agents.managed.toml`（数据库同目录，保留 10 个历史版本）并立即生效，返回新接入 agent 的握手检测结果 |
 | DELETE | `/api/nodes/{id}` | 解除配对 |
@@ -924,6 +927,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | `[models]` | `conversation` / `reply` / `router` / `general` / `reviewer` | 空 | 按角色指定模型；`reply` 不填时与 `conversation` 相同 |
 | `[conversation]` | `review_requests` | `reviewer` | 用户审查请求的处理方式：`reviewer` / `direct` / `auto`，见 7.7 节 |
 | | `stream_replies` | true | 直接回答时边生成边显示 |
+| | `agent_management` | false | AG.4 对话里管理助手（"把 Cursor 接进来"等）。会给前台判断加上 manage_agents 和三个枚举字段，评测达标前保持关闭 |
 | | `risk_rules` | false | 前台提速实验 B：路由后按关键词把风险只升不降（见 PLAN 的 FT 一节） |
 | `[backends.<名>]` | `front_structured_thinking` / `front_reason_first` / `front_thinking_escalation` | 不写 | 前台判断不思考；不思考时先写依据（A）；可疑时开思考重判一次（D）。A、D 只在关思考时生效 |
 | `[agents.general]` | `max_steps` / `max_concurrent` / `workspace_dir` | 6 / 4 / `workspace/files` | |

@@ -43,10 +43,14 @@ pub struct ConversationRuntime {
     stream_replies: bool,
     /// 同一会话同一时刻只处理一条消息
     locks: ConvLocks,
+    /// 对话里管理助手（AG.4）；开关关闭时为 None，前台判断与以前完全相同
+    agents: Option<Arc<crate::agent_chat::AgentAdmin>>,
 }
 
 /// 构造 ConversationRuntime 需要的参数
 pub struct ConversationDeps {
+    /// 对话里管理助手（AG.4）；开关关闭时为 None
+    pub agents: Option<Arc<crate::agent_chat::AgentAdmin>>,
     pub llm: LlmClient,
     pub reply_llm: LlmClient,
     pub store: Arc<Store>,
@@ -84,6 +88,41 @@ struct RawTurn {
     follow_up_kind: String,
     #[serde(default)]
     change: String,
+    /// AG.4 管理助手：操作 / 助手 id / 角色（开关关闭时 schema 里没有这三个字段）
+    #[serde(default)]
+    agent_op: String,
+    #[serde(default)]
+    agent_id: String,
+    #[serde(default)]
+    agent_role: String,
+}
+
+/// 开关打开时给前台判断的 schema 加上 manage_agents 和三个枚举字段（AG.4）。
+/// `candidates` 是本轮可选的助手 id（每轮按本机情况生成），模型只能从中选。
+fn add_manage_agents(mut schema: Value, candidates: &[String]) -> Value {
+    if let Some(actions) = schema["properties"]["action"]["enum"].as_array_mut() {
+        actions.push(json!("manage_agents"));
+    }
+    let mut ops: Vec<Value> = an_core::AgentOp::ALL
+        .iter()
+        .map(|o| json!(o.as_str()))
+        .collect();
+    ops.push(json!(""));
+    let mut ids: Vec<Value> = candidates.iter().map(|c| json!(c)).collect();
+    ids.push(json!(""));
+    let props = schema["properties"]
+        .as_object_mut()
+        .expect("schema 有 properties");
+    props.insert("agent_op".into(), json!({ "type": "string", "enum": ops }));
+    props.insert("agent_id".into(), json!({ "type": "string", "enum": ids }));
+    props.insert(
+        "agent_role".into(),
+        json!({ "type": "string", "enum": ["coding", "general", "reviewer", ""] }),
+    );
+    if let Some(req) = schema["required"].as_array_mut() {
+        req.extend([json!("agent_op"), json!("agent_id"), json!("agent_role")]);
+    }
+    schema
 }
 
 /// `reason_first`：FT 实验 A，不思考时让模型先写简短的判断依据（放在第一个字段）
@@ -118,7 +157,11 @@ fn turn_schema(reason_first: bool) -> Value {
 }
 
 /// 把扁平输出转换成 TurnDecision，同时做业务校验（不通过会反馈给模型重试）
-fn to_decision(raw: &RawTurn, active: &[TaskRecord]) -> Result<TurnDecision, String> {
+fn to_decision(
+    raw: &RawTurn,
+    active: &[TaskRecord],
+    agents: Option<&[String]>,
+) -> Result<TurnDecision, String> {
     let need = |v: &str, field: &str| {
         if v.trim().is_empty() {
             Err(format!("action={} 时 {field} 不能为空", raw.action))
@@ -167,6 +210,28 @@ fn to_decision(raw: &RawTurn, active: &[TaskRecord]) -> Result<TurnDecision, Str
                 change: raw.change.clone(),
             })
         }
+        // AG.4：只有开关打开（agents 为 Some）时才接受；助手 id 必须在本轮候选里
+        "manage_agents" if agents.is_some() => {
+            let Some(op) = an_core::AgentOp::parse(&raw.agent_op) else {
+                return Err(format!(
+                    "action=manage_agents 时 agent_op 必须是 connect / set_default / disable / enable / list / undo，收到 `{}`",
+                    raw.agent_op
+                ));
+            };
+            let candidates = agents.unwrap_or_default();
+            if !raw.agent_id.is_empty() && !candidates.iter().any(|c| c == &raw.agent_id) {
+                return Err(format!(
+                    "agent_id `{}` 不在候选里；可选：{}（没说是哪个就填空字符串）",
+                    raw.agent_id,
+                    candidates.join(", ")
+                ));
+            }
+            Ok(TurnDecision::ManageAgents {
+                op,
+                agent_id: raw.agent_id.clone(),
+                role: an_core::Role::parse(&raw.agent_role),
+            })
+        }
         other => Err(format!("未知 action：{other}")),
     }
 }
@@ -187,6 +252,7 @@ impl ConversationRuntime {
             },
             stream_replies: d.stream_replies,
             locks: ConvLocks::new(),
+            agents: d.agents,
         }
     }
 
@@ -212,11 +278,13 @@ impl ConversationRuntime {
             .map(|m| m.content.clone())
             .unwrap_or_default();
         let examples = self.store.similar_feedback(&query, 5).unwrap_or_default();
-        let mut messages = vec![ChatMessage::system(turn_system_prompt(
-            &self.prompt_info,
-            active,
-            &examples,
-        ))];
+        // AG.4：开关打开时，追加"管理助手"一节，并给出本轮候选助手
+        let candidates = self.agents.as_ref().map(|a| a.candidate_ids());
+        let mut system = turn_system_prompt(&self.prompt_info, active, &examples);
+        if let Some(a) = &self.agents {
+            system.push_str(&a.prompt_section());
+        }
+        let mut messages = vec![ChatMessage::system(system)];
         for m in history {
             messages.push(if m.role == "user" {
                 ChatMessage::user(&m.content)
@@ -225,9 +293,12 @@ impl ConversationRuntime {
             });
         }
         // 先拿到扁平结构，再转换（转换中的校验错误会触发重试）
-        let validate = |r: &RawTurn| to_decision(r, active).map(|_| ());
+        let validate = |r: &RawTurn| to_decision(r, active, candidates.as_deref()).map(|_| ());
         let front = self.llm.front_options();
-        let schema = turn_schema(front.reason_first);
+        let schema = match &candidates {
+            Some(c) => add_manage_agents(turn_schema(front.reason_first), c),
+            None => turn_schema(front.reason_first),
+        };
         let raw = if front.thinking_escalation {
             // FT 实验 D：不思考只试一次；格式或业务校验不合格（例如 delegate 但目标为空）就开思考重判一次
             let started = std::time::Instant::now();
@@ -281,7 +352,7 @@ impl ConversationRuntime {
                 .chat_json::<RawTurn, _>(&messages, "turn_decision", &schema, validate)
                 .await?
         };
-        let value = to_decision(&raw.value, active).expect("已在校验中通过");
+        let value = to_decision(&raw.value, active, candidates.as_deref()).expect("已在校验中通过");
         Ok(Structured {
             value,
             raw_outputs: raw.raw_outputs,
@@ -391,6 +462,17 @@ impl ConversationRuntime {
                     reply: reply.clone(),
                 };
                 self.finish_with_id(log, started, Some(decision), None, &reply, Some(&reply_id))
+            }
+            TurnDecision::ManageAgents { op, agent_id, role } => {
+                // 后续全部由代码完成：生成卡片，不再调用模型
+                let (content, card) = match &self.agents {
+                    Some(a) => a.wizard(*op, agent_id, *role),
+                    None => (
+                        "现在没有打开对话里管理助手的功能，可以在右侧「助手」页签里操作。".into(),
+                        None,
+                    ),
+                };
+                self.finish_with_card(log, started, decision.clone(), &content, card)
             }
             TurnDecision::Clarify { question } => {
                 self.finish(log, started, Some(decision.clone()), None, question)
@@ -596,9 +678,31 @@ impl ConversationRuntime {
     }
 
     /// 同上，可指定回复消息的 id（流式回复用）
+    /// 结束一轮并写一条带卡片的回复（AG.4）。卡片里有确认卡时，记下它来自哪条消息，确认后结果写回这里
+    fn finish_with_card(
+        &self,
+        log: RouteLog,
+        started: Instant,
+        decision: TurnDecision,
+        reply: &str,
+        card: Option<an_core::ChatCard>,
+    ) -> Result<TurnOutcome> {
+        let Some(card) = card else {
+            return self.finish(log, started, Some(decision), None, reply);
+        };
+        let msg = match &self.agents {
+            Some(a) => a.post_card(&log.conversation_id, reply, &card)?.message,
+            None => {
+                self.store
+                    .add_message_with_card(&log.conversation_id, "assistant", reply, &card)?
+            }
+        };
+        self.log_turn(log, started, Some(decision), None, msg)
+    }
+
     fn finish_with_id(
         &self,
-        mut log: RouteLog,
+        log: RouteLog,
         started: Instant,
         decision: Option<TurnDecision>,
         task: Option<TaskRecord>,
@@ -618,6 +722,18 @@ impl ConversationRuntime {
                 .store
                 .add_message(&log.conversation_id, "assistant", reply, task_ref)?,
         };
+        self.log_turn(log, started, decision, task, msg)
+    }
+
+    /// 记录本轮的埋点和路由日志，返回结果
+    fn log_turn(
+        &self,
+        mut log: RouteLog,
+        started: Instant,
+        decision: Option<TurnDecision>,
+        task: Option<TaskRecord>,
+        msg: Message,
+    ) -> Result<TurnOutcome> {
         log.latency_ms = started.elapsed().as_millis() as u64;
         // 埋点：每轮对话一条，记录决策、路由、重试次数和耗时
         let action = log

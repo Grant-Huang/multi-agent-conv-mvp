@@ -109,8 +109,12 @@ fn manage(op: &str, id: &str, role: &str) -> Value {
            "agent_op":op,"agent_id":id,"agent_role":role})
 }
 
+/// 用例独享的临时目录。PATH / HOME 在整条用例期间都指向这里（检测"是否已安装"发生在处理请求时），
+/// 用例结束（Drop）时恢复；用例之间由 ENV_LOCK 串行。
 struct Sandbox {
     root: PathBuf,
+    old_path: Option<std::ffi::OsString>,
+    old_home: Option<std::ffi::OsString>,
 }
 
 impl Sandbox {
@@ -126,7 +130,15 @@ impl Sandbox {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
-        Self { root }
+        let old_path = std::env::var_os("PATH");
+        let old_home = std::env::var_os("HOME");
+        std::env::set_var("PATH", root.join("bin"));
+        std::env::set_var("HOME", root.join("home"));
+        Self {
+            root,
+            old_path,
+            old_home,
+        }
     }
 
     async fn serve(&self, llm: &str, management: bool) -> (String, Arc<Runtime>) {
@@ -158,14 +170,8 @@ agent_management = {management}
             code = self.root.join("code").display(),
         );
         let (config, _) = AppConfig::parse(&text).unwrap();
-        let old_path = std::env::var_os("PATH");
-        let old_home = std::env::var_os("HOME");
-        std::env::set_var("PATH", self.root.join("bin"));
-        std::env::set_var("HOME", self.root.join("home"));
-        let rt = Runtime::new(config, Store::open(Path::new(":memory:")).unwrap());
-        restore("PATH", old_path);
-        restore("HOME", old_home);
-        let rt = Arc::new(rt.unwrap());
+        let rt =
+            Arc::new(Runtime::new(config, Store::open(Path::new(":memory:")).unwrap()).unwrap());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let for_serve = rt.clone();
@@ -180,6 +186,8 @@ agent_management = {management}
 
 impl Drop for Sandbox {
     fn drop(&mut self) {
+        restore("PATH", self.old_path.take());
+        restore("HOME", self.old_home.take());
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }

@@ -65,47 +65,7 @@ struct Target {
 impl Runtime {
     /// 目录：全部预设 + 本机状态。连接状态（link_status / link_reason）由调用方按健康接口的规则填写。
     pub fn agent_catalog(&self) -> Vec<CatalogItem> {
-        let cards = self.registry.cards();
-        let managed = self.agent_config.managed();
-        catalog()
-            .into_iter()
-            .map(|e| {
-                let registered = cards.iter().any(|c| c.id == e.id());
-                let status = if registered {
-                    CatalogStatus::Registered
-                } else if resolve_command(&e.preset.command).is_some() {
-                    CatalogStatus::Installed
-                } else {
-                    CatalogStatus::NotInstalled
-                };
-                let source = if self.config.acp.agents.iter().any(|a| a.id == e.id()) {
-                    "config_toml"
-                } else if managed.acp.agents.iter().any(|a| a.id == e.id()) {
-                    "managed"
-                } else if registered {
-                    "auto"
-                } else {
-                    "preset"
-                };
-                CatalogItem {
-                    id: e.id().to_string(),
-                    source: source.into(),
-                    disabled: managed.acp.disabled.iter().any(|d| d == e.id()),
-                    name: e.name(),
-                    purpose: e.meta.purpose.into(),
-                    role: e.role(),
-                    command: e.preset.command.clone(),
-                    args: e.preset.args.clone(),
-                    install: e.meta.install.clone(),
-                    login: e.meta.login.map(String::from),
-                    requirements: e.meta.requirements.iter().map(|s| s.to_string()).collect(),
-                    docs_url: e.meta.docs_url.map(String::from),
-                    status,
-                    link_status: None,
-                    link_reason: None,
-                }
-            })
-            .collect()
+        catalog_items(&self.config, &self.registry, &self.agent_config)
     }
 
     /// 握手检测。只能检测已注册的 ACP agent 或目录内的预设；其他 id（未知、内置、CLI、节点）返回 None。
@@ -174,4 +134,53 @@ impl Runtime {
             login,
         })
     }
+}
+
+/// 目录：全部预设 + 本机状态（Runtime 和对话里的向导共用）
+pub fn catalog_items(
+    config: &crate::config::AppConfig,
+    registry: &crate::registry::AgentRegistry,
+    manager: &crate::agent_config::AgentConfigManager,
+) -> Vec<CatalogItem> {
+    let cards = registry.cards();
+    let managed = manager.managed();
+    catalog()
+        .into_iter()
+        .map(|e| {
+            let registered = cards.iter().any(|c| c.id == e.id());
+            let status = if registered {
+                CatalogStatus::Registered
+            } else if resolve_command(&e.preset.command).is_some() {
+                CatalogStatus::Installed
+            } else {
+                CatalogStatus::NotInstalled
+            };
+            let source = if config.acp.agents.iter().any(|a| a.id == e.id()) {
+                "config_toml"
+            } else if managed.acp.agents.iter().any(|a| a.id == e.id()) {
+                "managed"
+            } else if registered {
+                "auto"
+            } else {
+                "preset"
+            };
+            CatalogItem {
+                id: e.id().to_string(),
+                source: source.into(),
+                disabled: managed.acp.disabled.iter().any(|d| d == e.id()),
+                name: e.name(),
+                purpose: e.meta.purpose.into(),
+                role: e.role(),
+                command: e.preset.command.clone(),
+                args: e.preset.args.clone(),
+                install: e.meta.install.clone(),
+                login: e.meta.login.map(String::from),
+                requirements: e.meta.requirements.iter().map(|s| s.to_string()).collect(),
+                docs_url: e.meta.docs_url.map(String::from),
+                status,
+                link_status: None,
+                link_reason: None,
+            }
+        })
+        .collect()
 }

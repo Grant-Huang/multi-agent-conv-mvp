@@ -11,6 +11,7 @@ import type { PairedNode } from "./bindings/PairedNode";
 import type { Problem } from "./bindings/Problem";
 import type { CatalogItem } from "./bindings/CatalogItem";
 import type { ProbeOutcome } from "./bindings/ProbeOutcome";
+import type { MessageView } from "./bindings/MessageView";
 
 // ───── Agent 配置（AG.2 / AG.3）。这些结构来自 an-runtime（不在 an-core 的 bindings 里），在这里手写 ─────
 
@@ -151,7 +152,11 @@ export const api = {
   health: () => request<Health>("/api/health"),
   conversations: () => request<Conversation[]>("/api/conversations"),
   createConversation: () => request<Conversation>("/api/conversations", { method: "POST", body: "{}" }),
-  messages: (cid: string) => request<Message[]>(`/api/conversations/${cid}/messages`),
+  /** 消息列表：每条消息多一个 card（AG.4 对话里的卡片） */
+  messages: (cid: string) => request<MessageView[]>(`/api/conversations/${cid}/messages`),
+  /** 在会话里生成确认卡（选择卡点选、结果卡撤销时用） */
+  proposeInConversation: (cid: string, change: ChangeRequest) =>
+    request<MessageView>(`/api/conversations/${cid}/agent-proposals`, { method: "POST", body: JSON.stringify(change) }),
   send: (cid: string, text: string) =>
     request<TurnOutcome>(`/api/conversations/${cid}/messages`, { method: "POST", body: JSON.stringify({ text }) }),
   tasks: (cid: string) => request<TaskRecord[]>(`/api/tasks?conversation_id=${cid}`),

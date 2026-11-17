@@ -69,8 +69,9 @@ function CopyButton(props: { text: string }) {
 /** 发现卡：首次打开时显示在对话区顶部，告诉用户本机有哪些助手 */
 export function DiscoveryCard(props: {
   catalog: CatalogItem[];
-  onDismiss: () => void;
-  onManage: () => void;
+  /** 首次打开的发现卡才有"知道了"；对话里的发现卡没有 */
+  onDismiss?: () => void;
+  onManage?: () => void;
 }) {
   const connected = props.catalog.filter((c) => c.status === "registered" && !c.disabled);
   const installable = props.catalog.filter((c) => c.status === "installed" && !c.disabled);
@@ -105,12 +106,16 @@ export function DiscoveryCard(props: {
         </details>
       )}
       <div className="card-actions">
-        <button type="button" className="btn small primary" onClick={props.onManage}>
-          去「助手」页签管理
-        </button>
-        <button type="button" className="btn small" onClick={props.onDismiss}>
-          知道了
-        </button>
+        {props.onManage && (
+          <button type="button" className="btn small primary" onClick={props.onManage}>
+            去「助手」页签管理
+          </button>
+        )}
+        {props.onDismiss && (
+          <button type="button" className="btn small" onClick={props.onDismiss}>
+            知道了
+          </button>
+        )}
       </div>
     </section>
   );
@@ -186,10 +191,13 @@ export function ConfirmCard(props: {
   command?: string;
   level: UiLevel;
   busy: boolean;
+  /** 对话里的确认卡会带状态：applied 已确认、expired 已过期；这两种状态不再显示按钮 */
+  state?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   const p = props.proposal;
+  const done = props.state === "applied" || props.state === "expired";
   return (
     <section className="agent-card confirm" role="region" aria-label="确认修改">
       <h3>确认修改</h3>
@@ -220,14 +228,18 @@ export function ConfirmCard(props: {
           </div>
         </div>
       </details>
-      <div className="card-actions">
-        <button type="button" className="btn small primary" disabled={props.busy} onClick={props.onConfirm}>
-          确认
-        </button>
-        <button type="button" className="btn small" disabled={props.busy} onClick={props.onCancel}>
-          取消
-        </button>
-      </div>
+      {done ? (
+        <p className="result-line">{props.state === "applied" ? "已确认，修改已经生效" : "已过期，没有生效；需要的话请重新发起"}</p>
+      ) : (
+        <div className="card-actions">
+          <button type="button" className="btn small primary" disabled={props.busy} onClick={props.onConfirm}>
+            确认
+          </button>
+          <button type="button" className="btn small" disabled={props.busy} onClick={props.onCancel}>
+            取消
+          </button>
+        </div>
+      )}
     </section>
   );
 }

@@ -4,7 +4,7 @@ import { api, subscribeEvents, type Health } from "./api";
 import type { TaskEvent } from "./bindings/TaskEvent";
 import { createDeltaBuffer, createEventPump, REFRESH_INTERVAL_MS } from "./refresh";
 import type { Conversation } from "./bindings/Conversation";
-import type { Message } from "./bindings/Message";
+import type { MessageView } from "./bindings/MessageView";
 import type { TaskRecord } from "./bindings/TaskRecord";
 import { ChatView, type TaskActionKind } from "./components/ChatView";
 import { RouteLogPanel } from "./components/RouteLogPanel";
@@ -88,7 +88,7 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<MessageView[]>([]);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [sideTab, setSideTab] = useState<SideTab>("tasks");
   // 开发者模式：显示诊断和路由日志页签；默认关闭，面向普通用户
@@ -261,7 +261,8 @@ export default function App() {
       cid = c.id;
       setCurrent(cid);
     }
-    const optimistic: Message = {
+    const optimistic: MessageView = {
+      card: null,
       id: `local-${Date.now()}`,
       conversation_id: cid,
       role: "user",
@@ -356,6 +357,7 @@ export default function App() {
         )}
         <ChatView
           messages={messages}
+          onRefresh={() => current && refreshConversation(current).catch(() => {})}
           tasks={tasks}
           notes={notes}
           onSend={send}

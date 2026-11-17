@@ -9,6 +9,7 @@
 //!   --tag 标签                           只跑带这个标签的样本（可重复）
 //!   --limit N                            只跑前 N 条
 //!   --label 名称                         结果文件名里的标记，例如模型名
+//!   --agent-management                   打开"对话里管理助手"（AG.4，只在内存里覆盖配置）；评测 evals/agents.jsonl 时用
 //!   --variant E0..E5                     FT 前台提速实验的配置组合（只在内存里覆盖，不改配置文件）：
 //!       E0 开思考（基线）  E1 关思考  E2 关思考+A  E3 关思考+A+B  E4 关思考+A+B+D  E5 开思考+B
 //!       A = front_reason_first，B = [conversation] risk_rules，D = front_thinking_escalation
@@ -81,6 +82,10 @@ struct Expect {
     expect_risk: Option<String>,
     expect_task_id: Option<String>,
     expect_follow_up_kind: Option<String>,
+    /// AG.4：manage_agents 的操作（connect / set_default / disable / enable / list / undo）
+    expect_agent_op: Option<String>,
+    /// AG.4：manage_agents 的助手 id；空字符串表示"没说是哪个"
+    expect_agent_id: Option<String>,
 }
 
 /// 区分"字段不存在"（None）和"字段为 null"（Some(None)）
@@ -93,6 +98,12 @@ impl Expect {
     fn overlay(&mut self, other: &Expect) {
         if other.expect_action.is_some() {
             self.expect_action = other.expect_action.clone();
+        }
+        if other.expect_agent_op.is_some() {
+            self.expect_agent_op = other.expect_agent_op.clone();
+        }
+        if other.expect_agent_id.is_some() {
+            self.expect_agent_id = other.expect_agent_id.clone();
         }
         if other.expect_role.is_some() {
             self.expect_role = other.expect_role.clone();
@@ -145,6 +156,9 @@ struct CaseResult {
     got_follow_up_kind: Option<String>,
     got_task_goal: Option<String>,
     got_question: Option<String>,
+    /// AG.4：manage_agents 的操作和助手 id
+    got_agent_op: Option<String>,
+    got_agent_id: Option<String>,
     /// 每项检查的结果：名称 → 是否通过
     checks: BTreeMap<String, bool>,
     pass: bool,
@@ -168,6 +182,7 @@ fn action_name(d: &TurnDecision) -> &'static str {
         TurnDecision::Clarify { .. } => "clarify",
         TurnDecision::Delegate { .. } => "delegate",
         TurnDecision::FollowUp { .. } => "follow_up",
+        TurnDecision::ManageAgents { .. } => "manage_agents",
     }
 }
 
@@ -254,6 +269,7 @@ struct Args {
     limit: Option<usize>,
     label: Option<String>,
     variant: Option<String>,
+    agent_management: bool,
 }
 
 /// FT 实验组合：(关思考, A 先写理由, B 规则判风险, D 开思考重判)
@@ -369,6 +385,7 @@ fn parse_args() -> Result<Args> {
         limit: None,
         label: None,
         variant: None,
+        agent_management: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(x) = it.next() {
@@ -383,6 +400,7 @@ fn parse_args() -> Result<Args> {
             "--limit" => a.limit = Some(it.next().context("--limit 需要一个值")?.parse()?),
             "--label" => a.label = Some(it.next().context("--label 需要一个值")?),
             "--variant" => a.variant = Some(it.next().context("--variant 需要一个值")?),
+            "--agent-management" => a.agent_management = true,
             o if o.starts_with("--") => bail!("无法识别的参数 {o}"),
             _ => pos.push(x),
         }
@@ -418,6 +436,10 @@ async fn main() -> Result<()> {
     if let Some(v) = &args.variant {
         apply_variant(&mut config, v)?;
         println!("实验组合：{v}");
+    }
+    if args.agent_management {
+        config.conversation.agent_management = true;
+        println!("对话里管理助手：开（只在内存里覆盖）");
     }
     let mode = config.conversation.review_requests;
     let rt = Runtime::with_mcp_diagnostics(
@@ -525,6 +547,10 @@ async fn main() -> Result<()> {
                         r.route_ms = t1.elapsed().as_millis() as u64;
                     }
                     TurnDecision::Respond { .. } => {}
+                    TurnDecision::ManageAgents { op, agent_id, .. } => {
+                        r.got_agent_op = Some(op.as_str().into());
+                        r.got_agent_id = Some(agent_id.clone());
+                    }
                 }
             }
             Err(e) => {
@@ -560,6 +586,17 @@ async fn main() -> Result<()> {
             if let Some(risk) = &expect.expect_risk {
                 r.checks
                     .insert("risk".into(), r.got_risk.as_ref() == Some(risk));
+            }
+        }
+        // AG.4：动作、操作、助手 id 都对才算对
+        if exp_action == "manage_agents" && r.got_action.as_deref() == Some("manage_agents") {
+            if let Some(op) = &expect.expect_agent_op {
+                r.checks
+                    .insert("agent_op".into(), r.got_agent_op.as_ref() == Some(op));
+            }
+            if let Some(id) = &expect.expect_agent_id {
+                r.checks
+                    .insert("agent_id".into(), r.got_agent_id.as_ref() == Some(id));
             }
         }
         if exp_action == "follow_up" && r.got_action.as_deref() == Some("follow_up") {
@@ -820,6 +857,9 @@ async fn main() -> Result<()> {
         "risk": check_rate("risk"),
         "follow_up_task_id": check_rate("task_id"),
         "follow_up_kind": check_rate("follow_up_kind"),
+        "agent_op": check_rate("agent_op"),
+        "agent_id": check_rate("agent_id"),
+        "agent_management": args.agent_management,
         "confusion": matrix,
         "error_types": errors,
         "by_tag": by_tag.iter().map(|(t, (ok, total))| (t.clone(), rate(*ok, *total))).collect::<BTreeMap<_, _>>(),

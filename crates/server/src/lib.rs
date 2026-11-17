@@ -86,6 +86,10 @@ pub fn api(rt: AppState) -> Router {
             "/api/conversations/{id}/messages",
             get(list_messages).post(send_message),
         )
+        .route(
+            "/api/conversations/{id}/agent-proposals",
+            post(propose_in_conversation),
+        )
         .route("/api/tasks", get(list_tasks))
         .route("/api/tasks/{id}", get(get_task))
         .route("/api/tasks/{id}/cancel", post(cancel_task))
@@ -271,14 +275,30 @@ async fn list_conversations(State(rt): State<AppState>) -> ApiResult<Vec<Convers
     Ok(Json(rt.store.list_conversations()?))
 }
 
+/// 消息列表：在原有字段之外多一个 `card`（AG.4 对话里的卡片；没有卡片时为 null）
 async fn list_messages(
     State(rt): State<AppState>,
     Path(id): Path<String>,
-) -> ApiResult<Vec<an_core::Message>> {
+) -> ApiResult<Vec<an_core::MessageView>> {
     rt.store
         .get_conversation(&id)?
         .ok_or_else(|| not_found("会话"))?;
-    Ok(Json(rt.store.list_messages(&id, None)?))
+    Ok(Json(rt.store.list_message_views(&id, None)?))
+}
+
+/// 在会话里生成确认卡（AG.4：用户在选择卡上点选后调用）。只校验、不写配置；确认仍要凭证
+async fn propose_in_conversation(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(change): Json<an_runtime::agent_config::ChangeRequest>,
+) -> ApiResult<an_core::MessageView> {
+    rt.store
+        .get_conversation(&id)?
+        .ok_or_else(|| not_found("会话"))?;
+    rt.agents
+        .propose_in_conversation(&id, change)
+        .map(Json)
+        .map_err(config_error)
 }
 
 #[derive(Deserialize)]

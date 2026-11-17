@@ -193,6 +193,8 @@ struct Pending {
     change: ChangeRequest,
     token: String,
     expires: Instant,
+    /// 从对话里发起时：(会话 id, 确认卡消息 id)。确认后把结果卡写回这个会话（AG.4）
+    origin: Option<(String, String)>,
 }
 
 struct State {
@@ -275,6 +277,21 @@ impl AgentConfigManager {
     /// 托管文件读取失败的原因（含错误码）
     pub fn load_error(&self) -> Option<String> {
         self.lock().load_error.clone()
+    }
+
+    /// 记下提议来自哪个会话、哪条确认卡消息（AG.4）
+    pub fn set_origin(&self, proposal_id: &str, conversation_id: &str, message_id: &str) {
+        if let Some(p) = self.lock().proposals.get_mut(proposal_id) {
+            p.origin = Some((conversation_id.to_string(), message_id.to_string()));
+        }
+    }
+
+    /// 提议的来源（不移除）
+    pub fn origin_of(&self, proposal_id: &str) -> Option<(String, String)> {
+        self.lock()
+            .proposals
+            .get(proposal_id)
+            .and_then(|p| p.origin.clone())
     }
 
     /// 是否有可以撤销的历史版本
@@ -538,6 +555,7 @@ impl AgentConfigManager {
                 change: change.clone(),
                 token: token.clone(),
                 expires: now + ttl,
+                origin: None,
             },
         );
         tracing::info!(event = "agent.config_proposed", proposal_id = %id, kind = change.kind(), summary = %summary);
@@ -904,13 +922,13 @@ impl crate::Runtime {
         }
     }
 
-    /// 确认一次提议（必须带提议时返回的凭证）
+    /// 确认一次提议（必须带提议时返回的凭证）。来自对话的提议，结果卡会写回原会话（AG.4）
     pub async fn apply_agent_proposal(
         &self,
         id: &str,
         token: &str,
     ) -> Result<Applied, ConfigError> {
-        self.agent_config.apply(&self.agent_ctx(), id, token).await
+        self.agents.apply(id, token).await
     }
 }
 

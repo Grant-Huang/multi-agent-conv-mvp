@@ -332,3 +332,7 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
 .card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .error-text { color: #c0392b; margin: 0; font-size: 12px; }
 @media (max-width: 560px) { .agent-card .diff { grid-template-columns: 1fr; } }
+/* AG.4 对话里的卡片 */
+.chat-card { margin-top: 8px; }
+.chat-card .agent-card { background: var(--bg, transparent); }
+.choice-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; }

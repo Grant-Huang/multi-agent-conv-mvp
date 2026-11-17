@@ -123,6 +123,10 @@ pub struct ConversationSection {
     /// 写文件 / 改代码 → 至少 medium）。默认不开。
     #[serde(default)]
     pub risk_rules: bool,
+    /// AG.4：在对话里管理助手（"把 Cursor 接进来"等）。会改变前台判断的 schema，默认关；
+    /// 用户本机评测达标后再决定是否打开
+    #[serde(default)]
+    pub agent_management: bool,
 }
 
 impl Default for ConversationSection {
@@ -131,6 +135,7 @@ impl Default for ConversationSection {
             review_requests: Default::default(),
             stream_replies: true,
             risk_rules: false,
+            agent_management: false,
         }
     }
 }
