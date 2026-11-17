@@ -224,6 +224,7 @@
       "crates/runtime/src/mom/des/physics.rs",
       "crates/runtime/src/mom/des/engine_link.rs",
       "crates/runtime/src/mom/des/observe.rs",
+      "crates/runtime/src/mom/des/coordination.rs",
       "crates/runtime/src/mom/des/review.rs",
       "crates/runtime/src/mom/des/batch.rs",
       "crates/runtime/tests/mom_des.rs",

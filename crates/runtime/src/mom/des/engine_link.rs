@@ -668,12 +668,8 @@ impl Engine {
             !c.cancelled && !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED")
         };
         let c = self.case(case_id)?;
-        // 已请人决策的案例保持为独立处理单元，不再加入事项（决策只能在一处做）。
-        if is_incident(c)
-            || !open(c)
-            || !c.actions.is_empty()
-            || self.decision_requested(case_id)?
-        {
+        // 已执行动作的案例不再加入事项；已请人决策但未执行的可以加入，其决策请求在加入时撤回。
+        if is_incident(c) || !open(c) || !c.actions.is_empty() {
             return Ok(());
         }
         let Some(line) = line_of(&c.asset) else {
@@ -716,13 +712,6 @@ impl Engine {
                             && x.observations.iter().any(|o| o.event.occurred_at >= since)
                     })
                     .collect();
-                let mut undecided = vec![];
-                for x in candidates {
-                    if !self.decision_requested(&x.id)? {
-                        undecided.push(x);
-                    }
-                }
-                let candidates = undecided;
                 if candidates.len() < coord.min_cases.max(2)
                     || !candidates.iter().any(|x| has_alarm(x))
                 {
@@ -733,21 +722,6 @@ impl Engine {
         };
         let existing = active.map(|(id, _)| id);
         self.apply_incident(sim_id, &line, existing, members)
-    }
-
-    /// 案例是否已经发出过决策请求（逐页扫描该案例的事件日志）。
-    fn decision_requested(&self, case_id: &str) -> Result<bool> {
-        let mut after = 0;
-        loop {
-            let page = self.events(case_id, after, 1000)?;
-            if page.iter().any(|ev| ev.kind == "DecisionRequested") {
-                return Ok(true);
-            }
-            match page.last() {
-                Some(last) if page.len() == 1000 => after = last.sequence,
-                _ => return Ok(false),
-            }
-        }
     }
 
     /// 建立或更新协同事项，并把新成员改为只做诊断（同一事务内完成）。
@@ -829,12 +803,15 @@ impl Engine {
                 }
             };
             // 成员：标记归属；已有排产计划且未执行的改为诊断模板。
+            // 已请人决策（等待决策或受阻）的，撤回决策请求：方案修订号加 1，旧批准作废，
+            // 决策此后只在事项上做（设计文档 §6.8，2026-11-17 用户确认方案 A）。
             for m in &new_members {
                 let c = s.cases.get_mut(m).context("member missing")?;
                 let joined = !c.world.get("des_member_of").is_some_and(Value::is_string);
                 c.world["des_member_of"] = json!(incident_id);
                 if c.actions.is_empty() && !c.template.is_empty() && c.template != TPL_DIAGNOSIS {
                     if let Some((template, nodes)) = des_template(c) {
+                        let pending = matches!(c.stage.as_str(), "WAITING_HUMAN" | "BLOCKED");
                         c.template = template;
                         c.nodes = nodes;
                         c.proposal = None;
@@ -848,6 +825,15 @@ impl Engine {
                             json!({"reason": "joined line incident", "incident": incident_id}),
                             events,
                         );
+                        if pending {
+                            emit(
+                                c,
+                                now,
+                                "DecisionWithdrawn",
+                                json!({"reason": "joined line incident", "incident": incident_id, "plan_revision": c.plan_revision}),
+                                events,
+                            );
+                        }
                     }
                 }
                 if joined {

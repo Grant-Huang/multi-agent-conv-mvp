@@ -1551,12 +1551,30 @@ fn rt_des_26_line_incident_coordinates_concurrent_cases() {
                     !mc.nodes.contains_key("schedule"),
                     "member {m} must not schedule"
                 );
-                let decided = e
-                    .events(m, 0, 1000)
-                    .unwrap()
+                // 方案 A（2026-11-17 用户批准）：加入前已请人决策的成员，决策请求必须在加入时撤回；
+                // 加入后不再请人决策。
+                let log = e.events(m, 0, 1000).unwrap();
+                let joined_at = log
                     .iter()
-                    .any(|ev| ev.kind == "DecisionRequested");
-                assert!(!decided, "member {m} must never request a decision");
+                    .position(|ev| ev.kind == "JoinedLineIncident")
+                    .unwrap_or_else(|| panic!("member {m} records joining"));
+                if log[..joined_at]
+                    .iter()
+                    .any(|ev| ev.kind == "DecisionRequested")
+                {
+                    assert!(
+                        log[..=joined_at]
+                            .iter()
+                            .any(|ev| ev.kind == "DecisionWithdrawn"),
+                        "member {m} decided before joining: its request must be withdrawn"
+                    );
+                }
+                assert!(
+                    !log[joined_at..]
+                        .iter()
+                        .any(|ev| ev.kind == "DecisionRequested"),
+                    "member {m} must not request a decision after joining"
+                );
                 if kinds(mc).iter().any(|k| k == "vibration" || k == "quality") {
                     member_assets.insert(mc.asset.clone());
                 }
