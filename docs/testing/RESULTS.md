@@ -167,3 +167,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 环境记录：首次 verify 失败是因为 Playwright 默认的 headless shell 路径不存在，改用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 后通过；之前 `npm ci` 因磁盘写满未完整安装 `@types/node`，重新安装后解决。
 
 范围限制：M4.3 的并行执行与 Composer 汇合回复未接入编排器，RT 用例不覆盖它们；M4.4（真实模型 F 组覆盖率）未运行。
+
+## 2026-11-17 R-20261117-M1
+
+RT-DES-22/23 Red 0通过2失败，缓存实现后2通过；完整Rust检查421通过0失败2原有忽略，clippy无警告，fmt通过；web npm ci、21条测试、构建与test:map通过。为单元回归与仓库检查，不计为浏览器或真实模型验收。证据见 [r-20261117-m1.md](evidence/r-20261117-m1.md)。

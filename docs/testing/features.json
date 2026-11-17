@@ -243,7 +243,7 @@
       "RT-DES-20",
       "RT-DES-21"
     ],
-    "note": "阶段①（开环）已实现，RT-DES 由 Red 转 Green；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。"
+    "note": "阶段①（开环）已实现，RT-DES 由 Red 转 Green；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。 R-20261117-M1：RT-DES-22/23为engine_link.rs中的单元测试（重放计数及恢复后缓存共享），不计入runtime集成测试映射。"
   },
   {
     "id": "agent-links",

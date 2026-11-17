@@ -15,6 +15,7 @@ use crate::mom::{Engine, ScheduledEvent, ScheduledPayload};
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::sync::{Arc, OnceLock};
 
 /// 同一引擎中 DES 仿真数量上限（与脚本仿真一致）。
 const MAX_DES_SIMULATIONS: usize = 50;
@@ -41,16 +42,24 @@ pub(crate) struct DesReplay {
     pub factory: FactoryConfig,
     pub scenario: ScenarioConfig,
     pub attempt: u32,
+    /// Ephemeral replay shared by state clones; never serialized into snapshots/views.
+    #[serde(skip)]
+    telemetry: OnceLock<Arc<super::Telemetry>>,
 }
 
 impl DesReplay {
-    /// 当前时刻的可观测快照（确定性重放后截取）。
+    fn telemetry(&self) -> &super::Telemetry {
+        self.telemetry
+            .get_or_init(|| Arc::new(replay(&self.factory, &self.scenario, self.attempt)))
+            .as_ref()
+    }
+
+    /// 当前时刻的可观测快照（一次确定性重放后截取）。
     fn observe(&self, simulation_id: &str, now: u64) -> Observation {
-        let telemetry = replay(&self.factory, &self.scenario, self.attempt);
         observe::observe(
             simulation_id,
             &self.factory,
-            &telemetry,
+            self.telemetry(),
             self.scenario.start_minute,
             now,
         )
@@ -121,6 +130,7 @@ impl Engine {
                 factory,
                 scenario: scenario.clone(),
                 attempt,
+                telemetry: OnceLock::from(Arc::new(run.telemetry)),
             }),
         };
         self.update(|s, _| {
@@ -170,11 +180,10 @@ impl Engine {
     /// 按观测线性趋势外推到阈值的估计。
     pub fn des_forecast(&self, simulation_id: &str) -> Result<Value> {
         let r = self.des_replay(simulation_id)?;
-        let telemetry = replay(&r.factory, &r.scenario, r.attempt);
         Ok(observe::forecast(
             simulation_id,
             &r.factory,
-            &telemetry,
+            r.telemetry(),
             r.scenario.start_minute,
             self.now(),
         ))
@@ -275,5 +284,114 @@ impl Engine {
                 "provenance": "simulation",
             }))
             .collect::<Vec<_>>())
+    }
+}
+
+#[cfg(test)]
+mod review_regressions {
+    use super::super::scenario::REVIEW_REPLAY_COUNT;
+    use super::*;
+    fn large_engine() -> (Engine, String, super::super::Telemetry, FactoryConfig) {
+        let mut factory = FactoryConfig::line_b_default();
+        while factory.machines.len() < 32 {
+            let i = factory.machines.len();
+            factory.machines.push(super::super::MachineSpec {
+                id: format!("CNC-{i:02}"),
+                line: "Line-B".into(),
+                cycle_seconds: 90,
+            });
+        }
+        let scenario = ScenarioConfig {
+            seed: 1,
+            pattern: Pattern::Script,
+            start_minute: 497,
+            horizon_minutes: 2880,
+            mechanisms: None,
+        };
+        let expected = replay(&factory, &scenario, 0);
+        let mut engine = Engine::memory().unwrap();
+        let id = engine
+            .create_des_simulation(DesSimulationConfig {
+                name: "cache regression".into(),
+                factory: Some(factory.clone()),
+                scenario,
+            })
+            .unwrap();
+        engine.advance(497).unwrap();
+        (engine, id, expected, factory)
+    }
+    #[test]
+    fn rt_des_22_advance_2880_reuses_replay_and_preserves_observations() {
+        let (mut e, id, telemetry, factory) = large_engine();
+        REVIEW_REPLAY_COUNT.with(|c| c.set(0));
+        for step in 1..=2880 {
+            e.advance(497 + step).unwrap();
+            let count = REVIEW_REPLAY_COUNT.with(|c| c.get());
+            assert!(
+                count <= 1,
+                "推进2880分钟至多重放一次，step={step}, count={count}"
+            );
+            if [1, 14, 80, 2880].contains(&step) {
+                let expected =
+                    serde_json::to_value(observe::observe(&id, &factory, &telemetry, 497, e.now()))
+                        .unwrap();
+                let case = e
+                    .state
+                    .cases
+                    .values()
+                    .find(|c| c.batch.starts_with(&format!("{id}:")))
+                    .unwrap();
+                assert_eq!(
+                    case.world["des"], expected,
+                    "缓存快照必须与直接重放逐值一致"
+                );
+                assert_eq!(
+                    e.des_factory_view(&id).unwrap(),
+                    observe::factory_view(&serde_json::from_value(expected).unwrap())
+                );
+            }
+        }
+    }
+    #[test]
+    fn rt_des_23_recovered_cache_is_shared_read_only_and_not_persisted() {
+        let (mut e, id, _, _) = large_engine();
+        let before = serde_json::to_value(&e.state).unwrap();
+        e.state = serde_json::from_value(before.clone()).unwrap();
+        REVIEW_REPLAY_COUNT.with(|c| c.set(0));
+        let view = e.des_factory_view(&id).unwrap();
+        e.des_forecast(&id).unwrap();
+        e.des_whatif(
+            &id,
+            &WhatIfRequest {
+                asset: "CNC-XX".into(),
+                quantity: 500,
+                due_minute: 960,
+            },
+        )
+        .unwrap();
+        assert!(
+            REVIEW_REPLAY_COUNT.with(|c| c.get()) <= 1,
+            "恢复后各读取入口应共用一次重放"
+        );
+        assert_eq!(
+            serde_json::to_value(&e.state).unwrap(),
+            before,
+            "只读缓存不得持久化或改变状态"
+        );
+        e.advance(498).unwrap();
+        e.des_forecast(&id).unwrap();
+        assert!(
+            REVIEW_REPLAY_COUNT.with(|c| c.get()) <= 1,
+            "状态clone后不得丢失缓存"
+        );
+        let again = e.des_factory_view(&id).unwrap();
+        assert_eq!(again["simulation_id"], view["simulation_id"]);
+        let replay =
+            serde_json::to_value(&e.state).unwrap()["des_simulations"][&id]["replay"].clone();
+        assert_eq!(
+            replay.as_object().unwrap().len(),
+            3,
+            "仅持久化factory/scenario/attempt，不持久化遥测"
+        );
     }
 }

@@ -245,9 +245,16 @@ pub(super) fn run_with_attempt(
     )
 }
 
+#[cfg(test)]
+thread_local! {
+    pub(super) static REVIEW_REPLAY_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// 按已选定的尝试序号重放遥测（确定性，与创建时完全相同）。
 /// 引擎只从中截取当前时刻之前、可观测的量（振动、Cpk、刀具计数），不对外暴露主轴磨损。
 pub(super) fn replay(factory: &FactoryConfig, cfg: &ScenarioConfig, attempt: u32) -> Telemetry {
+    #[cfg(test)]
+    REVIEW_REPLAY_COUNT.with(|count| count.set(count.get() + 1));
     if cfg.pattern == Pattern::Script {
         return script(factory, cfg).telemetry;
     }

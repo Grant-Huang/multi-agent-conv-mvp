@@ -397,3 +397,7 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 12. J. Pearl, *Causality: Models, Reasoning, and Inference*, 2nd ed., Cambridge University Press, 2009. ISBN 978-0-521-89560-6.
 13. L. Zheng et al., "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena," NeurIPS 2023 Datasets and Benchmarks. https://arxiv.org/abs/2306.05685
 14. A. Panickssery, S. R. Bowman, S. Feng, "LLM Evaluators Recognize and Favor Their Own Generations," NeurIPS 2024. https://arxiv.org/abs/2404.13076
+
+### 遥测重放缓存（R-20261117-M1）
+
+每个 DES 仿真保留不序列化的内存遥测缓存。创建时复用已生成的轨迹，时钟观察、工厂视图、预测和 what-if 共用它；状态克隆以 Arc 共享缓存。恢复快照后首次读取惰性重放一次。可观测字段过滤不变；缓存不进入快照或 HTTP 返回，删除仿真后随引用释放。

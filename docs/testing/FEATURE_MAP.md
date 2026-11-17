@@ -74,3 +74,5 @@ R-20261113-L1 11-15预审补充：RT-HOST-08验证文件日志降级时不再误
 
 R-20261113-L1 11-16预审：RT-HOST-10确定性验证其他监听者不能满足自己的子进程就绪。host_log_limits/host_diagnostics共用support/service_readiness.rs，等待独立捕获的自身监听日志、存活状态与端口连接；只串行化启动交接。原业务断言不变，host_log_limits连续50次默认并行验证。证据见[evidence/r-20261113-l1-pre-review-20261116.md](evidence/r-20261113-l1-pre-review-20261116.md)。
 R-20261116-L1：RT-HOST-11确定性验证外国监听者不能满足自身子进程就绪。host_guard共用support/service_readiness.rs，确认独立捕获的自身监听日志、Child存活及端口；只串行化启动交接，原RT-HOST-01/02断言不变，连续100次默认并行验证。证据见[evidence/r-20261116-l1.md](evidence/r-20261116-l1.md)。
+
+R-20261117-M1：RT-DES-22/23（engine_link.rs 单元回归）验证32台设备、2880分钟推进只需至多一次重放，观察值与原始轨迹一致；反序列化后 factory/forecast/what-if 共用一次重放，读取不改变持久状态。证据见 [r-20261117-m1.md](evidence/r-20261117-m1.md)。
