@@ -506,7 +506,18 @@ impl ConversationRuntime {
         );
         let messages = [ChatMessage::system(system), ChatMessage::user(goal)];
         match self.reply_llm.chat(&messages).await {
-            Ok(text) if !text.trim().is_empty() => text,
+            // 先大白话，错误码只放在最后的括号里：便于用户截图求助、便于排查
+            Ok(text) if !text.trim().is_empty() => {
+                if text.contains(an_core::codes::ROUTE_NO_AGENT) {
+                    text
+                } else {
+                    format!(
+                        "{}\n\n（技术信息：{}）",
+                        text.trim_end(),
+                        an_core::codes::ROUTE_NO_AGENT
+                    )
+                }
+            }
             _ => format!(
                 "现在没有能做「{label}」的助手（可能被停用了，或者还没有安装），所以这件事还没有开始做。\n\
                  你可以：\n\

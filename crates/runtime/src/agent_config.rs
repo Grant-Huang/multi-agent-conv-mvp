@@ -829,6 +829,32 @@ impl AgentConfigManager {
     }
 }
 
+// ───────────────────────── Runtime 入口 ─────────────────────────
+
+impl crate::Runtime {
+    fn agent_ctx(&self) -> Ctx<'_> {
+        Ctx {
+            config: &self.config,
+            registry: &self.registry,
+            probers: &self.probers,
+        }
+    }
+
+    /// 提议一次 agent 配置修改（只校验、不写入）
+    pub fn propose_agent_change(&self, change: ChangeRequest) -> Result<Proposal, ConfigError> {
+        self.agent_config.propose(&self.agent_ctx(), change)
+    }
+
+    /// 确认一次提议（必须带提议时返回的凭证）
+    pub async fn apply_agent_proposal(
+        &self,
+        id: &str,
+        token: &str,
+    ) -> Result<Applied, ConfigError> {
+        self.agent_config.apply(&self.agent_ctx(), id, token).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -871,31 +897,5 @@ mod tests {
         let back: ManagedConfig = toml::from_str(&m.to_toml()).unwrap();
         assert_eq!(back.acp.disabled, vec!["zcode"]);
         assert_eq!(back.agents.assign["coding"], vec!["cursor"]);
-    }
-}
-
-// ───────────────────────── Runtime 入口 ─────────────────────────
-
-impl crate::Runtime {
-    fn agent_ctx(&self) -> Ctx<'_> {
-        Ctx {
-            config: &self.config,
-            registry: &self.registry,
-            probers: &self.probers,
-        }
-    }
-
-    /// 提议一次 agent 配置修改（只校验、不写入）
-    pub fn propose_agent_change(&self, change: ChangeRequest) -> Result<Proposal, ConfigError> {
-        self.agent_config.propose(&self.agent_ctx(), change)
-    }
-
-    /// 确认一次提议（必须带提议时返回的凭证）
-    pub async fn apply_agent_proposal(
-        &self,
-        id: &str,
-        token: &str,
-    ) -> Result<Applied, ConfigError> {
-        self.agent_config.apply(&self.agent_ctx(), id, token).await
     }
 }

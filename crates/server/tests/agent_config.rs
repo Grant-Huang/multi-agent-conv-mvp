@@ -551,9 +551,16 @@ async fn rt_agcfg_13_no_agent_reply_by_front_model() {
         .await
         .unwrap();
     assert!(out.task.is_none());
-    assert_eq!(
-        out.reply.content, "现在没有能写代码的助手，所以这件事暂时做不了。",
-        "回复应由前台模型生成"
+    // 回复由前台模型生成；错误码只允许出现在末尾的括号里（与 e2e node_flow 的"如实报告错误码"要求一致）
+    let content = out.reply.content.as_str();
+    assert!(
+        content.starts_with("现在没有能写代码的助手，所以这件事暂时做不了。"),
+        "回复应由前台模型生成：{content}"
+    );
+    let code_at = content.find("E_ROUTE_NO_AGENT").expect("末尾应附错误码");
+    assert!(
+        content[code_at..].trim_end().ends_with('）'),
+        "错误码应放在最后的括号里：{content}"
     );
     let reqs = plain.lock().unwrap().clone();
     let text = reqs.iter().map(request_text).collect::<Vec<_>>().join("\n");
