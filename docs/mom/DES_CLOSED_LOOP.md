@@ -1,6 +1,6 @@
 # MOM 车间离散事件仿真（DES）闭环设计
 
-日期：2026-11-17（America/Vancouver）。状态：阶段①（DES 内核与场景生成器，开环）已实现，见 `crates/runtime/src/mom/des/`；阶段②～⑤仅设计。本文是后续实施的基线；实施时按 §15 分阶段提交，每阶段先写用例和失败测试，再改实现。
+日期：2026-11-17（America/Vancouver）。状态：阶段①（DES 内核与场景生成器，开环）与阶段②（工具读取、what-if、只读仿真接口）已实现，见 `crates/runtime/src/mom/des/` 与 `crates/server/src/mom_sim.rs`；阶段③～⑤仅设计。本文是后续实施的基线；实施时按 §15 分阶段提交，每阶段先写用例和失败测试，再改实现。
 
 相关文档：[DESIGN.md](DESIGN.md)（MOM 主架构）、[MOCK_REGISTER.md](MOCK_REGISTER.md)（Mock 台账）、[TEST_PLAN.md](TEST_PLAN.md)、[UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md)、[SPC_TASK_WORKSPACE.md](SPC_TASK_WORKSPACE.md)、[测试指南](../testing/README.md)。
 

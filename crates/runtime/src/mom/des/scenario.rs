@@ -50,6 +50,8 @@ struct Knobs {
     /// 热点设备当前刀具的实际寿命（名义寿命的倍数）区间，用于构造"磨损偏快的刀"。
     hot_tool_life: Option<(f64, f64)>,
     hot_tool_used: Option<(f64, f64)>,
+    /// 固定某台设备的初始主轴磨损（只用于 P0 固定剧本，使背景遥测与剧本事件一致）。
+    forced_wear: Option<(&'static str, f64)>,
 }
 
 fn knobs(pattern: &Pattern) -> Knobs {
@@ -64,6 +66,7 @@ fn knobs(pattern: &Pattern) -> Knobs {
         tool_used: (0.0, 1.0),
         hot_tool_life: None,
         hot_tool_used: None,
+        forced_wear: None,
     };
     match pattern {
         Pattern::Unconstrained | Pattern::Script => base,
@@ -159,6 +162,12 @@ fn precheck(factory: &FactoryConfig, cfg: &ScenarioConfig) -> Result<()> {
         ensure!(ids.insert(m.id.as_str()), "duplicate machine {}", m.id);
     }
     ensure!(
+        factory.machines.len() <= super::MAX_MACHINES,
+        "factory has {} machines; at most {} machines are supported",
+        factory.machines.len(),
+        super::MAX_MACHINES
+    );
+    ensure!(
         (1..=MAX_HORIZON_MINUTES).contains(&cfg.horizon_minutes),
         "horizon must be 1..={MAX_HORIZON_MINUTES} minutes"
     );
@@ -199,9 +208,17 @@ fn precheck(factory: &FactoryConfig, cfg: &ScenarioConfig) -> Result<()> {
 
 /// 生成场景并开环运行。见 `super::run_open_loop` 的说明。
 pub(super) fn run(factory: &FactoryConfig, cfg: &ScenarioConfig) -> Result<DesRun> {
+    run_with_attempt(factory, cfg).map(|(run, _)| run)
+}
+
+/// 同 `run`，另返回满足约束的尝试序号，供引擎按需回放同一条轨迹（阶段②）。
+pub(super) fn run_with_attempt(
+    factory: &FactoryConfig,
+    cfg: &ScenarioConfig,
+) -> Result<(DesRun, u32)> {
     precheck(factory, cfg)?;
     if cfg.pattern == Pattern::Script {
-        return Ok(script(factory, cfg));
+        return Ok((script(factory, cfg), 0));
     }
     let attempts = if cfg.pattern == Pattern::Unconstrained {
         1
@@ -213,11 +230,12 @@ pub(super) fn run(factory: &FactoryConfig, cfg: &ScenarioConfig) -> Result<DesRu
         let sim = simulate(factory, cfg, &knobs(&cfg.pattern), mech, attempt);
         let truth = derive_truth(&sim, mech);
         if satisfies(&cfg.pattern, &sim, &truth) {
-            return Ok(DesRun {
+            let run = DesRun {
                 events: sim.emitted.into_iter().map(|e| e.event).collect(),
                 truth,
                 telemetry: sim.telemetry,
-            });
+            };
+            return Ok((run, attempt));
         }
     }
     bail!(
@@ -225,6 +243,16 @@ pub(super) fn run(factory: &FactoryConfig, cfg: &ScenarioConfig) -> Result<DesRu
         cfg.pattern,
         cfg.seed
     )
+}
+
+/// 按已选定的尝试序号重放遥测（确定性，与创建时完全相同）。
+/// 引擎只从中截取当前时刻之前、可观测的量（振动、Cpk、刀具计数），不对外暴露主轴磨损。
+pub(super) fn replay(factory: &FactoryConfig, cfg: &ScenarioConfig, attempt: u32) -> Telemetry {
+    if cfg.pattern == Pattern::Script {
+        return script(factory, cfg).telemetry;
+    }
+    let mech = mechanisms(cfg, attempt);
+    simulate(factory, cfg, &knobs(&cfg.pattern), mech, attempt).telemetry
 }
 
 // ───────────────────────── 逐分钟仿真 ─────────────────────────
@@ -342,7 +370,11 @@ fn simulate(
             let mut init = Rng::stream(cfg.seed, attempt, &format!("machine:{}:init", spec.id));
             let is_hot = hot.contains(&i);
             let (lo, hi) = if is_hot { k.hot_wear } else { k.base_wear };
-            let wear = init.uniform(lo, hi);
+            let sampled = init.uniform(lo, hi);
+            let wear = match k.forced_wear {
+                Some((id, w)) if id == spec.id => w,
+                _ => sampled,
+            };
             let (tlo, thi) = match (is_hot, k.hot_tool_used) {
                 (true, Some(range)) => range,
                 _ => k.tool_used,
@@ -495,6 +527,10 @@ fn simulate(
             m.telemetry.cpk.push(Sample {
                 at_seconds,
                 value: cpk,
+            });
+            m.telemetry.tool_parts.push(Sample {
+                at_seconds,
+                value: m.tool_parts,
             });
 
             // 振动：进入 C 区并持续若干分钟才报警；报警后锁存，回到 B 区以下才解除。
@@ -864,10 +900,22 @@ fn satisfies(pattern: &Pattern, sim: &Simulated, truth: &GroundTruth) -> bool {
 // ───────────────────────── P0 固定剧本 ─────────────────────────
 
 /// P0：复现 S1 夹具的时序（插单 08:17、振动 +6、质量 +14），批次 B77、客户 A。
-/// 这是固定剧本夹具，事件不由仿真产生；遥测取同一工厂的安静运行作背景。
+/// 这是固定剧本夹具，事件时刻不由仿真产生；背景遥测用安静运行，但 CNC-XX 的初始主轴磨损固定为 1.62，
+/// 使它在剧本期间振动处于 C 区、Cpk 低于门槛，与剧本事件一致；事件中的读数取自该遥测。
 fn script(factory: &FactoryConfig, cfg: &ScenarioConfig) -> DesRun {
-    let quiet = simulate(factory, cfg, &knobs(&Pattern::Quiet), spindle_only(), 0);
+    let k = Knobs {
+        forced_wear: Some(("CNC-XX", 1.62)),
+        ..knobs(&Pattern::Quiet)
+    };
+    let quiet = simulate(factory, cfg, &k, spindle_only(), 0);
     let start = cfg.start_minute;
+    let xx = quiet.telemetry.machines.get("CNC-XX");
+    let reading = |series: fn(&MachineTelemetry) -> &Vec<Sample>, minute: usize, digits: i32| {
+        xx.and_then(|t| series(t).get(minute))
+            .map_or(0.0, |s| round(s.value.clamp(0.0, 5.0), digits))
+    };
+    let vibration = reading(|t| &t.vibration_mm_s, 6, 2);
+    let cpk = reading(|t| &t.cpk, 14, 3);
     let event =
         |id: &str, kind: &str, source: &str, at: u64, payload: serde_json::Value| EventInput {
             id: id.into(),
@@ -886,21 +934,21 @@ fn script(factory: &FactoryConfig, cfg: &ScenarioConfig) -> DesRun {
             "order",
             "MES",
             start,
-            json!({"line":"Line-B","order":"ORD-A-URGENT","quantity":500,"due_minute":960}),
+            json!({"line":"Line-B","order":"ORD-A-URGENT","quantity":500,"due_minute":start + 463}),
         ),
         event(
             "P0-vibration",
             "vibration",
             "EAM",
             start + 6,
-            json!({"line":"Line-B","vibration_mm_s":3.1,"zone":"C"}),
+            json!({"line":"Line-B","vibration_mm_s":vibration,"zone":"C"}),
         ),
         event(
             "P0-quality",
             "quality",
             "QMS",
             start + 14,
-            json!({"line":"Line-B","cpk":1.1,"threshold":CPK_THRESHOLD}),
+            json!({"line":"Line-B","cpk":cpk,"threshold":CPK_THRESHOLD}),
         ),
     ];
     let cause = vec!["spindle_wear:CNC-XX".to_string()];

@@ -223,6 +223,7 @@
       "crates/runtime/src/mom/des/scenario.rs",
       "crates/runtime/src/mom/des/physics.rs",
       "crates/runtime/src/mom/des/engine_link.rs",
+      "crates/runtime/src/mom/des/observe.rs",
       "crates/runtime/tests/mom_des.rs",
       "crates/server/src/mom_sim.rs",
       "crates/server/tests/mom_des.rs"

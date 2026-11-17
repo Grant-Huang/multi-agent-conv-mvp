@@ -15,11 +15,13 @@
 //! - 阶段①只产生 `order` / `vibration` / `quality` 三类事件（决策 D7）。
 //! - 标准答案（`GroundTruth`）只供审核层读取，不得进入 agent 视图、人类视图、工具返回或仿真列表。
 mod engine_link;
+mod observe;
 mod physics;
 mod rng;
 mod scenario;
 
 pub use engine_link::DesSimulation;
+pub(crate) use observe::read_tool;
 
 use super::EventInput;
 use anyhow::Result;
@@ -218,8 +220,10 @@ pub struct MachineTelemetry {
     pub spindle_wear: Vec<Sample>,
     /// 振动有效值（mm/s）。
     pub vibration_mm_s: Vec<Sample>,
-    /// 滚动窗口 Cpk。
+    /// 过程能力 Cpk（阶段①为模型值，见设计文档 §4.2 修订说明）。
     pub cpk: Vec<Sample>,
+    /// 当前刀具已加工件数（MES 刀具计数器，可观测）。
+    pub tool_parts: Vec<Sample>,
 }
 
 /// 全部设备的遥测，按设备编号索引。
