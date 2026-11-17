@@ -233,3 +233,21 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGCAT-07 | agent-catalog | 目录内预设未安装 | kind = not_installed，立即返回 |
 | RT-AGCAT-08 | agent-catalog | 未知 id、非 ACP agent（general）；请求体附带 command 字段 | 未知和非 ACP 返回 404；带 command 的请求被拒绝，命令未被执行 |
 | RT-AGCAT-09 | agent-catalog | 检测已注册 agent 成功 | 健康接口中该 agent 的连接状态变为 connected |
+
+## 前台提速：先写理由 / 规则判风险 / 可疑时再思考（FT.1，实现前定义）
+
+用假模型服务记录每个请求体，按脚本返回结果。"不思考"指请求带 `chat_template_kwargs.enable_thinking = false`；"思考"指不带这个设置（沿用模型默认）。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-FT-01 | front-thinking | 不写任何新配置（基线） | 前台请求不带 enable_thinking；turn_decision 没有 reason 字段；route_decision 的 reason 仍在最后 |
+| RT-FT-02 | front-thinking | 不思考 + front_reason_first | turn_decision 与 route_decision 的第一个字段都是 reason，最长 40 字，且为必填 |
+| RT-FT-03 | front-thinking | 只开 front_reason_first、不关思考 | schema 与基线相同（A 只在不思考时生效） |
+| RT-FT-04 | front-thinking | risk_rules 开；模型给 low 的"删除生产环境数据库旧表"、给 low 的"修改 src/main.rs"、给 high 的"总结这篇文章" | 风险分别为 high、medium、high（只升不降） |
+| RT-FT-05 | front-thinking | risk_rules 不开；模型给 low 的"删除生产环境数据库旧表" | 风险保持 low |
+| RT-FT-06 | front-thinking | 不思考 + 升级；前台判断第一次输出不是 JSON，第二次合格 | 共 2 次请求：第 1 次不思考，第 2 次思考；结果取第 2 次 |
+| RT-FT-07 | front-thinking | 不思考 + 升级；路由第一次给 high，思考后给 medium | 共 2 次路由请求，第 2 次思考；最终风险 medium |
+| RT-FT-08 | front-thinking | 不思考 + 升级；路由第一次选了没有可用 agent 的 coding，思考后选 general | 路由成功，角色 general；第 2 次请求思考 |
+| RT-FT-09 | front-thinking | 不思考 + 升级；前台判断第一次给 delegate 但 task_goal 为空，思考后合格 | 共 2 次请求，第 2 次思考；结果为 delegate 且目标非空 |
+| RT-FT-10 | front-thinking | 不思考 + 升级，max_retries = 1；前台判断始终输出非 JSON | 返回错误；不思考的请求只有 1 次，之后都是思考请求（1 + max_retries 次），不会退回不思考 |
+| RT-FT-11 | front-thinking | 不思考但不开升级，或开升级但没关思考；第一次输出非 JSON、第二次合格 | 两次请求的思考设置相同（与现在的重试行为一致） |

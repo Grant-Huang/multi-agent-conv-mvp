@@ -347,5 +347,30 @@
       "RT-AGCAT-08",
       "RT-AGCAT-09"
     ]
+  },
+  {
+    "id": "front-thinking",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/conversation.rs",
+      "crates/runtime/src/router.rs",
+      "crates/llm/src/lib.rs",
+      "crates/runtime/src/backends.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-FT-01",
+      "RT-FT-02",
+      "RT-FT-03",
+      "RT-FT-04",
+      "RT-FT-05",
+      "RT-FT-06",
+      "RT-FT-07",
+      "RT-FT-08",
+      "RT-FT-09",
+      "RT-FT-10",
+      "RT-FT-11"
+    ]
   }
 ]
