@@ -247,7 +247,7 @@ export function ResultCard(props: {
         <p className="error-text">{props.error}</p>
       ) : (
         <>
-          <p className="summary">已完成：{props.applied?.summary}</p>
+          <p className="summary">{props.applied?.summary}</p>
           {props.applied?.probes.map((p) => (
             <p key={p.id} className="result-line">
               检测「{p.id}」：{probeText(p)}

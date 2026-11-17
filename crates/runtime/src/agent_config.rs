@@ -460,6 +460,21 @@ pub fn merged_assign(
     m
 }
 
+/// 给用户看的名称：注册表里的显示名 → 托管配置里的 name → 预设名 → id
+fn display_name(ctx: &Ctx<'_>, managed: &ManagedConfig, id: &str) -> String {
+    if let Some(c) = ctx.registry.cards().into_iter().find(|c| c.id == id) {
+        return c.name;
+    }
+    managed
+        .acp
+        .agents
+        .iter()
+        .chain(presets().iter())
+        .find(|a| a.id == id)
+        .and_then(|a| a.name.clone())
+        .unwrap_or_else(|| id.to_string())
+}
+
 fn same_config(a: &AcpConfig, b: &AcpConfig) -> bool {
     serde_json::to_value(a).ok() == serde_json::to_value(b).ok()
 }
@@ -814,14 +829,17 @@ impl AgentConfigManager {
                         ));
                     }
                 }
-                summary = format!("停用 {id}：之后不再把任务交给它，正在做的任务会照常做完");
+                summary = format!(
+                    "停用「{}」：之后不再把任务交给它，正在做的任务会照常做完",
+                    display_name(ctx, current, id)
+                );
             }
             ChangeRequest::Enable { id } => {
                 if !current.acp.disabled.contains(id) {
                     return Err(ConfigError::Conflict(format!("{id} 没有被停用")));
                 }
                 next.acp.disabled.retain(|d| d != id);
-                summary = format!("恢复启用 {id}");
+                summary = format!("恢复启用「{}」", display_name(ctx, current, id));
             }
             ChangeRequest::Remove { id } => {
                 if in_toml(id) {
@@ -837,7 +855,7 @@ impl AgentConfigManager {
                     ids.retain(|x| x != id);
                 }
                 next.agents.assign.retain(|_, ids| !ids.is_empty());
-                summary = format!("移除自定义 agent {id}");
+                summary = format!("移除自定义助手「{}」", display_name(ctx, current, id));
             }
             ChangeRequest::Revert => {
                 let Some(prev) = self.history_top() else {
