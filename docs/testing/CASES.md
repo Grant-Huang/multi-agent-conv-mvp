@@ -265,3 +265,16 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-21 | mom-des | 默认工厂扩充到 32 台和 33 台设备 | 开环运行与在引擎中创建 | 32 台可以运行；33 台被拒绝，错误说明设备数上限 |
 | HTTP-DES-01 | mom-des | an-mom 服务，已用 S1 场景取得案例并创建 P0 DES 仿真 | 推进 30 分钟后读取工厂状态、趋势预测与 what-if | 创建返回仿真编号；工厂状态列出各设备振动、Cpk、刀具与资源，截至时间等于当前虚拟时间；预测按观测线性趋势给出到达阈值的估计分钟数并注明方法；what-if 返回 3 个方案；所有返回 provenance=simulation，且不含标准答案字段与主轴磨损量 |
 | HTTP-DES-02 | mom-des | 同上 | what-if 数量为 0、交期超过 48 小时、未知仿真或设备；创建 33 台设备的仿真 | 均返回 400 及说明，2 秒内返回；之后工厂状态接口仍正常响应 |
+
+## MOM 车间 DES 阶段③：方案选择、执行回写与核验（实现前定义）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §6.4～§6.7 与阶段③修订说明。阶段③起 DES 是闭环：执行动作作为"干预"记入仿真，从执行时刻起重新推演，之后的遥测、事件和标准答案随之改变；执行时刻之前的历史不变。被测接口：`Engine::select_des_plan`（从排产方案中选定一个可行方案，选定后需重新批准）、`Engine::des_inject_fault`（注入仿真故障）、执行与核验沿用现有 `approve` / `execute` / `close`；HTTP 新增命令 `select_plan`。runtime 测试在 `crates/runtime/tests/mom_des.rs`，HTTP 测试在 `crates/server/tests/mom_des.rs`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DES-08 | mom-des | P0 固定剧本 DES 案例进入人工决策 | 选定方案 B、批准、执行，再推进到维修完成后 | 不可行的方案 A 不能被选定；维修动作在"完成当前批次 30 分钟 + 维修 240 分钟"后完成，调拨动作在 45 分钟后完成，而不是固定 2 分钟；维修期间工厂视图显示 CNC-XX 停机，调拨到达后 CNC-XZ 有刀；维修完成后 CNC-XX 恢复运行、振动低于 2.8 mm/s、Cpk 不低于 1.33；全部动作核验后案例可以关闭 |
+| RT-DES-09 | mom-des | 同上，已按方案 C 执行 | 同一设备再到一条质量观测 | 观测作为核验证据记录（事件 `VerificationObservationRecorded`），不产生 `PlanInvalidated`，计划版本和阶段不变 |
+| RT-DES-10 | mom-des | 同上，已按方案 C 执行 | 同一案例再到一张新插单 | 仍产生 `PlanInvalidated` 并进入人工处理（基线：既有行为，补录为回归保护） |
+| RT-DES-11 | mom-des | 同上，选定方案 C 并批准后，仓库备件被注入故障清空 | 执行，再推进 60 分钟 | 刀具调拨动作失败，案例进入 PARTIAL 并产生 `CompensationRequired`；CNC-XZ 仍然无刀 |
+| RT-DES-18 | mom-des | 资源竞争模式的 DES 仿真产生多个不同设备的报警案例 | 推进到仿真结束 | 同线、共用维修班组的报警案例之间互相记录 `RelatedCaseLinked`，理由写明共用资源；不与脚本案例关联 |
+| HTTP-DES-03 | mom-des | an-mom 服务中的 P0 DES 案例进入人工决策 | 依次发送 select_plan(B)、approve、execute、advance、close 命令 | 每步返回 200；推进后工厂视图显示 CNC-XX 恢复运行且振动低于 2.8 mm/s；案例全部动作核验并成功关闭 |

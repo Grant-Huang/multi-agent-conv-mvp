@@ -24,6 +24,8 @@ pub use engine_link::DesSimulation;
 pub(crate) use observe::read_tool;
 
 use super::EventInput;
+/// 仿真产生的事件与引擎观测使用同一结构。
+pub(crate) type DesEvent = EventInput;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -94,6 +96,28 @@ impl Default for ResourceConfig {
             urgent_capacity_share: 1.0,
         }
     }
+}
+
+/// 执行动作对仿真世界的干预（阶段③）。时刻为绝对虚拟分钟。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Intervention {
+    /// 停机维修：`[start_minute, end_minute)` 期间停机；结束时主轴磨损复位、报警锁存解除。
+    Maintenance {
+        machine: String,
+        start_minute: u64,
+        end_minute: u64,
+    },
+    /// 刀具调拨：`arrive_minute` 起该设备装有所需刀具。
+    ToolTransfer { machine: String, arrive_minute: u64 },
+}
+
+/// 注入 DES 仿真的故障（阶段③），用于检验执行时的失败与补偿。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DesFault {
+    /// 仓库备用刀具全部丢失（被他处领用或检出不合格），之后的刀具调拨失败。
+    ToolSparesLost,
 }
 
 /// what-if 请求：为某个报警设备上的订单比较候选方案。

@@ -4,7 +4,7 @@
 //! 刀具计数和资源配置——不读取主轴磨损等隐状态，也不复跑带随机数的仿真。
 //! 因此 what-if 是计划工具，结果可能与之后仿真世界的真实演化不同，这正是被测系统需要面对的不确定性。
 
-use super::{FactoryConfig, ResourceConfig, Telemetry, WhatIfRequest, CPK_THRESHOLD};
+use super::{FactoryConfig, Intervention, ResourceConfig, Telemetry, WhatIfRequest, CPK_THRESHOLD};
 use crate::mom::tools::ToolResponse;
 use crate::mom::Case;
 use anyhow::{ensure, Context, Result};
@@ -79,14 +79,36 @@ fn index_at(telemetry: &Telemetry, start_minute: u64, now: u64) -> usize {
 }
 
 /// 从遥测中截取 `now` 时刻的可观测状态。
+///
+/// 阶段③：已到达的刀具调拨使该设备有刀；已发起的调拨占用备件；备件丢失故障后可用备件为 0。
 pub(super) fn observe(
     simulation_id: &str,
     factory: &FactoryConfig,
     telemetry: &Telemetry,
     start_minute: u64,
     now: u64,
+    interventions: &[Intervention],
+    spares_lost: bool,
 ) -> Observation {
     let i = index_at(telemetry, start_minute, now);
+    let transfers: Vec<(&str, u64)> = interventions
+        .iter()
+        .filter_map(|iv| match iv {
+            Intervention::ToolTransfer {
+                machine,
+                arrive_minute,
+            } => Some((machine.as_str(), *arrive_minute)),
+            Intervention::Maintenance { .. } => None,
+        })
+        .collect();
+    let arrived = |id: &str| transfers.iter().any(|(m, at)| *m == id && *at <= now);
+    let mut resources = factory.resources.clone();
+    resources.missing_tool.retain(|m| !arrived(m));
+    resources.tool_spares = if spares_lost {
+        0
+    } else {
+        resources.tool_spares.saturating_sub(transfers.len() as u32)
+    };
     let machines = factory
         .machines
         .iter()
@@ -107,7 +129,7 @@ pub(super) fn observe(
                 zone: zone(vibration).into(),
                 cpk: round(t.cpk.get(i)?.value, 3),
                 tool_parts: round(t.tool_parts.get(i).map_or(0.0, |s| s.value), 1),
-                tool_present: !factory.resources.missing_tool.contains(&spec.id),
+                tool_present: !resources.missing_tool.contains(&spec.id),
                 certified: !factory.resources.uncertified.contains(&spec.id),
             })
         })
@@ -116,7 +138,7 @@ pub(super) fn observe(
         simulation_id: simulation_id.into(),
         observed_at: now,
         machines,
-        resources: factory.resources.clone(),
+        resources,
     }
 }
 

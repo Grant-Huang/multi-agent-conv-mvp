@@ -159,6 +159,19 @@ impl Engine {
             let id=s.cases.values().find(|c|c.scenario==input.scenario&&c.batch==input.batch&&c.customer==input.customer&&c.asset==input.asset&&!matches!(c.stage.as_str(),"CLOSED"|"CANCELLED")).map(|c|c.id.clone()).unwrap_or_else(||format!("CASE-{}-{}",input.scenario,s.cases.len()+1));
             let received_at=s.now;
             let c=s.cases.entry(id.clone()).or_insert_with(||new_case(&id,&input,received_at));
+            // 车间 DES 案例（阶段③，D2）：执行之后同一设备的振动、质量观测是核验证据，不使计划失效。
+            // 安全联锁观测仍走原有路径。脚本案例（没有 world.des）不受影响。
+            let des_verification=c.world.get("des").is_some_and(Value::is_object)&&!c.actions.is_empty()
+                &&input.asset==c.asset&&matches!(input.kind.as_str(),"vibration"|"quality")
+                &&input.payload["safety_trip"]!=true&&c.world["safety_trip"]!=true;
+            if des_verification {
+                c.observations.push(Observation{event:input.clone(),received_at:s.now,provenance:"simulation".into()});
+                let evid=format!("obs:{}:{}",input.source,input.id);
+                c.evidence.insert(evid.clone(),json!({"source":input.source,"payload":input.payload,"occurred_at":input.occurred_at,"received_at":s.now,"provenance":"simulation","mock_ids":["M01","M27"],"verification":true}));
+                emit(c, s.now,"VerificationObservationRecorded",json!({"evidence_ref":evid}),events);
+                s.seen.insert(key,id.clone());
+                return Ok(id);
+            }
             if !c.nodes.is_empty() {
                 c.resource_version+=1;c.approvals.clear();
                 if c.actions.is_empty(){
@@ -331,7 +344,9 @@ impl Engine {
                 c.outbox.push(json!({"key":key,"customer":c.customer,"report":report,"provenance":"mock","mock_ids":["M16"],"sent_at":s.now}));
                 c.stage="INVESTIGATING".into();
             }
-            emit(c, s.now,"ActionAccepted",json!({"scope":scope,"provenance":"mock"}),events);Ok(())})
+            emit(c, s.now,"ActionAccepted",json!({"scope":scope,"provenance":"mock"}),events);Ok(())})?;
+        // 车间 DES 案例（阶段③）：按选定方案把动作记为仿真干预，并由仿真决定动作完成时刻；其他案例不受影响。
+        self.des_after_execute(id, scope)
     }
     pub fn close(&mut self, id: &str) -> Result<()> {
         self.update(|s, events| {
