@@ -214,7 +214,8 @@ impl Engine {
                 Err(e) => self.mark_delivery(&id, &event.id, "FAILED", Some(e.to_string()))?,
             }
         }
-        Ok(())
+        // DES 仿真的事件在脚本事件之后投递，不影响脚本仿真的行为。
+        self.deliver_des(now)
     }
     fn mark_delivery(
         &mut self,
@@ -244,7 +245,7 @@ impl Engine {
         })
     }
     pub fn simulations_view(&self) -> Value {
-        json!({"now":self.now(),"playback":self.state.playback,"simulation_rate":"1 wall second = 1 virtual minute","simulations":self.state.simulations.values().map(|sim|json!({"case_id":sim.case_id,"config":sim.config,"started_at":sim.started_at,"pending":sim.queue.iter().filter(|e|e.status=="PENDING").count(),"queue":sim.queue})).collect::<Vec<_>>()})
+        json!({"now":self.now(),"playback":self.state.playback,"simulation_rate":"1 wall second = 1 virtual minute","des_simulations":self.des_simulations_view(),"simulations":self.state.simulations.values().map(|sim|json!({"case_id":sim.case_id,"config":sim.config,"started_at":sim.started_at,"pending":sim.queue.iter().filter(|e|e.status=="PENDING").count(),"queue":sim.queue})).collect::<Vec<_>>()})
     }
     pub fn set_playback(&mut self, playing: bool, minutes: u64) -> Result<()> {
         ensure!(

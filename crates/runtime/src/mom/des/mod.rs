@@ -2,18 +2,28 @@
 //!
 //! 设计见 `docs/mom/DES_CLOSED_LOOP.md`（§4 场景生成器、§5 内核、§15 验收用例）。
 //!
-//! **当前状态：接口骨架。** 本文件只定义被测接口与数据结构，行为尚未实现；
-//! 按"测试先行"约定，`crates/runtime/tests/mom_des.rs` 中的 RT-DES-* 用例此时应因业务断言失败（Red）。
-//! 实现阶段在此基础上补齐，不改变下列公开接口的含义。
+//! 模块组成：
+//! - `rng`：可复现的独立随机流；
+//! - `physics`：规律模型（磨损、振动、刀具、尺寸与 Cpk），常数均为建模假设；
+//! - `scenario`：场景模式、逐分钟开环仿真、报警发生器、标准答案导出；
+//! - `engine_link`：在 MOM 引擎中创建 DES 仿真、按虚拟时钟投递事件、只向审核层提供标准答案。
+//!
+//! 验收用例：`crates/runtime/tests/mom_des.rs`（RT-DES-01～05、16、17）。
 //!
 //! 约定：
-//! - 仿真内部时间以秒计；对外事件沿用 `EventInput.occurred_at`（虚拟分钟）。
+//! - 仿真按虚拟分钟推进（与引擎时钟一致），遥测时间戳以秒记录；对外事件沿用 `EventInput.occurred_at`（虚拟分钟）。
 //! - 阶段①只产生 `order` / `vibration` / `quality` 三类事件（决策 D7）。
 //! - 标准答案（`GroundTruth`）只供审核层读取，不得进入 agent 视图、人类视图、工具返回或仿真列表。
-use super::{Engine, EventInput};
-use anyhow::{bail, Result};
+mod engine_link;
+mod physics;
+mod rng;
+mod scenario;
+
+pub use engine_link::DesSimulation;
+
+use super::EventInput;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// 过程能力警戒门槛（与现有 S1 夹具一致；是行业惯例而非普适标准，见设计文档 §4.2）。
@@ -170,11 +180,12 @@ pub struct DesRun {
 
 /// 生成场景并开环运行到 `start_minute + horizon_minutes`。
 ///
-/// 约束无法满足时返回含 "constraint" 的错误，不得放宽约束（RT-DES-16）。
-///
-/// 骨架：尚未实现，返回空结果，使 RT-DES-* 因业务断言失败。
-pub fn run_open_loop(_factory: &FactoryConfig, _scenario: &ScenarioConfig) -> Result<DesRun> {
-    Ok(DesRun::default())
+/// - 相同的工厂与场景配置，输出逐字节相同（RT-DES-01）。
+/// - 场景模式不满足时换下一个尝试序号重新抽样，最多 256 次；仍不满足或事先就能判定不可能时，
+///   返回含 "constraint" 的错误，不放宽约束（RT-DES-16）。
+/// - `Pattern::Script` 是固定剧本夹具：事件按 S1 时序给出，不由仿真产生。
+pub fn run_open_loop(factory: &FactoryConfig, scenario: &ScenarioConfig) -> Result<DesRun> {
+    scenario::run(factory, scenario)
 }
 
 /// 在引擎中创建 DES 仿真的配置。与脚本模式的 `SimulationConfig` 分开，
@@ -186,20 +197,4 @@ pub struct DesSimulationConfig {
     /// `None` 使用 `FactoryConfig::line_b_default()`。
     pub factory: Option<FactoryConfig>,
     pub scenario: ScenarioConfig,
-}
-
-impl Engine {
-    /// 创建 DES 仿真，返回仿真编号。事件经现有虚拟时钟逐分钟投递到 `ingest`。
-    ///
-    /// 骨架：尚未实现。
-    pub fn create_des_simulation(&mut self, _config: DesSimulationConfig) -> Result<String> {
-        bail!("DES simulation is not implemented yet")
-    }
-
-    /// 读取某个 DES 仿真的标准答案。只供审核层使用，不得被 agent 或人类视图引用。
-    ///
-    /// 骨架：尚未实现。
-    pub fn des_review_truth(&self, _simulation_id: &str) -> Result<Value> {
-        bail!("DES review truth is not implemented yet")
-    }
 }

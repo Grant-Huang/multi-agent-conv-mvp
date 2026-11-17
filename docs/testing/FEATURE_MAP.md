@@ -39,7 +39,7 @@ MOM 增量：主界面左侧 **MOM 运营沙盘** → 同源 `/mom/`；配置持
 
 RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS 不可用时的安全降级、上下文写入校验与未启用时的兼容；HTTP-MOM-RELOS-01/02（`crates/server/tests/mom.rs`）用桩 RelOS 与无人监听地址验证 an-mom 的端到端调用。RelOS 知识为仿真数据（台账 M24）。
 
-车间 DES 阶段①（`mom-des`，开环）：RT-DES-01～05、16、17（`crates/runtime/tests/mom_des.rs`）定义可复现、主轴磨损因果、报警锁存、标准答案隔离、脚本模式不变、场景模式约束与随机流独立；当前只有接口骨架（`crates/runtime/src/mom/des.rs`），用例处于实现前 Red。设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md)；DES 为仿真，参数为建模假设。
+车间 DES 阶段①（`mom-des`，开环）：RT-DES-01～05、16、17（`crates/runtime/tests/mom_des.rs`）定义可复现、主轴磨损因果、报警锁存、标准答案隔离、脚本模式不变、场景模式约束与随机流独立；实现位于 `crates/runtime/src/mom/des/`，阶段①为开环（事件一次生成后按虚拟时钟投递，处置不影响后续事件），Red→Green 证据见 [mom-des-phase1.md](evidence/mom-des-phase1.md)。设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md)；DES 为仿真，参数为建模假设。
 
 专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
 
