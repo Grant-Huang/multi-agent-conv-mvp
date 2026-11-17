@@ -251,3 +251,24 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-FT-09 | front-thinking | 不思考 + 升级；前台判断第一次给 delegate 但 task_goal 为空，思考后合格 | 共 2 次请求，第 2 次思考；结果为 delegate 且目标非空 |
 | RT-FT-10 | front-thinking | 不思考 + 升级，max_retries = 1；前台判断始终输出非 JSON | 返回错误；不思考的请求只有 1 次，之后都是思考请求（1 + max_retries 次），不会退回不思考 |
 | RT-FT-11 | front-thinking | 不思考但不开升级，或开升级但没关思考；第一次输出非 JSON、第二次合格 | 两次请求的思考设置相同（与现在的重试行为一致） |
+
+## 托管配置、热注册与撤销（AG.2，实现前定义）
+
+接口：`POST /api/agents/proposals`（只校验、不写入，返回提议与一次性确认凭证）、`POST /api/agents/proposals/{id}/apply {"token"}`。提议类型：add_preset、add_custom、set_default、disable、enable、remove、revert。托管文件放在数据库同目录的 `agents.managed.toml`。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGCFG-01 | agent-config | 自动发现关闭，claude-agent-acp 已安装；提议接入预设 claude 并确认 | 不重启即出现在注册表；目录状态为 registered；已做过一次握手检测；托管文件含 claude |
+| RT-AGCFG-02 | agent-config | 两个 coding agent m1、m2（config.toml 没写执行组）；提议把 coding 默认设为 m2 并确认 | 新的 coding 分配得到 m2 |
+| RT-AGCFG-03 | agent-config | 托管 agent 正在执行任务（持有名额）；停用它 | 新分配不再得到它；执行中的名额仍可用并能正常归还 |
+| RT-AGCFG-04 | agent-config | 唯一的 coding agent 忙，另一个分配在排队；停用它 | 排队的分配报 E_ROUTE_NO_AGENT，说明里有"已被停用或没有安装"之类的大白话 |
+| RT-AGCFG-05 | agent-config | 连续两次修改后撤销两次，再撤销一次 | 两次撤销依次恢复，注册表同步；第三次撤销被拒绝（没有可撤销的版本） |
+| RT-AGCFG-06 | agent-config | 托管文件有自定义 agent、默认执行者，以及与已安装预设同 id 的托管 agent；重新启动 | 托管内容生效；同 id 时托管配置优先于自动发现的预设 |
+| RT-AGCFG-07 | agent-config | config.toml 手写了 agent "hand" 和 coding 执行组 | 停用 hand、改 coding 默认、托管同 id agent 的提议都被拒绝，并说明要改 config.toml |
+| RT-AGCFG-08 | agent-config | 确认时不带凭证、凭证错误、提议已过期 | 分别被拒绝（403、403、410）；托管文件和注册表都不变 |
+| RT-AGCFG-09 | agent-config | 启动前托管文件内容损坏 | 启动正常；状态里报 E_AGENT_MANAGED_INVALID；坏文件内容不变；新提议被拒绝并说明原因 |
+| RT-AGCFG-10 | agent-config | 自定义 agent 的 env 写了明文值；另一个只写 `${VAR}` 引用 | 写明文的提议被拒绝；写引用的被接受，托管文件里只有引用 |
+| RT-AGCFG-11 | agent-config | 把两个不同类型的 agent 设为同一个执行组 | 提议被拒绝；注册表执行组不变 |
+| RT-AGCFG-12 | agent-config | 两个不同的修改同时确认 | 两个都生效；托管文件是完整的合法 TOML，包含两处修改 |
+| RT-AGCFG-13 | agent-config | 对话中派发写代码任务，但没有任何可用的 coding agent | 回复由前台模型生成，请求里带了原因和"用非专业用户能看懂的话"的要求；模型不可用时的兜底文字不以错误码开头 |
+| RT-AGCFG-14 | agent-config | 写代码任务在执行阶段因没有可用 coding agent 失败 | 交付消息由前台模型撰写，提供给它的材料里有原因和恢复办法，并要求用大白话 |

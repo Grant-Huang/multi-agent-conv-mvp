@@ -372,5 +372,35 @@
       "RT-FT-10",
       "RT-FT-11"
     ]
+  },
+  {
+    "id": "agent-config",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/agent_config.rs",
+      "crates/runtime/src/registry.rs",
+      "crates/runtime/src/lib.rs",
+      "crates/runtime/src/conversation.rs",
+      "crates/runtime/src/composer.rs",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGCFG-01",
+      "RT-AGCFG-02",
+      "RT-AGCFG-03",
+      "RT-AGCFG-04",
+      "RT-AGCFG-05",
+      "RT-AGCFG-06",
+      "RT-AGCFG-07",
+      "RT-AGCFG-08",
+      "RT-AGCFG-09",
+      "RT-AGCFG-10",
+      "RT-AGCFG-11",
+      "RT-AGCFG-12",
+      "RT-AGCFG-13",
+      "RT-AGCFG-14"
+    ]
   }
 ]

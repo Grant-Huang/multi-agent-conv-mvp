@@ -12,6 +12,7 @@
 
 pub mod admission;
 pub mod agent_catalog;
+pub mod agent_config;
 pub mod backends;
 pub mod bus;
 pub mod composer;
@@ -75,6 +76,8 @@ pub struct Runtime {
     pub admission: Option<Arc<admission::AdmissionLedger>>,
     /// 握手检测接口的并发闸门（AG.1）
     pub probe_gate: Arc<agent_catalog::ProbeGate>,
+    /// 托管配置（AG.2）
+    pub agent_config: Arc<agent_config::AgentConfigManager>,
 }
 
 /// 连通性探测的目标：只做握手或命令检查，不调用模型（探测结果写入 `registry.links`）
@@ -331,6 +334,7 @@ impl Runtime {
             probers: Arc::new(probers),
             admission,
             probe_gate: Arc::default(),
+            agent_config: Arc::default(),
         })
     }
 
