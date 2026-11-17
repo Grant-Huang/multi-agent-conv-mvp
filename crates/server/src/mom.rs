@@ -76,6 +76,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/mom/cases/{id}/events", get(events))
         .route("/api/mom/cases/{id}/commands", post(command))
         .route("/api/mom/cases/{id}/master", post(master))
+        // 车间 DES 仿真的只读接口（阶段②），见 `mom_sim`。
+        .merge(crate::mom_sim::routes())
         .layer(axum::extract::DefaultBodyLimit::max(128 * 1024))
         .with_state(state)
 }

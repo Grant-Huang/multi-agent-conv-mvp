@@ -1,6 +1,6 @@
 # MOM 车间离散事件仿真（DES）闭环设计
 
-日期：2026-11-17（America/Vancouver）。状态：阶段①（DES 内核与场景生成器，开环）已实现，见 `crates/runtime/src/mom/des/`；阶段②～⑤仅设计。本文是后续实施的基线；实施时按 §15 分阶段提交，每阶段先写用例和失败测试，再改实现。
+日期：2026-11-17（America/Vancouver）。状态：阶段①（DES 内核与场景生成器，开环）与阶段②（工具读取、what-if、只读仿真接口）已实现，见 `crates/runtime/src/mom/des/` 与 `crates/server/src/mom_sim.rs`；阶段③～⑤仅设计。本文是后续实施的基线；实施时按 §15 分阶段提交，每阶段先写用例和失败测试，再改实现。
 
 相关文档：[DESIGN.md](DESIGN.md)（MOM 主架构）、[MOCK_REGISTER.md](MOCK_REGISTER.md)（Mock 台账）、[TEST_PLAN.md](TEST_PLAN.md)、[UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md)、[SPC_TASK_WORKSPACE.md](SPC_TASK_WORKSPACE.md)、[测试指南](../testing/README.md)。
 
@@ -219,6 +219,14 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 - 候选方案由模板生成，首版固定三类：A 继续在原设备生产；B 本批完成后停机维修，由其他设备分担；C 立即停机维修。不可行的方案保留在结果里，注明违反的约束。
 - 推演期间真实状态不变（RT-DES-06 校验状态哈希）。推演有时长和事件数上限（§13）。
 - 提案结构从单一方案扩展为方案列表加推荐项；审批时必须指明所选方案的编号，并沿用现有的计划版本和资源版本检查。
+
+> 修订（2026-11-17，阶段②写用例时）：
+> - **what-if 只用可观测状态。** 原文"复制当前 DES 状态推演"会让 what-if 读到主轴磨损等隐状态并复跑带随机数的仿真，相当于预知未来，用于实验会高估 agent 与系统的表现。改为计划模型：输入设备运行状态、观测振动与 Cpk、刀具计数、资源配置（认证、缺刀、备件、调拨与维修时长、维修班组），按设备产能计算各方案的完成时间、是否按期、风险件数（在报警设备上继续加工的件数）和违反的硬约束，不含随机数，结果标注 `basis: observable_state`。
+> - **趋势预测**同样只用观测：最近 60 分钟振动与 Cpk 的线性趋势外推到阈值，注明方法 `linear_trend`。
+> - **资源配置**加在 `FactoryConfig.resources`（带默认值），默认取自 S1 夹具：CNC-XZ 缺 φ32 刀具，仓库 1 把备件，调拨 45 分钟；维修 240 分钟，1 个班组；完成当前批次 30 分钟；检验 20 分钟；插单可占用设备全部产能。
+> - **HTTP 路由**放在新文件 `crates/server/src/mom_sim.rs`：`POST /api/mom/des/simulations`（创建）、`GET /api/mom/factory?simulation=`、`GET /api/mom/factory/forecast?simulation=`、`POST /api/mom/factory/whatif`。审核接口放到阶段④。
+> - DES 案例的工具结果由引擎每分钟写入案例的可观测快照提供，`tools.rs` 按快照读取；脚本案例不受影响。
+> - 工厂设备数上限 32 台。
 
 ### 6.5 执行（DES 模式）
 | 动作 | 对 DES 的影响 | 完成条件 |

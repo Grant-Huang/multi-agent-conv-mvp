@@ -15,11 +15,13 @@
 //! - 阶段①只产生 `order` / `vibration` / `quality` 三类事件（决策 D7）。
 //! - 标准答案（`GroundTruth`）只供审核层读取，不得进入 agent 视图、人类视图、工具返回或仿真列表。
 mod engine_link;
+mod observe;
 mod physics;
 mod rng;
 mod scenario;
 
 pub use engine_link::DesSimulation;
+pub(crate) use observe::read_tool;
 
 use super::EventInput;
 use anyhow::Result;
@@ -46,6 +48,64 @@ pub struct MachineSpec {
 #[serde(deny_unknown_fields)]
 pub struct FactoryConfig {
     pub machines: Vec<MachineSpec>,
+    /// 资源与工艺约束（阶段②）。旧配置没有此字段时取默认值。
+    #[serde(default)]
+    pub resources: ResourceConfig,
+}
+
+/// 工厂设备数上限（阶段②，RT-DES-21）。
+pub const MAX_MACHINES: usize = 32;
+
+/// 资源与工艺约束，供 what-if 计划模型和资源查询使用。默认值取自 S1 夹具，均为建模假设。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ResourceConfig {
+    /// 未获该产品工艺认证的设备。
+    pub uncertified: Vec<String>,
+    /// 当前缺少指定刀具（φ32 铣刀）的设备。
+    pub missing_tool: Vec<String>,
+    /// 仓库可调拨的合格备用刀具数量。
+    pub tool_spares: u32,
+    /// 刀具调拨加装配耗时（分钟）。
+    pub tool_transfer_minutes: u64,
+    /// 主轴轴承更换等维修耗时（分钟）。
+    pub maintenance_minutes: u64,
+    /// 可用维修班组数量。
+    pub maintenance_crews: u32,
+    /// "完成当前批次后再停机"所需时间（分钟）。
+    pub finish_batch_minutes: u64,
+    /// 成品检验放行耗时（分钟）。
+    pub inspection_minutes: u64,
+    /// 插单可占用的设备产能比例（0～1）。
+    pub urgent_capacity_share: f64,
+}
+
+impl Default for ResourceConfig {
+    fn default() -> Self {
+        Self {
+            uncertified: vec![],
+            missing_tool: vec!["CNC-XZ".into()],
+            tool_spares: 1,
+            tool_transfer_minutes: 45,
+            maintenance_minutes: 240,
+            maintenance_crews: 1,
+            finish_batch_minutes: 30,
+            inspection_minutes: 20,
+            urgent_capacity_share: 1.0,
+        }
+    }
+}
+
+/// what-if 请求：为某个报警设备上的订单比较候选方案。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WhatIfRequest {
+    /// 报警设备（方案 A/B/C 针对它继续用、批后停、立即停）。
+    pub asset: String,
+    /// 需要完成的件数。
+    pub quantity: u64,
+    /// 交期（虚拟分钟）。
+    pub due_minute: u64,
 }
 
 impl FactoryConfig {
@@ -58,6 +118,7 @@ impl FactoryConfig {
         };
         Self {
             machines: vec![machine("CNC-XX"), machine("CNC-XY"), machine("CNC-XZ")],
+            resources: ResourceConfig::default(),
         }
     }
 }
@@ -159,8 +220,10 @@ pub struct MachineTelemetry {
     pub spindle_wear: Vec<Sample>,
     /// 振动有效值（mm/s）。
     pub vibration_mm_s: Vec<Sample>,
-    /// 滚动窗口 Cpk。
+    /// 过程能力 Cpk（阶段①为模型值，见设计文档 §4.2 修订说明）。
     pub cpk: Vec<Sample>,
+    /// 当前刀具已加工件数（MES 刀具计数器，可观测）。
+    pub tool_parts: Vec<Sample>,
 }
 
 /// 全部设备的遥测，按设备编号索引。

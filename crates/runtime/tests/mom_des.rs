@@ -556,3 +556,274 @@ fn rt_des_17_adding_unrelated_machine_keeps_other_random_streams() {
         "adding an unrelated machine must not change Line-B random streams"
     );
 }
+
+// ───────────────────── 阶段②：工具读取、what-if、设备数上限 ─────────────────────
+
+/// 在引擎中创建 P0 固定剧本 DES 仿真（插单 +0、振动 +6、质量 +14，均在 CNC-XX）。
+fn p0_engine(factory: Option<FactoryConfig>) -> (Engine, String) {
+    let mut e = Engine::memory().unwrap();
+    let sim = e
+        .create_des_simulation(DesSimulationConfig {
+            name: "p0".into(),
+            factory,
+            scenario: scenario(1, Pattern::Script, 240, None),
+        })
+        .unwrap();
+    (e, sim)
+}
+
+/// 引擎可见状态的指纹：事件序号、仿真列表、全部案例。
+fn fingerprint(e: &Engine) -> Value {
+    let cases: Vec<Value> = e
+        .case_ids()
+        .iter()
+        .map(|id| serde_json::to_value(e.case(id).unwrap()).unwrap())
+        .collect();
+    serde_json::json!({"sequence": e.sequence(), "simulations": e.simulations_view(), "cases": cases})
+}
+
+fn urgent_order() -> WhatIfRequest {
+    WhatIfRequest {
+        asset: "CNC-XX".into(),
+        quantity: 500,
+        due_minute: 960,
+    }
+}
+
+fn plan<'a>(r: &'a Value, id: &str) -> &'a Value {
+    r["plans"]
+        .as_array()
+        .expect("plans array")
+        .iter()
+        .find(|p| p["id"] == id)
+        .unwrap_or_else(|| panic!("plan {id} missing"))
+}
+
+fn violations(p: &Value) -> Vec<String> {
+    p["violations"]
+        .as_array()
+        .expect("violations array")
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect()
+}
+
+fn uses(p: &Value) -> Vec<String> {
+    p["uses"]
+        .as_array()
+        .expect("uses array")
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn rt_des_06_whatif_is_read_only_and_compares_plans() {
+    let (mut e, sim) = p0_engine(None);
+    e.advance(START + 20).unwrap();
+    let before = fingerprint(&e);
+    let r1 = e
+        .des_whatif(&sim, &urgent_order())
+        .expect("RT-DES-06: what-if must answer");
+    let r2 = e.des_whatif(&sim, &urgent_order()).unwrap();
+    assert_eq!(r1, r2, "what-if must be deterministic");
+    assert_eq!(
+        before,
+        fingerprint(&e),
+        "what-if must not change engine state"
+    );
+
+    let ids: Vec<&str> = r1["plans"]
+        .as_array()
+        .expect("plans array")
+        .iter()
+        .map(|p| p["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["A", "B", "C"], "three candidate plans");
+    for id in ["A", "B", "C"] {
+        let p = plan(&r1, id);
+        for field in [
+            "feasible",
+            "completion_minute",
+            "on_time",
+            "risk_parts",
+            "violations",
+            "uses",
+        ] {
+            assert!(p.get(field).is_some(), "plan {id} lacks {field}");
+        }
+    }
+    let (a, b, c) = (plan(&r1, "A"), plan(&r1, "B"), plan(&r1, "C"));
+    assert!(
+        violations(a).contains(&"quality_risk:CNC-XX".to_string()),
+        "plan A keeps an alarmed machine and must carry quality_risk"
+    );
+    assert_eq!(a["feasible"], false, "plan A must not be feasible");
+    let risk = |p: &Value| p["risk_parts"].as_f64().unwrap();
+    assert!(risk(b) < risk(a), "plan B must risk fewer parts than A");
+    assert_eq!(risk(c), 0.0, "plan C stops the alarmed machine at once");
+    let rec = r1["recommended"].as_str().expect("a recommended plan");
+    assert_eq!(
+        plan(&r1, rec)["feasible"],
+        true,
+        "recommended plan must be feasible"
+    );
+    assert_eq!(r1["provenance"], "simulation");
+    assert_eq!(r1["basis"], "observable_state");
+    assert_no_truth("what-if", &r1);
+}
+
+#[test]
+fn rt_des_07_infeasible_plans_list_hard_constraint_violations() {
+    // 默认资源：至少一个方案可行；用到 CNC-XZ 的方案需要先调拨刀具。
+    let (mut e, sim) = p0_engine(None);
+    e.advance(START + 20).unwrap();
+    let r = e
+        .des_whatif(&sim, &urgent_order())
+        .expect("what-if answers");
+    assert!(
+        ["B", "C"].iter().any(|id| plan(&r, id)["feasible"] == true),
+        "with default resources plan B or C must be feasible"
+    );
+    let c = plan(&r, "C");
+    assert!(
+        uses(c).contains(&"CNC-XZ".to_string()),
+        "plan C uses CNC-XZ"
+    );
+    assert!(
+        c["prerequisites"]
+            .as_array()
+            .expect("prerequisites array")
+            .iter()
+            .any(|p| p == "tool_transfer:CNC-XZ"),
+        "using CNC-XZ requires a tool transfer first"
+    );
+
+    // 没有备用刀具：CNC-XZ 不可用，只剩 CNC-XY，误期。
+    let mut no_spare = FactoryConfig::line_b_default();
+    no_spare.resources.tool_spares = 0;
+    // 未认证：CNC-XZ 不可用于该产品。
+    let mut uncertified = FactoryConfig::line_b_default();
+    uncertified.resources.uncertified = vec!["CNC-XZ".into()];
+    for (factory, expected) in [
+        (no_spare, "tool_unavailable:CNC-XZ"),
+        (uncertified, "uncertified:CNC-XZ"),
+    ] {
+        let (mut e, sim) = p0_engine(Some(factory));
+        e.advance(START + 20).unwrap();
+        let r = e
+            .des_whatif(&sim, &urgent_order())
+            .expect("what-if answers");
+        for id in ["B", "C"] {
+            let p = plan(&r, id);
+            let v = violations(p);
+            assert!(
+                v.contains(&expected.to_string()),
+                "plan {id} must list {expected}: {v:?}"
+            );
+            assert!(
+                !uses(p).contains(&"CNC-XZ".to_string()),
+                "plan {id} must not use CNC-XZ"
+            );
+            assert!(
+                v.contains(&"deadline_miss".to_string()),
+                "plan {id} misses the deadline: {v:?}"
+            );
+            assert_eq!(p["feasible"], false, "plan {id} must be infeasible");
+        }
+    }
+}
+
+#[test]
+fn rt_des_20_tools_in_des_cases_read_simulation_state() {
+    let (mut e, _sim) = p0_engine(None);
+    e.advance(START + 30).unwrap();
+    let id = e
+        .case_ids()
+        .into_iter()
+        .find(|id| !e.case(id).unwrap().template.is_empty())
+        .expect("P0 events must form one planned case");
+    let c = e.case(&id).unwrap();
+    let output = |node: &str| -> Value {
+        let n = &c.nodes[node];
+        assert_eq!(n.status, "SUCCEEDED", "node {node} must succeed");
+        let ev = &c.evidence[&n.evidence_refs[0]];
+        assert_eq!(ev["source"], "DES", "node {node} must read DES");
+        assert_eq!(ev["provenance"], "simulation", "node {node} provenance");
+        assert!(
+            ev["mock_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m == "M27"),
+            "node {node} must cite M27"
+        );
+        n.output.clone().expect("node output")
+    };
+    let m = output("maintenance");
+    assert!(
+        m["vibration_mm_s"].as_f64().unwrap() >= 2.8,
+        "vibration in zone C"
+    );
+    assert_eq!(m["zone"], "C");
+    let q = output("quality");
+    assert!(
+        q["cpk"].as_f64().unwrap() < CPK_THRESHOLD,
+        "Cpk below threshold"
+    );
+    let r = output("resources");
+    let xz = r["machines"]
+        .as_array()
+        .expect("machines")
+        .iter()
+        .find(|m| m["id"] == "CNC-XZ")
+        .expect("CNC-XZ listed")
+        .clone();
+    assert_eq!(xz["tool_present"], false, "CNC-XZ lacks the tool");
+    let s = output("schedule");
+    assert_eq!(
+        s["plans"].as_array().map(|p| p.len()),
+        Some(3),
+        "three plans"
+    );
+    assert!(s["recommended"].is_string(), "a recommended plan");
+    let proposal = c.proposal.as_ref().expect("proposal");
+    assert_eq!(proposal["plans"].as_array().map(|p| p.len()), Some(3));
+    assert_no_truth("agent view", &e.agent_view(&id, 0, 999).unwrap());
+    assert_no_truth("human view", &e.human_view(&id).unwrap());
+}
+
+#[test]
+fn rt_des_21_factory_size_is_bounded() {
+    let factory = |n: usize| {
+        let mut f = FactoryConfig::line_b_default();
+        while f.machines.len() < n {
+            let i = f.machines.len();
+            f.machines.push(MachineSpec {
+                id: format!("CNC-{i:02}"),
+                line: "Line-B".into(),
+                cycle_seconds: 90,
+            });
+        }
+        f
+    };
+    let cfg = scenario(1, Pattern::Unconstrained, 60, None);
+    run_open_loop(&factory(MAX_MACHINES), &cfg).expect("32 machines must run");
+    let Err(err) = run_open_loop(&factory(MAX_MACHINES + 1), &cfg) else {
+        panic!("33 machines must be rejected");
+    };
+    assert!(
+        err.to_string().contains("machines"),
+        "error must name the limit: {err}"
+    );
+    let mut e = Engine::memory().unwrap();
+    assert!(
+        e.create_des_simulation(DesSimulationConfig {
+            name: "too-big".into(),
+            factory: Some(factory(MAX_MACHINES + 1)),
+            scenario: cfg,
+        })
+        .is_err(),
+        "engine must reject oversized factories"
+    );
+}

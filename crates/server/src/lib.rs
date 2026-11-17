@@ -22,6 +22,7 @@ pub mod admission_api;
 pub mod host_guard;
 pub mod mom;
 pub mod mom_relos;
+pub mod mom_sim;
 
 use std::convert::Infallible;
 use std::sync::Arc;
