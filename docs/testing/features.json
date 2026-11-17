@@ -402,5 +402,26 @@
       "RT-AGCFG-13",
       "RT-AGCFG-14"
     ]
+  },
+  {
+    "id": "agent-ui",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "web/src/components/AgentsPanel.tsx",
+      "web/src/components/AgentCards.tsx",
+      "web/src/api.ts",
+      "web/src/App.tsx",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-AGFIRST",
+      "E2E-AGLIST",
+      "E2E-AGTOML",
+      "E2E-AGGUIDE",
+      "E2E-AGCONNECT",
+      "E2E-AGUNDO",
+      "E2E-AGDISABLE"
+    ]
   }
 ]

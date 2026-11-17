@@ -272,3 +272,17 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGCFG-12 | agent-config | 两个不同的修改同时确认 | 两个都生效；托管文件是完整的合法 TOML，包含两处修改 |
 | RT-AGCFG-13 | agent-config | 对话中派发写代码任务，但没有任何可用的 coding agent | 回复由前台模型生成，请求里带了原因和"用非专业用户能看懂的话"的要求；模型不可用时的兜底文字不以错误码开头 |
 | RT-AGCFG-14 | agent-config | 写代码任务在执行阶段因没有可用 coding agent 失败 | 交付消息由前台模型撰写，提供给它的材料里有原因和恢复办法，并要求用大白话 |
+
+## 助手页签与卡片（AG.3，实现前定义）
+
+测试服务里：`claude-agent-acp` 已安装（包装脚本指向自带的模拟 ACP agent，握手真实）；`zcode-acp-server` 未安装；config.toml 手写了一个 agent `hand`；自动发现关闭；没有内置 coding agent。用例按顺序执行，共享同一个服务。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| E2E-AGFIRST | agent-ui | 新浏览器首次打开 | 对话区顶部出现发现卡，列出可接入的助手；点"知道了"后刷新不再出现 |
+| E2E-AGLIST | agent-ui | 打开「助手」页签 | 显示 Claude Code（已安装、未接入）、ZCode（未安装）、hand（在 config.toml 中配置）、内置的通用执行，每项有用途说明 |
+| E2E-AGTOML | agent-ui | 查看 hand 一行 | 显示"在 config.toml 中配置"，没有"停用"按钮 |
+| E2E-AGGUIDE | agent-ui | ZCode 一行点"看安装步骤"，再点"我装好了，重新检测" | 引导卡列出安装步骤，命令带"复制"按钮；检测结果用大白话说明"还没有安装" |
+| E2E-AGCONNECT | agent-ui | Claude Code 一行点"接入"，在确认卡上确认 | 确认卡说明将会发生什么并显示将执行的命令；结果卡显示已接入和检测结果"已连通"；该行变为已接入 |
+| E2E-AGUNDO | agent-ui | 在结果卡上点"撤销"并确认 | Claude Code 恢复为已安装、未接入 |
+| E2E-AGDISABLE | agent-ui | 再次接入 Claude Code 后停用它，然后在对话里要求改代码 | 确认卡警告"写代码"类任务将没有执行者；之后对话中的回复是大白话，错误码只在末尾括号里 |
