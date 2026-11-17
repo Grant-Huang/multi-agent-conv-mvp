@@ -368,6 +368,47 @@ pub struct ProbeOutcome {
     pub detail: Option<String>,
 }
 
+// ───────────────────────── 助手排查（AG.5 第 1、2 层）─────────────────────────
+
+/// 本机体检的一项（只读检查的结果）
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CheckItem {
+    /// command_in_service_path / command_in_login_shell / node_version / credential_file
+    pub key: String,
+    /// 给人看的名称
+    pub name: String,
+    /// ok / problem / skipped / error
+    pub status: String,
+    /// 大白话说明
+    pub detail: String,
+}
+
+/// 规则命中的一条结论
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Finding {
+    /// 规则 id，例如 node_missing / path_mismatch / node_too_old / credential_missing / not_installed
+    pub rule: String,
+    pub title: String,
+    pub explain: String,
+    /// 修复步骤（可复制的命令）
+    pub steps: Vec<InstallStep>,
+}
+
+/// 一次排查的结果：握手检测 + 本机体检 + 规则结论。全部在本机完成，不外发
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DiagnoseReport {
+    pub id: String,
+    pub name: String,
+    pub probe: ProbeOutcome,
+    pub checks: Vec<CheckItem>,
+    pub findings: Vec<Finding>,
+    /// 检测失败但没有命中任何规则
+    pub unmatched: bool,
+}
+
 // ───────────────────────── 对话里的卡片（AG.4）─────────────────────────
 
 /// 选择卡里的一个候选助手

@@ -24,6 +24,10 @@ pub struct CatalogMeta {
     pub login: Option<&'static str>,
     pub requirements: Vec<&'static str>,
     pub docs_url: Option<&'static str>,
+    /// 需要 Node.js 时的最低主版本；Some(0) 表示需要但不限版本，None 表示不需要（AG.5 体检）
+    pub node_min_major: Option<u32>,
+    /// 登录凭证文件（只检查是否存在，不读取内容；AG.5 体检）
+    pub credential_files: Vec<&'static str>,
 }
 
 /// 目录中的一项：预设配置 + 说明
@@ -67,6 +71,8 @@ fn meta(id: &str) -> Option<CatalogMeta> {
             login: Some("首次使用前按 opencode 文档配置模型账号"),
             requirements: vec![],
             docs_url: Some("https://opencode.ai/docs/acp"),
+            node_min_major: None,
+            credential_files: vec![],
         },
         "hermes" => CatalogMeta {
             id: "hermes",
@@ -79,6 +85,8 @@ fn meta(id: &str) -> Option<CatalogMeta> {
             login: None,
             requirements: vec![],
             docs_url: Some("https://hermes-agent.nousresearch.com/docs/user-guide/features/acp"),
+            node_min_major: None,
+            credential_files: vec![],
         },
         "pi" => CatalogMeta {
             id: "pi",
@@ -90,6 +98,8 @@ fn meta(id: &str) -> Option<CatalogMeta> {
             login: None,
             requirements: vec![],
             docs_url: None,
+            node_min_major: None,
+            credential_files: vec![],
         },
         "claude" => CatalogMeta {
             id: "claude",
@@ -109,6 +119,8 @@ fn meta(id: &str) -> Option<CatalogMeta> {
             login: Some("在终端运行 claude 按提示登录；或设置环境变量 ANTHROPIC_API_KEY"),
             requirements: vec!["Node.js"],
             docs_url: Some("https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp"),
+            node_min_major: Some(0),
+            credential_files: vec![],
         },
         "codex-acp" => CatalogMeta {
             id: "codex-acp",
@@ -124,6 +136,8 @@ fn meta(id: &str) -> Option<CatalogMeta> {
             login: Some("在终端运行 codex login；或设置环境变量 OPENAI_API_KEY"),
             requirements: vec!["Node.js"],
             docs_url: Some("https://www.npmjs.com/package/@agentclientprotocol/codex-acp"),
+            node_min_major: Some(0),
+            credential_files: vec![],
         },
         "cursor" => CatalogMeta {
             id: "cursor",
@@ -135,6 +149,8 @@ fn meta(id: &str) -> Option<CatalogMeta> {
             login: Some("在终端运行 agent login"),
             requirements: vec![],
             docs_url: Some("https://cursor.com/docs/cli/acp"),
+            node_min_major: None,
+            credential_files: vec![],
         },
         "zcode" => CatalogMeta {
             id: "zcode",
@@ -151,6 +167,8 @@ fn meta(id: &str) -> Option<CatalogMeta> {
             login: Some("打开 ZCode App 登录一次"),
             requirements: vec!["Node.js ≥ 22"],
             docs_url: Some("https://www.npmjs.com/package/zcode-acp-server"),
+            node_min_major: Some(22),
+            credential_files: vec!["~/.zcode/v2/config.json"],
         },
         _ => return None,
     };

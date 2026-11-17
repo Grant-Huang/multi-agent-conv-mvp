@@ -221,7 +221,8 @@ async fn rt_agdiag_03_node_version_checks() {
     );
 
     // node 卡住：5 秒内结束并记为检查失败
-    sb.bin("node", "sleep 30");
+    // 用绝对路径：用例期间 PATH 只指向临时目录，写 `sleep` 会找不到而立刻退出，测不到超时
+    sb.bin("node", "exec /bin/sleep 30");
     let started = Instant::now();
     let (status, report) = diagnose(&base, "zcode").await;
     assert_eq!(status, 200, "{report}");

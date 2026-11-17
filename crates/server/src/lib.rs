@@ -71,6 +71,7 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/agents", get(agents))
         .route("/api/agents/catalog", get(agent_catalog))
         .route("/api/agents/probe", post(probe_agent))
+        .route("/api/agents/diagnose", post(diagnose_agent))
         .route("/api/agents/config", get(agent_config_view))
         .route("/api/agents/proposals", post(propose_agent_change))
         .route(
@@ -236,6 +237,17 @@ async fn apply_agent_proposal(
         .await
         .map(Json)
         .map_err(config_error)
+}
+
+/// 排查（AG.5 第 1、2 层，不外发）：握手检测 + 本机体检 + 规则结论。请求体同握手检测，只接受 id
+async fn diagnose_agent(
+    State(rt): State<AppState>,
+    Json(req): Json<ProbeRequest>,
+) -> ApiResult<an_core::DiagnoseReport> {
+    rt.diagnose_agent(&req.id)
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found(&format!("可排查的 ACP agent `{}`", req.id)))
 }
 
 /// 握手检测的请求体：只接受 agent id。多余字段（例如 command）直接拒绝，不会被执行。

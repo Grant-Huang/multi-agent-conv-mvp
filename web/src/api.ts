@@ -12,6 +12,7 @@ import type { Problem } from "./bindings/Problem";
 import type { CatalogItem } from "./bindings/CatalogItem";
 import type { ProbeOutcome } from "./bindings/ProbeOutcome";
 import type { MessageView } from "./bindings/MessageView";
+import type { DiagnoseReport } from "./bindings/DiagnoseReport";
 
 // ───── Agent 配置（AG.2 / AG.3）。这些结构来自 an-runtime（不在 an-core 的 bindings 里），在这里手写 ─────
 
@@ -184,6 +185,9 @@ export const api = {
   agents: () => request<AgentCard[]>("/api/agents"),
   agentCatalog: () => request<CatalogItem[]>("/api/agents/catalog"),
   agentConfig: () => request<AgentConfigView>("/api/agents/config"),
+  /** 排查（AG.5 第 1、2 层）：握手检测 + 本机体检 + 规则结论，不外发 */
+  diagnoseAgent: (id: string) =>
+    request<DiagnoseReport>("/api/agents/diagnose", { method: "POST", body: JSON.stringify({ id }) }),
   probeAgent: (id: string) =>
     request<ProbeOutcome>("/api/agents/probe", { method: "POST", body: JSON.stringify({ id }) }),
   proposeAgentChange: (change: ChangeRequest) =>

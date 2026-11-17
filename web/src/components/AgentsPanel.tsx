@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { AgentCard } from "../bindings/AgentCard";
 import type { CatalogItem } from "../bindings/CatalogItem";
 import { api, type AgentConfigView, type AgentWithLink, type Applied, type ChangeRequest, type Proposal } from "../api";
-import { ConfirmCard, GuideCard, ResultCard, loadUiLevel, roleLabel } from "./AgentCards";
+import { ConfirmCard, DiagnoseCard, GuideCard, ResultCard, loadUiLevel, roleLabel } from "./AgentCards";
+import type { DiagnoseReport } from "../bindings/DiagnoseReport";
 
 /** 列表里的一行（把目录、注册表、托管配置合并成同一种结构） */
 interface Row {
@@ -115,6 +116,7 @@ type Pending =
   | { kind: "confirm"; proposal: Proposal; command?: string }
   | { kind: "result"; applied?: Applied; error?: string }
   | { kind: "guide"; item: CatalogItem }
+  | { kind: "diagnose"; report: DiagnoseReport }
   | null;
 
 export function AgentsPanel() {
@@ -170,6 +172,18 @@ export function AgentsPanel() {
 
   const defaultOf = (role: string) => view?.assign[role]?.[0];
 
+  /** 排查（不外发）：握手检测 + 本机体检 + 规则结论 */
+  const diagnose = async (id: string) => {
+    setBusy(true);
+    try {
+      setPending({ kind: "diagnose", report: await api.diagnoseAgent(id) });
+    } catch (e) {
+      setPending({ kind: "result", error: `排查失败：${String(e).replace(/^Error: /, "")}` });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="task-list agents-panel">
       <div className="agents-toolbar">
@@ -210,6 +224,13 @@ export function AgentsPanel() {
       {pending?.kind === "guide" && (
         <GuideCard item={pending.item} onProbe={() => api.probeAgent(pending.item.id)} onClose={() => setPending(null)} />
       )}
+      {pending?.kind === "diagnose" && (
+        <DiagnoseCard
+          report={pending.report}
+          onRecheck={() => diagnose(pending.report.id)}
+          onClose={() => setPending(null)}
+        />
+      )}
       {showForm && <CustomAgentForm busy={busy} onSubmit={(change, command) => propose(change, command)} />}
 
       <section role="region" aria-label="助手列表" className="agent-list">
@@ -235,6 +256,13 @@ export function AgentsPanel() {
               </div>
               {SOURCE_LABEL[r.source] && <div className="agent-source">{SOURCE_LABEL[r.source]}</div>}
               {defaultOf(r.role) === r.id && <div className="agent-source">「{roleLabel(r.role)}」的默认助手</div>}
+              {r.source !== "builtin" && r.source !== "node" && (
+                <div className="card-actions">
+                  <button type="button" className="btn small" disabled={busy} onClick={() => diagnose(r.id)}>
+                    排查
+                  </button>
+                </div>
+              )}
               {!locked && (
                 <div className="card-actions">
                   {!r.registered && !r.disabled && r.catalog && (

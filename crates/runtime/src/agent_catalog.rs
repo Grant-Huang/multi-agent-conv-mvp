@@ -68,6 +68,78 @@ impl Runtime {
         catalog_items(&self.config, &self.registry, &self.agent_config)
     }
 
+    /// 排查（AG.5 第 1、2 层）：握手检测 + 本机体检 + 已知问题规则。全部在本机完成，不外发。
+    /// 只能排查目录内或已注册的 ACP agent；其他 id 返回 None（HTTP 404）。
+    pub async fn diagnose_agent(&self, id: &str) -> Option<an_core::DiagnoseReport> {
+        use an_agents::diagnose::{check_items, checkup, rules, CheckupInput, RuleContext};
+        let probe = self.probe_agent(id).await?;
+        let entry = catalog().into_iter().find(|e| e.id() == id);
+        // 实际使用的命令：已注册的用注册时的配置，否则用目录预设
+        let registered_cfg = self.probers.snapshot().into_iter().find_map(|p| match p {
+            Prober::Acp(a) if an_core::AgentAdapter::card(a.as_ref()).id == id => {
+                Some(a.config().clone())
+            }
+            _ => None,
+        });
+        let (command, args, name) = match (&registered_cfg, &entry) {
+            (Some(c), _) => (
+                c.command.clone(),
+                c.args.clone(),
+                c.name.clone().unwrap_or_else(|| c.id.clone()),
+            ),
+            (None, Some(e)) => (e.preset.command.clone(), e.preset.args.clone(), e.name()),
+            (None, None) => return None,
+        };
+        // 只有命令与目录预设完全相同时才算预设（才做登录 shell 检查、node 和凭证检查）
+        let preset = entry.as_ref().filter(|e| e.preset.command == command);
+        let input = CheckupInput {
+            command: command.clone(),
+            is_preset: preset.is_some(),
+            node_min_major: preset.and_then(|e| e.meta.node_min_major),
+            credential_files: preset
+                .map(|e| {
+                    e.meta
+                        .credential_files
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
+        let c = checkup(&input).await;
+        let ctx = RuleContext {
+            name: name.clone(),
+            command,
+            args,
+            install: entry
+                .as_ref()
+                .map(|e| e.meta.install.clone())
+                .unwrap_or_default(),
+            login: entry.as_ref().and_then(|e| e.meta.login.map(String::from)),
+        };
+        let findings = rules(&probe, &c, &ctx);
+        let unmatched = probe.kind != ProbeKind::Ok && findings.is_empty();
+        if unmatched {
+            // 记录特征以便补规则：只记分类和错误输出的长度，不记内容
+            tracing::info!(
+                event = "agent.diagnose_unmatched",
+                agent_id = %id,
+                kind = ?probe.kind,
+                detail_len = probe.detail.as_deref().map(str::len).unwrap_or(0),
+                "排查没有命中任何规则"
+            );
+        }
+        tracing::info!(event = "agent.diagnose", agent_id = %id, kind = ?probe.kind, findings = findings.len());
+        Some(an_core::DiagnoseReport {
+            id: id.to_string(),
+            name,
+            checks: check_items(&c),
+            probe,
+            findings,
+            unmatched,
+        })
+    }
+
     /// 握手检测。只能检测已注册的 ACP agent 或目录内的预设；其他 id（未知、内置、CLI、节点）返回 None。
     pub async fn probe_agent(&self, id: &str) -> Option<ProbeOutcome> {
         let target = self.probe_target(id)?;

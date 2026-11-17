@@ -13,6 +13,7 @@ pub mod acp;
 pub mod capability;
 pub mod catalog;
 pub mod coding;
+pub mod diagnose;
 pub mod general;
 pub mod mcp;
 pub mod proc_group;

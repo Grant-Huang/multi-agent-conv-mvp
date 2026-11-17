@@ -9,6 +9,7 @@ import type { CatalogItem } from "../bindings/CatalogItem";
 import type { InstallStep } from "../bindings/InstallStep";
 import type { ProbeOutcome } from "../bindings/ProbeOutcome";
 import type { Applied, Proposal } from "../api";
+import type { DiagnoseReport } from "../bindings/DiagnoseReport";
 
 /** 使用水平：预留给以后的用户分类。现在只实现"专业" */
 export type UiLevel = "professional" | "basic";
@@ -49,7 +50,7 @@ export function roleLabel(role: string): string {
 }
 
 /** 复制按钮：复制失败时提示手动选择，不抛错 */
-function CopyButton(props: { text: string }) {
+export function CopyButton(props: { text: string }) {
   const [state, setState] = useState<"" | "ok" | "fail">("");
   const copy = async () => {
     try {
@@ -273,6 +274,60 @@ export function ResultCard(props: {
             撤销
           </button>
         )}
+        <button type="button" className="btn small" onClick={props.onClose}>
+          关闭
+        </button>
+      </div>
+    </section>
+  );
+}
+
+const CHECK_MARK: Record<string, string> = { ok: "✓", problem: "✗", skipped: "–", error: "!" };
+
+/** 排查结果卡（AG.5 第 1、2 层）：先给结论和修复步骤，再列本机体检的每一项。全部在本机完成 */
+export function DiagnoseCard(props: { report: DiagnoseReport; onRecheck: () => void; onClose: () => void }) {
+  const r = props.report;
+  return (
+    <section className="agent-card" role="region" aria-label="排查结果">
+      <h3>排查「{r.name}」</h3>
+      <p className="result-line">检测结果：{probeText(r.probe)}</p>
+      {r.findings.length > 0 && <h4>可能的原因和解决办法</h4>}
+      {r.findings.map((f) => (
+        <div key={f.rule} className="finding">
+          <p className="summary">{f.title}</p>
+          <p className="hint">{f.explain}</p>
+          <ol>
+            {f.steps.map((s, i) => (
+              <li key={i}>
+                {s.text}
+                {s.command && (
+                  <div className="cmd">
+                    <code>{s.command}</code> <CopyButton text={s.command} />
+                  </div>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ))}
+      {r.unmatched && (
+        <p className="hint">没有找到已知的原因。可以把上面的检测结果和下面的体检信息发给熟悉的人或工具帮忙看看。</p>
+      )}
+      {r.probe.kind === "ok" && <p className="hint">没有发现问题。</p>}
+      <details open>
+        <summary>本机体检（只做了只读检查，没有往外发送任何内容）</summary>
+        <ul className="checks">
+          {r.checks.map((c) => (
+            <li key={c.key} className={`check ${c.status}`}>
+              {CHECK_MARK[c.status] ?? "·"} {c.name}：{c.detail}
+            </li>
+          ))}
+        </ul>
+      </details>
+      <div className="card-actions">
+        <button type="button" className="btn small primary" onClick={props.onRecheck}>
+          重新排查
+        </button>
         <button type="button" className="btn small" onClick={props.onClose}>
           关闭
         </button>

@@ -773,6 +773,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 启动 | `server.started`、`log.file`、`agent.registered`、`agent.detected`、`agent.not_installed`、`pool.resolved`、`pool.invalid`、`config.unknown_key`、`task.interrupted`、`llm.connected`、`llm.unreachable` | 启动时的状态和配置问题 |
 | 对话 | `conversation.turn`、`conversation.reply`、`conversation.reply_stream_failed`、`conversation.reply_failed`、`conversation.config` | 每轮对话一条（决策、角色、任务、尝试次数、耗时）；直接回答的生成（是否流式、字数、耗时）；启动时的审查模式 |
 | 模型 | `llm.request_failed`、`llm.format_retry`、`llm.structured_failed`、`llm.structured_ok`（debug 级别） | 请求失败、格式不合格重试、最终失败 |
+| Agent 排查 | `agent.diagnose`、`agent.diagnose_unmatched` | 一次排查（分类、命中的结论数）；没有命中任何规则时只记分类和错误输出的长度，不记内容 |
 | Agent 配置 | `agent.config_proposed`、`agent.config_applied`、`agent.config_reverted`、`agent.config_rejected`、`agent.managed_invalid`、`agent.env_missing` | 托管配置的提议、确认、撤销、被拒（凭证错误 / 过期）；托管文件读取失败；托管 agent 引用的环境变量没有设置 |
 | 前台提速 | `llm.escalated`、`route.risk_raised` | 不思考的判断可疑、开思考重判一次（`schema`、`reason`：format / high_risk / no_agent、`fast_ms`、`total_ms`）；规则把路由风险调高 |
 | 规则 | `policy.reject` | 没有可用 agent，拒绝派发 |
@@ -891,6 +892,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | POST | `/api/nodes/pair` | 配对 `{"address", "code"}`；地址可以只写 IP，会自动补成 `http://IP:7788` |
 | GET | `/api/agents/catalog` | 预设 agent 目录：用途、安装步骤、登录方式、依赖说明，以及本机状态（未安装 / 已安装未注册 / 已注册）和连接状态（AG.1，只读） |
 | POST | `/api/agents/probe` | 握手检测 `{"id"}`（只接受 id，多余字段返回 422）：目录内或已注册的 ACP agent；结果分类 ok / not_installed / needs_login / missing_dependency / handshake_failed / timeout；其他 id 返回 404。超时 10 秒，同一 agent 不并发，全局最多 2 个（AG.1，只读） |
+| POST | `/api/agents/diagnose` | 排查（AG.5 第 1、2 层）`{"id"}`：先握手检测，再做只读的本机体检（服务 / 登录 shell 能否找到命令、需要时 `node --version`、凭证文件是否存在），按已知问题规则给出大白话结论和修复步骤。只运行写死的命令（每条 5 秒超时、按进程组清理），登录 shell 检查只对目录预设命令做；不读凭证内容；不外发 |
 | GET | `/api/agents/config` | 托管配置概况（AG.3，只读）：托管内容、能否撤销、config.toml 里写了的 agent 和角色、当前执行组、托管文件读取错误 |
 | POST | `/api/agents/proposals` | 提议修改 agent 配置（AG.2）：`{"kind": "add_preset" / "add_custom" / "set_default" / "disable" / "enable" / "remove" / "revert", ...}`。只校验不写入，返回说明、警告、修改前后的托管文件内容和一次性确认凭证（10 分钟有效）。与 config.toml 冲突、没有可撤销版本、托管文件损坏时返回 409；请求不合格（例如环境变量写了明文值、执行组类型不一致）返回 422 |
 | POST | `/api/agents/proposals/{id}/apply` | 确认提议 `{"token"}`：凭证错误 403、过期 410；成功后写入托管文件 `agents.managed.toml`（数据库同目录，保留 10 个历史版本）并立即生效，返回新接入 agent 的握手检测结果 |
