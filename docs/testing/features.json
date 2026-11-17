@@ -216,6 +216,29 @@
     ]
   },
   {
+    "id": "mom-des",
+    "document": "docs/mom/DES_CLOSED_LOOP.md",
+    "sources": [
+      "crates/runtime/src/mom/des/mod.rs",
+      "crates/runtime/src/mom/des/scenario.rs",
+      "crates/runtime/src/mom/des/physics.rs",
+      "crates/runtime/src/mom/des/engine_link.rs",
+      "crates/runtime/tests/mom_des.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-DES-01",
+      "RT-DES-02",
+      "RT-DES-03",
+      "RT-DES-04",
+      "RT-DES-05",
+      "RT-DES-16",
+      "RT-DES-17"
+    ],
+    "note": "阶段①（开环）已实现，RT-DES 由 Red 转 Green；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。"
+  },
+  {
     "id": "agent-links",
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [
