@@ -41,6 +41,8 @@ RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS �
 
 车间 DES 阶段①（`mom-des`，开环）：RT-DES-01～05、16、17（`crates/runtime/tests/mom_des.rs`）定义可复现、主轴磨损因果、报警锁存、标准答案隔离、脚本模式不变、场景模式约束与随机流独立；实现位于 `crates/runtime/src/mom/des/`，阶段①为开环（事件一次生成后按虚拟时钟投递，处置不影响后续事件），Red→Green 证据见 [mom-des-phase1.md](evidence/mom-des-phase1.md)。设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md)；DES 为仿真，参数为建模假设。
 
+车间 DES 阶段②（`mom-des`）：RT-DES-06、07、20、21（runtime）与 HTTP-DES-01/02（`crates/server/tests/mom_des.rs`）定义 DES 案例的工具读取、基于可观测状态的 what-if 多方案、只读工厂状态与趋势预测接口、设备数上限；实现前 Red。
+
 专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
 
 每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。

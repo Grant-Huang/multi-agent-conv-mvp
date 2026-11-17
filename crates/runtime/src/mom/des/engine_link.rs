@@ -104,6 +104,31 @@ impl Engine {
         Ok(serde_json::to_value(truth)?)
     }
 
+    /// 比较候选方案（A 继续用、B 批后停机维修、C 立即停机维修），只读，只用可观测状态。
+    ///
+    /// 骨架：阶段②尚未实现。
+    pub fn des_whatif(
+        &self,
+        _simulation_id: &str,
+        _request: &super::WhatIfRequest,
+    ) -> Result<Value> {
+        anyhow::bail!("DES what-if is not implemented yet")
+    }
+
+    /// 工厂当前可观测状态（不含隐状态与标准答案）。
+    ///
+    /// 骨架：阶段②尚未实现。
+    pub fn des_factory_view(&self, _simulation_id: &str) -> Result<Value> {
+        anyhow::bail!("DES factory view is not implemented yet")
+    }
+
+    /// 按观测趋势外推到阈值的估计。
+    ///
+    /// 骨架：阶段②尚未实现。
+    pub fn des_forecast(&self, _simulation_id: &str) -> Result<Value> {
+        anyhow::bail!("DES forecast is not implemented yet")
+    }
+
     /// 投递到期的 DES 事件。由 `deliver_scheduled` 在每个虚拟分钟调用。
     pub(in crate::mom) fn deliver_des(&mut self, now: u64) -> Result<()> {
         let due: Vec<(String, ScheduledEvent)> = self
