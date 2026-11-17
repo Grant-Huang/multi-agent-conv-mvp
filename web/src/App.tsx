@@ -11,6 +11,9 @@ import { RouteLogPanel } from "./components/RouteLogPanel";
 import { TaskPanel } from "./components/TaskPanel";
 import { NodesPanel } from "./components/NodesPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+import { AgentsPanel } from "./components/AgentsPanel";
+import { DiscoveryCard } from "./components/AgentCards";
+import type { CatalogItem } from "./bindings/CatalogItem";
 import { roleLabel } from "./labels";
 
 /** 每个任务保留的进度条目数，超过后丢弃最早的 */
@@ -18,7 +21,26 @@ const MAX_PROGRESS_LINES = 30;
 /** 开发者模式的本地开关键（只是界面偏好，不影响数据） */
 const DEV_MODE_KEY = "agentnexus.devMode";
 
-type SideTab = "tasks" | "nodes" | "diag" | "logs";
+type SideTab = "tasks" | "agents" | "nodes" | "diag" | "logs";
+/** 首次打开时的"发现卡"是否已经看过（按浏览器记录，AG.3 用户确认） */
+const AGENTS_INTRO_KEY = "an.agentsIntroSeen";
+
+function readIntroSeen(): boolean {
+  try {
+    return localStorage.getItem(AGENTS_INTRO_KEY) === "1";
+  } catch {
+    // 读不到本地存储（隐私窗口等）时不打扰用户
+    return true;
+  }
+}
+
+function writeIntroSeen() {
+  try {
+    localStorage.setItem(AGENTS_INTRO_KEY, "1");
+  } catch {
+    /* 忽略：只是界面偏好 */
+  }
+}
 
 /** 追加一条进度：与上一条相同则忽略，超出上限丢弃最早的 */
 function appendLine(list: string[], msg: string): string[] {
@@ -78,6 +100,19 @@ export default function App() {
   // 最新一条任务事件，展开的任务卡片会把它追加到时间线上
   const [incoming, setIncoming] = useState<TaskEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 首次打开时的发现卡：没看过才去读目录
+  const [introCatalog, setIntroCatalog] = useState<CatalogItem[] | null>(null);
+  useEffect(() => {
+    if (readIntroSeen()) return;
+    api
+      .agentCatalog()
+      .then(setIntroCatalog)
+      .catch(() => {});
+  }, []);
+  const dismissIntro = () => {
+    writeIntroSeen();
+    setIntroCatalog(null);
+  };
   // 正在流式生成的回答：id 等于最终消息的 id，最终消息到达后自动隐藏
   const [streaming, setStreaming] = useState<{ id: string; text: string } | null>(null);
   // 每个任务的进度历史（时间顺序）：进度条显示最后一条，展开时看全部
@@ -309,6 +344,16 @@ export default function App() {
             {error}（点击关闭）
           </div>
         )}
+        {introCatalog && (
+          <DiscoveryCard
+            catalog={introCatalog}
+            onDismiss={dismissIntro}
+            onManage={() => {
+              dismissIntro();
+              setSideTab("agents");
+            }}
+          />
+        )}
         <ChatView
           messages={messages}
           tasks={tasks}
@@ -324,6 +369,7 @@ export default function App() {
           <TabButton id="tasks" label="任务" active={activeTab} onSelect={setSideTab}>
             {tasks.length > 0 && <span className="count">{tasks.length}</span>}
           </TabButton>
+          <TabButton id="agents" label="助手" active={activeTab} onSelect={setSideTab} />
           <TabButton id="nodes" label="节点" active={activeTab} onSelect={setSideTab} />
           {devMode && <TabButton id="diag" label="诊断" active={activeTab} onSelect={setSideTab} />}
           {devMode && <TabButton id="logs" label="路由日志" active={activeTab} onSelect={setSideTab} />}
@@ -337,6 +383,7 @@ export default function App() {
             messageIds={Object.fromEntries(messages.filter((m) => m.role === "user" && m.task_id).map((m) => [m.task_id as string, m.id]))}
           />
         )}
+        {activeTab === "agents" && <AgentsPanel />}
         {activeTab === "nodes" && <NodesPanel />}
         {activeTab === "diag" && <DiagnosticsPanel refreshTick={panelTick} />}
         {activeTab === "logs" && <RouteLogPanel refreshTick={panelTick} />}

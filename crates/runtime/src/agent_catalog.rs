@@ -66,6 +66,7 @@ impl Runtime {
     /// 目录：全部预设 + 本机状态。连接状态（link_status / link_reason）由调用方按健康接口的规则填写。
     pub fn agent_catalog(&self) -> Vec<CatalogItem> {
         let cards = self.registry.cards();
+        let managed = self.agent_config.managed();
         catalog()
             .into_iter()
             .map(|e| {
@@ -77,8 +78,19 @@ impl Runtime {
                 } else {
                     CatalogStatus::NotInstalled
                 };
+                let source = if self.config.acp.agents.iter().any(|a| a.id == e.id()) {
+                    "config_toml"
+                } else if managed.acp.agents.iter().any(|a| a.id == e.id()) {
+                    "managed"
+                } else if registered {
+                    "auto"
+                } else {
+                    "preset"
+                };
                 CatalogItem {
                     id: e.id().to_string(),
+                    source: source.into(),
+                    disabled: managed.acp.disabled.iter().any(|d| d == e.id()),
                     name: e.name(),
                     purpose: e.meta.purpose.into(),
                     role: e.role(),

@@ -132,6 +132,23 @@ pub struct Proposal {
     pub expires_in_secs: u64,
 }
 
+/// 托管配置的概况（界面用）
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentConfigView {
+    /// 托管文件读取失败的原因（含错误码）
+    pub load_error: Option<String>,
+    /// 是否有可以撤销的修改
+    pub can_undo: bool,
+    /// 写在 config.toml 里的 ACP agent（界面里不能改）
+    pub config_toml_ids: Vec<String>,
+    /// config.toml 里已经指定执行组的角色（界面里不能改默认）
+    pub config_toml_roles: Vec<String>,
+    /// 当前生效的执行组（config.toml 与托管合并后）
+    pub assign: BTreeMap<String, Vec<String>>,
+    /// 托管内容
+    pub managed: ManagedConfig,
+}
+
 /// 确认后的结果
 #[derive(Debug, Clone, Serialize)]
 pub struct Applied {
@@ -258,6 +275,11 @@ impl AgentConfigManager {
     /// 托管文件读取失败的原因（含错误码）
     pub fn load_error(&self) -> Option<String> {
         self.lock().load_error.clone()
+    }
+
+    /// 是否有可以撤销的历史版本
+    pub fn can_undo(&self) -> bool {
+        !self.history_files().is_empty()
     }
 
     /// 调整提议的有效期（测试用）
@@ -843,6 +865,25 @@ impl crate::Runtime {
     /// 提议一次 agent 配置修改（只校验、不写入）
     pub fn propose_agent_change(&self, change: ChangeRequest) -> Result<Proposal, ConfigError> {
         self.agent_config.propose(&self.agent_ctx(), change)
+    }
+
+    /// 托管配置的概况（AG.3 界面用，只读）
+    pub fn agent_config_view(&self) -> AgentConfigView {
+        let managed = self.agent_config.managed();
+        AgentConfigView {
+            load_error: self.agent_config.load_error(),
+            can_undo: self.agent_config.can_undo(),
+            config_toml_ids: self
+                .config
+                .acp
+                .agents
+                .iter()
+                .map(|a| a.id.clone())
+                .collect(),
+            config_toml_roles: self.config.agents.assign.keys().cloned().collect(),
+            assign: self.registry.assign(),
+            managed,
+        }
     }
 
     /// 确认一次提议（必须带提议时返回的凭证）

@@ -32,6 +32,14 @@ login: string | null,
  */
 requirements: Array<string>, docs_url: string | null, status: CatalogStatus, 
 /**
+ * 配置来源（AG.3）：config_toml（手写，不能在界面里改）/ managed（托管）/ auto（自动发现）/ preset（未接入的预设）
+ */
+source: string, 
+/**
+ * 是否在托管配置里被停用（AG.3）
+ */
+disabled: boolean, 
+/**
  * 已注册时的连接状态：connected / configured / unavailable
  */
 link_status: string | null, 

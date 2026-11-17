@@ -279,6 +279,10 @@ pub struct CatalogItem {
     pub requirements: Vec<String>,
     pub docs_url: Option<String>,
     pub status: CatalogStatus,
+    /// 配置来源（AG.3）：config_toml（手写，不能在界面里改）/ managed（托管）/ auto（自动发现）/ preset（未接入的预设）
+    pub source: String,
+    /// 是否在托管配置里被停用（AG.3）
+    pub disabled: bool,
     /// 已注册时的连接状态：connected / configured / unavailable
     pub link_status: Option<String>,
     /// 连接状态的原因说明

@@ -71,6 +71,7 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/agents", get(agents))
         .route("/api/agents/catalog", get(agent_catalog))
         .route("/api/agents/probe", post(probe_agent))
+        .route("/api/agents/config", get(agent_config_view))
         .route("/api/agents/proposals", post(propose_agent_change))
         .route(
             "/api/agents/proposals/{id}/apply",
@@ -196,6 +197,13 @@ fn config_error(e: an_runtime::agent_config::ConfigError) -> AppError {
         E::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     AppError(status, e.to_string())
+}
+
+/// 托管配置的概况（AG.3，只读）
+async fn agent_config_view(
+    State(rt): State<AppState>,
+) -> Json<an_runtime::agent_config::AgentConfigView> {
+    Json(rt.agent_config_view())
 }
 
 /// 提议修改 agent 配置（AG.2）：只校验、不写入；返回说明、修改前后内容和一次性确认凭证
