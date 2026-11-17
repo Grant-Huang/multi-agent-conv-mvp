@@ -634,6 +634,8 @@ pub mod codes {
     pub const POOL_WAIT: &str = "W_POOL_WAIT";
     // agent 执行
     pub const AGENT_NOT_INSTALLED: &str = "E_AGENT_NOT_INSTALLED";
+    /// 托管配置文件（agents.managed.toml）读不出来或格式错误（AG.2）
+    pub const AGENT_MANAGED_INVALID: &str = "E_AGENT_MANAGED_INVALID";
     pub const AGENT_SPAWN: &str = "E_AGENT_SPAWN";
     pub const AGENT_TIMEOUT: &str = "E_AGENT_TIMEOUT";
     pub const AGENT_RUNTIME: &str = "E_AGENT_RUNTIME";

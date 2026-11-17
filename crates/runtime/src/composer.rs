@@ -54,7 +54,8 @@ impl Composer {
                  2. 再给出关键内容；有文件产物时列出文件名；\n\
                  3. 如实说明审查意见和遗留问题，不要夸大，不要编造事实材料里没有的内容；\n\
                  4. 失败时根据错误信息和进程输出说明直接原因；材料里看不出原因就说明原因未知，不要猜测；\n\
-                 5. 简洁，使用中文。",
+                 5. 读者多数是非专业用户：用大白话说明，少用技术术语；错误码不要放在开头，需要时放在最后的括号里；\n\
+                 6. 简洁，使用中文。",
             ),
             ChatMessage::user(facts.clone()),
         ];
@@ -91,6 +92,19 @@ impl Composer {
             }
             if !r.errors.is_empty() {
                 s += &format!("错误：{}\n", r.errors.join("；"));
+            }
+            // 没有可用执行者（AG.2）：给模型一段可以直接转述的原因和恢复办法
+            let no_agent = r
+                .errors
+                .iter()
+                .chain(std::iter::once(&r.summary))
+                .any(|e| e.contains(an_core::codes::ROUTE_NO_AGENT));
+            if no_agent {
+                s += &format!(
+                    "原因说明（请用大白话转述）：现在没有能做「{}」的助手，常见原因是对应的助手被停用了，或者还没有安装，所以任务没有开始做。\n\
+                     恢复办法：接入或恢复启用一个能做这类任务的助手后重新发起；也可以让助手在对话里直接给出建议或示例，由用户自己动手。\n",
+                    crate::registry::role_label(task.role)
+                );
             }
             if let Some(out) = failure_output(r) {
                 s += &format!("进程输出末尾（判断失败原因用）：\n{out}\n");

@@ -135,7 +135,7 @@ impl Runtime {
             .find(|e| e.id() == id)
             .and_then(|e| e.meta.login);
         // 已注册的 ACP agent：用注册时的同一个实例（命令、参数、工作目录都来自配置）
-        for p in self.probers.iter() {
+        for p in self.probers.snapshot().iter() {
             if let Prober::Acp(a) = p {
                 if an_core::AgentAdapter::card(a.as_ref()).id == id {
                     return Some(Target {

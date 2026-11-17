@@ -472,16 +472,49 @@ impl ConversationRuntime {
             Err(f) => {
                 log.raw_outputs.extend(f.raw_outputs);
                 log.attempts += f.attempts;
+                let role = f.decision.as_ref().map(|d| d.execution_role);
                 log.route_decision = f.decision;
                 log.error = Some(f.message.clone());
-                self.finish(
-                    log,
-                    started,
-                    Some(decision),
-                    None,
-                    &format!("这个任务暂时无法派发：{}", f.message),
-                )
+                // 没有可用的执行者：不改派给别的角色，由前台模型用大白话说明并给出替代办法（AG.2）
+                let reply = if f.message.contains(an_core::codes::ROUTE_NO_AGENT) {
+                    self.no_agent_reply(goal, role, &f.message).await
+                } else {
+                    format!("这个任务暂时无法派发：{}", f.message)
+                };
+                self.finish(log, started, Some(decision), None, &reply)
             }
+        }
+    }
+
+    /// 没有可用执行者时的回复（AG.2）：由前台模型生成，面向非专业用户；模型不可用时用大白话模板兜底
+    async fn no_agent_reply(
+        &self,
+        goal: &str,
+        role: Option<an_core::Role>,
+        detail: &str,
+    ) -> String {
+        let label = role.map(crate::registry::role_label).unwrap_or("这类任务");
+        let system = format!(
+            "你是 AgentNexus 的助手。用户刚提出的任务现在没有可用的执行者，所以还没有开始做。\n\
+             请用非专业用户能看懂的大白话回复，要求：\n\
+             1. 先用一句话说明：现在没有能做「{label}」的助手，这件事还没有开始；\n\
+             2. 简单说明可能的原因：对应的助手被停用了，或者还没有安装；\n\
+             3. 告诉用户可以怎么办：接入或恢复启用一个能做「{label}」的助手后再试；如果用户愿意，也可以在对话里直接给出建议或示例（例如修改思路、示例代码），由用户自己动手；\n\
+             4. 不要堆技术术语，不要把错误码放在开头；如需提到错误码，放在最后的括号里；\n\
+             5. 不要假装任务已经完成，不要编造结果；简洁，使用中文。\n\n\
+             技术细节（帮助你理解，不要原样照抄给用户）：{detail}"
+        );
+        let messages = [ChatMessage::system(system), ChatMessage::user(goal)];
+        match self.reply_llm.chat(&messages).await {
+            Ok(text) if !text.trim().is_empty() => text,
+            _ => format!(
+                "现在没有能做「{label}」的助手（可能被停用了，或者还没有安装），所以这件事还没有开始做。\n\
+                 你可以：\n\
+                 1. 接入或恢复启用一个能做「{label}」的助手，然后再说一次；\n\
+                 2. 也可以让我在对话里直接给出建议或示例，由你自己动手。\n\
+                 （技术信息：{}）",
+                an_core::codes::ROUTE_NO_AGENT
+            ),
         }
     }
 

@@ -71,6 +71,11 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/agents", get(agents))
         .route("/api/agents/catalog", get(agent_catalog))
         .route("/api/agents/probe", post(probe_agent))
+        .route("/api/agents/proposals", post(propose_agent_change))
+        .route(
+            "/api/agents/proposals/{id}/apply",
+            post(apply_agent_proposal),
+        )
         .route("/api/capabilities", get(capabilities))
         .route(
             "/api/conversations",
@@ -177,6 +182,48 @@ async fn agent_catalog(State(rt): State<AppState>) -> Json<Vec<an_core::CatalogI
         }
     }
     Json(items)
+}
+
+/// 托管配置错误 → HTTP 状态码
+fn config_error(e: an_runtime::agent_config::ConfigError) -> AppError {
+    use an_runtime::agent_config::ConfigError as E;
+    let status = match &e {
+        E::NotFound(_) => StatusCode::NOT_FOUND,
+        E::BadToken => StatusCode::FORBIDDEN,
+        E::Expired => StatusCode::GONE,
+        E::Conflict(_) => StatusCode::CONFLICT,
+        E::Invalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        E::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    AppError(status, e.to_string())
+}
+
+/// 提议修改 agent 配置（AG.2）：只校验、不写入；返回说明、修改前后内容和一次性确认凭证
+async fn propose_agent_change(
+    State(rt): State<AppState>,
+    Json(change): Json<an_runtime::agent_config::ChangeRequest>,
+) -> ApiResult<an_runtime::agent_config::Proposal> {
+    rt.propose_agent_change(change)
+        .map(Json)
+        .map_err(config_error)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApplyRequest {
+    token: String,
+}
+
+/// 确认提议（AG.2）：凭证正确且未过期才写入，并立即生效
+async fn apply_agent_proposal(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<ApplyRequest>,
+) -> ApiResult<an_runtime::agent_config::Applied> {
+    rt.apply_agent_proposal(&id, &req.token)
+        .await
+        .map(Json)
+        .map_err(config_error)
 }
 
 /// 握手检测的请求体：只接受 agent id。多余字段（例如 command）直接拒绝，不会被执行。
