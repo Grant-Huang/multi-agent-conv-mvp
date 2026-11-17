@@ -43,7 +43,10 @@ pub(crate) fn has_alarm(c: &Case) -> bool {
     k.contains("vibration") || k.contains("quality")
 }
 
-fn nodes(list: &[(&str, &str, &[&str])]) -> BTreeMap<String, Node> {
+/// 节点规格：（节点编号，工具，依赖）。
+type NodeSpec<'a> = (&'a str, &'a str, &'a [&'a str]);
+
+fn nodes(list: &[NodeSpec]) -> BTreeMap<String, Node> {
     list.iter()
         .map(|(id, tool, deps)| (id.to_string(), Node::new(tool, deps)))
         .collect()
@@ -65,7 +68,7 @@ pub(crate) fn des_template(c: &Case) -> Option<(String, BTreeMap<String, Node>)>
     }
     if is_member(c) {
         // 成员只做诊断，决策在协同事项上。
-        let mut list: Vec<(&str, &str, &[&str])> = vec![];
+        let mut list: Vec<NodeSpec> = vec![];
         if v {
             list.push(("maintenance", "maintenance.assess", &[]));
         }
@@ -77,7 +80,7 @@ pub(crate) fn des_template(c: &Case) -> Option<(String, BTreeMap<String, Node>)>
     if v && q && o {
         return None; // 三类事件齐全：沿用原 S1 模板（P0 行为不变）。
     }
-    let (template, list): (&str, Vec<(&str, &str, &[&str])>) = match (v, q) {
+    let (template, list): (&str, Vec<NodeSpec>) = match (v, q) {
         (true, true) => (
             TPL_COMBINED,
             vec![
