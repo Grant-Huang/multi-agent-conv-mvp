@@ -1,6 +1,6 @@
 # MOM 车间离散事件仿真（DES）闭环设计
 
-日期：2026-11-17（America/Vancouver）。状态：阶段①（DES 内核与场景生成器，开环）与阶段②（工具读取、what-if、只读仿真接口）已实现，见 `crates/runtime/src/mom/des/` 与 `crates/server/src/mom_sim.rs`；阶段③～⑤仅设计。本文是后续实施的基线；实施时按 §15 分阶段提交，每阶段先写用例和失败测试，再改实现。
+日期：2026-11-17（America/Vancouver）。状态：阶段①（DES 内核与场景生成器，开环）、阶段②（工具读取、what-if、只读仿真接口）与阶段③（方案选定、执行回写与核验，闭环）已实现，见 `crates/runtime/src/mom/des/` 与 `crates/server/src/mom_sim.rs`；阶段④、⑤仅设计。本文是后续实施的基线；实施时按 §15 分阶段提交，每阶段先写用例和失败测试，再改实现。
 
 相关文档：[DESIGN.md](DESIGN.md)（MOM 主架构）、[MOCK_REGISTER.md](MOCK_REGISTER.md)（Mock 台账）、[TEST_PLAN.md](TEST_PLAN.md)、[UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md)、[SPC_TASK_WORKSPACE.md](SPC_TASK_WORKSPACE.md)、[测试指南](../testing/README.md)。
 
@@ -239,6 +239,7 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 - 现有故障开关映射为 DES 故障：`dispatch_failure` 表示改排产被拒绝；`lost_receipt` 表示动作已经生效但回执丢失，动作状态为 `UNKNOWN`，需要通过 `action.status` 对账。
 
 > 修订（2026-11-17，阶段③写用例时）：
+> - **执行后继续推演（实现时补充）。** 场景窗口只限定报警事件的产生范围；执行干预后，世界状态按需继续推演到查询时刻（最多再推演 2 × 2880 分钟），以便维修在场景窗口之后完成时仍能观测到恢复。
 > - **闭环的实现方式：干预 + 重新推演。** 执行时把动作记为仿真干预（维修：从开始到结束停机，结束时主轴磨损复位；刀具调拨：到达时刻起该设备有刀），保存在 DES 仿真的重放输入中；从执行时刻起用同一批随机流重新推演，替换尚未投递的事件，并重新导出标准答案。因为随机数的消耗与干预无关，执行时刻之前的历史保持不变。
 > - **方案选定**：新增 `Engine::select_des_plan` 与 HTTP 命令 `select_plan`；只能选可行方案，选定后原有批准作废、需重新批准；执行时按选定方案（未选定时按推荐方案）生成干预。
 > - **动作完成时刻由 DES 决定**：在 `execute` 末尾增加一次 DES 回调（`engine.rs` 中一处调用），为 DES 案例设置各动作的完成时刻；脚本案例不变。

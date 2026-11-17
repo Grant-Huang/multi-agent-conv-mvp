@@ -8,8 +8,8 @@
 use super::physics::{self, Contributions};
 use super::rng::Rng;
 use super::{
-    AlarmTruth, DesRun, FactoryConfig, GroundTruth, MachineTelemetry, Mechanisms, Pattern,
-    ResourceContention, Sample, ScenarioConfig, Telemetry, TrueRelation, CPK_THRESHOLD,
+    AlarmTruth, DesRun, FactoryConfig, GroundTruth, Intervention, MachineTelemetry, Mechanisms,
+    Pattern, ResourceContention, Sample, ScenarioConfig, Telemetry, TrueRelation, CPK_THRESHOLD,
 };
 use crate::mom::EventInput;
 use anyhow::{bail, ensure, Result};
@@ -218,7 +218,7 @@ pub(super) fn run_with_attempt(
 ) -> Result<(DesRun, u32)> {
     precheck(factory, cfg)?;
     if cfg.pattern == Pattern::Script {
-        return Ok((script(factory, cfg), 0));
+        return Ok((script(factory, cfg, &[], 0), 0));
     }
     let attempts = if cfg.pattern == Pattern::Unconstrained {
         1
@@ -227,7 +227,7 @@ pub(super) fn run_with_attempt(
     };
     for attempt in 0..attempts {
         let mech = mechanisms(cfg, attempt);
-        let sim = simulate(factory, cfg, &knobs(&cfg.pattern), mech, attempt);
+        let sim = simulate(factory, cfg, &knobs(&cfg.pattern), mech, attempt, &[], 0);
         let truth = derive_truth(&sim, mech);
         if satisfies(&cfg.pattern, &sim, &truth) {
             let run = DesRun {
@@ -245,14 +245,39 @@ pub(super) fn run_with_attempt(
     )
 }
 
-/// 按已选定的尝试序号重放遥测（确定性，与创建时完全相同）。
-/// 引擎只从中截取当前时刻之前、可观测的量（振动、Cpk、刀具计数），不对外暴露主轴磨损。
-pub(super) fn replay(factory: &FactoryConfig, cfg: &ScenarioConfig, attempt: u32) -> Telemetry {
+/// 按已选定的尝试序号和已记录的干预重新推演（确定性）。
+///
+/// 干预只影响其开始时刻之后；随机数的消耗与干预无关，所以干预之前的事件、遥测与标准答案保持不变。
+/// 引擎只从遥测中截取可观测的量（振动、Cpk、刀具计数），不对外暴露主轴磨损。
+///
+/// `until_minute`（绝对虚拟分钟）晚于场景结束时，世界状态继续推演到该时刻，供执行后的查询使用；
+/// 报警事件仍只在场景窗口内产生。
+pub(super) fn rerun(
+    factory: &FactoryConfig,
+    cfg: &ScenarioConfig,
+    attempt: u32,
+    interventions: &[Intervention],
+    until_minute: u64,
+) -> DesRun {
     if cfg.pattern == Pattern::Script {
-        return script(factory, cfg).telemetry;
+        return script(factory, cfg, interventions, until_minute);
     }
     let mech = mechanisms(cfg, attempt);
-    simulate(factory, cfg, &knobs(&cfg.pattern), mech, attempt).telemetry
+    let sim = simulate(
+        factory,
+        cfg,
+        &knobs(&cfg.pattern),
+        mech,
+        attempt,
+        interventions,
+        until_minute,
+    );
+    let truth = derive_truth(&sim, mech);
+    DesRun {
+        events: sim.emitted.into_iter().map(|e| e.event).collect(),
+        truth,
+        telemetry: sim.telemetry,
+    }
 }
 
 // ───────────────────────── 逐分钟仿真 ─────────────────────────
@@ -343,8 +368,16 @@ fn simulate(
     k: &Knobs,
     mech: Mechanisms,
     attempt: u32,
+    interventions: &[Intervention],
+    until_minute: u64,
 ) -> Simulated {
     let horizon = cfg.horizon_minutes;
+    // 执行后世界继续推演到查询时刻（最多再推演一个最大时长），事件只保留场景窗口内的。
+    let total = horizon.max(
+        until_minute
+            .saturating_sub(cfg.start_minute)
+            .min(2 * MAX_HORIZON_MINUTES),
+    );
     // 产线按设备在配置中首次出现的顺序排列。
     let mut lines: Vec<Line> = vec![];
     for m in &factory.machines {
@@ -448,7 +481,7 @@ fn simulate(
         });
     };
 
-    for minute in 0..=horizon {
+    for minute in 0..=total {
         let t = cfg.start_minute + minute;
         // 1) 外生事件：插单到达。
         for line in &mut lines {
@@ -486,7 +519,30 @@ fn simulate(
             let unit_increment = m.wear_rng.gamma(physics::WEAR_SHAPE_PER_MIN);
             let noise = m.vibration_rng.normal();
             let line = &lines[m.line];
-            if m.running && minute > 0 {
+            // 干预（阶段③）：维修期间停机；维修结束的那一分钟起主轴磨损复位、恢复运行、报警锁存解除。
+            let mut in_maintenance = false;
+            for iv in interventions {
+                if let Intervention::Maintenance {
+                    machine,
+                    start_minute,
+                    end_minute,
+                } = iv
+                {
+                    if machine == &m.id && (*start_minute..*end_minute).contains(&t) {
+                        in_maintenance = true;
+                    }
+                    if machine == &m.id && *end_minute == t {
+                        m.wear = physics::POST_REPAIR_WEAR;
+                        m.running = true;
+                        m.vibration_armed = true;
+                        m.vibration_over = 0;
+                        m.cpk_armed = true;
+                        m.cpk_recovered_minutes = 0;
+                    }
+                }
+            }
+            let active = m.running && !in_maintenance;
+            if active && minute > 0 {
                 let load = if line.backlog > 0.0 {
                     physics::OVERLOAD_FACTOR
                 } else {
@@ -507,7 +563,8 @@ fn simulate(
             if m.wear >= physics::FUNCTIONAL_FAILURE_WEAR {
                 m.running = false;
             }
-            let vibration = if m.running {
+            let active = active && m.running;
+            let vibration = if active {
                 physics::vibration_mean(m.wear) + physics::VIBRATION_NOISE_MM_S * noise
             } else {
                 0.0
@@ -534,7 +591,7 @@ fn simulate(
             });
 
             // 振动：进入 C 区并持续若干分钟才报警；报警后锁存，回到 B 区以下才解除。
-            if m.running && vibration >= physics::VIBRATION_ZONE_C_MM_S {
+            if active && vibration >= physics::VIBRATION_ZONE_C_MM_S {
                 m.vibration_over += 1;
             } else {
                 m.vibration_over = 0;
@@ -555,12 +612,13 @@ fn simulate(
                     vec![format!("spindle_wear:{}", m.id)],
                     vec![crew],
                 );
-            } else if !m.vibration_armed && m.running && vibration < physics::VIBRATION_REARM_MM_S {
+            } else if !m.vibration_armed && active && vibration < physics::VIBRATION_REARM_MM_S {
                 m.vibration_armed = true;
             }
 
             // 质量：Cpk 从门槛以上跌到以下时报警一次；回升并保持一段时间才解除锁存。
-            if cpk < CPK_THRESHOLD {
+            // 停机期间没有加工件，不做质量判定。
+            if active && cpk < CPK_THRESHOLD {
                 m.cpk_recovered_minutes = 0;
                 if m.cpk_armed {
                     m.cpk_armed = false;
@@ -579,7 +637,7 @@ fn simulate(
                         resources,
                     );
                 }
-            } else if !m.cpk_armed {
+            } else if active && !m.cpk_armed {
                 if cpk >= CPK_THRESHOLD + physics::CPK_REARM_MARGIN {
                     m.cpk_recovered_minutes += 1;
                     if m.cpk_recovered_minutes >= physics::CPK_REARM_MINUTES {
@@ -602,6 +660,7 @@ fn simulate(
         }
     }
 
+    emitted.retain(|e| e.event.occurred_at <= cfg.start_minute + horizon);
     Simulated {
         emitted,
         telemetry: Telemetry {
@@ -902,12 +961,25 @@ fn satisfies(pattern: &Pattern, sim: &Simulated, truth: &GroundTruth) -> bool {
 /// P0：复现 S1 夹具的时序（插单 08:17、振动 +6、质量 +14），批次 B77、客户 A。
 /// 这是固定剧本夹具，事件时刻不由仿真产生；背景遥测用安静运行，但 CNC-XX 的初始主轴磨损固定为 1.62，
 /// 使它在剧本期间振动处于 C 区、Cpk 低于门槛，与剧本事件一致；事件中的读数取自该遥测。
-fn script(factory: &FactoryConfig, cfg: &ScenarioConfig) -> DesRun {
+fn script(
+    factory: &FactoryConfig,
+    cfg: &ScenarioConfig,
+    interventions: &[Intervention],
+    until_minute: u64,
+) -> DesRun {
     let k = Knobs {
         forced_wear: Some(("CNC-XX", 1.62)),
         ..knobs(&Pattern::Quiet)
     };
-    let quiet = simulate(factory, cfg, &k, spindle_only(), 0);
+    let quiet = simulate(
+        factory,
+        cfg,
+        &k,
+        spindle_only(),
+        0,
+        interventions,
+        until_minute,
+    );
     let start = cfg.start_minute;
     let xx = quiet.telemetry.machines.get("CNC-XX");
     let reading = |series: fn(&MachineTelemetry) -> &Vec<Sample>, minute: usize, digits: i32| {

@@ -10,6 +10,8 @@ pub(super) const WEAR_RATE_PER_MIN: f64 = 0.0006;
 pub(super) const WEAR_SHAPE_PER_MIN: f64 = 0.5;
 /// 产线有插单积压时的负荷系数（插单 → 负荷 → 磨损加快）。
 pub(super) const OVERLOAD_FACTOR: f64 = 1.4;
+/// 更换主轴轴承后的主轴磨损量（新轴承也有磨合期，不取 0）。
+pub(super) const POST_REPAIR_WEAR: f64 = 0.2;
 /// 功能失效阈值 F：达到后设备停机（P-F 曲线的 F 点）。
 pub(super) const FUNCTIONAL_FAILURE_WEAR: f64 = 2.6;
 

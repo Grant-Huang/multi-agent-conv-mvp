@@ -4,17 +4,21 @@
 //! 由现有虚拟时钟逐分钟投递到 `ingest`；标准答案单独保存，只能经 `des_review_truth` 读取。
 //! 阶段②：每个虚拟分钟把可观测快照写入 DES 案例的 `world.des`，供工具读取；
 //! 提供只读的工厂状态、趋势预测和 what-if（只用可观测状态，见 `observe.rs`）。
-//! 闭环（执行回写仿真世界）在阶段③实现。
+//! 阶段③（闭环）：选定方案并执行后，把维修、刀具调拨记为仿真干预，从执行时刻起重新推演，
+//! 替换尚未投递的事件与标准答案；动作完成时刻由干预决定；同线报警案例互相关联。
 
 use super::observe::{self, Observation};
-use super::scenario::{replay, run_with_attempt};
+use super::scenario::{rerun, run_with_attempt};
 use super::{
-    DesSimulationConfig, FactoryConfig, GroundTruth, Pattern, ScenarioConfig, WhatIfRequest,
+    DesEvent, DesFault, DesSimulationConfig, FactoryConfig, GroundTruth, Intervention, Pattern,
+    ScenarioConfig, WhatIfRequest,
 };
+use crate::mom::engine::emit;
 use crate::mom::{Engine, ScheduledEvent, ScheduledPayload};
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 
 /// 同一引擎中 DES 仿真数量上限（与脚本仿真一致）。
 const MAX_DES_SIMULATIONS: usize = 50;
@@ -41,20 +45,83 @@ pub(crate) struct DesReplay {
     pub factory: FactoryConfig,
     pub scenario: ScenarioConfig,
     pub attempt: u32,
+    /// 已执行动作对仿真世界的干预（阶段③）。
+    #[serde(default)]
+    pub interventions: Vec<Intervention>,
+    /// 是否已注入"备件丢失"故障（阶段③）。
+    #[serde(default)]
+    pub spares_lost: bool,
 }
 
 impl DesReplay {
-    /// 当前时刻的可观测快照（确定性重放后截取）。
+    /// 推演到 `now` 的遥测（执行干预后可能超出原场景窗口）。
+    fn telemetry(&self, now: u64) -> super::Telemetry {
+        rerun(
+            &self.factory,
+            &self.scenario,
+            self.attempt,
+            &self.interventions,
+            now,
+        )
+        .telemetry
+    }
+
+    /// 当前时刻的可观测快照（确定性重新推演后截取）。
     fn observe(&self, simulation_id: &str, now: u64) -> Observation {
-        let telemetry = replay(&self.factory, &self.scenario, self.attempt);
         observe::observe(
             simulation_id,
             &self.factory,
-            &telemetry,
+            &self.telemetry(now),
             self.scenario.start_minute,
             now,
+            &self.interventions,
+            self.spares_lost,
         )
     }
+
+    /// 已发起的刀具调拨占用的备件数量。
+    fn transfers_used(&self) -> u32 {
+        self.interventions
+            .iter()
+            .filter(|iv| matches!(iv, Intervention::ToolTransfer { .. }))
+            .count() as u32
+    }
+}
+
+/// 把仿真事件转成引擎事件队列项：事件编号与批次号加上仿真编号前缀。
+fn prefixed_queue(id: &str, events: Vec<DesEvent>) -> Vec<ScheduledEvent> {
+    events
+        .into_iter()
+        .map(|mut event| {
+            event.id = format!("{id}:{}", event.id);
+            event.batch = format!("{id}:{}", event.batch);
+            ScheduledEvent {
+                id: event.id.clone(),
+                due_at: event.occurred_at,
+                status: "PENDING".into(),
+                payload: ScheduledPayload::Observation { event },
+                error: None,
+            }
+        })
+        .collect()
+}
+
+/// 标准答案中的事件编号加上仿真编号前缀，与队列一致。
+fn prefixed_truth(id: &str, mut truth: GroundTruth) -> GroundTruth {
+    let prefix = |s: &str| format!("{id}:{s}");
+    for a in &mut truth.alarms {
+        a.event_id = prefix(&a.event_id);
+    }
+    for r in &mut truth.relations {
+        r.from_event = prefix(&r.from_event);
+        r.to_event = prefix(&r.to_event);
+    }
+    for c in &mut truth.contentions {
+        for e in &mut c.event_ids {
+            *e = prefix(e);
+        }
+    }
+    truth
 }
 
 impl Engine {
@@ -80,35 +147,8 @@ impl Engine {
         let (run, attempt) = run_with_attempt(&factory, &scenario)?;
 
         let id = format!("DES-{}", self.state.des_simulations.len() + 1);
-        let prefix = |s: &str| format!("{id}:{s}");
-        let queue = run
-            .events
-            .into_iter()
-            .map(|mut event| {
-                event.id = prefix(&event.id);
-                event.batch = prefix(&event.batch);
-                ScheduledEvent {
-                    id: event.id.clone(),
-                    due_at: event.occurred_at,
-                    status: "PENDING".into(),
-                    payload: ScheduledPayload::Observation { event },
-                    error: None,
-                }
-            })
-            .collect();
-        let mut truth: GroundTruth = run.truth;
-        for a in &mut truth.alarms {
-            a.event_id = prefix(&a.event_id);
-        }
-        for r in &mut truth.relations {
-            r.from_event = prefix(&r.from_event);
-            r.to_event = prefix(&r.to_event);
-        }
-        for c in &mut truth.contentions {
-            for e in &mut c.event_ids {
-                *e = prefix(e);
-            }
-        }
+        let queue = prefixed_queue(&id, run.events);
+        let truth = prefixed_truth(&id, run.truth);
         let sim = DesSimulation {
             id: id.clone(),
             name: config.name,
@@ -121,6 +161,8 @@ impl Engine {
                 factory,
                 scenario: scenario.clone(),
                 attempt,
+                interventions: vec![],
+                spares_lost: false,
             }),
         };
         self.update(|s, _| {
@@ -170,7 +212,7 @@ impl Engine {
     /// 按观测线性趋势外推到阈值的估计。
     pub fn des_forecast(&self, simulation_id: &str) -> Result<Value> {
         let r = self.des_replay(simulation_id)?;
-        let telemetry = replay(&r.factory, &r.scenario, r.attempt);
+        let telemetry = r.telemetry(self.now());
         Ok(observe::forecast(
             simulation_id,
             &r.factory,
@@ -218,21 +260,284 @@ impl Engine {
     }
 
     /// 从 DES 案例的排产方案中选定一个可行方案；选定后原有批准作废，需要重新批准（阶段③）。
-    ///
-    /// 骨架：阶段③尚未实现。
-    pub fn select_des_plan(&mut self, _case_id: &str, _plan_id: &str) -> Result<()> {
-        anyhow::bail!("DES plan selection is not implemented yet")
+    pub fn select_des_plan(&mut self, case_id: &str, plan_id: &str) -> Result<()> {
+        self.update(|s, events| {
+            let now = s.now;
+            let c = s.cases.get_mut(case_id).context("unknown case")?;
+            ensure!(
+                c.world.get("des").is_some_and(Value::is_object),
+                "plan selection applies to DES cases only"
+            );
+            ensure!(
+                !c.cancelled && !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED" | "BLOCKED"),
+                "case is not open for a decision"
+            );
+            ensure!(c.actions.is_empty(), "a plan was already executed");
+            let proposal = c.proposal.as_mut().context("no schedule proposal yet")?;
+            let plan = proposal["plans"]
+                .as_array()
+                .and_then(|plans| plans.iter().find(|p| p["id"] == plan_id))
+                .with_context(|| format!("unknown plan {plan_id}"))?;
+            ensure!(
+                plan["feasible"] == true,
+                "plan {plan_id} is not feasible: {}",
+                plan["violations"]
+            );
+            proposal["selected"] = json!(plan_id);
+            c.approvals.clear();
+            let revision = c.plan_revision;
+            emit(
+                c,
+                now,
+                "PlanSelected",
+                json!({"plan": plan_id, "plan_revision": revision}),
+                events,
+            );
+            Ok(())
+        })
     }
 
     /// 向 DES 仿真注入故障（阶段③）。
-    ///
-    /// 骨架：阶段③尚未实现。
-    pub fn des_inject_fault(
-        &mut self,
-        _simulation_id: &str,
-        _fault: super::DesFault,
-    ) -> Result<()> {
-        anyhow::bail!("DES fault injection is not implemented yet")
+    pub fn des_inject_fault(&mut self, simulation_id: &str, fault: DesFault) -> Result<()> {
+        self.des_replay(simulation_id)?;
+        self.update(|s, _| {
+            let r = s
+                .des_simulations
+                .get_mut(simulation_id)
+                .and_then(|sim| sim.replay.as_mut())
+                .context("unknown DES simulation")?;
+            match fault {
+                DesFault::ToolSparesLost => r.spares_lost = true,
+            }
+            Ok(())
+        })
+    }
+
+    /// `execute` 成功后由引擎调用：DES 案例按选定（未选定时按推荐）方案生成仿真干预，
+    /// 从当前时刻起重新推演，并用干预时刻设置动作的完成时刻。脚本案例、非生产范围、重复执行时不做任何事。
+    pub(in crate::mom) fn des_after_execute(&mut self, case_id: &str, scope: &str) -> Result<()> {
+        if scope != "production" {
+            return Ok(());
+        }
+        let c = self.case(case_id)?;
+        let Some(sim_id) = c
+            .world
+            .get("des")
+            .and_then(|d| d["simulation_id"].as_str())
+            .map(String::from)
+        else {
+            return Ok(());
+        };
+        if c.actions.is_empty()
+            || c.stage == "PARTIAL"
+            || c.world["des_applied"] == json!(c.plan_revision)
+        {
+            return Ok(());
+        }
+        let proposal = c.proposal.clone().context("no schedule proposal")?;
+        let plan_id = proposal["selected"]
+            .as_str()
+            .or(proposal["recommended"].as_str())
+            .context("no plan selected or recommended")?
+            .to_string();
+        let plan = proposal["plans"]
+            .as_array()
+            .and_then(|plans| plans.iter().find(|p| p["id"] == plan_id.as_str()))
+            .cloned()
+            .context("selected plan missing")?;
+        let asset = c.asset.clone();
+        let revision = c.plan_revision;
+        let replay = self.des_replay(&sim_id)?.clone();
+        let now = self.now();
+        let r = replay.factory.resources.clone();
+
+        // 方案 → 干预。
+        let mut interventions = vec![];
+        let maintenance_start = match plan_id.as_str() {
+            "B" => Some(now + r.finish_batch_minutes),
+            "C" => Some(now),
+            _ => None,
+        };
+        let maintenance_end = maintenance_start.map(|start| {
+            let end = start + r.maintenance_minutes;
+            interventions.push(Intervention::Maintenance {
+                machine: asset.clone(),
+                start_minute: start,
+                end_minute: end,
+            });
+            end
+        });
+        let mut spares = if replay.spares_lost {
+            0
+        } else {
+            r.tool_spares.saturating_sub(replay.transfers_used())
+        };
+        let (mut transfer_arrive, mut transfer_failed) = (None, false);
+        for machine in plan["prerequisites"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|p| p.as_str()?.strip_prefix("tool_transfer:"))
+        {
+            if spares == 0 {
+                transfer_failed = true;
+                continue;
+            }
+            spares -= 1;
+            let arrive = now + r.tool_transfer_minutes;
+            interventions.push(Intervention::ToolTransfer {
+                machine: machine.to_string(),
+                arrive_minute: arrive,
+            });
+            transfer_arrive = Some(arrive);
+        }
+
+        // 重新推演：执行时刻之前的事件不变，之后尚未投递的事件与标准答案被替换。
+        let mut next = replay;
+        next.interventions.extend(interventions.iter().cloned());
+        let run = rerun(
+            &next.factory,
+            &next.scenario,
+            next.attempt,
+            &next.interventions,
+            now,
+        );
+        let future: Vec<ScheduledEvent> = prefixed_queue(&sim_id, run.events)
+            .into_iter()
+            .filter(|e| e.due_at > now)
+            .collect();
+        let truth = prefixed_truth(&sim_id, run.truth);
+
+        self.update(|s, events| {
+            let sim = s
+                .des_simulations
+                .get_mut(&sim_id)
+                .context("DES simulation missing")?;
+            sim.replay = Some(next);
+            sim.queue.retain(|e| e.status != "PENDING" || e.due_at <= now);
+            let existing: BTreeSet<String> = sim.queue.iter().map(|e| e.id.clone()).collect();
+            sim.queue
+                .extend(future.into_iter().filter(|e| !existing.contains(&e.id)));
+            sim.queue.sort_by(|a, b| (a.due_at, &a.id).cmp(&(b.due_at, &b.id)));
+            s.des_truth.insert(sim_id.clone(), truth);
+
+            let c = s.cases.get_mut(case_id).context("unknown case")?;
+            for a in c.actions.values_mut() {
+                match a.tool.as_str() {
+                    "eam.maintenance" => {
+                        if let Some(end) = maintenance_end {
+                            a.complete_at = end;
+                        }
+                    }
+                    "mro.transfer" if transfer_failed => {
+                        a.state = "FAILED".into();
+                    }
+                    "mro.transfer" => {
+                        if let Some(at) = transfer_arrive {
+                            a.complete_at = at;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if transfer_failed {
+                c.stage = "PARTIAL".into();
+                c.world["reservations"] = json!({});
+                emit(
+                    c,
+                    now,
+                    "CompensationRequired",
+                    json!({"released":"reservations","reason":"tool spares unavailable in simulation","irreversible":"accepted maintenance needs operator review","provenance":"simulation"}),
+                    events,
+                );
+            }
+            c.world["des_applied"] = json!(revision);
+            emit(
+                c,
+                now,
+                "DesPlanApplied",
+                json!({"plan": plan_id, "interventions": interventions, "provenance": "simulation"}),
+                events,
+            );
+            Ok(())
+        })
+    }
+
+    /// 同一 DES 仿真中、同一产线（共用维修班组）的报警案例互相关联（D6），每对只记录一次。
+    fn link_related_cases(&mut self, sim_id: &str, case_id: &str) -> Result<()> {
+        let Some(replay) = self
+            .state
+            .des_simulations
+            .get(sim_id)
+            .and_then(|s| s.replay.as_ref())
+        else {
+            return Ok(());
+        };
+        let line_of = |asset: &str| {
+            replay
+                .factory
+                .machines
+                .iter()
+                .find(|m| m.id == asset)
+                .map(|m| m.line.clone())
+        };
+        let has_alarm = |c: &crate::mom::Case| {
+            c.observations
+                .iter()
+                .any(|o| matches!(o.event.kind.as_str(), "vibration" | "quality"))
+        };
+        let prefix = format!("{sim_id}:");
+        let c = self.case(case_id)?;
+        let Some(line) = line_of(&c.asset) else {
+            return Ok(());
+        };
+        if !has_alarm(c) {
+            return Ok(());
+        }
+        let linked = |c: &crate::mom::Case, other: &str| {
+            c.world["des_related"]
+                .as_array()
+                .is_some_and(|l| l.iter().any(|v| v == other))
+        };
+        let others: Vec<String> = self
+            .state
+            .cases
+            .values()
+            .filter(|o| {
+                o.id != case_id
+                    && o.batch.starts_with(&prefix)
+                    && has_alarm(o)
+                    && line_of(&o.asset).as_deref() == Some(line.as_str())
+                    && !linked(c, &o.id)
+            })
+            .map(|o| o.id.clone())
+            .collect();
+        if others.is_empty() {
+            return Ok(());
+        }
+        let reason = format!("shared_resource:maintenance_crew:{line}");
+        self.update(|s, events| {
+            let now = s.now;
+            for other in &others {
+                for (a, b) in [(case_id, other.as_str()), (other.as_str(), case_id)] {
+                    let c = s.cases.get_mut(a).context("unknown case")?;
+                    if !c.world["des_related"].is_array() {
+                        c.world["des_related"] = json!([]);
+                    }
+                    if let Some(list) = c.world["des_related"].as_array_mut() {
+                        list.push(json!(b));
+                    }
+                    emit(
+                        c,
+                        now,
+                        "RelatedCaseLinked",
+                        json!({"related_case": b, "reason": reason, "source": "DES topology"}),
+                        events,
+                    );
+                }
+            }
+            Ok(())
+        })
     }
 
     /// 投递到期的 DES 事件。由 `deliver_scheduled` 在每个虚拟分钟调用。
@@ -250,7 +555,9 @@ impl Engine {
             .collect();
         for (sim_id, item) in due {
             let result = match item.payload {
-                ScheduledPayload::Observation { event } => self.ingest(event).map(|_| ()),
+                ScheduledPayload::Observation { event } => self
+                    .ingest(event)
+                    .and_then(|case_id| self.link_related_cases(&sim_id, &case_id)),
                 ScheduledPayload::WorldChange { .. } => Ok(()),
             };
             let (status, error) = match result {
