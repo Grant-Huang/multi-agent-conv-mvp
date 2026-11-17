@@ -19,6 +19,10 @@ use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
+
+/// 场景结束后继续推演时，每次多算的分钟数，避免逐分钟重放（R-20261117-M1）。
+const EXTENSION_CHUNK_MINUTES: u64 = 720;
 
 /// 同一引擎中 DES 仿真数量上限（与脚本仿真一致）。
 const MAX_DES_SIMULATIONS: usize = 50;
@@ -51,19 +55,72 @@ pub(crate) struct DesReplay {
     /// 是否已注入"备件丢失"故障（阶段③）。
     #[serde(default)]
     pub spares_lost: bool,
+    /// 重放遥测的内存缓存（R-20261117-M1）：不序列化，状态克隆之间共享。
+    /// 以"已记录的干预数 + 推演到的时刻"为键；干预增加或查询超出已推演范围时才重新推演。
+    #[serde(skip)]
+    cache: Arc<Mutex<Option<TelemetryCache>>>,
+}
+
+/// 一次重新推演得到的遥测及其适用范围。
+#[derive(Debug)]
+struct TelemetryCache {
+    interventions: usize,
+    until: u64,
+    telemetry: Arc<super::Telemetry>,
 }
 
 impl DesReplay {
-    /// 推演到 `now` 的遥测（执行干预后可能超出原场景窗口）。
-    fn telemetry(&self, now: u64) -> super::Telemetry {
-        rerun(
-            &self.factory,
-            &self.scenario,
-            self.attempt,
-            &self.interventions,
-            now,
-        )
-        .telemetry
+    fn horizon_end(&self) -> u64 {
+        self.scenario.start_minute + self.scenario.horizon_minutes
+    }
+
+    /// 把一次推演得到的遥测放进缓存（创建时与执行回调时复用，避免再推演一次）。
+    fn seed_cache(&self, until: u64, telemetry: super::Telemetry) {
+        if let Ok(mut cache) = self.cache.lock() {
+            *cache = Some(TelemetryCache {
+                interventions: self.interventions.len(),
+                until: until.max(self.horizon_end()),
+                telemetry: Arc::new(telemetry),
+            });
+        }
+    }
+
+    /// 至少覆盖到 `now` 的遥测（执行干预后可能超出原场景窗口）。
+    ///
+    /// 命中缓存时不重新推演；场景结束后需要延伸时，一次多推演 `EXTENSION_CHUNK_MINUTES` 分钟。
+    fn telemetry(&self, now: u64) -> Arc<super::Telemetry> {
+        let horizon_end = self.horizon_end();
+        let needed = now.max(horizon_end);
+        let mut cache = match self.cache.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if let Some(c) = cache.as_ref() {
+            if c.interventions == self.interventions.len() && c.until >= needed {
+                return c.telemetry.clone();
+            }
+        }
+        let until = if needed > horizon_end {
+            needed + EXTENSION_CHUNK_MINUTES
+        } else {
+            horizon_end
+        };
+        let telemetry = Arc::new(
+            rerun(
+                &self.factory,
+                &self.scenario,
+                self.attempt,
+                &self.interventions,
+                until,
+            )
+            .telemetry,
+        );
+        *cache = Some(TelemetryCache {
+            interventions: self.interventions.len(),
+            until,
+            telemetry: telemetry.clone(),
+        });
+        telemetry
     }
 
     /// 当前时刻的可观测快照（确定性重新推演后截取）。
@@ -163,8 +220,16 @@ impl Engine {
                 attempt,
                 interventions: vec![],
                 spares_lost: false,
+                cache: Arc::default(),
             }),
         };
+        // 创建时已经推演过一次，直接放进缓存。
+        if let Some(r) = &sim.replay {
+            r.seed_cache(
+                scenario.start_minute + scenario.horizon_minutes,
+                run.telemetry,
+            );
+        }
         self.update(|s, _| {
             s.des_simulations.insert(id.clone(), sim);
             s.des_truth.insert(id.clone(), truth);
@@ -402,6 +467,9 @@ impl Engine {
             &next.interventions,
             now,
         );
+        // 新干预需要新的缓存（不与旧状态共享），并复用这次推演的遥测。
+        next.cache = Arc::default();
+        next.seed_cache(now, run.telemetry);
         let future: Vec<ScheduledEvent> = prefixed_queue(&sim_id, run.events)
             .into_iter()
             .filter(|e| e.due_at > now)
@@ -600,5 +668,184 @@ impl Engine {
                 "provenance": "simulation",
             }))
             .collect::<Vec<_>>())
+    }
+}
+
+/// R-20261117-M1 回归（移植自 PR #84，并按阶段③的干预与执行后延伸调整）。
+/// 是 `engine_link` 内部的单元测试：重放次数计数器只在单元测试中可见，不计入 runtime 集成测试映射。
+#[cfg(test)]
+mod review_regressions {
+    use super::super::scenario::REVIEW_REPLAY_COUNT;
+    use super::*;
+
+    fn large_engine() -> (Engine, String, super::super::Telemetry, FactoryConfig) {
+        let mut factory = FactoryConfig::line_b_default();
+        while factory.machines.len() < 32 {
+            let i = factory.machines.len();
+            factory.machines.push(super::super::MachineSpec {
+                id: format!("CNC-{i:02}"),
+                line: "Line-B".into(),
+                cycle_seconds: 90,
+            });
+        }
+        let scenario = ScenarioConfig {
+            seed: 1,
+            pattern: Pattern::Script,
+            start_minute: 497,
+            horizon_minutes: 2880,
+            mechanisms: None,
+        };
+        let expected = rerun(&factory, &scenario, 0, &[], 0).telemetry;
+        let mut engine = Engine::memory().unwrap();
+        let id = engine
+            .create_des_simulation(DesSimulationConfig {
+                name: "cache regression".into(),
+                factory: Some(factory.clone()),
+                scenario,
+            })
+            .unwrap();
+        engine.advance(497).unwrap();
+        (engine, id, expected, factory)
+    }
+
+    fn replays() -> usize {
+        REVIEW_REPLAY_COUNT.with(|c| c.get())
+    }
+
+    #[test]
+    fn rt_des_22_advance_2880_reuses_replay_and_preserves_observations() {
+        let (mut e, id, telemetry, factory) = large_engine();
+        REVIEW_REPLAY_COUNT.with(|c| c.set(0));
+        for step in 1..=2880 {
+            e.advance(497 + step).unwrap();
+            let count = replays();
+            assert!(
+                count <= 1,
+                "推进2880分钟至多重放一次，step={step}, count={count}"
+            );
+            if [1, 14, 80, 2880].contains(&step) {
+                let expected = serde_json::to_value(observe::observe(
+                    &id,
+                    &factory,
+                    &telemetry,
+                    497,
+                    e.now(),
+                    &[],
+                    false,
+                ))
+                .unwrap();
+                let case = e
+                    .state
+                    .cases
+                    .values()
+                    .find(|c| c.batch.starts_with(&format!("{id}:")))
+                    .unwrap();
+                assert_eq!(
+                    case.world["des"], expected,
+                    "缓存快照必须与直接重放逐值一致"
+                );
+                assert_eq!(
+                    e.des_factory_view(&id).unwrap(),
+                    observe::factory_view(&serde_json::from_value(expected).unwrap())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rt_des_23_recovered_cache_is_shared_read_only_and_not_persisted() {
+        let (mut e, id, _, _) = large_engine();
+        let before = serde_json::to_value(&e.state).unwrap();
+        e.state = serde_json::from_value(before.clone()).unwrap();
+        REVIEW_REPLAY_COUNT.with(|c| c.set(0));
+        let view = e.des_factory_view(&id).unwrap();
+        e.des_forecast(&id).unwrap();
+        e.des_whatif(
+            &id,
+            &WhatIfRequest {
+                asset: "CNC-XX".into(),
+                quantity: 500,
+                due_minute: 960,
+            },
+        )
+        .unwrap();
+        assert!(replays() <= 1, "恢复后各读取入口应共用一次重放");
+        assert_eq!(
+            serde_json::to_value(&e.state).unwrap(),
+            before,
+            "只读缓存不得持久化或改变状态"
+        );
+        e.advance(498).unwrap();
+        e.des_forecast(&id).unwrap();
+        assert!(replays() <= 1, "状态clone后不得丢失缓存");
+        let again = e.des_factory_view(&id).unwrap();
+        assert_eq!(again["simulation_id"], view["simulation_id"]);
+        // 阶段③后重放输入有 5 个持久字段（工厂、场景、尝试序号、干预、备件丢失）；
+        // 原 #84 断言"只有 3 个字段"的意图是"遥测不持久化"，这里直接检查。
+        let replay =
+            serde_json::to_value(&e.state).unwrap()["des_simulations"][&id]["replay"].clone();
+        let keys: Vec<&String> = replay.as_object().unwrap().keys().collect();
+        assert!(
+            keys.iter()
+                .all(|k| !k.contains("telemetry") && !k.contains("cache")),
+            "不持久化遥测或缓存: {keys:?}"
+        );
+    }
+
+    /// 阶段③补充：执行干预后缓存按新干预失效并只重算一次；场景结束后的继续推演也不逐分钟重放。
+    #[test]
+    fn rt_des_22b_interventions_and_post_horizon_reuse_cache() {
+        let mut e = Engine::memory().unwrap();
+        let id = e
+            .create_des_simulation(DesSimulationConfig {
+                name: "p0".into(),
+                factory: None,
+                scenario: ScenarioConfig {
+                    seed: 1,
+                    pattern: Pattern::Script,
+                    start_minute: 497,
+                    horizon_minutes: 60,
+                    mechanisms: None,
+                },
+            })
+            .unwrap();
+        let mut case = None;
+        for t in 497..=530 {
+            e.advance(t).unwrap();
+            case = e
+                .state
+                .cases
+                .values()
+                .find(|c| c.stage == "WAITING_HUMAN")
+                .map(|c| c.id.clone());
+            if case.is_some() {
+                break;
+            }
+        }
+        let case = case.expect("P0 case waits for a decision");
+        e.select_des_plan(&case, "C").unwrap();
+        let rev = e.case(&case).unwrap().plan_revision;
+        e.approve(&case, rev, "production", "supervisor").unwrap();
+        e.execute(&case, "production").unwrap();
+        let t0 = e.now();
+        REVIEW_REPLAY_COUNT.with(|c| c.set(0));
+        // 推进到场景结束后 300 分钟（维修完成之后）。
+        for t in t0 + 1..=497 + 60 + 300 {
+            e.advance(t).unwrap();
+        }
+        assert!(
+            replays() <= 2,
+            "干预后与场景结束后的推进不应逐分钟重放，实际 {} 次",
+            replays()
+        );
+        let view = e.des_factory_view(&id).unwrap();
+        let xx = view["machines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["id"] == "CNC-XX")
+            .unwrap()
+            .clone();
+        assert_eq!(xx["status"], "running", "维修完成后恢复运行: {xx}");
     }
 }

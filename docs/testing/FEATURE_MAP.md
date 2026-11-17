@@ -47,6 +47,8 @@ RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS �
 
 车间 DES 阶段④（`mom-des`）：RT-DES-12～15、19 与 HTTP-DES-04 定义审核层（规则检查、AI 审核与降级、人工确认与分歧记录、审核模型选择与独立性标注）和批量实验（两种策略、同一组 seed、CSV）；实现前 Red。
 
+DES 审查修复（R-20261117-M1/L1，移植自 PR #84/#85 并适配阶段③）：RT-DES-22/23（`engine_link.rs` 单元测试）验证遥测缓存——推进 2880 分钟至多重新推演一次、恢复快照后各读取入口共用一次、缓存不持久化，干预后与场景结束后的推进也不逐分钟重放；RT-DES-24（`server/tests/mom_des_budget.rs`，真实 HTTP）验证无法满足的大场景在 2 秒内返回 400 constraint，并发读取在 2 秒内返回。证据见 [r-20261117-m1-l1-des.md](evidence/r-20261117-m1-l1-des.md)。
+
 专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
 
 每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。
