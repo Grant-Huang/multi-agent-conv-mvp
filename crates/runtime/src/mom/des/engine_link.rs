@@ -217,6 +217,24 @@ impl Engine {
         })
     }
 
+    /// 从 DES 案例的排产方案中选定一个可行方案；选定后原有批准作废，需要重新批准（阶段③）。
+    ///
+    /// 骨架：阶段③尚未实现。
+    pub fn select_des_plan(&mut self, _case_id: &str, _plan_id: &str) -> Result<()> {
+        anyhow::bail!("DES plan selection is not implemented yet")
+    }
+
+    /// 向 DES 仿真注入故障（阶段③）。
+    ///
+    /// 骨架：阶段③尚未实现。
+    pub fn des_inject_fault(
+        &mut self,
+        _simulation_id: &str,
+        _fault: super::DesFault,
+    ) -> Result<()> {
+        anyhow::bail!("DES fault injection is not implemented yet")
+    }
+
     /// 投递到期的 DES 事件。由 `deliver_scheduled` 在每个虚拟分钟调用。
     pub(in crate::mom) fn deliver_des(&mut self, now: u64) -> Result<()> {
         let due: Vec<(String, ScheduledEvent)> = self

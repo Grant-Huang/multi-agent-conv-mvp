@@ -175,3 +175,101 @@ async fn http_des_02_invalid_requests_fail_fast_without_breaking_service() {
     assert_eq!(r.status(), 200, "service must stay responsive");
     task.abort();
 }
+
+async fn command(client: &reqwest::Client, url: &str, case: &str, body: Value) -> Value {
+    let r = client
+        .post(format!("{url}/api/mom/cases/{case}/commands"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = r.status();
+    let v: Value = r.json().await.unwrap_or(Value::Null);
+    assert_eq!(status, 200, "command {body} failed: {v}");
+    v
+}
+
+#[tokio::test]
+async fn http_des_03_select_approve_execute_and_close_over_http() {
+    let (url, task) = server().await;
+    let client = reqwest::Client::new();
+    let sim = setup(&client, &url).await;
+    let list: Value = client
+        .get(format!("{url}/api/mom/cases"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let case = list["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["batch"].as_str().is_some_and(|b| b.starts_with("DES-")))
+        .expect("DES case listed")
+        .clone();
+    let id = case["case_id"].as_str().unwrap().to_string();
+    // setup 已推进 30 分钟；先刷新证据，避免批准时快照过期。
+    command(&client, &url, &id, json!({"command":"refresh_plan"})).await;
+    command(&client, &url, &id, json!({"command":"advance","minutes":2})).await;
+    command(
+        &client,
+        &url,
+        &id,
+        json!({"command":"select_plan","plan":"B"}),
+    )
+    .await;
+    let view: Value = client
+        .get(format!("{url}/api/mom/cases/{id}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let rev = view["plan_revision"].as_u64().unwrap();
+    command(
+        &client,
+        &url,
+        &id,
+        json!({"command":"approve","scope":"production","plan_revision":rev,"actor":"supervisor"}),
+    )
+    .await;
+    command(
+        &client,
+        &url,
+        &id,
+        json!({"command":"execute","scope":"production"}),
+    )
+    .await;
+    command(
+        &client,
+        &url,
+        &id,
+        json!({"command":"advance","minutes":290}),
+    )
+    .await;
+    let f: Value = client
+        .get(format!("{url}/api/mom/factory?simulation={sim}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let xx = f["machines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == "CNC-XX")
+        .unwrap()
+        .clone();
+    assert_eq!(xx["status"], "running", "CNC-XX back in service: {xx}");
+    assert!(
+        xx["vibration_mm_s"].as_f64().unwrap() < 2.8,
+        "vibration recovered: {xx}"
+    );
+    command(&client, &url, &id, json!({"command":"close"})).await;
+    task.abort();
+}

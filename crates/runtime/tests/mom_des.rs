@@ -827,3 +827,273 @@ fn rt_des_21_factory_size_is_bounded() {
         "engine must reject oversized factories"
     );
 }
+
+// ───────────────────── 阶段③：方案选定、执行回写、核验 ─────────────────────
+
+/// 推进 P0 仿真直到 DES 案例进入人工决策，返回案例编号。
+fn p0_waiting(e: &mut Engine) -> String {
+    for t in START..=START + 30 {
+        e.advance(t).unwrap();
+        if let Some(id) = e
+            .case_ids()
+            .into_iter()
+            .find(|id| e.case(id).unwrap().stage == "WAITING_HUMAN")
+        {
+            return id;
+        }
+    }
+    panic!("P0 case must reach WAITING_HUMAN within 30 minutes");
+}
+
+/// 选定方案、批准并执行，返回执行时刻。
+fn run_plan(e: &mut Engine, id: &str, plan_id: &str) -> u64 {
+    e.select_des_plan(id, plan_id)
+        .unwrap_or_else(|err| panic!("plan {plan_id} must be selectable: {err}"));
+    let rev = e.case(id).unwrap().plan_revision;
+    e.approve(id, rev, "production", "supervisor").unwrap();
+    e.execute(id, "production").unwrap();
+    e.now()
+}
+
+fn action<'a>(e: &'a Engine, id: &str, tool: &str) -> &'a an_runtime::mom::Action {
+    e.case(id)
+        .unwrap()
+        .actions
+        .values()
+        .find(|a| a.tool == tool)
+        .unwrap_or_else(|| panic!("action {tool} missing"))
+}
+
+fn machine(view: &Value, id: &str) -> Value {
+    view["machines"]
+        .as_array()
+        .expect("machines")
+        .iter()
+        .find(|m| m["id"] == id)
+        .unwrap_or_else(|| panic!("{id} missing"))
+        .clone()
+}
+
+fn event_kinds_after(e: &Engine, id: &str, after: u64) -> Vec<String> {
+    e.events(id, after, 1000)
+        .unwrap()
+        .into_iter()
+        .map(|ev| ev.kind)
+        .collect()
+}
+
+#[test]
+fn rt_des_08_selected_plan_b_changes_the_simulated_world() {
+    let (mut e, sim) = p0_engine(None);
+    let id = p0_waiting(&mut e);
+    assert!(
+        e.select_des_plan(&id, "A").is_err(),
+        "infeasible plan A must not be selectable"
+    );
+    let t0 = run_plan(&mut e, &id, "B");
+    let r = FactoryConfig::line_b_default().resources;
+    let maintenance_end = t0 + r.finish_batch_minutes + r.maintenance_minutes;
+    assert_eq!(
+        action(&e, &id, "eam.maintenance").complete_at,
+        maintenance_end,
+        "maintenance completes after finishing the batch and the repair"
+    );
+    assert_eq!(
+        action(&e, &id, "mro.transfer").complete_at,
+        t0 + r.tool_transfer_minutes,
+        "tool transfer completes after the transfer time"
+    );
+
+    // 维修期间 CNC-XX 停机；调拨到达前 CNC-XZ 无刀。
+    e.advance(t0 + r.finish_batch_minutes + 10).unwrap();
+    let f = e.des_factory_view(&sim).unwrap();
+    assert_eq!(
+        machine(&f, "CNC-XX")["status"],
+        "stopped",
+        "CNC-XX stopped for maintenance"
+    );
+    // 调拨到达后 CNC-XZ 有刀。
+    e.advance(t0 + r.tool_transfer_minutes + 1).unwrap();
+    let f = e.des_factory_view(&sim).unwrap();
+    assert_eq!(
+        machine(&f, "CNC-XZ")["tool_present"],
+        true,
+        "tool arrived at CNC-XZ"
+    );
+    assert_eq!(action(&e, &id, "mro.transfer").state, "VERIFIED");
+
+    // 维修完成后 CNC-XX 恢复。
+    e.advance(maintenance_end + 5).unwrap();
+    let f = e.des_factory_view(&sim).unwrap();
+    let xx = machine(&f, "CNC-XX");
+    assert_eq!(xx["status"], "running", "CNC-XX back in service");
+    assert!(
+        xx["vibration_mm_s"].as_f64().unwrap() < 2.8,
+        "vibration recovered: {xx}"
+    );
+    assert!(
+        xx["cpk"].as_f64().unwrap() >= CPK_THRESHOLD,
+        "Cpk recovered: {xx}"
+    );
+    assert!(
+        e.case(&id)
+            .unwrap()
+            .actions
+            .values()
+            .all(|a| a.state == "VERIFIED"),
+        "all actions verified"
+    );
+    e.close(&id).expect("verified case can be closed");
+    assert_eq!(e.case(&id).unwrap().stage, "CLOSED");
+}
+
+#[test]
+fn rt_des_09_post_execution_same_source_observation_is_verification_evidence() {
+    let (mut e, _sim) = p0_engine(None);
+    let id = p0_waiting(&mut e);
+    run_plan(&mut e, &id, "C");
+    let before = e.case(&id).unwrap().clone();
+    let seq = e.sequence();
+    let mut recheck = before
+        .observations
+        .iter()
+        .find(|o| o.event.kind == "quality")
+        .expect("quality observation")
+        .event
+        .clone();
+    recheck.id = format!("{}-recheck", recheck.id);
+    recheck.occurred_at = e.now();
+    recheck.payload["cpk"] = serde_json::json!(1.4);
+    assert_eq!(
+        e.ingest(recheck).unwrap(),
+        id,
+        "re-check joins the same case"
+    );
+    let after = e.case(&id).unwrap();
+    let kinds = event_kinds_after(&e, &id, seq);
+    assert!(
+        kinds.iter().any(|k| k == "VerificationObservationRecorded"),
+        "re-check must be recorded as verification evidence: {kinds:?}"
+    );
+    assert!(
+        !kinds.iter().any(|k| k == "PlanInvalidated"),
+        "re-check must not invalidate the plan: {kinds:?}"
+    );
+    assert_eq!(after.plan_revision, before.plan_revision);
+    assert_eq!(after.stage, before.stage);
+    assert_eq!(after.observations.len(), before.observations.len() + 1);
+}
+
+#[test]
+fn rt_des_10_new_disturbance_after_execution_still_invalidates_plan() {
+    let (mut e, _sim) = p0_engine(None);
+    let id = p0_waiting(&mut e);
+    run_plan(&mut e, &id, "C");
+    let seq = e.sequence();
+    let mut order = e
+        .case(&id)
+        .unwrap()
+        .observations
+        .iter()
+        .find(|o| o.event.kind == "order")
+        .expect("order observation")
+        .event
+        .clone();
+    order.id = format!("{}-second", order.id);
+    order.occurred_at = e.now();
+    order.payload["quantity"] = serde_json::json!(200);
+    assert_eq!(e.ingest(order).unwrap(), id);
+    let kinds = event_kinds_after(&e, &id, seq);
+    assert!(
+        kinds.iter().any(|k| k == "PlanInvalidated"),
+        "a new order must still invalidate the plan: {kinds:?}"
+    );
+}
+
+#[test]
+fn rt_des_11_tool_transfer_failure_comes_from_the_simulation() {
+    let (mut e, sim) = p0_engine(None);
+    let id = p0_waiting(&mut e);
+    e.select_des_plan(&id, "C").expect("plan C selectable");
+    let rev = e.case(&id).unwrap().plan_revision;
+    e.approve(&id, rev, "production", "supervisor").unwrap();
+    e.des_inject_fault(&sim, DesFault::ToolSparesLost)
+        .expect("fault injection");
+    let seq = e.sequence();
+    e.execute(&id, "production").unwrap();
+    assert_eq!(
+        action(&e, &id, "mro.transfer").state,
+        "FAILED",
+        "transfer fails without spares"
+    );
+    assert_eq!(e.case(&id).unwrap().stage, "PARTIAL");
+    assert!(
+        event_kinds_after(&e, &id, seq)
+            .iter()
+            .any(|k| k == "CompensationRequired"),
+        "failure requires compensation"
+    );
+    let t0 = e.now();
+    e.advance(t0 + 60).unwrap();
+    let f = e.des_factory_view(&sim).unwrap();
+    assert_eq!(
+        machine(&f, "CNC-XZ")["tool_present"],
+        false,
+        "no tool arrived"
+    );
+}
+
+#[test]
+fn rt_des_18_cases_sharing_resources_are_linked() {
+    let mut e = Engine::memory().unwrap();
+    let scripted = e.create_simulation(SimulationConfig::default()).unwrap();
+    e.create_des_simulation(des_config(1, Pattern::ResourceContention, 240))
+        .unwrap();
+    e.advance(START + 240).unwrap();
+    let alarm_cases: Vec<String> = e
+        .case_ids()
+        .into_iter()
+        .filter(|id| {
+            let c = e.case(id).unwrap();
+            c.batch.starts_with("DES-")
+                && c.observations
+                    .iter()
+                    .any(|o| matches!(o.event.kind.as_str(), "vibration" | "quality"))
+        })
+        .collect();
+    let assets: BTreeSet<String> = alarm_cases
+        .iter()
+        .map(|id| e.case(id).unwrap().asset.clone())
+        .collect();
+    assert!(
+        assets.len() >= 2,
+        "contention needs alarms on two machines: {assets:?}"
+    );
+    for id in &alarm_cases {
+        let links: Vec<Value> = e
+            .events(id, 0, 1000)
+            .unwrap()
+            .into_iter()
+            .filter(|ev| ev.kind == "RelatedCaseLinked")
+            .map(|ev| ev.payload)
+            .collect();
+        let others: BTreeSet<String> = links
+            .iter()
+            .filter_map(|p| p["related_case"].as_str().map(String::from))
+            .collect();
+        assert!(
+            alarm_cases.iter().any(|o| o != id && others.contains(o)),
+            "case {id} must be linked to another alarm case: {links:?}"
+        );
+        assert!(
+            !others.contains(&scripted),
+            "scripted case must not be linked"
+        );
+        assert!(
+            links.iter().all(|p| p["reason"]
+                .as_str()
+                .is_some_and(|r| r.contains("maintenance_crew"))),
+            "link reason must name the shared resource: {links:?}"
+        );
+    }
+}

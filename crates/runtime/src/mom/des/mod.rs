@@ -96,6 +96,14 @@ impl Default for ResourceConfig {
     }
 }
 
+/// 注入 DES 仿真的故障（阶段③），用于检验执行时的失败与补偿。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DesFault {
+    /// 仓库备用刀具全部丢失（被他处领用或检出不合格），之后的刀具调拨失败。
+    ToolSparesLost,
+}
+
 /// what-if 请求：为某个报警设备上的订单比较候选方案。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
