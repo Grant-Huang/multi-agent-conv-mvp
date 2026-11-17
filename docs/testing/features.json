@@ -216,6 +216,26 @@
     ]
   },
   {
+    "id": "mom-des",
+    "document": "docs/mom/DES_CLOSED_LOOP.md",
+    "sources": [
+      "crates/runtime/src/mom/des.rs",
+      "crates/runtime/tests/mom_des.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-DES-01",
+      "RT-DES-02",
+      "RT-DES-03",
+      "RT-DES-04",
+      "RT-DES-05",
+      "RT-DES-16",
+      "RT-DES-17"
+    ],
+    "note": "阶段①（开环）用例已定义，实现前 Red；DES 为仿真，不代表真实工厂能力。"
+  },
+  {
     "id": "agent-links",
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [
