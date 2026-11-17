@@ -421,7 +421,33 @@
       "E2E-AGGUIDE",
       "E2E-AGCONNECT",
       "E2E-AGUNDO",
-      "E2E-AGDISABLE"
+      "E2E-AGDISABLE",
+      "E2E-AGCHAT",
+      "E2E-AGCHOICE"
+    ]
+  },
+  {
+    "id": "agent-chat",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/conversation.rs",
+      "crates/runtime/src/store.rs",
+      "crates/runtime/src/agent_config.rs",
+      "crates/core/src/lib.rs",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGCHAT-01",
+      "RT-AGCHAT-02",
+      "RT-AGCHAT-03",
+      "RT-AGCHAT-04",
+      "RT-AGCHAT-05",
+      "RT-AGCHAT-06",
+      "RT-AGCHAT-07",
+      "RT-AGCHAT-08",
+      "RT-AGCHAT-09"
     ]
   }
 ]

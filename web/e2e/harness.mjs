@@ -27,8 +27,14 @@ const model=http.createServer(async(req,res)=>{
     modelLog.write(JSON.stringify({schema:schema??'text',at:Date.now()})+'\n');
     let result;
     if(schema==='turn_decision') {
+      // AG.4：对话里管理助手（开关在下面的配置里打开）
+      const manage=(op,id,role)=>({action:'manage_agents',question:'',task_goal:'',task_id:'',follow_up_kind:'',change:'',agent_op:op,agent_id:id,agent_role:role});
+      if(last.includes('接进来验证'))result=manage('connect','claude','');
+      else if(last.includes('接个写代码的助手验证'))result=manage('connect','','coding');
+      else {
       const delegate=!last.startsWith('你好');
       result={action:delegate?'delegate':'respond',question:'',task_goal:delegate?last:'',task_id:'',follow_up_kind:'',change:''};
+      }
     }else if(schema==='route_decision') {
       // AG.3：要求改代码时路由到 coding（测试服务里没有内置 coding agent）
       if(goal.includes('改代码验证'))result={task_class:'L2',execution_role:'coding',required_tools:[],risk_level:'medium',reason:'受控验证路由'};
@@ -65,7 +71,7 @@ await mkdir(bin,{recursive:true});
 const mockAcp=path.join(root,'target/debug',process.platform==='win32'?'an-mock-acp.exe':'an-mock-acp');
 await writeFile(path.join(bin,'claude-agent-acp'),`#!/bin/sh\nexec ${JSON.stringify(mockAcp)} "$@"\n`,{mode:0o755});
 const config=path.join(dir,'config.toml');
-const configText=`[server]\nbind="127.0.0.1:18787"\ndb_path=${JSON.stringify(path.join(dir,'app.db'))}\nstatic_dir=${JSON.stringify(path.join(root,'web/dist'))}\n[llm]\nbase_url="http://127.0.0.1:${modelPort}/v1"\nmodel="verification-model"\nmax_retries=0\ntimeout_secs=120\n[agents.general]\nworkspace_dir=${JSON.stringify(workspace)}\nwebsearch_command=""\n[agents.coding]\nenabled=false\n[acp]\nauto_detect=false\n[[acp.agents]]\nid="hand"\nname="hand"\ncommand=${JSON.stringify(mockAcp)}\nrole="reviewer"\n[nodes]\ndiscovery=false\n[logging]\ndir=${JSON.stringify(path.join(dir,'logs'))}\n`;
+const configText=`[server]\nbind="127.0.0.1:18787"\ndb_path=${JSON.stringify(path.join(dir,'app.db'))}\nstatic_dir=${JSON.stringify(path.join(root,'web/dist'))}\n[llm]\nbase_url="http://127.0.0.1:${modelPort}/v1"\nmodel="verification-model"\nmax_retries=0\ntimeout_secs=120\n[agents.general]\nworkspace_dir=${JSON.stringify(workspace)}\nwebsearch_command=""\n[agents.coding]\nenabled=false\n[acp]\nauto_detect=false\n[[acp.agents]]\nid="hand"\nname="hand"\ncommand=${JSON.stringify(mockAcp)}\nrole="reviewer"\n[nodes]\ndiscovery=false\n[conversation]\nagent_management=true\n[logging]\ndir=${JSON.stringify(path.join(dir,'logs'))}\n`;
 await writeFile(config,configText);
 const binary=path.join(root,'target/debug',process.platform==='win32'?'agentnexus.exe':'agentnexus');
 const child=spawn(binary,[config],{cwd:root,env:{...process.env,RUST_LOG:'info',PATH:`${bin}${path.delimiter}${process.env.PATH??''}`},stdio:['ignore','pipe','pipe']});

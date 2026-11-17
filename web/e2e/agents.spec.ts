@@ -112,3 +112,30 @@ test('E2E-AGDISABLE: 停用最后一个写代码的助手后，对话用大白�
   expect(text.startsWith('[')).toBeFalsy();
   expect(text).toMatch(/（技术信息：E_ROUTE_NO_AGENT）$/);
 });
+
+test('E2E-AGCHAT: 在对话里接入助手：确认卡 → 结果卡，刷新后仍在', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '＋ 新会话', exact: true }).click();
+  await page.getByRole('textbox', { name: '输入消息' }).fill('把 Claude Code 接进来验证');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  const main = page.locator('main');
+  const card = main.getByRole('region', { name: '确认修改' });
+  await expect(card).toContainText('接入「Claude Code」');
+  await card.getByRole('button', { name: '确认', exact: true }).click();
+  await expect(main.getByRole('region', { name: '修改结果' })).toContainText('已连通');
+  await page.reload();
+  await expect(main.getByRole('region', { name: '修改结果' })).toBeVisible();
+  await expect(main.getByRole('region', { name: '确认修改' })).toContainText('已确认');
+});
+
+test('E2E-AGCHOICE: 没说是哪个助手时给选择卡，点选后出确认卡', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '＋ 新会话', exact: true }).click();
+  await page.getByRole('textbox', { name: '输入消息' }).fill('帮我接个写代码的助手验证');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  const main = page.locator('main');
+  const choice = main.getByRole('region', { name: '选择助手' });
+  await expect(choice).toBeVisible();
+  await choice.getByRole('button', { name: /Cursor CLI/ }).click();
+  await expect(main.getByRole('region', { name: '确认修改' })).toContainText('接入「Cursor CLI」');
+});

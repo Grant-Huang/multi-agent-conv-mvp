@@ -286,3 +286,21 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-AGCONNECT | agent-ui | Claude Code 一行点"接入"，在确认卡上确认 | 确认卡说明将会发生什么并显示将执行的命令；结果卡显示已接入和检测结果"已连通"；该行变为已接入 |
 | E2E-AGUNDO | agent-ui | 在结果卡上点"撤销"并确认 | Claude Code 恢复为已安装、未接入 |
 | E2E-AGDISABLE | agent-ui | 再次接入 Claude Code 后停用它，然后在对话里要求改代码 | 确认卡警告"写代码"类任务将没有执行者；之后对话中的回复是大白话，错误码只在末尾括号里 |
+
+## 对话里管理助手（AG.4，实现前定义）
+
+开关 `[conversation] agent_management`。受控模型按脚本给出前台判断；"不思考 / 思考"不涉及。卡片存在消息的 `card_json` 列，送给模型的历史只用 `content`。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGCHAT-01 | agent-chat | 开关关闭 | 前台判断请求的 schema 与现在相同（没有 manage_agents 和 agent_* 字段） |
+| RT-AGCHAT-02 | agent-chat | 开关打开，claude-agent-acp 已安装；模型判断"接入 claude" | 回复消息带确认卡（提议 id、凭证、说明）；消息正文是大白话，不含凭证 |
+| RT-AGCHAT-03 | agent-chat | 模型判断"接入"但没说是哪个，角色 coding | 回复选择卡，候选都是负责写代码、尚未接入的助手；在选择卡上点选（会话内提议接口）后，会话里追加一张确认卡 |
+| RT-AGCHAT-04 | agent-chat | 模型判断"停用 hand"（config.toml 里写的） | 大白话说明要改 config.toml，没有卡片 |
+| RT-AGCHAT-05 | agent-chat | 生成确认卡之后再发一条消息 | 送给模型的请求里没有凭证，也没有卡片数据，只有卡片消息的大白话正文 |
+| RT-AGCHAT-06 | agent-chat | 用卡片里的凭证确认 | 同一会话追加结果卡；原确认卡状态变为 applied；助手已注册 |
+| RT-AGCHAT-07 | agent-chat | 提议过期后再确认 | 410；原确认卡状态变为 expired |
+| RT-AGCHAT-08 | agent-chat | 旧数据库的 messages 表没有 card_json 列 | 打开时自动补列，可重复打开；旧消息可读，卡片为空 |
+| RT-AGCHAT-09 | agent-chat | 模型给的 agent_id 不在候选里 | 按格式不合格重试；第二次合格后正常生成卡片 |
+| E2E-AGCHAT | agent-ui | 对话里说"把 Claude Code 接进来" | 对话里出现确认卡 → 确认 → 对话里出现结果卡；刷新后两张卡仍在，确认卡显示已确认 |
+| E2E-AGCHOICE | agent-ui | 对话里说"帮我接个写代码的助手" | 对话里出现选择卡 → 点选一个 → 对话里出现确认卡 |
