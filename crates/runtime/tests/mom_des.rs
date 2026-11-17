@@ -1394,3 +1394,329 @@ fn rt_des_19_reviewer_model_choice_and_independence() {
         assert!(c.label.is_some(), "non-independent review must be labelled");
     }
 }
+
+// ───────────────────── 阶段③b：按报警触发的模板与产线协同事项 ─────────────────────
+
+const S1_TEMPLATE: &str = "DAG-TPL-COMPOSITE-MAINT-QUAL-RESCHEDULE@1";
+
+fn run_des(pattern: Pattern, seed: u64, horizon: u64) -> Engine {
+    let mut e = Engine::memory().unwrap();
+    e.create_des_simulation(des_config(seed, pattern, horizon))
+        .unwrap();
+    e.advance(START + horizon).unwrap();
+    e
+}
+
+fn is_incident(c: &an_runtime::mom::Case) -> bool {
+    c.world.get("des_incident").is_some_and(Value::is_object)
+}
+
+fn is_open(c: &an_runtime::mom::Case) -> bool {
+    !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED")
+}
+
+fn kinds(c: &an_runtime::mom::Case) -> BTreeSet<String> {
+    c.observations
+        .iter()
+        .map(|o| o.event.kind.clone())
+        .collect()
+}
+
+fn alarm_cases(e: &Engine) -> Vec<an_runtime::mom::Case> {
+    e.case_ids()
+        .into_iter()
+        .map(|id| e.case(&id).unwrap().clone())
+        .filter(|c| c.batch.starts_with("DES-") && !is_incident(c))
+        .filter(|c| {
+            let k = kinds(c);
+            k.contains("vibration") || k.contains("quality")
+        })
+        .collect()
+}
+
+fn incidents(e: &Engine) -> Vec<an_runtime::mom::Case> {
+    e.case_ids()
+        .into_iter()
+        .map(|id| e.case(&id).unwrap().clone())
+        .filter(is_incident)
+        .collect()
+}
+
+#[test]
+fn rt_des_25_every_alarm_case_gets_a_plan_or_joins_an_incident() {
+    let mut checked = 0;
+    for (pattern, horizon) in [
+        (cluster(), 240),
+        (Pattern::ResourceContention, 480),
+        (Pattern::Unconstrained, 480),
+    ] {
+        for seed in 1..=5 {
+            let e = run_des(pattern.clone(), seed, horizon);
+            for c in alarm_cases(&e).iter().filter(|c| is_open(c)) {
+                checked += 1;
+                let k = kinds(c);
+                assert!(
+                    !c.template.is_empty(),
+                    "{pattern:?} seed {seed}: {} has no plan ({k:?})",
+                    c.id
+                );
+                if c.world.get("des_member_of").is_some_and(Value::is_string) {
+                    assert_eq!(
+                        c.template, "DAG-TPL-DES-DIAGNOSIS@1",
+                        "member {} uses diagnosis",
+                        c.id
+                    );
+                    assert!(
+                        !c.nodes.contains_key("schedule"),
+                        "member {} must not schedule",
+                        c.id
+                    );
+                } else {
+                    let (v, q, o) = (
+                        k.contains("vibration"),
+                        k.contains("quality"),
+                        k.contains("order"),
+                    );
+                    let expected = match (v, q, o) {
+                        (true, true, true) => S1_TEMPLATE,
+                        (true, true, false) => "DAG-TPL-DES-COMBINED@1",
+                        (true, false, _) => "DAG-TPL-DES-EQUIPMENT@1",
+                        _ => "DAG-TPL-DES-QUALITY@1",
+                    };
+                    assert_eq!(
+                        c.template, expected,
+                        "{pattern:?} seed {seed}: {} kinds {k:?}",
+                        c.id
+                    );
+                    assert!(c.nodes.contains_key("schedule"), "{} must schedule", c.id);
+                }
+            }
+        }
+    }
+    assert!(checked > 0, "the patterns must produce alarm cases");
+}
+
+#[test]
+fn rt_des_26_line_incident_coordinates_concurrent_cases() {
+    let mut found = 0;
+    for seed in 1..=5 {
+        let mut e = Engine::memory().unwrap();
+        e.create_des_simulation(des_config(seed, cluster(), 240))
+            .unwrap();
+        // 逐分钟检查：同一产线任一时刻最多一个活动事项。
+        for t in START..=START + 240 {
+            e.advance(t).unwrap();
+            let active = incidents(&e).iter().filter(|i| is_open(i)).count();
+            assert!(
+                active <= 1,
+                "seed {seed} minute {t}: {active} active incidents on Line-B"
+            );
+        }
+        // 两个以上 DES 案例的首次观测在 60 分钟内 → 必须有事项。
+        let mut firsts: Vec<u64> = e
+            .case_ids()
+            .into_iter()
+            .map(|id| e.case(&id).unwrap().clone())
+            .filter(|c| c.batch.starts_with("DES-") && !is_incident(c))
+            .filter_map(|c| c.observations.iter().map(|o| o.event.occurred_at).min())
+            .collect();
+        firsts.sort();
+        let close_pair = firsts.windows(2).any(|w| w[1] - w[0] <= 60);
+        let incs = incidents(&e);
+        if close_pair {
+            assert!(
+                !incs.is_empty(),
+                "seed {seed}: concurrent cases on one line need an incident"
+            );
+        }
+        for inc in &incs {
+            found += 1;
+            assert_eq!(inc.template, "DAG-TPL-DES-LINE-INCIDENT@1");
+            let members: Vec<String> = inc.world["des_incident"]["members"]
+                .as_array()
+                .expect("members")
+                .iter()
+                .map(|m| m.as_str().unwrap().to_string())
+                .collect();
+            assert!(members.len() >= 2, "incident {} needs two members", inc.id);
+            let mut member_assets = BTreeSet::new();
+            for m in &members {
+                let mc = e.case(m).unwrap();
+                assert_eq!(
+                    mc.world["des_member_of"],
+                    inc.id.as_str(),
+                    "member {m} points back"
+                );
+                assert!(
+                    !mc.nodes.contains_key("schedule"),
+                    "member {m} must not schedule"
+                );
+                let decided = e
+                    .events(m, 0, 1000)
+                    .unwrap()
+                    .iter()
+                    .any(|ev| ev.kind == "DecisionRequested");
+                assert!(!decided, "member {m} must never request a decision");
+                if kinds(mc).iter().any(|k| k == "vibration" || k == "quality") {
+                    member_assets.insert(mc.asset.clone());
+                }
+            }
+            if let Some(p) = &inc.proposal {
+                assert_eq!(
+                    p["plans"].as_array().map(|x| x.len()),
+                    Some(3),
+                    "incident has three plans"
+                );
+                let assets: Vec<String> = p["assets"]
+                    .as_array()
+                    .expect("incident plan names its alarmed machines")
+                    .iter()
+                    .map(|a| a.as_str().unwrap().to_string())
+                    .collect();
+                assert!(!assets.is_empty());
+                assert!(
+                    assets.iter().all(|a| member_assets.contains(a)),
+                    "{assets:?} ⊆ {member_assets:?}"
+                );
+            }
+        }
+    }
+    assert!(
+        found > 0,
+        "the cluster pattern must produce at least one line incident"
+    );
+}
+
+#[test]
+fn rt_des_27_incident_decision_applies_to_all_alarmed_machines() {
+    for seed in 1..=10 {
+        let mut e = Engine::memory().unwrap();
+        let sim = e
+            .create_des_simulation(des_config(seed, Pattern::ResourceContention, 480))
+            .unwrap();
+        let mut target = None;
+        for t in START..=START + 480 {
+            e.advance(t).unwrap();
+            target = incidents(&e).into_iter().find(|i| {
+                i.stage == "WAITING_HUMAN"
+                    && i.proposal.as_ref().is_some_and(|p| {
+                        p["recommended"].is_string()
+                            && p["assets"].as_array().is_some_and(|a| a.len() >= 2)
+                    })
+            });
+            if target.is_some() {
+                break;
+            }
+        }
+        let Some(inc) = target else { continue };
+        let plan_id = inc.proposal.as_ref().unwrap()["recommended"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let assets: Vec<String> = inc.proposal.as_ref().unwrap()["assets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a.as_str().unwrap().to_string())
+            .collect();
+        let seq = e.sequence();
+        run_plan(&mut e, &inc.id, &plan_id);
+        let applied = e
+            .events(&inc.id, seq, 1000)
+            .unwrap()
+            .into_iter()
+            .find(|ev| ev.kind == "DesPlanApplied")
+            .expect("plan applied to the simulation");
+        let windows: Vec<(String, u64, u64)> = applied.payload["interventions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|iv| iv["kind"] == "maintenance")
+            .map(|iv| {
+                (
+                    iv["machine"].as_str().unwrap().to_string(),
+                    iv["start_minute"].as_u64().unwrap(),
+                    iv["end_minute"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        let maintained: BTreeSet<&String> = windows.iter().map(|w| &w.0).collect();
+        assert!(
+            assets.iter().all(|a| maintained.contains(a)),
+            "every alarmed machine is maintained: {windows:?} vs {assets:?}"
+        );
+        let mut sorted = windows.clone();
+        sorted.sort_by_key(|w| w.1);
+        assert!(
+            sorted.windows(2).all(|w| w[1].1 >= w[0].2),
+            "one crew maintains machines one after another: {sorted:?}"
+        );
+        let last_end = sorted.iter().map(|w| w.2).max().unwrap();
+        e.advance(last_end + 5).unwrap();
+        let view = e.des_factory_view(&sim).unwrap();
+        for a in &assets {
+            let m = machine(&view, a);
+            assert_eq!(m["status"], "running", "{a} back in service: {m}");
+            assert!(
+                m["vibration_mm_s"].as_f64().unwrap() < 2.8,
+                "{a} recovered: {m}"
+            );
+        }
+        e.close(&inc.id).expect("verified incident can be closed");
+        for m in inc.world["des_incident"]["members"].as_array().unwrap() {
+            let mc = e.case(m.as_str().unwrap()).unwrap();
+            assert_eq!(
+                mc.stage, "CLOSED",
+                "member {} closes with the incident",
+                mc.id
+            );
+        }
+        return;
+    }
+    panic!("resource contention must yield an incident with two alarmed machines and a recommended plan within seeds 1–10");
+}
+
+#[test]
+fn rt_des_28_p0_keeps_single_case_without_incident() {
+    let (mut e, _sim) = p0_engine(None);
+    e.advance(START + 30).unwrap();
+    let ids = e.case_ids();
+    assert_eq!(ids.len(), 1, "P0 forms one case");
+    let c = e.case(&ids[0]).unwrap();
+    assert_eq!(c.template, S1_TEMPLATE);
+    assert!(!is_incident(c));
+    assert!(c.world.get("des_member_of").is_none_or(Value::is_null));
+}
+
+#[test]
+fn rt_des_29_closed_des_case_is_not_reused_or_refreshed() {
+    let (mut e, _sim) = p0_engine(None);
+    let id = p0_waiting(&mut e);
+    let t0 = run_plan(&mut e, &id, "C");
+    let end = t0
+        + FactoryConfig::line_b_default()
+            .resources
+            .maintenance_minutes;
+    e.advance(end + 5).unwrap();
+    e.close(&id).unwrap();
+    let frozen = e.case(&id).unwrap().world["des"].clone();
+    let mut later = e
+        .case(&id)
+        .unwrap()
+        .observations
+        .iter()
+        .find(|o| o.event.kind == "quality")
+        .unwrap()
+        .event
+        .clone();
+    later.id = format!("{}-after-close", later.id);
+    later.occurred_at = e.now();
+    let new_case = e.ingest(later).unwrap();
+    assert_ne!(new_case, id, "a closed case must not receive new events");
+    e.advance(e.now() + 10).unwrap();
+    assert_eq!(
+        e.case(&id).unwrap().world["des"],
+        frozen,
+        "closed case is not refreshed"
+    );
+}

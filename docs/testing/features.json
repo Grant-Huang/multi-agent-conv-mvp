@@ -255,7 +255,12 @@
       "RT-DES-19",
       "RT-DES-20",
       "RT-DES-21",
-      "RT-DES-24"
+      "RT-DES-24",
+      "RT-DES-25",
+      "RT-DES-26",
+      "RT-DES-27",
+      "RT-DES-28",
+      "RT-DES-29"
     ],
     "note": "阶段①～③已实现，阶段④实现前 Red；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。RT-DES-22/23 为 engine_link.rs 中的单元测试（重放计数与缓存共享），不计入 runtime 集成测试映射。"
   },
