@@ -304,3 +304,16 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGCHAT-09 | agent-chat | 模型给的 agent_id 不在候选里 | 按格式不合格重试；第二次合格后正常生成卡片 |
 | E2E-AGCHAT | agent-ui | 对话里说"把 Claude Code 接进来" | 对话里出现确认卡 → 确认 → 对话里出现结果卡；刷新后两张卡仍在，确认卡显示已确认 |
 | E2E-AGCHOICE | agent-ui | 对话里说"帮我接个写代码的助手" | 对话里出现选择卡 → 点选一个 → 对话里出现确认卡 |
+
+## 助手排查：规则库与本机体检（AG.5 第 1、2 层，实现前定义）
+
+接口 `POST /api/agents/diagnose {"id"}`：先做一次握手检测，再做本机体检（只运行写死的只读检查），按规则给出大白话结论和修复步骤。不外发任何内容。RT-AGDIAG-05（诊断包脱敏）、07～12（外部助手排查）依赖 DLP，D1 定稿后再定义。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGDIAG-01 | agent-diagnose | 已安装的 claude-agent-acp 启动时向错误输出写"env: node: No such file or directory"并退出 | 检测分类为缺依赖；命中"找不到 Node.js"规则，给出大白话解释和安装步骤 |
+| RT-AGDIAG-02 | agent-diagnose | 服务的 PATH 里找不到 claude-agent-acp，登录 shell 的 PATH 里能找到 | 命中"服务找不到命令、终端能找到"规则，解释里给出终端里找到的完整路径和修复办法 |
+| RT-AGDIAG-03 | agent-diagnose | ZCode 要求 Node ≥ 22，本机 node 是 v18；Cursor 没有 Node 要求；node 命令卡住不返回 | ZCode 命中"Node 版本太低"；排查 Cursor 时不运行 node；node 卡住时 5 秒内结束并记为检查失败，不拖住整个排查 |
+| RT-AGDIAG-04 | agent-diagnose | ZCode 的凭证文件存在但不可读；另一次凭证文件不存在 | 不可读时检查结果仍为"存在"（只看是否存在，不读内容）；不存在时命中"缺少 ZCode 登录凭证"规则 |
+| RT-AGDIAG-06 | agent-diagnose | 自定义 agent 以未知报错退出 | 没有命中任何规则，结果标记为"未识别"；自定义命令不做登录 shell 检查 |
+| E2E-AGDIAG | agent-ui | 「助手」页签里未安装的 ZCode 点"排查" | 显示排查结果：大白话结论"还没有安装"、安装步骤（带复制按钮）和体检项 |

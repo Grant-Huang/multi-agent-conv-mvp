@@ -139,3 +139,14 @@ test('E2E-AGCHOICE: 没说是哪个助手时给选择卡，点选后出确认卡
   await choice.getByRole('button', { name: /Cursor CLI/ }).click();
   await expect(main.getByRole('region', { name: '确认修改' })).toContainText('接入「Cursor CLI」');
 });
+
+test('E2E-AGDIAG: 未安装的助手点"排查"，看到大白话结论和安装步骤', async ({ page }) => {
+  await page.goto('/');
+  const list = await openAgents(page);
+  await row(list, 'zcode').getByRole('button', { name: '排查' }).click();
+  const report = page.getByRole('region', { name: '排查结果' });
+  await expect(report).toContainText('还没有安装');
+  await expect(report).toContainText('npm i -g zcode-acp-server');
+  await expect(report.getByRole('button', { name: '复制' }).first()).toBeVisible();
+  await expect(report).toContainText('体检');
+});

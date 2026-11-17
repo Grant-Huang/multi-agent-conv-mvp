@@ -423,7 +423,8 @@
       "E2E-AGUNDO",
       "E2E-AGDISABLE",
       "E2E-AGCHAT",
-      "E2E-AGCHOICE"
+      "E2E-AGCHOICE",
+      "E2E-AGDIAG"
     ]
   },
   {
@@ -448,6 +449,25 @@
       "RT-AGCHAT-07",
       "RT-AGCHAT-08",
       "RT-AGCHAT-09"
+    ]
+  },
+  {
+    "id": "agent-diagnose",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/diagnose.rs",
+      "crates/agents/src/catalog.rs",
+      "crates/runtime/src/agent_chat.rs",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGDIAG-01",
+      "RT-AGDIAG-02",
+      "RT-AGDIAG-03",
+      "RT-AGDIAG-04",
+      "RT-AGDIAG-06"
     ]
   }
 ]
