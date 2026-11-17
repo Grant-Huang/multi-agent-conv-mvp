@@ -224,6 +224,8 @@
       "crates/runtime/src/mom/des/physics.rs",
       "crates/runtime/src/mom/des/engine_link.rs",
       "crates/runtime/src/mom/des/observe.rs",
+      "crates/runtime/src/mom/des/review.rs",
+      "crates/runtime/src/mom/des/batch.rs",
       "crates/runtime/tests/mom_des.rs",
       "crates/server/src/mom_sim.rs",
       "crates/server/tests/mom_des.rs"
@@ -242,9 +244,14 @@
       "RT-DES-09",
       "RT-DES-10",
       "RT-DES-11",
+      "RT-DES-12",
+      "RT-DES-13",
+      "RT-DES-14",
+      "RT-DES-15",
       "RT-DES-16",
       "RT-DES-17",
       "RT-DES-18",
+      "RT-DES-19",
       "RT-DES-20",
       "RT-DES-21"
     ],

@@ -191,6 +191,8 @@ pub struct ModelOverrides {
     pub router: Option<String>,
     pub general: Option<String>,
     pub reviewer: Option<String>,
+    /// MOM 车间 DES 审核层使用的 AI 审核模型；不填则用 `[llm].model`（与 MOM 主 agent 同模型，报告标注"非独立审核"）
+    pub mom_reviewer: Option<String>,
     /// 各角色的服务地址；不填则使用 `[llm].base_url`
     #[serde(default)]
     pub base_urls: ModelBaseUrls,

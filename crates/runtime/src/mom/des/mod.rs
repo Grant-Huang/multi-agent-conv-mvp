@@ -14,9 +14,11 @@
 //! - 仿真按虚拟分钟推进（与引擎时钟一致），遥测时间戳以秒记录；对外事件沿用 `EventInput.occurred_at`（虚拟分钟）。
 //! - 阶段①只产生 `order` / `vibration` / `quality` 三类事件（决策 D7）。
 //! - 标准答案（`GroundTruth`）只供审核层读取，不得进入 agent 视图、人类视图、工具返回或仿真列表。
+pub mod batch;
 mod engine_link;
 mod observe;
 mod physics;
+pub mod review;
 mod rng;
 mod scenario;
 

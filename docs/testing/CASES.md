@@ -278,3 +278,16 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-11 | mom-des | 同上，选定方案 C 并批准后，仓库备件被注入故障清空 | 执行，再推进 60 分钟 | 刀具调拨动作失败，案例进入 PARTIAL 并产生 `CompensationRequired`；CNC-XZ 仍然无刀 |
 | RT-DES-18 | mom-des | 资源竞争模式的 DES 仿真产生多个不同设备的报警案例 | 推进到仿真结束 | 同线、共用维修班组的报警案例之间互相记录 `RelatedCaseLinked`，理由写明共用资源；不与脚本案例关联 |
 | HTTP-DES-03 | mom-des | an-mom 服务中的 P0 DES 案例进入人工决策 | 依次发送 select_plan(B)、approve、execute、advance、close 命令 | 每步返回 200；推进后工厂视图显示 CNC-XX 恢复运行且振动低于 2.8 mm/s；案例全部动作核验并成功关闭 |
+
+## MOM 车间 DES 阶段④：审核层与批量实验（实现前定义）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §7、§8、§10 与阶段④修订说明。审核分三步：确定性规则检查 → AI 审核（`Reviewer` 接口，测试用脚本替身）→ 人工确认或推翻。规则：`hitl_before_write`（写操作之前有人工批准）、`root_cause_attribution`（记录的根因假设与标准答案比对）、`plan_safe`（执行的方案可行且不是"继续使用报警设备"）、`effectiveness`（维修完成后设备振动低于 2.8 mm/s 且 Cpk 不低于 1.33）、`timeliness`（各阶段耗时，仅信息）。AI 审核的每条结论必须引用输入中的证据编号（`rule:…`、`event:…`、`truth:…`）。审核模型按 `[models].mom_reviewer` → `[llm].model` 的顺序选择；与 MOM 主 agent 同模型时标注"非独立审核"。批量实验：同一组 seed 分别以 AI-Native 与传统 MOM 策略运行；两者都按推荐方案决策，差别只在决策延迟（传统策略为多次部门间交接的延迟之和，参数为建模假设）。runtime 测试在 `crates/runtime/tests/mom_des.rs`，HTTP 测试在 `crates/server/tests/mom_des.rs`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DES-12 | mom-des | P0 案例；以及人为构造的案例记录 | 记录错误根因假设、再记录正确假设；构造"先执行后批准"的记录；执行方案 C 后在维修完成前后检查 | 错误假设使 `root_cause_attribution` 失败并注明误判，正确假设通过；先执行后批准使 `hitl_before_write` 失败，先批准后执行则通过；`effectiveness` 在维修完成前为待定，完成且设备恢复后通过 |
+| RT-DES-13 | mom-des | P0 案例已执行 | 用脚本审核替身分别返回合规结论、报错、超时、引用不存在的证据 | 合规时报告 AI 状态为完成，每条结论引用的证据都在输入中；其余三种情况 AI 状态为不可用并写明原因（错误、timeout、invalid_output），规则检查结果照常在报告中；审核不改变案例和仿真状态 |
+| RT-DES-14 | mom-des | AI 审核已完成 | 人工推翻但不写理由；写理由推翻；再确认同意 | 无理由推翻被拒绝；有理由推翻被记录，并生成一条 AI 与人工的分歧记录；同意不产生新的分歧 |
+| RT-DES-15 | mom-des | P0 固定剧本，seed 1–100，AI-Native 与传统两种策略 | 运行两次批量实验并导出 CSV | 两次结果完全相同；每个 seed 两种策略各一行，共 200 行；CSV 有表头和 200 行数据；传统策略的平均决策耗时大于 AI-Native |
+| RT-DES-19 | mom-des | 三份配置：配置了不同于 `[llm].model` 的 `mom_reviewer`；未配置；配置为与 `[llm].model` 相同 | 解析配置并选择审核模型 | 第一份使用 `mom_reviewer`、为独立审核；后两份为非独立审核并带标注；配置项被识别，不出现未知字段警告 |
+| HTTP-DES-04 | mom-des | an-mom 服务配置了脚本审核替身，P0 DES 案例进入人工决策 | 记录根因假设、读取审核报告、触发 AI 审核、提交人工推翻 | 每步返回 200；报告含规则结果、AI 结论与分歧记录；案例的 agent 视图中不出现审核报告与标准答案字段 |

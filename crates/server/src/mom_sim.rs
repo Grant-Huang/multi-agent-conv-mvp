@@ -8,7 +8,7 @@ use crate::mom::AppState;
 use an_runtime::mom::des::{DesSimulationConfig, WhatIfRequest};
 use an_runtime::mom::Engine;
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
@@ -44,6 +44,54 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/mom/factory", get(factory))
         .route("/api/mom/factory/forecast", get(forecast))
         .route("/api/mom/factory/whatif", post(whatif))
+        .route("/api/mom/reviews/{case_id}", get(review_report))
+        .route("/api/mom/reviews/{case_id}/ai", post(ai_review))
+        .route("/api/mom/reviews/{case_id}/decision", post(human_review))
+}
+
+/// 审核报告（阶段④）：规则检查、AI 审核记录、人工结论与分歧。
+async fn review_report(State(s): State<AppState>, Path(case_id): Path<String>) -> ApiResult {
+    with_engine(&s, |e| e.des_review_report(&case_id))
+}
+
+/// AI 审核的超时（阶段④）。
+const AI_REVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// 触发 AI 审核；未配置审核模型时返回规则检查结果并标注 AI 审核不可用。
+async fn ai_review(State(s): State<AppState>, Path(case_id): Path<String>) -> ApiResult {
+    let Some(reviewer) = s.reviewer.clone() else {
+        return with_engine(&s, |e| e.des_review_report(&case_id));
+    };
+    an_runtime::mom::des::review::run_ai_review(
+        &s.engine,
+        &case_id,
+        reviewer.as_ref(),
+        AI_REVIEW_TIMEOUT,
+    )
+    .await
+    .map(Json)
+    .map_err(bad_request)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HumanReviewBody {
+    decision: String,
+    #[serde(default)]
+    reason: String,
+    actor: String,
+}
+
+/// 人工确认或推翻 AI 审核结论（推翻必须写理由）。
+async fn human_review(
+    State(s): State<AppState>,
+    Path(case_id): Path<String>,
+    Json(body): Json<HumanReviewBody>,
+) -> ApiResult {
+    with_engine(&s, |e| {
+        e.des_human_review(&case_id, &body.decision, &body.reason, &body.actor)?;
+        e.des_review_report(&case_id)
+    })
 }
 
 #[derive(Deserialize)]
