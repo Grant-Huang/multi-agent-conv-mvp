@@ -1,0 +1,225 @@
+{
+  "mode": "A_master_data",
+  "rows": 700,
+  "errors": 0,
+  "entities": {
+    "micro": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "tp": 1947,
+      "fp": 0,
+      "fn": 0,
+      "support": 1947
+    },
+    "macro_f1": 1.0,
+    "per_type": {
+      "AMOUNT": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 77,
+        "fp": 0,
+        "fn": 0,
+        "support": 77
+      },
+      "CONTACT": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 17,
+        "fp": 0,
+        "fn": 0,
+        "support": 17
+      },
+      "CUSTOMER": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 403,
+        "fp": 0,
+        "fn": 0,
+        "support": 403
+      },
+      "DEVICE_ID": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 273,
+        "fp": 0,
+        "fn": 0,
+        "support": 273
+      },
+      "EMAIL": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 56,
+        "fp": 0,
+        "fn": 0,
+        "support": 56
+      },
+      "INTERNAL_INFO": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 175,
+        "fp": 0,
+        "fn": 0,
+        "support": 175
+      },
+      "METRIC": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 228,
+        "fp": 0,
+        "fn": 0,
+        "support": 228
+      },
+      "ORDER_ID": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 217,
+        "fp": 0,
+        "fn": 0,
+        "support": 217
+      },
+      "PERSON": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 137,
+        "fp": 0,
+        "fn": 0,
+        "support": 137
+      },
+      "PLANT": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 150,
+        "fp": 0,
+        "fn": 0,
+        "support": 150
+      },
+      "PROJECT": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 204,
+        "fp": 0,
+        "fn": 0,
+        "support": 204
+      },
+      "SECRET": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 10,
+        "fp": 0,
+        "fn": 0,
+        "support": 10
+      }
+    },
+    "per_language": {
+      "en": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 556,
+        "fp": 0,
+        "fn": 0,
+        "support": 556
+      },
+      "zh": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 1391,
+        "fp": 0,
+        "fn": 0,
+        "support": 1391
+      }
+    },
+    "boundary_near_miss": 0
+  },
+  "decisions": {
+    "accuracy": 1.0,
+    "confusion": {
+      "ALLOW": {
+        "ALLOW": 56,
+        "ANONYMIZE": 0,
+        "REVIEW": 0,
+        "BLOCK": 0
+      },
+      "ANONYMIZE": {
+        "ALLOW": 0,
+        "ANONYMIZE": 459,
+        "REVIEW": 0,
+        "BLOCK": 0
+      },
+      "REVIEW": {
+        "ALLOW": 0,
+        "ANONYMIZE": 0,
+        "REVIEW": 175,
+        "BLOCK": 0
+      },
+      "BLOCK": {
+        "ALLOW": 0,
+        "ANONYMIZE": 0,
+        "REVIEW": 0,
+        "BLOCK": 10
+      }
+    },
+    "per_channel_accuracy": {
+      "email": 1.0,
+      "external_api": 1.0,
+      "file_upload": 1.0,
+      "mcp": 1.0,
+      "slack": 1.0
+    }
+  },
+  "safety": {
+    "dangerous_release": 0,
+    "over_blocking": 0,
+    "secret_total": 10,
+    "secret_missed": 0,
+    "secret_value_in_output": 0
+  },
+  "sanitized_exact_match": {
+    "match": 700,
+    "total": 700,
+    "rate": 1.0
+  },
+  "invariants": {
+    "metric_total": 228,
+    "metric_kept": 228,
+    "device_total": 273,
+    "device_kept": 273,
+    "routing_total": 21,
+    "routing_kept": 21
+  },
+  "vault": {
+    "restoration_map_match": 606,
+    "restoration_map_total": 606,
+    "roundtrip_ok": 459,
+    "roundtrip_total": 459,
+    "cross_scope_attempts": 459,
+    "cross_task_restored": 0,
+    "cross_tenant_restored": 0
+  },
+  "supplementary": {
+    "unknown_destination_total": 20,
+    "unknown_destination_blocked": 20
+  },
+  "latency_ms": {
+    "p50": 3.456,
+    "p95": 6.041,
+    "p99": 8.475,
+    "max": 23.465
+  },
+  "failures": [],
+  "wall_seconds": 2.74
+}

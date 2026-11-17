@@ -1,0 +1,6 @@
+# 租户主数据示例（客户 / 项目 / 厂区 / 人员名单），通常从 CRM、MES、HR 系统同步。
+# 名单越完整，识别越准；无名单时只能依赖通用规则（与可选 GLiNER）。
+CUSTOMER: [青川重工, Harborview Dynamics]
+PROJECT: [项目白鹭, Project Kestrel]
+PLANT: [西岸三厂, Plant North]
+PERSON: [吴主管, Riley Morgan]
