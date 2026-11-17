@@ -26,16 +26,21 @@ fn bad_request(e: impl std::fmt::Display) -> (StatusCode, Json<Value>) {
     )
 }
 
-/// 在引擎锁内执行一次调用；计算都有上限，不会长时间占用锁。
-fn with_engine(
-    state: &AppState,
-    f: impl FnOnce(&mut Engine) -> anyhow::Result<Value>,
+/// Keep bounded DES computation and mutex waiting off Tokio's async workers.
+/// Creation's rejection sampling has a deterministic machine-minute work budget.
+async fn with_engine(
+    state: AppState,
+    f: impl FnOnce(&mut Engine) -> anyhow::Result<Value> + Send + 'static,
 ) -> ApiResult {
-    let mut engine = state
-        .engine
-        .lock()
-        .map_err(|_| bad_request("runtime unavailable"))?;
-    f(&mut engine).map(Json).map_err(bad_request)
+    tokio::task::spawn_blocking(move || {
+        let mut engine = state
+            .engine
+            .lock()
+            .map_err(|_| bad_request("runtime unavailable"))?;
+        f(&mut engine).map(Json).map_err(bad_request)
+    })
+    .await
+    .map_err(|_| bad_request("runtime unavailable"))?
 }
 
 pub(crate) fn routes() -> Router<AppState> {
@@ -63,17 +68,18 @@ struct WhatIfBody {
 }
 
 async fn create(State(s): State<AppState>, Json(config): Json<DesSimulationConfig>) -> ApiResult {
-    with_engine(&s, |e| {
+    with_engine(s, move |e| {
         Ok(json!({"simulation_id": e.create_des_simulation(config)?, "provenance": "simulation"}))
     })
+    .await
 }
 
 async fn factory(State(s): State<AppState>, Query(q): Query<SimulationQuery>) -> ApiResult {
-    with_engine(&s, |e| e.des_factory_view(&q.simulation))
+    with_engine(s, move |e| e.des_factory_view(&q.simulation)).await
 }
 
 async fn forecast(State(s): State<AppState>, Query(q): Query<SimulationQuery>) -> ApiResult {
-    with_engine(&s, |e| e.des_forecast(&q.simulation))
+    with_engine(s, move |e| e.des_forecast(&q.simulation)).await
 }
 
 async fn whatif(State(s): State<AppState>, Json(body): Json<WhatIfBody>) -> ApiResult {
@@ -82,5 +88,5 @@ async fn whatif(State(s): State<AppState>, Json(body): Json<WhatIfBody>) -> ApiR
         quantity: body.quantity,
         due_minute: body.due_minute,
     };
-    with_engine(&s, |e| e.des_whatif(&body.simulation_id, &request))
+    with_engine(s, move |e| e.des_whatif(&body.simulation_id, &request)).await
 }

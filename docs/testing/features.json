@@ -226,7 +226,8 @@
       "crates/runtime/src/mom/des/observe.rs",
       "crates/runtime/tests/mom_des.rs",
       "crates/server/src/mom_sim.rs",
-      "crates/server/tests/mom_des.rs"
+      "crates/server/tests/mom_des.rs",
+      "crates/server/tests/mom_des_budget.rs"
     ],
     "coverage": "backend",
     "cases": [],
@@ -241,7 +242,8 @@
       "RT-DES-16",
       "RT-DES-17",
       "RT-DES-20",
-      "RT-DES-21"
+      "RT-DES-21",
+      "RT-DES-24"
     ],
     "note": "阶段①（开环）已实现，RT-DES 由 Red 转 Green；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。"
   },

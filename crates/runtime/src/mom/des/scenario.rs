@@ -18,6 +18,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// 拒绝抽样的最大尝试次数。
 const MAX_ATTEMPTS: u32 = 256;
+/// Per-creation deterministic work budget, including all rejection-sampling attempts.
+/// One maximum-size trajectory (32 * 2881) fits; repeated full trajectories do not.
+const MAX_MACHINE_MINUTES: u64 = 100_000;
 /// 仿真最长时长（虚拟分钟），与脚本仿真扰动窗口一致（48 小时）。
 const MAX_HORIZON_MINUTES: u64 = 2880;
 /// 两个报警相隔不超过此值且需要同一资源时，记为资源竞争。
@@ -225,6 +228,8 @@ pub(super) fn run_with_attempt(
     } else {
         MAX_ATTEMPTS
     };
+    let per_attempt = factory.machines.len() as u64 * (cfg.horizon_minutes + 1);
+    let attempts = attempts.min((MAX_MACHINE_MINUTES / per_attempt) as u32);
     for attempt in 0..attempts {
         let mech = mechanisms(cfg, attempt);
         let sim = simulate(factory, cfg, &knobs(&cfg.pattern), mech, attempt);
@@ -239,7 +244,7 @@ pub(super) fn run_with_attempt(
         }
     }
     bail!(
-        "scenario constraint not satisfiable: {:?} within {MAX_ATTEMPTS} attempts (seed {})",
+        "scenario constraint not satisfiable: {:?} within {attempts} attempts and {MAX_MACHINE_MINUTES} machine-minutes work budget (seed {})",
         cfg.pattern,
         cfg.seed
     )

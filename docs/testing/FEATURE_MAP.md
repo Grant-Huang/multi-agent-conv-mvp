@@ -43,6 +43,8 @@ RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS �
 
 车间 DES 阶段②（`mom-des`）：RT-DES-06、07、20、21（runtime）与 HTTP-DES-01/02（`crates/server/tests/mom_des.rs`）覆盖 DES 案例的工具读取、基于可观测状态的 what-if 多方案、只读工厂状态与趋势预测接口、设备数上限；实现位于 `crates/runtime/src/mom/des/observe.rs` 与 `crates/server/src/mom_sim.rs`，Red→Green 证据见 [mom-des-phase2.md](evidence/mom-des-phase2.md)。
 
+R-20261117-L1：RT-DES-24（server/tests/mom_des_budget.rs，真实HTTP、内存引擎）验证32×2880、无法满足的并发簇创建在2秒内返回400 constraint，并发GET cases在2秒内返回200且无拒绝创建记录。DES调用移入阻塞线程；拒绝抽样累计预算100,000设备分钟。证据见 [r-20261117-l1.md](evidence/r-20261117-l1.md)。
+
 专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
 
 每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。
