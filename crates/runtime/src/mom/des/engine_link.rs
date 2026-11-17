@@ -18,7 +18,7 @@ use crate::mom::{Engine, ScheduledEvent, ScheduledPayload};
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 /// 场景结束后继续推演时，每次多算的分钟数，避免逐分钟重放（R-20261117-M1）。
@@ -146,12 +146,18 @@ impl DesReplay {
 }
 
 /// 把仿真事件转成引擎事件队列项：事件编号与批次号加上仿真编号前缀。
-fn prefixed_queue(id: &str, events: Vec<DesEvent>) -> Vec<ScheduledEvent> {
+///
+/// `coordinated` 为真时在载荷中标记来源仿真，启用阶段③b 的报警模板与产线协同事项；
+/// P0 固定剧本（`Pattern::Script`）不标记，保持原 S1 行为不变（设计文档 §6.8）。
+fn prefixed_queue(id: &str, events: Vec<DesEvent>, coordinated: bool) -> Vec<ScheduledEvent> {
     events
         .into_iter()
         .map(|mut event| {
             event.id = format!("{id}:{}", event.id);
             event.batch = format!("{id}:{}", event.batch);
+            if coordinated {
+                event.payload["simulation"] = json!(id);
+            }
             ScheduledEvent {
                 id: event.id.clone(),
                 due_at: event.occurred_at,
@@ -204,7 +210,11 @@ impl Engine {
         let (run, attempt) = run_with_attempt(&factory, &scenario)?;
 
         let id = format!("DES-{}", self.state.des_simulations.len() + 1);
-        let queue = prefixed_queue(&id, run.events);
+        let queue = prefixed_queue(
+            &id,
+            run.events,
+            !matches!(scenario.pattern, super::Pattern::Script),
+        );
         let truth = prefixed_truth(&id, run.truth);
         let sim = DesSimulation {
             id: id.clone(),
@@ -410,7 +420,16 @@ impl Engine {
             .and_then(|plans| plans.iter().find(|p| p["id"] == plan_id.as_str()))
             .cloned()
             .context("selected plan missing")?;
-        let asset = c.asset.clone();
+        // 协同事项作用于报警设备集合；单设备案例作用于本设备。
+        let assets: Vec<String> = proposal["assets"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .filter(|a: &Vec<String>| !a.is_empty())
+            .unwrap_or_else(|| vec![c.asset.clone()]);
         let revision = c.plan_revision;
         let replay = self.des_replay(&sim_id)?.clone();
         let now = self.now();
@@ -423,14 +442,23 @@ impl Engine {
             "C" => Some(now),
             _ => None,
         };
+        // 维修班组依次排班：每台设备分给最早空闲的班组（只有 1 个班组时依次维修）。
         let maintenance_end = maintenance_start.map(|start| {
-            let end = start + r.maintenance_minutes;
-            interventions.push(Intervention::Maintenance {
-                machine: asset.clone(),
-                start_minute: start,
-                end_minute: end,
-            });
-            end
+            let mut crews = vec![start; r.maintenance_crews.max(1) as usize];
+            let mut last_end = start;
+            for machine in &assets {
+                let crew = (0..crews.len()).min_by_key(|&i| crews[i]).unwrap_or(0);
+                let begin = crews[crew].max(start);
+                let end = begin + r.maintenance_minutes;
+                crews[crew] = end;
+                last_end = last_end.max(end);
+                interventions.push(Intervention::Maintenance {
+                    machine: machine.clone(),
+                    start_minute: begin,
+                    end_minute: end,
+                });
+            }
+            last_end
         });
         let mut spares = if replay.spares_lost {
             0
@@ -470,10 +498,14 @@ impl Engine {
         // 新干预需要新的缓存（不与旧状态共享），并复用这次推演的遥测。
         next.cache = Arc::default();
         next.seed_cache(now, run.telemetry);
-        let future: Vec<ScheduledEvent> = prefixed_queue(&sim_id, run.events)
-            .into_iter()
-            .filter(|e| e.due_at > now)
-            .collect();
+        let future: Vec<ScheduledEvent> = prefixed_queue(
+            &sim_id,
+            run.events,
+            !matches!(next.scenario.pattern, super::Pattern::Script),
+        )
+        .into_iter()
+        .filter(|e| e.due_at > now)
+        .collect();
         let truth = prefixed_truth(&sim_id, run.truth);
 
         self.update(|s, events| {
@@ -608,6 +640,320 @@ impl Engine {
         })
     }
 
+    /// 产线协同事项（阶段③b，设计文档 §6.8）。某 DES 案例收到观测后：
+    /// - 该产线已有未执行的活动事项 → 加入（成员改为只做诊断）；
+    /// - 否则，若同产线窗口内有足够多的 DES 案例且至少一个有报警 → 建立事项。
+    ///
+    /// 已执行的事项不再接收新成员；已执行动作的案例不加入事项。
+    fn coordinate_incident(&mut self, sim_id: &str, case_id: &str) -> Result<()> {
+        use super::coordination::{has_alarm, is_incident, is_member};
+        let Some(replay) = self
+            .state
+            .des_simulations
+            .get(sim_id)
+            .and_then(|s| s.replay.as_ref())
+        else {
+            return Ok(());
+        };
+        let coord = replay.factory.coordination.clone();
+        let line_of = |asset: &str| {
+            replay
+                .factory
+                .machines
+                .iter()
+                .find(|m| m.id == asset)
+                .map(|m| m.line.clone())
+        };
+        let open = |c: &crate::mom::Case| {
+            !c.cancelled && !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED")
+        };
+        let c = self.case(case_id)?;
+        // 已请人决策的案例保持为独立处理单元，不再加入事项（决策只能在一处做）。
+        if is_incident(c)
+            || !open(c)
+            || !c.actions.is_empty()
+            || self.decision_requested(case_id)?
+        {
+            return Ok(());
+        }
+        let Some(line) = line_of(&c.asset) else {
+            return Ok(());
+        };
+        let now = self.now();
+        let sim_prefix = format!("{sim_id}:");
+        let incident_prefix = format!("{sim_id}:INCIDENT:{line}:");
+        let active = self
+            .state
+            .cases
+            .values()
+            .find(|x| x.batch.starts_with(&incident_prefix) && open(x))
+            .map(|x| (x.id.clone(), x.actions.is_empty()));
+        let members: Vec<String> = match active {
+            Some((_, false)) => return Ok(()),
+            Some((ref inc, true)) => {
+                let current = &self.case(inc)?.world["des_incident"]["members"];
+                let already = current
+                    .as_array()
+                    .is_some_and(|m| m.iter().any(|v| v == case_id));
+                if already && !has_alarm(c) {
+                    return Ok(());
+                }
+                vec![case_id.to_string()]
+            }
+            None => {
+                let since = now.saturating_sub(coord.incident_window_minutes);
+                let candidates: Vec<&crate::mom::Case> = self
+                    .state
+                    .cases
+                    .values()
+                    .filter(|x| {
+                        x.batch.starts_with(&sim_prefix)
+                            && !is_incident(x)
+                            && !is_member(x)
+                            && open(x)
+                            && x.actions.is_empty()
+                            && line_of(&x.asset).as_deref() == Some(line.as_str())
+                            && x.observations.iter().any(|o| o.event.occurred_at >= since)
+                    })
+                    .collect();
+                let mut undecided = vec![];
+                for x in candidates {
+                    if !self.decision_requested(&x.id)? {
+                        undecided.push(x);
+                    }
+                }
+                let candidates = undecided;
+                if candidates.len() < coord.min_cases.max(2)
+                    || !candidates.iter().any(|x| has_alarm(x))
+                {
+                    return Ok(());
+                }
+                candidates.iter().map(|x| x.id.clone()).collect()
+            }
+        };
+        let existing = active.map(|(id, _)| id);
+        self.apply_incident(sim_id, &line, existing, members)
+    }
+
+    /// 案例是否已经发出过决策请求（逐页扫描该案例的事件日志）。
+    fn decision_requested(&self, case_id: &str) -> Result<bool> {
+        let mut after = 0;
+        loop {
+            let page = self.events(case_id, after, 1000)?;
+            if page.iter().any(|ev| ev.kind == "DecisionRequested") {
+                return Ok(true);
+            }
+            match page.last() {
+                Some(last) if page.len() == 1000 => after = last.sequence,
+                _ => return Ok(false),
+            }
+        }
+    }
+
+    /// 建立或更新协同事项，并把新成员改为只做诊断（同一事务内完成）。
+    fn apply_incident(
+        &mut self,
+        sim_id: &str,
+        line: &str,
+        existing: Option<String>,
+        new_members: Vec<String>,
+    ) -> Result<()> {
+        use super::coordination::{
+            des_template, has_alarm, incident_nodes, TPL_DIAGNOSIS, TPL_LINE_INCIDENT,
+        };
+        self.update(|s, events| {
+            let now = s.now;
+            // 新建事项。
+            let incident_id = match existing {
+                Some(id) => id,
+                None => {
+                    let id = format!("CASE-s1-{}", s.cases.len() + 1);
+                    let seq = s
+                        .cases
+                        .values()
+                        .filter(|c| c.batch.starts_with(&format!("{sim_id}:INCIDENT:{line}:")))
+                        .count()
+                        + 1;
+                    let mut world = crate::mom::fixture_world("s1");
+                    world["des_incident"] = json!({"line": line, "members": [], "assets": [], "orders": []});
+                    let policy = crate::mom::fixture_policy("s1");
+                    let incident = crate::mom::Case {
+                        id: id.clone(),
+                        scenario: "s1".into(),
+                        batch: format!("{sim_id}:INCIDENT:{line}:{seq}"),
+                        customer: "LINE".into(),
+                        asset: line.into(),
+                        updated_at: now,
+                        revision: 0,
+                        plan_revision: 1,
+                        stage: "ASSESS".into(),
+                        template: TPL_LINE_INCIDENT.into(),
+                        constraints: vec![
+                            "Never bypass safety interlock or quality release".into(),
+                            "Approval must match current plan and resource conditions".into(),
+                            "Simulated evidence is not real industrial validation".into(),
+                        ],
+                        observations: vec![],
+                        nodes: incident_nodes(false),
+                        evidence: BTreeMap::new(),
+                        proposal: None,
+                        initial_report: None,
+                        eight_d: None,
+                        approvals: BTreeMap::new(),
+                        actions: BTreeMap::new(),
+                        children: vec![],
+                        outbox: vec![],
+                        world,
+                        resource_version: 1,
+                        resource_observed_at: now,
+                        budget_remaining: 40,
+                        tool_calls: 0,
+                        model_calls: 0,
+                        replans: 0,
+                        deadlines: BTreeMap::new(),
+                        alerts: vec![],
+                        breaches: vec![],
+                        mock_ids: policy.mock_ids,
+                        cancelled: false,
+                    };
+                    s.cases.insert(id.clone(), incident);
+                    let c = s.cases.get_mut(&id).context("incident missing")?;
+                    emit(
+                        c,
+                        now,
+                        "LineIncidentOpened",
+                        json!({"line": line, "simulation": sim_id, "provenance": "simulation"}),
+                        events,
+                    );
+                    id
+                }
+            };
+            // 成员：标记归属；已有排产计划且未执行的改为诊断模板。
+            for m in &new_members {
+                let c = s.cases.get_mut(m).context("member missing")?;
+                let joined = !c.world.get("des_member_of").is_some_and(Value::is_string);
+                c.world["des_member_of"] = json!(incident_id);
+                if c.actions.is_empty() && !c.template.is_empty() && c.template != TPL_DIAGNOSIS {
+                    if let Some((template, nodes)) = des_template(c) {
+                        c.template = template;
+                        c.nodes = nodes;
+                        c.proposal = None;
+                        c.approvals.clear();
+                        c.plan_revision += 1;
+                        c.stage = "ASSESS".into();
+                        emit(
+                            c,
+                            now,
+                            "PlanInvalidated",
+                            json!({"reason": "joined line incident", "incident": incident_id}),
+                            events,
+                        );
+                    }
+                }
+                if joined {
+                    emit(c, now, "JoinedLineIncident", json!({"incident": incident_id}), events);
+                }
+            }
+            // 事项：成员、报警设备集合与插单；有变化且未执行时重新规划。
+            let prior = s
+                .cases
+                .get(&incident_id)
+                .map(|c| c.world["des_incident"].clone())
+                .context("incident missing")?;
+            let mut members: BTreeSet<String> = prior["members"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            members.extend(new_members.iter().cloned());
+            let mut assets = BTreeSet::new();
+            let mut orders = vec![];
+            for m in &members {
+                if let Some(mc) = s.cases.get(m) {
+                    if has_alarm(mc) {
+                        assets.insert(mc.asset.clone());
+                    }
+                    for o in mc.observations.iter().filter(|o| o.event.kind == "order") {
+                        orders.push(json!({
+                            "order": o.event.payload["order"],
+                            "quantity": o.event.payload["quantity"],
+                            "due_minute": o.event.payload["due_minute"],
+                        }));
+                    }
+                }
+            }
+            let next = json!({"line": line, "members": members, "assets": assets, "orders": orders});
+            let inc = s.cases.get_mut(&incident_id).context("incident missing")?;
+            if inc.world["des_incident"] != next && inc.actions.is_empty() {
+                let had_plan = inc.nodes.values().any(|n| n.status != "READY");
+                inc.world["des_incident"] = next;
+                inc.nodes = incident_nodes(!assets.is_empty());
+                inc.proposal = None;
+                inc.approvals.clear();
+                inc.stage = "ASSESS".into();
+                if had_plan {
+                    inc.plan_revision += 1;
+                    emit(
+                        inc,
+                        now,
+                        "PlanInvalidated",
+                        json!({"reason": "incident membership changed"}),
+                        events,
+                    );
+                }
+                emit(
+                    inc,
+                    now,
+                    "PlanAccepted",
+                    json!({"template": TPL_LINE_INCIDENT, "plan_revision": inc.plan_revision, "members": members, "assets": assets}),
+                    events,
+                );
+            }
+            Ok(())
+        })
+    }
+
+    /// `close` 成功后由引擎调用：关闭协同事项时一并关闭成员案例（阶段③b）。其他案例不做任何事。
+    pub(in crate::mom) fn des_after_close(&mut self, case_id: &str) -> Result<()> {
+        let c = self.case(case_id)?;
+        if !super::coordination::is_incident(c) {
+            return Ok(());
+        }
+        let members: Vec<String> = c.world["des_incident"]["members"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+        self.update(|s, events| {
+            let now = s.now;
+            for m in &members {
+                let Some(c) = s.cases.get_mut(m) else {
+                    continue;
+                };
+                if matches!(c.stage.as_str(), "CLOSED" | "CANCELLED") {
+                    continue;
+                }
+                c.stage = "CLOSED".into();
+                for ch in &mut c.children {
+                    if ch.status == "RUNNING" {
+                        ch.status = "CANCELLED".into();
+                    }
+                }
+                c.world["reservations"] = json!({});
+                emit(
+                    c,
+                    now,
+                    "CaseClosed",
+                    json!({"scope": "closed with line incident", "incident": case_id}),
+                    events,
+                );
+            }
+            Ok(())
+        })
+    }
+
     /// 投递到期的 DES 事件。由 `deliver_scheduled` 在每个虚拟分钟调用。
     pub(in crate::mom) fn deliver_des(&mut self, now: u64) -> Result<()> {
         let due: Vec<(String, ScheduledEvent)> = self
@@ -623,9 +969,10 @@ impl Engine {
             .collect();
         for (sim_id, item) in due {
             let result = match item.payload {
-                ScheduledPayload::Observation { event } => self
-                    .ingest(event)
-                    .and_then(|case_id| self.link_related_cases(&sim_id, &case_id)),
+                ScheduledPayload::Observation { event } => self.ingest(event).and_then(|case_id| {
+                    self.link_related_cases(&sim_id, &case_id)?;
+                    self.coordinate_incident(&sim_id, &case_id)
+                }),
                 ScheduledPayload::WorldChange { .. } => Ok(()),
             };
             let (status, error) = match result {

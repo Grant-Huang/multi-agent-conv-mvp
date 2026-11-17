@@ -15,6 +15,7 @@
 //! - 阶段①只产生 `order` / `vibration` / `quality` 三类事件（决策 D7）。
 //! - 标准答案（`GroundTruth`）只供审核层读取，不得进入 agent 视图、人类视图、工具返回或仿真列表。
 pub mod batch;
+mod coordination;
 mod engine_link;
 mod observe;
 mod physics;
@@ -22,6 +23,7 @@ pub mod review;
 mod rng;
 mod scenario;
 
+pub(crate) use coordination::des_template;
 pub use engine_link::DesSimulation;
 pub(crate) use observe::read_tool;
 
