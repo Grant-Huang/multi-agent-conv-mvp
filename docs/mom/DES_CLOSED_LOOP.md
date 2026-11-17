@@ -356,6 +356,36 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 - 车间视图作为 `web/mom/` 的新标签页，代码放在新模块中，入口只增加挂载：工厂布局（SVG）、设备状态、队列长度、刀具库存、订单甘特图、振动和 Cpk 趋势、审核报告。
 - 界面改动按 `UI_UX_PRINCIPLES.md` 评审，满足 UI16（桌面、Pad、手机和键盘）。
 
+## 11a. 阶段⑤a：独立仿真引擎与 MCP 挂载（2026-11-17 用户确认，尚未实施）
+
+**目标**：把仿真内核做成可挂载的独立"模拟工厂"，AgentNexus 生产系统像接真实 MES/EAM/QMS 一样接入它；被测系统与仿真世界在进程和数据上彻底隔离，标准答案只在模拟工厂内。
+
+**用户决定**：
+1. 顺序：先完成阶段③b、④的实现，再做⑤a，然后才是⑤车间视图。③b、④的用例作为拆分前后行为一致的回归基线（同 seed 下进程内与 MCP 模式的事件、观测、执行结果一致）。
+2. 传输：先做 stdio，随 AgentNexus 在本机启动；HTTP 以后再加。
+3. 工具命名按通用的 MES/EAM 风格设计，便于其他系统挂载，不使用 AgentNexus 专有概念。
+4. 写操作（维修、调拨、改排产）不交给模型直接调用：由 AgentNexus 在审批与 `execute` 之后经连接器发出，带幂等键并记录回执。这是 MCP 设计第 4 阶段"外部写入"的前置能力，属于权限策略变更，已获用户批准。
+
+**结构**：
+- `an-des` crate：纯仿真内核（场景生成、规律模型、随机流、干预与重新推演、可观测量、标准答案），不依赖 MOM 引擎。
+- 进程内适配：保留，供批量实验与测试，保证可复现。
+- `an-des-mcp` 服务（stdio）：用官方 Rust SDK 的服务端。
+- AgentNexus 侧连接器：参照 RelOS 接入模式，在服务层异步调用；按游标拉取事件交给 `ingest`，把可观测快照作为观测写入案例，执行后发出写操作并记录回执；引擎本身保持确定、可重放。
+- 归属调整：按报警触发的模板、产线协同事项、what-if 计划模型属于 AgentNexus 侧业务逻辑，留在 MOM；审核层的标准答案改从模拟工厂的管理入口读取。
+
+**工具（草案，按通用风格命名）**：
+
+| 类别 | 工具 | 性质 | 使用方 |
+|---|---|---|---|
+| 观测 | `equipment.status`、`equipment.trend`、`quality.capability`、`inventory.tooling`、`events.poll`（按游标） | 只读 | agent、桌面、连接器 |
+| 执行 | `maintenance.order.create`、`tooling.transfer.create`、`production.schedule.apply`、`order.status` | 外部写（幂等键、回执） | 仅 AgentNexus 审批后的执行流程 |
+| 仿真控制 | `simulation.create`、`simulation.advance`、`simulation.fault.inject` | 控制 | 测试调度器、实验脚本 |
+| 管理 | `simulation.ground_truth` | 只读（敏感） | 仅审核层，单独凭证，不进任何 agent 的允许清单 |
+
+**时钟**：测试与实验时由测试调度器统一推进（模拟工厂推进 → 连接器拉取事件 → MOM 推进）；演示时按墙钟比例推进。
+
+**验收方向**（实施时细化为用例）：同 seed 下进程内与 MCP 模式结果一致；agent 允许清单中不出现管理与仿真控制工具；写操作未经审批被拒绝、重复提交按幂等键只生效一次；模拟工厂不在线时连接器明确报错、不静默降级。
+
 ## 12. 改动范围、风险和回滚
 
 | 文件 | 改动 | 风险 |
