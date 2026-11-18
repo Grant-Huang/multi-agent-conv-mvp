@@ -52,6 +52,10 @@ fn relos_diagnosis(relos: &Value, candidates_key: &str, base: Value) -> (Value, 
     (data, "ok")
 }
 pub fn read(c: &Case, tool: &str, now: u64) -> Result<ToolResponse> {
+    // DES 案例（阶段②）：维护、质量、资源、排产改读仿真的可观测快照；其他工具仍用夹具。
+    if let Some(response) = super::des::read_tool(c, tool, now) {
+        return response;
+    }
     let w = &c.world;
     let relos = w.get("relos").filter(|v| v.is_object());
     let (source, ids, data, status) = match tool {

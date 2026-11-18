@@ -76,6 +76,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/mom/cases/{id}/events", get(events))
         .route("/api/mom/cases/{id}/commands", post(command))
         .route("/api/mom/cases/{id}/master", post(master))
+        // 车间 DES 仿真的只读接口（阶段②），见 `mom_sim`。
+        .merge(crate::mom_sim::routes())
         .layer(axum::extract::DefaultBodyLimit::max(128 * 1024))
         .with_state(state)
 }
@@ -244,6 +246,10 @@ pub enum Command {
         node: String,
         dependency: String,
     },
+    /// 车间 DES 案例：选定排产方案（阶段③），之后需要重新批准。
+    SelectPlan {
+        plan: String,
+    },
 }
 async fn command(
     State(s): State<AppState>,
@@ -274,6 +280,7 @@ async fn command(
             Command::Close => e.close(&id)?,
             Command::VerifyComplaint => e.verify_complaint(&id)?,
             Command::RefreshPlan => e.refresh_plan(&id)?,
+            Command::SelectPlan { plan } => e.select_des_plan(&id, &plan)?,
             Command::Fault { key, value } => e.change_world(&id, &key, value)?,
             Command::Patch { node, dependency } => {
                 e.apply_intent(&id, Intent::ProposePatch { node, dependency })?

@@ -171,10 +171,15 @@ pub fn init(app: &str, cfg: &LogConfig) -> (Arc<Diagnostics>, LogGuard) {
     let console = tracing_subscriber::fmt::layer()
         .with_target(false)
         .with_filter(filter());
-    let (file_layer, guard) = match &cfg.dir {
-        Some(dir) => {
-            let _ = std::fs::create_dir_all(dir);
-            let appender = tracing_appender::rolling::daily(dir, format!("{app}.jsonl"));
+    // Builder returns initialization errors instead of panicking (e.g. logs is a file).
+    let appender = cfg.dir.as_ref().map(|dir| {
+        tracing_appender::rolling::RollingFileAppender::builder()
+            .rotation(tracing_appender::rolling::Rotation::DAILY)
+            .filename_prefix(format!("{app}.jsonl"))
+            .build(dir)
+    });
+    let (file_layer, guard, file_error) = match appender {
+        Some(Ok(appender)) => {
             let (writer, guard) = tracing_appender::non_blocking(appender);
             // flatten_event：字段直接放在顶层，方便 jq / 脚本过滤，例如 jq 'select(.code != null)'
             let layer = tracing_subscriber::fmt::layer()
@@ -183,17 +188,28 @@ pub fn init(app: &str, cfg: &LogConfig) -> (Arc<Diagnostics>, LogGuard) {
                 .with_current_span(false)
                 .with_writer(writer)
                 .with_filter(filter());
-            (Some(layer), Some(guard))
+            (Some(layer), Some(guard), None)
         }
-        None => (None, None),
+        Some(Err(error)) => (None, None, Some(error)),
+        None => (None, None, None),
     };
 
     // 其他代码（例如测试框架）可能已经设置过全局日志，忽略"已初始化"的错误
-    let _ = tracing_subscriber::registry()
+    let installed = tracing_subscriber::registry()
         .with(console)
         .with(file_layer)
         .with(DiagnosticsLayer(diagnostics.clone()))
-        .try_init();
+        .try_init()
+        .is_ok();
+    if let Some(error) = file_error {
+        tracing::warn!(event = "log.file_unavailable", task_id = "", error = %error,
+            "文件日志不可用，已降级为控制台和内存诊断");
+    }
+    // Announce the file only after this subscriber and its writer are active.
+    if let Some(dir) = cfg.dir.as_ref().filter(|_| installed && guard.is_some()) {
+        tracing::info!(event = "log.file", task_id = "", dir = %dir.display(),
+            "JSON 日志目录（用于自动排查）");
+    }
     (diagnostics, LogGuard { _file: guard })
 }
 

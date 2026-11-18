@@ -96,6 +96,24 @@ jobs:
       - name: flake8
         run: uv run flake8 .
 
+  # ---------- Python：外发脱敏 MCP 工具 ----------
+  python-dlp-egress:
+    name: python-dlp-egress
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: tools/dlp-egress
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --frozen
+      # 含 700 条评测集与留出集的安全底线门槛；不访问网络，不加载 GLiNER 模型。
+      - name: 测试与覆盖率（阈值 80%，见 pyproject.toml）
+        run: uv run pytest --cov --cov-report=term
+      - name: flake8
+        run: uv run flake8 .
+
   # ---------- Python：CI 策略脚本本身 ----------
   python-tools:
     name: python-tools

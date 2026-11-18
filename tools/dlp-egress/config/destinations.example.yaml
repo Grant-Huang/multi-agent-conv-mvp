@@ -1,0 +1,19 @@
+# 目的地注册表示例。未出现在此表中的 destination_id 一律 BLOCK。
+# trust：external_untrusted（已登记但按不可信处理，脱敏后可外发）/ internal（企业内部系统）
+# purposes：可选，限制允许的用途；allowed_recipient_domains：可选，限制邮件收件域。
+destinations:
+  vendor-api:
+    trust: external_untrusted
+  vendor-mail:
+    trust: external_untrusted
+    # allowed_recipient_domains: [example.net]
+  vendor-slack:
+    trust: external_untrusted
+  vendor-file-portal:
+    trust: external_untrusted
+  vendor-mcp:
+    trust: external_untrusted
+  cloud-llm:
+    trust: external_untrusted
+  internal-wiki:
+    trust: internal

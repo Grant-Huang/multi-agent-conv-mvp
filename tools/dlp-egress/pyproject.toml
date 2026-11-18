@@ -1,0 +1,44 @@
+[project]
+name = "agentnexus-dlp"
+version = "0.1.0"
+description = "AgentNexus 统一外发脱敏服务：Presidio + detect-secrets + 可选 GLiNER，提供 stdio MCP 工具"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "cryptography>=50.0.2",
+    "detect-secrets>=1.5.0",
+    "presidio-analyzer>=2.2.366",
+    "pyyaml>=6.0.3",
+]
+
+[project.optional-dependencies]
+mcp = [
+    "mcp>=2.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "flake8>=7.5.0",
+    "mcp>=2.0",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+]
+
+[project.scripts]
+dlp-egress-mcp = "agentnexus_dlp.mcp_server:main"
+dlp-egress-bench = "bench.run_benchmark:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["agentnexus_dlp"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

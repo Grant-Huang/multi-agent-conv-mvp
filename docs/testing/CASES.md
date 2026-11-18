@@ -57,7 +57,7 @@
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
-| E2E-MOMDYNAMIC | mom | 主界面与独立沙盘数据库 | 从主界面进入MOM，调整订单数量和seed创建持续仿真，推进、播放/暂停并查看gap | 同源入口可达；配置影响方案；事件逐步进入案例；暂停与运行状态可见；gap显示24项的真实状态而非仅ID |
+| E2E-MOMDYNAMIC | mom | 主界面与独立沙盘数据库 | 从主界面进入MOM，调整订单数量和seed创建持续仿真，推进、播放/暂停并查看gap | 同源入口可达；配置影响方案；事件逐步进入案例；暂停与运行状态可见；gap显示台账全部条目（当前26项）的真实状态而非仅ID |
 
 ## 每日审查修复验收（实现前定义）
 
@@ -317,3 +317,76 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGDIAG-04 | agent-diagnose | ZCode 的凭证文件存在但不可读；另一次凭证文件不存在 | 不可读时检查结果仍为"存在"（只看是否存在，不读内容）；不存在时命中"缺少 ZCode 登录凭证"规则 |
 | RT-AGDIAG-06 | agent-diagnose | 自定义 agent 以未知报错退出 | 没有命中任何规则，结果标记为"未识别"；自定义命令不做登录 shell 检查 |
 | E2E-AGDIAG | agent-ui | 「助手」页签里未安装的 ZCode 点"排查" | 显示排查结果：大白话结论"还没有安装"、安装步骤（带复制按钮）和体检项 |
+
+## Host 拒绝事件可观测性（实现前定义，R-20261113-L1）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-03 | http-host | 正式主服务收到恶意长Host的POST（带敏感请求体/认证头/查询串） | 403且无业务副作用；诊断与JSON各有一条WARN http.host_rejected / E_HTTP_HOST；method/path正确，Host最多100字符，不记录其他敏感输入；合法请求不新增拒绝事件 |
+| RT-HOST-04 | http-host | 独立an-mom收到相同恶意POST | 403，JSON日志有WARN与统一错误码及截断Host；合法本机请求仍可访问且案例未创建 |
+
+## R-20261113-L1 预审回归（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-05 | http-host | an-mom工作目录的logs是普通文件，启动并发送非法Host | 正常监听，原文件不变；降级提示及Host拒绝均输出控制台，403不变 |
+| RT-HOST-06 | http-host | 主服务/独立MOM收到约60KB路径且Host非法 | 403；JSON中path最多200字符、单条记录小于2KB；主服务诊断同样限长 |
+| RT-HOST-07 | http-host | 主服务遇到同一日志目录冲突 | 不panic；保留控制台及内存诊断，不覆盖原文件 |
+
+## R-20261113-L1 11-15 预审回归（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-08 | http-host | 主服务配置logs目录但该路径是普通文件，启动并请求诊断 | 保留降级WARN，不宣告log.file，不覆盖原文件 |
+| RT-HOST-09 | http-host | 主服务文件日志目录正常，启动并请求诊断（正向基线补录） | 控制台与JSON恰好各有一条log.file及正确目录，没有降级WARN |
+
+## 子进程就绪身份验证（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-10 | http-host | 端口由其他监听者占用，自己的子进程仍活着但没有监听日志 | 不得报告自己的服务已就绪；原RT-HOST-03～09断言保持；host_log_limits连续50次0失败 |
+## R-20261116-L1 子进程就绪（实现前定义）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-HOST-11 | http-host | 其他监听者占目标端口，自己的子进程活着却无监听日志 | 不得误报自己的服务就绪；RT-HOST-01/02断言不变；host_guard连续100次默认并行执行0失败 |
+
+## MOM 车间 DES 阶段①：内核与场景生成器（开环，实现前定义）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §4、§5、§15。被测接口：`an_runtime::mom::des::run_open_loop`（场景生成与开环运行）与 `Engine::create_des_simulation` / `Engine::des_review_truth`（引擎接入、标准答案隔离）。默认工厂为 Line-B 上的 CNC-XX、CNC-XY、CNC-XZ（节拍 90 秒）；阈值 Cpk 1.33。阶段①只产生 order / vibration / quality 三类事件（D7），开环不含维修，磨损只增不减。测试函数前缀 `rt_des_NN_`，在 `crates/runtime/tests/mom_des.rs`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DES-01 | mom-des | 默认工厂，并发簇模式，seed 1/7/42 | 同一输入各运行两次；另用不同 seed 运行 | 两次的事件流、标准答案和遥测序列化后逐字节一致；事件非空、ID 唯一、时间在仿真窗口内、只含三类事件且来源为 MES/EAM/QMS；不同 seed 的事件流不同 |
+| RT-DES-02 | mom-des | 只开启"主轴磨损→尺寸"机制，与三种机制全关，seed 1–10 | 各运行 12 小时 | 开启时至少一个 seed 出现同一设备先振动报警、后 Cpk 报警，且该 Cpk 报警的标准根因含该设备主轴磨损；全关时没有任何质量报警、Cpk 始终 ≥ 1.33，但磨损轨迹与开启时完全相同、振动报警照常出现；磨损只增不减 |
+| RT-DES-03 | mom-des | 只开启"主轴磨损→尺寸"，无维修，seed 1–10 | 运行 24 小时 | 每台设备的振动报警、质量报警各最多一次（报警锁存，持续越限不重复报警）；至少一个 seed 出现振动报警 |
+| RT-DES-04 | mom-des | 引擎中创建并发簇模式的 DES 仿真 | 推进到仿真结束 | DES 事件进入案例；标准答案可由审核接口读到且含根因；任何案例的 agent 视图、人类视图、仿真列表中都不出现标准答案字段（root_causes、mechanisms、ground_truth、主轴磨损量等） |
+| RT-DES-05 | mom-des | 两个引擎都创建同一个脚本仿真，其中一个再创建 DES 仿真 | 推进到同一时刻 | 脚本仿真案例和它的事件队列完全相同；DES 仿真出现在仿真列表中 |
+| RT-DES-16 | mom-des | 默认工厂，seed 1–10 | 分别以固定剧本、并发簇、诱饵、级联、资源竞争、安静对照模式运行；再给出无法满足的约束 | 固定剧本按 start、+6、+14 分钟依次产生插单、振动、质量报警，根因为 CNC-XX 主轴磨损；并发簇在 60 分钟窗口内至少 3 个扰动且至少一对真实关联；诱饵的振动与质量报警在同一设备 60 分钟内出现，但质量根因不含主轴磨损；级联依次出现插单、振动、质量报警，并带"负荷加速磨损"和"主轴磨损共同原因"关联；资源竞争至少一组资源对应两个以上事件；安静对照无事件且 Cpk 始终 ≥ 1.33；约束无法满足时返回含 "constraint" 的错误而不是放宽约束，重复调用得到相同错误 |
+| RT-DES-17 | mom-des | 默认工厂与"默认工厂 + Line-C 上的 CNC-YY" | 同一 seed、同一机制各运行 8 小时 | Line-B 三台设备的遥测完全相同；新设备出现在遥测中 |
+
+## MOM 车间 DES 阶段②：工具读取、what-if 与仿真接口（实现前定义）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §6.3、§6.4、§9 及阶段②修订说明。what-if 与预测只用**可观测状态**（设备状态、振动、Cpk、刀具计数、资源配置），不读取主轴磨损等隐状态，也不复跑带随机数的仿真；因此它是计划工具，不是"看见未来"的神谕。默认资源（建模假设，取自 S1 夹具）：CNC-XZ 缺 φ32 刀具，仓库有 1 把备件，调拨 45 分钟；维修 240 分钟，1 个维修班组；"完成当前批次"30 分钟；检验 20 分钟。候选方案：A 继续使用报警设备；B 当前批次完成后停机维修、其余设备分担；C 立即停机维修、其余设备分担。runtime 测试在 `crates/runtime/tests/mom_des.rs`，HTTP 测试在 `crates/server/tests/mom_des.rs`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DES-06 | mom-des | P0 固定剧本 DES 仿真推进到起点后 20 分钟 | 对 CNC-XX、500 件、16:00 交期做两次 what-if | 两次结果相同；引擎事件序号、仿真列表和全部案例完全不变；返回 A/B/C 三个方案，各含可行性、完成时间、是否按期、风险件数、违反项和所用设备；A 因 CNC-XX 处于报警状态带 `quality_risk:CNC-XX` 且不可行；B 的风险件数少于 A，C 为 0；推荐方案可行；结果标注 provenance=simulation、basis=observable_state，不含标准答案字段 |
+| RT-DES-07 | mom-des | 同上；分别把备用刀具设为 0、把 CNC-XZ 设为未认证 | what-if | 默认资源下至少一个方案可行，用到 CNC-XZ 的方案带刀具调拨前置条件；无备刀时 B、C 带 `tool_unavailable:CNC-XZ`，未认证时带 `uncertified:CNC-XZ`，且不再使用 CNC-XZ；因此误期的方案带 `deadline_miss` 且不可行 |
+| RT-DES-20 | mom-des | P0 固定剧本 DES 仿真 | 推进到起点后 30 分钟 | DES 案例的维护、质量、资源、排产四个节点成功；证据来源为 DES、provenance=simulation、含台账 M27；维护输出振动 ≥ 2.8 mm/s 且在 C 区，质量输出 Cpk < 1.33，资源输出显示 CNC-XZ 缺刀；排产输出与案例提案含 3 个方案和推荐项；agent 与人类视图不含标准答案字段 |
+| RT-DES-21 | mom-des | 默认工厂扩充到 32 台和 33 台设备 | 开环运行与在引擎中创建 | 32 台可以运行；33 台被拒绝，错误说明设备数上限 |
+| HTTP-DES-01 | mom-des | an-mom 服务，已用 S1 场景取得案例并创建 P0 DES 仿真 | 推进 30 分钟后读取工厂状态、趋势预测与 what-if | 创建返回仿真编号；工厂状态列出各设备振动、Cpk、刀具与资源，截至时间等于当前虚拟时间；预测按观测线性趋势给出到达阈值的估计分钟数并注明方法；what-if 返回 3 个方案；所有返回 provenance=simulation，且不含标准答案字段与主轴磨损量 |
+| HTTP-DES-02 | mom-des | 同上 | what-if 数量为 0、交期超过 48 小时、未知仿真或设备；创建 33 台设备的仿真 | 均返回 400 及说明，2 秒内返回；之后工厂状态接口仍正常响应 |
+
+## MOM 车间 DES 阶段③：方案选择、执行回写与核验（实现前定义）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §6.4～§6.7 与阶段③修订说明。阶段③起 DES 是闭环：执行动作作为"干预"记入仿真，从执行时刻起重新推演，之后的遥测、事件和标准答案随之改变；执行时刻之前的历史不变。被测接口：`Engine::select_des_plan`（从排产方案中选定一个可行方案，选定后需重新批准）、`Engine::des_inject_fault`（注入仿真故障）、执行与核验沿用现有 `approve` / `execute` / `close`；HTTP 新增命令 `select_plan`。runtime 测试在 `crates/runtime/tests/mom_des.rs`，HTTP 测试在 `crates/server/tests/mom_des.rs`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DES-08 | mom-des | P0 固定剧本 DES 案例进入人工决策 | 选定方案 B、批准、执行，再推进到维修完成后 | 不可行的方案 A 不能被选定；维修动作在"完成当前批次 30 分钟 + 维修 240 分钟"后完成，调拨动作在 45 分钟后完成，而不是固定 2 分钟；维修期间工厂视图显示 CNC-XX 停机，调拨到达后 CNC-XZ 有刀；维修完成后 CNC-XX 恢复运行、振动低于 2.8 mm/s、Cpk 不低于 1.33；全部动作核验后案例可以关闭 |
+| RT-DES-09 | mom-des | 同上，已按方案 C 执行 | 同一设备再到一条质量观测 | 观测作为核验证据记录（事件 `VerificationObservationRecorded`），不产生 `PlanInvalidated`，计划版本和阶段不变 |
+| RT-DES-10 | mom-des | 同上，已按方案 C 执行 | 同一案例再到一张新插单 | 仍产生 `PlanInvalidated` 并进入人工处理（基线：既有行为，补录为回归保护） |
+| RT-DES-11 | mom-des | 同上，选定方案 C 并批准后，仓库备件被注入故障清空 | 执行，再推进 60 分钟 | 刀具调拨动作失败，案例进入 PARTIAL 并产生 `CompensationRequired`；CNC-XZ 仍然无刀 |
+| RT-DES-18 | mom-des | 资源竞争模式的 DES 仿真产生多个不同设备的报警案例 | 推进到仿真结束 | 同线、共用维修班组的报警案例之间互相记录 `RelatedCaseLinked`，理由写明共用资源；不与脚本案例关联 |
+| HTTP-DES-03 | mom-des | an-mom 服务中的 P0 DES 案例进入人工决策 | 依次发送 select_plan(B)、approve、execute、advance、close 命令 | 每步返回 200；推进后工厂视图显示 CNC-XX 恢复运行且振动低于 2.8 mm/s；案例全部动作核验并成功关闭 |

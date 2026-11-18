@@ -32,14 +32,16 @@
 | [ ] | M22 人类运营视图 | 已有独立网页与 Agent JSON 视图，含交互测试 | 实际 UI 展示态势/决策/回执/缺口，权限和证据链接通过；企业身份权限仍依赖 M20 | REAL_UNVERIFIED |
 | [ ] | M23 计费和预算估算 | 固定调用代价 | 实际 token/工具成本对账，准入预留与上限保护通过 | MOCK |
 | [ ] | M24 RelOS 关系上下文 | an-mom 可选调用 RelOS `/v1/context/compile`（E1-C），接口真实接入，图中知识为仿真数据 | 真实工厂关系数据接入，候选根因经专家核对，超时/不可用降级通过 | REAL_UNVERIFIED |
+| [ ] | M27 车间 DES 世界 | `mom/des` 规律模型（Gamma 磨损、振动分区、刀具寿命离散、尺寸与模型 Cpk），参数为建模假设 | 用工厂样本数据标定参数，与历史维修、振动和质量记录比对验证 | MOCK |
+| [ ] | M28 场景生成器与标准答案 | 场景模式约束抽样、因果机制开关、由轨迹导出的根因/关联/资源竞争 | 标准答案经领域专家抽查确认；场景分布与现场扰动统计相符 | MOCK |
 
 ## 2. 不可用 Mock 掩盖的核心实现
 
-以下是已实现并接受自动化测试的确定性被测对象，不以硬编码成功替代：公告板持久状态与事务/outbox、两类投影、DAG/关卡校验、认领租约与隔离、动作幂等账本、批准有效性、预算和取消。代码位于 `crates/runtime/src/mom/`；清单的 24 项不等于整个系统的开发工作量。
+以下是已实现并接受自动化测试的确定性被测对象，不以硬编码成功替代：公告板持久状态与事务/outbox、两类投影、DAG/关卡校验、认领租约与隔离、动作幂等账本、批准有效性、预算和取消。代码位于 `crates/runtime/src/mom/`；清单的 26 项不等于整个系统的开发工作量。
 
 ## 3. 当前 gap 与更新方式
 
-- 清单共 24 项：PLANNED 0，MOCK 22，REAL_UNVERIFIED 2，REAL_VERIFIED 0。
+- 清单共 26 项：PLANNED 0，MOCK 24，REAL_UNVERIFIED 2，REAL_VERIFIED 0。M25、M26 已由 [SPC 任务工作区设计](SPC_TASK_WORKSPACE.md) 预留，实现时再登记。
 - 两场景工具模拟、确定性运行时、HTTP 接口与人类界面已有测试；生产连通、真实模型决策和企业权限尚未验证。不能把 Mock 通过计作真实替换。
 - S1 依赖 M01–M12、M14、M17–M23（启用 RelOS 时另加 M24）；S2 依赖 M01–M04、M07、M12–M23（范围和调用按实际任务裁剪）。
 - 物理试验、现场维修、客户侧确认不能由软件自动替代；真实能力可以是可追踪的人类工作项与回执。
@@ -58,6 +60,7 @@
 - M22：`web/mom/index.html` 和页面交互测试，支持人类运营看板、决策、证据、Mock缺口、机器视图。企业访问控制未验收，故不勾选。
 - M23：真实调用次数与硬配额，子任务按固定代价预留；未对账真实 token/金额。
 - M24：`crates/server/src/mom_relos.rs` 与 `mom/tools.rs`，RT-MOM-06～09、HTTP-MOM-RELOS-01/02。RelOS 接口真实调用，但其中知识为仿真数据，候选根因只是假设，故不勾选。
+- M27/M28：`crates/runtime/src/mom/des/`，RT-DES-01～05、16、17（`crates/runtime/tests/mom_des.rs`）。阶段①为开环：事件一次生成后按虚拟时钟投递，agent 处置不影响后续事件；P0 固定剧本为夹具，不由仿真产生。阶段②（RT-DES-06、07、20、21，HTTP-DES-01/02）：DES 案例的维护/质量/资源/排产工具改读仿真可观测快照（证据含 M27 与原 M03–M06），`schedule.simulate` 为基于可观测状态的 A/B/C 计划模型，仍是 MOCK，不代表真实求解器或现场能力。阶段③（RT-DES-08～11、18，HTTP-DES-03）：选定方案执行后，维修与刀具调拨作为仿真干预改变后续世界，动作完成时刻由仿真决定，备件丢失可注入；执行仍是模拟回执（M09–M12），不是现场执行。设计见 [DES_CLOSED_LOOP.md](DES_CLOSED_LOOP.md)。
 - 证据入口：`crates/runtime/tests/mom.rs`、`crates/server/tests/mom.rs`、`web/src/mom.test.ts`；`tools/mom/smoke.py` 可重放并生成带 mock_ids 的功能报告。
 - SQLite schema v1 为独立数据库；单进程仿真，跨实例陈旧写入会拒绝并要求重开。尚未提供多实例热加载和高可用调度。
 

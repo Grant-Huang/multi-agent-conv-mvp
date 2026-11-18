@@ -24,7 +24,7 @@
 | reports | 对话中要求“写报告并引用公开资料/最新信息”，General 后台执行 | 同时要求 web_search+write_file 时走代码控制流程：规划→检索（≤6、去重）→章节并行写作→汇合；过半章成功才完成；无效引用剔除；取消后不再请求。仅要求 web_search 时仍走逐步循环（先搜后写） | RT-REP-01 至 RT-REP-09（Rust 集成测试，受控模型）；Router 提示词与重复追加为单元测试；真实模型质量与搜索时效需实际 E2E 验收 |
 | templates | 当前无界面入口（M4.3 尚未接入编排器） | 模板校验、Router 拆分决定、分支信封与汇合输入在 Runtime 集成层验证 | RT-TPL-01 至 RT-TPL-10；Rust 集成测试与单元测试；并行执行与 Composer 汇合回复未实现 |
 | admission | 无界面入口；HTTP `/api/admission/*`（开启 `[admission]` 时才有） | S1→S7 顺序、澄清问题、加权打分与等级、人工审批闸门、确定性抽检、警告与降级、撤权与凭证代际、重启恢复、旧库自动建表；按等级分配、凭证过期结果丢弃、撤权中止进行中任务并由备份接手、外部 agent 试用期记录；HTTP 接口走完准入流程、激活后注册外部 agent（kind=a2a）并完成任务、重启后自动重新注册、未开启时 404；外部 agent HTTP 适配器 | RT-ADM-01 至 RT-ADM-17；实验工具：`cargo run -p an-runtime --example admission_replay`（用正式账本回放 A1/A2/A3）、`cargo run -p an-server --example admission_revoke_bench`（撤权实测）；Rust 集成测试；未接入网页界面，S2/S3 的大模型澄清与评分由实验脚本完成 |
-| tools-evals | 聊天委派工具；终端 websearch、an-eval、dream | 计算/文件/CLI证据、JSON错误、逐条评分和失败草稿；不自动改主评测集 | 现有 Rust/Python 测试；真实搜索时效与模型质量另验 |
+| tools-evals | 聊天委派工具；终端 websearch、an-eval、dream；外发脱敏 MCP（tools/dlp-egress） | 计算/文件/CLI证据、JSON错误、逐条评分和失败草稿；不自动改主评测集 | 现有 Rust/Python 测试；dlp-egress 有 MCP 协议测试与 700 条+留出集评测（GLiNER 未评测）；真实搜索时效与模型质量另验 |
 
 应用为单页布局，网页没有 /tasks、/settings 或 /templates/run 路径。API 以 crates/server/src/lib.rs 为准；状态和中文文案见 web/src/labels.ts。
 
@@ -45,6 +45,12 @@
 MOM 增量：主界面左侧 **MOM 运营沙盘** → 同源 `/mom/`；配置持续仿真与播放暂停、事件队列和完整 gap 详情由 E2E-MOMDYNAMIC 验证。独立8790服务仍保留。两者均为明确标识的模拟模式。
 
 RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS 不可用时的安全降级、上下文写入校验与未启用时的兼容；HTTP-MOM-RELOS-01/02（`crates/server/tests/mom.rs`）用桩 RelOS 与无人监听地址验证 an-mom 的端到端调用。RelOS 知识为仿真数据（台账 M24）。
+
+车间 DES 阶段①（`mom-des`，开环）：RT-DES-01～05、16、17（`crates/runtime/tests/mom_des.rs`）定义可复现、主轴磨损因果、报警锁存、标准答案隔离、脚本模式不变、场景模式约束与随机流独立；实现位于 `crates/runtime/src/mom/des/`，阶段①为开环（事件一次生成后按虚拟时钟投递，处置不影响后续事件），Red→Green 证据见 [mom-des-phase1.md](evidence/mom-des-phase1.md)。设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md)；DES 为仿真，参数为建模假设。
+
+车间 DES 阶段②（`mom-des`）：RT-DES-06、07、20、21（runtime）与 HTTP-DES-01/02（`crates/server/tests/mom_des.rs`）覆盖 DES 案例的工具读取、基于可观测状态的 what-if 多方案、只读工厂状态与趋势预测接口、设备数上限；实现位于 `crates/runtime/src/mom/des/observe.rs` 与 `crates/server/src/mom_sim.rs`，Red→Green 证据见 [mom-des-phase2.md](evidence/mom-des-phase2.md)。
+
+车间 DES 阶段③（`mom-des`，闭环）：RT-DES-08～11、18 与 HTTP-DES-03 定义方案选定、执行回写仿真世界（维修停机与复位、刀具调拨到达）、执行后同源观测作为核验证据、仿真故障导致补偿、共用资源的案例关联；实现位于 `des/engine_link.rs`、`des/scenario.rs` 与 `engine.rs` 两处 DES 钩子，Red→Green 证据见 [mom-des-phase3.md](evidence/mom-des-phase3.md)。
 
 专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
 
@@ -68,3 +74,12 @@ R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不
 ## HTTP 请求 Host 防护
 
 `http-host`：正式 agentnexus/an-mom 在组装所有路由与静态 fallback 后统一应用 host_guard::protect，允许精确 localhost/127.0.0.1/[::1] 且端口匹配实际监听端口；不信任转发头。RT-HOST-01/02（`server/tests/host_guard.rs`）启动真实二进制，覆盖恶意 Host、写入无副作用、静态页、API、SSE、同源 MOM、合法 IPv6 authority 与非法/重复 Host。不是浏览器 DNS 重绑定复现，也不是完整身份认证。证据见 [R-20261106-S1](evidence/r-20261106-s1.md)。
+
+R-20261113-L1：RT-HOST-03/04（`crates/server/tests/host_diagnostics.rs`）用正式二进制验证主服务诊断与JSON、独立MOM JSON的WARN `http.host_rejected` / `E_HTTP_HOST`，Host最多100字符、不记录请求体/其他请求头/查询串，且合法请求不新增拒绝事件。只补观测性、常量与文档，放行条件和403响应保持。证据见 [R-20261113-L1](evidence/r-20261113-l1.md)。
+
+R-20261113-L1预审补充：RT-HOST-05/07覆盖独立MOM和主服务日志目录冲突时的控制台/内存诊断降级，原logs文件不变；RT-HOST-06覆盖约60KB拒绝路径在JSON和主服务诊断中截断到200字符，403与准入规则保持。共用日志初始化使用可失败builder，不改公开配置；证据见 [11-14预审修复](evidence/r-20261113-l1-pre-review-20261114.md)。
+
+R-20261113-L1 11-15预审补充：RT-HOST-08验证文件日志降级时不再误报log.file；RT-HOST-09为正常目录成功提示的正向基线，控制台/JSON各一条且目录正确。成功事件由共用init在writer及订阅器安装后发出，不新增公开接口；证据见 [11-15预审修复](evidence/r-20261113-l1-pre-review-20261115.md)。
+
+R-20261113-L1 11-16预审：RT-HOST-10确定性验证其他监听者不能满足自己的子进程就绪。host_log_limits/host_diagnostics共用support/service_readiness.rs，等待独立捕获的自身监听日志、存活状态与端口连接；只串行化启动交接。原业务断言不变，host_log_limits连续50次默认并行验证。证据见[evidence/r-20261113-l1-pre-review-20261116.md](evidence/r-20261113-l1-pre-review-20261116.md)。
+R-20261116-L1：RT-HOST-11确定性验证外国监听者不能满足自身子进程就绪。host_guard共用support/service_readiness.rs，确认独立捕获的自身监听日志、Child存活及端口；只串行化启动交接，原RT-HOST-01/02断言不变，连续100次默认并行验证。证据见[evidence/r-20261116-l1.md](evidence/r-20261116-l1.md)。

@@ -1,0 +1,289 @@
+{
+  "mode": "HOLDOUT_B_no_dictionary",
+  "rows": 36,
+  "errors": 0,
+  "entities": {
+    "micro": {
+      "precision": 0.9216,
+      "recall": 0.8103,
+      "f1": 0.8624,
+      "tp": 47,
+      "fp": 4,
+      "fn": 11,
+      "support": 58
+    },
+    "macro_f1": 0.8824,
+    "per_type": {
+      "AMOUNT": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "support": 3
+      },
+      "CONTACT": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "fp": 0,
+        "fn": 0,
+        "support": 2
+      },
+      "CUSTOMER": {
+        "precision": 1.0,
+        "recall": 0.4286,
+        "f1": 0.6,
+        "tp": 6,
+        "fp": 0,
+        "fn": 8,
+        "support": 14
+      },
+      "DEVICE_ID": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "fp": 0,
+        "fn": 0,
+        "support": 2
+      },
+      "EMAIL": {
+        "precision": 0.3333,
+        "recall": 1.0,
+        "f1": 0.5,
+        "tp": 1,
+        "fp": 2,
+        "fn": 0,
+        "support": 1
+      },
+      "INTERNAL_INFO": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "support": 3
+      },
+      "METRIC": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 6,
+        "fp": 0,
+        "fn": 0,
+        "support": 6
+      },
+      "ORDER_ID": {
+        "precision": 1.0,
+        "recall": 0.8889,
+        "f1": 0.9412,
+        "tp": 8,
+        "fp": 0,
+        "fn": 1,
+        "support": 9
+      },
+      "PERSON": {
+        "precision": 1.0,
+        "recall": 0.7143,
+        "f1": 0.8333,
+        "tp": 5,
+        "fp": 0,
+        "fn": 2,
+        "support": 7
+      },
+      "PLANT": {
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.8571,
+        "tp": 3,
+        "fp": 1,
+        "fn": 0,
+        "support": 3
+      },
+      "PROJECT": {
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.8571,
+        "tp": 3,
+        "fp": 1,
+        "fn": 0,
+        "support": 3
+      },
+      "SECRET": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "support": 5
+      }
+    },
+    "per_language": {
+      "en": {
+        "precision": 0.96,
+        "recall": 0.96,
+        "f1": 0.96,
+        "tp": 24,
+        "fp": 1,
+        "fn": 1,
+        "support": 25
+      },
+      "zh": {
+        "precision": 0.8846,
+        "recall": 0.697,
+        "f1": 0.7797,
+        "tp": 23,
+        "fp": 3,
+        "fn": 10,
+        "support": 33
+      }
+    },
+    "boundary_near_miss": 0
+  },
+  "decisions": {
+    "accuracy": 0.9167,
+    "confusion": {
+      "ALLOW": {
+        "ALLOW": 5,
+        "ANONYMIZE": 1,
+        "REVIEW": 0,
+        "BLOCK": 0
+      },
+      "ANONYMIZE": {
+        "ALLOW": 2,
+        "ANONYMIZE": 20,
+        "REVIEW": 0,
+        "BLOCK": 0
+      },
+      "REVIEW": {
+        "ALLOW": 0,
+        "ANONYMIZE": 0,
+        "REVIEW": 3,
+        "BLOCK": 0
+      },
+      "BLOCK": {
+        "ALLOW": 0,
+        "ANONYMIZE": 0,
+        "REVIEW": 0,
+        "BLOCK": 5
+      }
+    },
+    "per_channel_accuracy": {
+      "external_api": 0.9167
+    }
+  },
+  "safety": {
+    "dangerous_release": 0,
+    "over_blocking": 0,
+    "secret_total": 5,
+    "secret_missed": 0,
+    "secret_value_in_output": 0
+  },
+  "sanitized_exact_match": {
+    "match": 26,
+    "total": 36,
+    "rate": 0.7222
+  },
+  "invariants": {
+    "device_total": 2,
+    "device_kept": 2,
+    "metric_total": 6,
+    "metric_kept": 6
+  },
+  "vault": {
+    "restoration_map_match": 0,
+    "restoration_map_total": 0,
+    "roundtrip_ok": 21,
+    "roundtrip_total": 21,
+    "cross_scope_attempts": 21,
+    "cross_task_restored": 0,
+    "cross_tenant_restored": 0
+  },
+  "supplementary": {
+    "unknown_destination_total": 2,
+    "unknown_destination_blocked": 2
+  },
+  "latency_ms": {
+    "p50": 2.298,
+    "p95": 3.838,
+    "p99": 4.017,
+    "max": 4.017
+  },
+  "failures": [
+    {
+      "id": "HO-001",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ANONYMIZE",
+      "expected": "请把[CUSTOMER_001]的[ORDER_ID_001]到货异常同步给外部物流商。",
+      "got": "请把松岩液压的[ORDER_ID_001]到货异常同步给外部物流商。"
+    },
+    {
+      "id": "HO-008",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ANONYMIZE",
+      "expected": "请联系[PERSON_001]，电话[CONTACT_001]，确认[ORDER_ID_001]的批次放行。",
+      "got": "请联系[PERSON_001]，电话[CONTACT_001]，确认LOT-7Q的批次放行。"
+    },
+    {
+      "id": "HO-011",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ANONYMIZE",
+      "expected": "向外部财务顾问说明[CUSTOMER_001]的应收款[AMOUNT_001]。",
+      "got": "向外部财务顾问说明松岩液压的应收款[AMOUNT_001]。"
+    },
+    {
+      "id": "HO-022",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ALLOW",
+      "expected": "send_email(to=\"qa@partner-demo.com\", body=\"[CUSTOMER_001] 良率97.0%\")",
+      "got": "send_email(to=\"qa@partner-demo.com\", body=\"松岩液压 良率97.0%\")"
+    },
+    {
+      "id": "HO-026",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ALLOW",
+      "expected": "客户[CUSTOMER_001]的交付计划。",
+      "got": "客户松\u200b岩液压的交付计划。"
+    },
+    {
+      "id": "HO-027",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ANONYMIZE",
+      "expected": "[CUSTOMER_001]与[CUSTOMER_002]对比：[CUSTOMER_001]交付更快。",
+      "got": "松岩液压与[CUSTOMER_001]对比：松岩液压交付更快。"
+    },
+    {
+      "id": "HO-028",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ANONYMIZE",
+      "expected": "Ping [PERSON_001] 关于 [ORDER_ID_001] 的进度。",
+      "got": "Ping Dana Brooks 关于 [ORDER_ID_001] 的进度。"
+    },
+    {
+      "id": "HO-029",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ANONYMIZE",
+      "expected": "请把报告发给[PERSON_001]，他负责[CUSTOMER_001]项目对接。",
+      "got": "请把报告发给王晓峰，他负责蓝鲸[PROJECT_001]。"
+    },
+    {
+      "id": "HO-030",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ANONYMIZE",
+      "expected": "[CUSTOMER_001] wants the [ORDER_ID_001] data by Friday.",
+      "got": "Acme wants the [ORDER_ID_001] data by Friday."
+    },
+    {
+      "id": "HO-032",
+      "expected_action": "ALLOW",
+      "got_action": "ANONYMIZE",
+      "expected": "项目管理培训资料：如何拆分工单与排产，适用于任何工厂。",
+      "got": "项目管理培训资料：如何拆分工单与排产，适用于[PLANT_001]。"
+    }
+  ]
+}

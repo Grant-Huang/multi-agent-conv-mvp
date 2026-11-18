@@ -1,5 +1,6 @@
 //! Isolated MOM simulator: durable state machine, not a production MOM connector.
 pub mod binding;
+pub mod des;
 mod engine;
 mod master;
 mod model;

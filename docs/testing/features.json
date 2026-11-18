@@ -124,6 +124,7 @@
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [
       "tools/websearch/README.md",
+      "tools/dlp-egress/README.md",
       "crates/server/src/bin/eval.rs"
     ],
     "coverage": "backend",
@@ -216,6 +217,41 @@
     ]
   },
   {
+    "id": "mom-des",
+    "document": "docs/mom/DES_CLOSED_LOOP.md",
+    "sources": [
+      "crates/runtime/src/mom/des/mod.rs",
+      "crates/runtime/src/mom/des/scenario.rs",
+      "crates/runtime/src/mom/des/physics.rs",
+      "crates/runtime/src/mom/des/engine_link.rs",
+      "crates/runtime/src/mom/des/observe.rs",
+      "crates/runtime/tests/mom_des.rs",
+      "crates/server/src/mom_sim.rs",
+      "crates/server/tests/mom_des.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-DES-01",
+      "RT-DES-02",
+      "RT-DES-03",
+      "RT-DES-04",
+      "RT-DES-05",
+      "RT-DES-06",
+      "RT-DES-07",
+      "RT-DES-08",
+      "RT-DES-09",
+      "RT-DES-10",
+      "RT-DES-11",
+      "RT-DES-16",
+      "RT-DES-17",
+      "RT-DES-18",
+      "RT-DES-20",
+      "RT-DES-21"
+    ],
+    "note": "阶段①（开环）已实现，RT-DES 由 Red 转 Green；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。"
+  },
+  {
     "id": "agent-links",
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [
@@ -297,13 +333,26 @@
       "crates/server/src/host_guard.rs",
       "crates/server/src/main.rs",
       "crates/server/src/bin/an-mom.rs",
-      "crates/server/tests/host_guard.rs"
+      "crates/server/tests/host_guard.rs",
+      "crates/server/tests/host_diagnostics.rs",
+      "crates/server/tests/host_log_limits.rs",
+      "crates/observe/src/lib.rs",
+      "crates/server/tests/support/service_readiness.rs"
     ],
     "coverage": "backend",
     "cases": [],
     "runtime_cases": [
       "RT-HOST-01",
-      "RT-HOST-02"
+      "RT-HOST-02",
+      "RT-HOST-03",
+      "RT-HOST-04",
+      "RT-HOST-05",
+      "RT-HOST-06",
+      "RT-HOST-07",
+      "RT-HOST-08",
+      "RT-HOST-09",
+      "RT-HOST-10",
+      "RT-HOST-11"
     ]
   },
   {

@@ -159,6 +159,12 @@ pub struct Snapshot {
     pub simulations: BTreeMap<String, super::Simulation>,
     #[serde(default)]
     pub playback: super::Playback,
+    /// DES 仿真（阶段①：开环事件队列）。旧快照没有此字段时为空。
+    #[serde(default)]
+    pub des_simulations: BTreeMap<String, super::des::DesSimulation>,
+    /// DES 标准答案，只供审核层读取（`Engine::des_review_truth`），不进入任何视图。
+    #[serde(default)]
+    pub des_truth: BTreeMap<String, super::des::GroundTruth>,
     pub now: u64,
     pub cases: BTreeMap<String, Case>,
     pub seen: BTreeMap<String, String>,

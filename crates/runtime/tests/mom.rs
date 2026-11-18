@@ -686,7 +686,8 @@ fn seed_changes_generated_events_without_fabricating_real_evidence() {
     let y = b.simulations_view();
     assert_ne!(x["simulations"][0]["queue"], y["simulations"][0]["queue"]);
     let gaps = gap_register();
-    assert_eq!(gaps["items"].as_array().unwrap().len(), 24);
+    // 台账条目数随登记的 Mock 变化：2026-11-17 经用户批准（DES 设计决策 A1）新增 M27、M28，24 → 26。
+    assert_eq!(gaps["items"].as_array().unwrap().len(), 26);
     assert!(gaps["items"]
         .as_array()
         .unwrap()
