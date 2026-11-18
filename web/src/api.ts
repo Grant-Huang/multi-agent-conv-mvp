@@ -9,6 +9,66 @@ import type { TurnDecision } from "./bindings/TurnDecision";
 import type { DiscoveredNode } from "./bindings/DiscoveredNode";
 import type { PairedNode } from "./bindings/PairedNode";
 import type { Problem } from "./bindings/Problem";
+import type { CatalogItem } from "./bindings/CatalogItem";
+import type { ProbeOutcome } from "./bindings/ProbeOutcome";
+import type { MessageView } from "./bindings/MessageView";
+import type { DiagnoseReport } from "./bindings/DiagnoseReport";
+
+// ───── Agent 配置（AG.2 / AG.3）。这些结构来自 an-runtime（不在 an-core 的 bindings 里），在这里手写 ─────
+
+/** 托管 / config.toml 里的一个 ACP agent（对应 Rust 的 AcpConfig，只列界面用到的字段） */
+export interface AcpAgentConfig {
+  id: string;
+  name?: string | null;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  role: "general" | "coding" | "reviewer";
+  agent_type?: string | null;
+}
+
+/** GET /api/agents/config：托管配置概况 */
+export interface AgentConfigView {
+  load_error: string | null;
+  can_undo: boolean;
+  config_toml_ids: string[];
+  config_toml_roles: string[];
+  assign: Record<string, string[]>;
+  managed: {
+    version: number;
+    acp: { disabled?: string[]; agents?: AcpAgentConfig[] };
+    agents: { assign?: Record<string, string[]> };
+  };
+}
+
+/** 修改请求（POST /api/agents/proposals 的请求体） */
+export type ChangeRequest =
+  | { kind: "add_preset"; id: string }
+  | { kind: "add_custom"; agent: AcpAgentConfig }
+  | { kind: "set_default"; role: string; ids: string[] }
+  | { kind: "disable"; id: string }
+  | { kind: "enable"; id: string }
+  | { kind: "remove"; id: string }
+  | { kind: "revert" };
+
+/** 提议：只校验、不写入；token 只给界面，用来确认 */
+export interface Proposal {
+  id: string;
+  kind: string;
+  summary: string;
+  warnings: string[];
+  before: string;
+  after: string;
+  token: string;
+  expires_in_secs: number;
+}
+
+/** 确认后的结果 */
+export interface Applied {
+  kind: string;
+  summary: string;
+  probes: ProbeOutcome[];
+}
 
 export interface NodesView {
   discovered: DiscoveredNode[];
@@ -93,7 +153,11 @@ export const api = {
   health: () => request<Health>("/api/health"),
   conversations: () => request<Conversation[]>("/api/conversations"),
   createConversation: () => request<Conversation>("/api/conversations", { method: "POST", body: "{}" }),
-  messages: (cid: string) => request<Message[]>(`/api/conversations/${cid}/messages`),
+  /** 消息列表：每条消息多一个 card（AG.4 对话里的卡片） */
+  messages: (cid: string) => request<MessageView[]>(`/api/conversations/${cid}/messages`),
+  /** 在会话里生成确认卡（选择卡点选、结果卡撤销时用） */
+  proposeInConversation: (cid: string, change: ChangeRequest) =>
+    request<MessageView>(`/api/conversations/${cid}/agent-proposals`, { method: "POST", body: JSON.stringify(change) }),
   send: (cid: string, text: string) =>
     request<TurnOutcome>(`/api/conversations/${cid}/messages`, { method: "POST", body: JSON.stringify({ text }) }),
   tasks: (cid: string) => request<TaskRecord[]>(`/api/tasks?conversation_id=${cid}`),
@@ -118,6 +182,21 @@ export const api = {
     request<PairedNode>("/api/nodes/pair", { method: "POST", body: JSON.stringify({ address, code }) }),
   unpairNode: (id: string) => request<{ unpaired: boolean }>(`/api/nodes/${id}`, { method: "DELETE" }),
   diagnostics: () => request<Diagnostics>("/api/diagnostics"),
+  agents: () => request<AgentCard[]>("/api/agents"),
+  agentCatalog: () => request<CatalogItem[]>("/api/agents/catalog"),
+  agentConfig: () => request<AgentConfigView>("/api/agents/config"),
+  /** 排查（AG.5 第 1、2 层）：握手检测 + 本机体检 + 规则结论，不外发 */
+  diagnoseAgent: (id: string) =>
+    request<DiagnoseReport>("/api/agents/diagnose", { method: "POST", body: JSON.stringify({ id }) }),
+  probeAgent: (id: string) =>
+    request<ProbeOutcome>("/api/agents/probe", { method: "POST", body: JSON.stringify({ id }) }),
+  proposeAgentChange: (change: ChangeRequest) =>
+    request<Proposal>("/api/agents/proposals", { method: "POST", body: JSON.stringify(change) }),
+  applyAgentProposal: (id: string, token: string) =>
+    request<Applied>(`/api/agents/proposals/${encodeURIComponent(id)}/apply`, {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
 };
 
 /** 订阅某个会话的 SSE 事件流，返回取消订阅函数 */

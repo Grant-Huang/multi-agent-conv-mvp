@@ -44,6 +44,9 @@ pub struct AppConfig {
     /// agent 准入与持续信任（E3）；默认关闭，关闭时行为与以前完全相同
     #[serde(default)]
     pub admission: AdmissionSection,
+    /// 外发检查（dlp-egress）；默认 off，关闭时行为与以前完全相同
+    #[serde(default)]
+    pub egress: an_agents::egress::EgressConfig,
 }
 
 /// `[admission]`：外部 agent 的准入规则。默认值取自论文 §5.2。
@@ -119,6 +122,14 @@ pub struct ConversationSection {
     /// 直接回答时是否边生成边显示（推理服务不支持流式时会自动退回一次性返回）
     #[serde(default = "d_true")]
     pub stream_replies: bool,
+    /// FT 实验 B：路由后按确定性规则检查任务描述，把风险只升不降（删除 / 对外发送 / 部署 → high，
+    /// 写文件 / 改代码 → 至少 medium）。默认不开。
+    #[serde(default)]
+    pub risk_rules: bool,
+    /// AG.4：在对话里管理助手（"把 Cursor 接进来"等）。会改变前台判断的 schema，默认关；
+    /// 用户本机评测达标后再决定是否打开
+    #[serde(default)]
+    pub agent_management: bool,
 }
 
 impl Default for ConversationSection {
@@ -126,6 +137,8 @@ impl Default for ConversationSection {
         Self {
             review_requests: Default::default(),
             stream_replies: true,
+            risk_rules: false,
+            agent_management: false,
         }
     }
 }

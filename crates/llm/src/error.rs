@@ -31,6 +31,12 @@ pub enum ErrorKind {
     BreakerOpen,
     /// 排队等不到空闲槽位 / 并发许可（调度器已经等过了，不再重试）
     Busy,
+    /// 外发检查判定 BLOCK：请求没有发出
+    EgressBlocked,
+    /// 外发检查判定 REVIEW（需人工审批）：请求没有发出
+    EgressReview,
+    /// 外发检查服务不可用（超时、崩溃、返回不合规）：按 fail closed 处理，请求没有发出
+    EgressUnavailable,
 }
 
 impl ErrorKind {
@@ -50,6 +56,9 @@ impl ErrorKind {
             ErrorKind::Empty => "empty",
             ErrorKind::BreakerOpen => "breaker_open",
             ErrorKind::Busy => "busy",
+            ErrorKind::EgressBlocked => "egress_blocked",
+            ErrorKind::EgressReview => "egress_review",
+            ErrorKind::EgressUnavailable => "egress_unavailable",
         }
     }
 
@@ -67,6 +76,9 @@ impl ErrorKind {
             ErrorKind::Empty => codes::LLM_FORMAT,
             ErrorKind::BreakerOpen => codes::LLM_BREAKER,
             ErrorKind::Busy => codes::LLM_BUSY,
+            ErrorKind::EgressBlocked => codes::EGRESS_BLOCKED,
+            ErrorKind::EgressReview => codes::EGRESS_REVIEW,
+            ErrorKind::EgressUnavailable => codes::EGRESS_UNAVAILABLE,
         }
     }
 

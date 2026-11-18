@@ -126,11 +126,26 @@
       "tools/dlp-egress/tests/test_review_m3.py",
       "tools/websearch/README.md",
       "tools/dlp-egress/README.md",
-      "crates/server/src/bin/eval.rs"
+      "crates/server/src/bin/eval.rs",
+      "tools/dlp-egress/tests/test_review_h1.py"
     ],
     "coverage": "backend",
     "cases": [],
     "note": "R-20261118-M3：PY-DLP-M3为Python evaluate端到端测试；证据见docs/testing/evidence/r-20261118-m3.md，不计入Rust或浏览器用例。"
+  },
+  {
+    "id": "egress",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/egress.rs",
+      "crates/llm/src/egress.rs",
+      "crates/agents/src/tools.rs",
+      "crates/runtime/src/lib.rs",
+      "docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": ["RT-EGR-01", "RT-EGR-02", "RT-EGR-03", "RT-EGR-04", "RT-EGR-05", "RT-EGR-06", "RT-EGR-07", "RT-EGR-08", "RT-EGR-09", "RT-EGR-10", "RT-EGR-11", "RT-EGR-12", "RT-EGR-13", "RT-EGR-14", "RT-EGR-15", "RT-EGR-16"]
   },
   {
     "id": "reports",
@@ -223,8 +238,6 @@
     "document": "docs/mom/DES_CLOSED_LOOP.md",
     "sources": [
       "crates/runtime/src/mom/des/mod.rs",
-      "crates/runtime/src/mom/des/scenario.rs",
-      "crates/runtime/src/mom/des/physics.rs",
       "crates/runtime/src/mom/des/engine_link.rs",
       "crates/runtime/src/mom/des/observe.rs",
       "crates/runtime/src/mom/des/coordination.rs",
@@ -266,7 +279,39 @@
       "RT-DES-28",
       "RT-DES-29"
     ],
-    "note": "阶段①～③已实现，阶段④实现前 Red；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。RT-DES-22/23 为 engine_link.rs 中的单元测试（重放计数与缓存共享），不计入 runtime 集成测试映射。"
+    "note": "阶段①～④与③b 已实现；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。RT-DES-22/23 为 engine_link.rs 中的单元测试（重放计数与缓存共享），不计入 runtime 集成测试映射。RT-DES-30 属于 des-factory。"
+  },
+  {
+    "id": "des-factory",
+    "document": "docs/mom/DES_CLOSED_LOOP.md",
+    "sources": [
+      "crates/des/src/lib.rs",
+      "crates/des/src/service.rs",
+      "crates/des/src/scenario.rs",
+      "crates/des/src/physics.rs",
+      "crates/des/src/rng.rs",
+      "crates/des/src/observe.rs",
+      "crates/des/tests/factory.rs",
+      "crates/des-mcp/src/main.rs",
+      "crates/des-mcp/tests/stdio.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-DESF-01",
+      "RT-DESF-02",
+      "RT-DESF-03",
+      "RT-DESF-04",
+      "RT-DESF-05",
+      "RT-DESF-06",
+      "RT-DESF-07",
+      "RT-DESF-08",
+      "RT-DESM-01",
+      "RT-DESM-02",
+      "RT-DESM-03",
+      "RT-DES-30"
+    ],
+    "note": "阶段⑤a-1：模拟工厂服务（an-des，含从 an-runtime 迁入的仿真内核）与 MCP stdio 服务（an-des-mcp），已实现并转绿；⑤a-2 连接器用例见 CASES.md 草案。参数为建模假设（台账 M27、M28）。"
   },
   {
     "id": "agent-links",
@@ -370,6 +415,170 @@
       "RT-HOST-09",
       "RT-HOST-10",
       "RT-HOST-11"
+    ]
+  },
+  {
+    "id": "acp-discovery",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/acp.rs",
+      "crates/runtime/src/lib.rs",
+      "crates/agents/src/util.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-ACPD-01",
+      "RT-ACPD-02",
+      "RT-ACPD-03",
+      "RT-ACPD-04",
+      "RT-ACPD-05"
+    ]
+  },
+  {
+    "id": "agent-catalog",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/catalog.rs",
+      "crates/agents/src/acp.rs",
+      "crates/runtime/src/agent_catalog.rs",
+      "crates/server/src/lib.rs",
+      "crates/server/src/bin/mock_acp_agent.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGCAT-01",
+      "RT-AGCAT-02",
+      "RT-AGCAT-03",
+      "RT-AGCAT-04",
+      "RT-AGCAT-05",
+      "RT-AGCAT-06",
+      "RT-AGCAT-07",
+      "RT-AGCAT-08",
+      "RT-AGCAT-09"
+    ]
+  },
+  {
+    "id": "front-thinking",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/conversation.rs",
+      "crates/runtime/src/router.rs",
+      "crates/llm/src/lib.rs",
+      "crates/runtime/src/backends.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-FT-01",
+      "RT-FT-02",
+      "RT-FT-03",
+      "RT-FT-04",
+      "RT-FT-05",
+      "RT-FT-06",
+      "RT-FT-07",
+      "RT-FT-08",
+      "RT-FT-09",
+      "RT-FT-10",
+      "RT-FT-11"
+    ]
+  },
+  {
+    "id": "agent-config",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/agent_config.rs",
+      "crates/runtime/src/registry.rs",
+      "crates/runtime/src/lib.rs",
+      "crates/runtime/src/conversation.rs",
+      "crates/runtime/src/composer.rs",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGCFG-01",
+      "RT-AGCFG-02",
+      "RT-AGCFG-03",
+      "RT-AGCFG-04",
+      "RT-AGCFG-05",
+      "RT-AGCFG-06",
+      "RT-AGCFG-07",
+      "RT-AGCFG-08",
+      "RT-AGCFG-09",
+      "RT-AGCFG-10",
+      "RT-AGCFG-11",
+      "RT-AGCFG-12",
+      "RT-AGCFG-13",
+      "RT-AGCFG-14"
+    ]
+  },
+  {
+    "id": "agent-ui",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "web/src/components/AgentsPanel.tsx",
+      "web/src/components/AgentCards.tsx",
+      "web/src/api.ts",
+      "web/src/App.tsx",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-AGFIRST",
+      "E2E-AGLIST",
+      "E2E-AGTOML",
+      "E2E-AGGUIDE",
+      "E2E-AGCONNECT",
+      "E2E-AGUNDO",
+      "E2E-AGDISABLE",
+      "E2E-AGCHAT",
+      "E2E-AGCHOICE",
+      "E2E-AGDIAG"
+    ]
+  },
+  {
+    "id": "agent-chat",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/conversation.rs",
+      "crates/runtime/src/store.rs",
+      "crates/runtime/src/agent_config.rs",
+      "crates/core/src/lib.rs",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGCHAT-01",
+      "RT-AGCHAT-02",
+      "RT-AGCHAT-03",
+      "RT-AGCHAT-04",
+      "RT-AGCHAT-05",
+      "RT-AGCHAT-06",
+      "RT-AGCHAT-07",
+      "RT-AGCHAT-08",
+      "RT-AGCHAT-09"
+    ]
+  },
+  {
+    "id": "agent-diagnose",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/diagnose.rs",
+      "crates/agents/src/catalog.rs",
+      "crates/runtime/src/agent_chat.rs",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGDIAG-01",
+      "RT-AGDIAG-02",
+      "RT-AGDIAG-03",
+      "RT-AGDIAG-04",
+      "RT-AGDIAG-06"
     ]
   }
 ]

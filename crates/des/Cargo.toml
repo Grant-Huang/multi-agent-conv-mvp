@@ -1,0 +1,11 @@
+[package]
+name = "an-des"
+version.workspace = true
+edition.workspace = true
+
+# 模拟工厂：独立的车间离散事件仿真内核与服务接口（设计文档 docs/mom/DES_CLOSED_LOOP.md §11a）。
+# 不依赖 MOM 引擎；MOM 通过进程内适配或 MCP（an-des-mcp）接入。
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true

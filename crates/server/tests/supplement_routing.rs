@@ -80,6 +80,8 @@ enabled = false
     assert_eq!(old.status, TaskStatus::NeedsHuman);
     *old_id.lock().unwrap() = old.id.clone();
     let before = serde_json::to_value(rt.store.get_task(&old.id).unwrap().unwrap()).unwrap();
+    // 事件是异步批量落库的（最多晚 20ms）：先等落库再拍快照，避免快照时序依赖（2026-11-17 用户批准方案 A）
+    rt.store.flush_events();
     let events = serde_json::to_value(rt.store.list_events(&old.id).unwrap()).unwrap();
     let follow = tokio::time::timeout(
         std::time::Duration::from_secs(10),
@@ -107,6 +109,8 @@ enabled = false
             before,
             "路由失败不能取消旧任务：{mode}"
         );
+        // 同上：先让本轮可能产生的事件落库，再比较（这样比较更严格，不会漏掉晚到的事件）
+        rt.store.flush_events();
         assert_eq!(
             serde_json::to_value(rt.store.list_events(&old.id).unwrap()).unwrap(),
             events

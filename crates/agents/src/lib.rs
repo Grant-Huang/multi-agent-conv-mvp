@@ -11,7 +11,10 @@
 pub mod a2a;
 pub mod acp;
 pub mod capability;
+pub mod catalog;
 pub mod coding;
+pub mod diagnose;
+pub mod egress;
 pub mod general;
 pub mod mcp;
 pub mod proc_group;
@@ -29,4 +32,4 @@ pub use coding::{CodingAgent, CodingConfig, SLOT_ENV};
 pub use general::GeneralAgent;
 pub use remote::{NodeClient, NodeConn, RemoteAgent};
 pub use reviewer::ReviewerAgent;
-pub use tools::ToolRegistry;
+pub use tools::{Tool, ToolOutput, ToolRegistry};

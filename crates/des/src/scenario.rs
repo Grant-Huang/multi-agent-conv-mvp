@@ -5,13 +5,13 @@
 //! 若某次抽样不满足模式约束，换下一个尝试序号重新抽样（拒绝抽样，次数有上限），
 //! 超过上限就报错，不放宽约束。
 
-use super::physics::{self, Contributions};
-use super::rng::Rng;
-use super::{
-    AlarmTruth, DesRun, FactoryConfig, GroundTruth, Intervention, MachineTelemetry, Mechanisms,
-    Pattern, ResourceContention, Sample, ScenarioConfig, Telemetry, TrueRelation, CPK_THRESHOLD,
+use crate::physics::{self, Contributions};
+use crate::rng::Rng;
+use crate::{
+    AlarmTruth, DesRun, FactoryConfig, FactoryEvent, GroundTruth, Intervention, MachineTelemetry,
+    Mechanisms, Pattern, ResourceContention, Sample, ScenarioConfig, Telemetry, TrueRelation,
+    CPK_THRESHOLD,
 };
-use crate::mom::EventInput;
 use anyhow::{bail, ensure, Result};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,7 +22,7 @@ const MAX_ATTEMPTS: u32 = 256;
 /// 一条最大规模轨迹（32 × 2881）在预算内；多次完整轨迹则不在。
 const MAX_MACHINE_MINUTES: u64 = 100_000;
 /// 仿真最长时长（虚拟分钟），与脚本仿真扰动窗口一致（48 小时）。
-const MAX_HORIZON_MINUTES: u64 = 2880;
+pub const MAX_HORIZON_MINUTES: u64 = 2880;
 /// 两个报警相隔不超过此值且需要同一资源时，记为资源竞争。
 const CONTENTION_WINDOW_MINUTES: u64 = 120;
 /// 插单在此时间内都视为可能加快了同线设备的磨损。
@@ -210,15 +210,12 @@ fn precheck(factory: &FactoryConfig, cfg: &ScenarioConfig) -> Result<()> {
 }
 
 /// 生成场景并开环运行。见 `super::run_open_loop` 的说明。
-pub(super) fn run(factory: &FactoryConfig, cfg: &ScenarioConfig) -> Result<DesRun> {
+pub fn run(factory: &FactoryConfig, cfg: &ScenarioConfig) -> Result<DesRun> {
     run_with_attempt(factory, cfg).map(|(run, _)| run)
 }
 
 /// 同 `run`，另返回满足约束的尝试序号，供引擎按需回放同一条轨迹（阶段②）。
-pub(super) fn run_with_attempt(
-    factory: &FactoryConfig,
-    cfg: &ScenarioConfig,
-) -> Result<(DesRun, u32)> {
+pub fn run_with_attempt(factory: &FactoryConfig, cfg: &ScenarioConfig) -> Result<(DesRun, u32)> {
     precheck(factory, cfg)?;
     if cfg.pattern == Pattern::Script {
         return Ok((script(factory, cfg, &[], 0), 0));
@@ -257,14 +254,13 @@ pub(super) fn run_with_attempt(
 ///
 /// `until_minute`（绝对虚拟分钟）晚于场景结束时，世界状态继续推演到该时刻，供执行后的查询使用；
 /// 报警事件仍只在场景窗口内产生。
-pub(super) fn rerun(
+pub fn rerun(
     factory: &FactoryConfig,
     cfg: &ScenarioConfig,
     attempt: u32,
     interventions: &[Intervention],
     until_minute: u64,
 ) -> DesRun {
-    #[cfg(test)]
     REVIEW_REPLAY_COUNT.with(|count| count.set(count.get() + 1));
     if cfg.pattern == Pattern::Script {
         return script(factory, cfg, interventions, until_minute);
@@ -287,17 +283,18 @@ pub(super) fn rerun(
     }
 }
 
-// 测试用：统计重新推演次数（R-20261117-M1 的可计数验收，RT-DES-22/23）。
-#[cfg(test)]
+// 统计本线程的重新推演次数（R-20261117-M1 的可计数验收，RT-DES-22/23）。
+// 迁入 an-des 后由 an-runtime 的单元测试读取，所以不再限于 cfg(test)；开销只是一次线程局部加一。
 thread_local! {
-    pub(super) static REVIEW_REPLAY_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    #[doc(hidden)]
+    pub static REVIEW_REPLAY_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 // ───────────────────────── 逐分钟仿真 ─────────────────────────
 
 /// 仿真产生的一条事件及其内部记录（根因、所需资源、关联用的上下文）。
 struct Emitted {
-    event: EventInput,
+    event: FactoryEvent,
     line: String,
     machine: Option<String>,
     causes: Vec<String>,
@@ -476,7 +473,7 @@ fn simulate(
             _ => "QMS",
         };
         emitted.push(Emitted {
-            event: EventInput {
+            event: FactoryEvent {
                 id: format!("E{:04}", emitted.len() + 1),
                 scenario: "s1".into(),
                 kind: kind.into(),
@@ -881,7 +878,7 @@ fn derive_truth(sim: &Simulated, mech: Mechanisms) -> GroundTruth {
 // ───────────────────────── 模式约束 ─────────────────────────
 
 fn satisfies(pattern: &Pattern, sim: &Simulated, truth: &GroundTruth) -> bool {
-    let ev: Vec<&EventInput> = sim.emitted.iter().map(|e| &e.event).collect();
+    let ev: Vec<&FactoryEvent> = sim.emitted.iter().map(|e| &e.event).collect();
     let first = |kind: &str, machine: &str| {
         ev.iter()
             .find(|e| e.kind == kind && e.asset == machine)
@@ -1002,7 +999,7 @@ fn script(
     let vibration = reading(|t| &t.vibration_mm_s, 6, 2);
     let cpk = reading(|t| &t.cpk, 14, 3);
     let event =
-        |id: &str, kind: &str, source: &str, at: u64, payload: serde_json::Value| EventInput {
+        |id: &str, kind: &str, source: &str, at: u64, payload: serde_json::Value| FactoryEvent {
             id: id.into(),
             scenario: "s1".into(),
             kind: kind.into(),

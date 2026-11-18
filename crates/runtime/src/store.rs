@@ -325,6 +325,15 @@ impl Store {
         if has_assignment == 0 {
             conn.execute_batch("ALTER TABLE tasks ADD COLUMN assignment_json TEXT")?;
         }
+        // 兼容旧库：messages 表补 card_json 列（AG.4 对话里的卡片；旧消息为 NULL）
+        let has_card: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'card_json'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_card == 0 {
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN card_json TEXT")?;
+        }
         // 内存库不能跨连接共享，读写仍走同一条。文件库另开只读连接，写的时候读不用等。
         let read = if path == Path::new(":memory:") {
             None
@@ -483,6 +492,83 @@ impl Store {
             params![m.id, m.conversation_id, m.role, m.content, m.task_id, m.created_at],
         )?;
         Ok(m)
+    }
+
+    /// 写一条带卡片的消息（AG.4）。`content` 是给人和模型看的大白话；卡片数据只存在 card_json，不进模型上下文
+    pub fn add_message_with_card(
+        &self,
+        conversation_id: &str,
+        role: &str,
+        content: &str,
+        card: &an_core::ChatCard,
+    ) -> Result<Message> {
+        let m = Message {
+            id: an_core::new_id("msg"),
+            conversation_id: conversation_id.into(),
+            role: role.into(),
+            content: content.into(),
+            task_id: None,
+            created_at: now(),
+        };
+        self.write().execute(
+            "INSERT INTO messages (id, conversation_id, role, content, task_id, created_at, card_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![m.id, m.conversation_id, m.role, m.content, m.task_id, m.created_at, serde_json::to_string(card)?],
+        )?;
+        Ok(m)
+    }
+
+    /// 更新某条消息的卡片（AG.4：确认卡变为已确认 / 已过期）
+    pub fn update_message_card(&self, message_id: &str, card: &an_core::ChatCard) -> Result<()> {
+        self.write().execute(
+            "UPDATE messages SET card_json = ?2 WHERE id = ?1",
+            params![message_id, serde_json::to_string(card)?],
+        )?;
+        Ok(())
+    }
+
+    /// 读一条消息的卡片
+    pub fn message_card(&self, message_id: &str) -> Result<Option<an_core::ChatCard>> {
+        let conn = self.read();
+        let json: Option<Option<String>> = conn
+            .query_row(
+                "SELECT card_json FROM messages WHERE id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(json.flatten().and_then(|j| serde_json::from_str(&j).ok()))
+    }
+
+    /// 消息 + 卡片（消息列表接口用）。卡片读不出来时当作没有卡片，不影响消息本身
+    pub fn list_message_views(
+        &self,
+        conversation_id: &str,
+        last: Option<usize>,
+    ) -> Result<Vec<an_core::MessageView>> {
+        let _timer = ReadTimer::new("list_message_views");
+        let conn = self.read();
+        let limit = last.map(|n| n as i64).unwrap_or(-1);
+        let mut st = conn.prepare(
+            "SELECT id, conversation_id, role, content, task_id, created_at, card_json FROM messages
+             WHERE conversation_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT ?2",
+        )?;
+        let rows = st.query_map(params![conversation_id, limit], |r| {
+            let card: Option<String> = r.get(6)?;
+            Ok(an_core::MessageView {
+                message: Message {
+                    id: r.get(0)?,
+                    conversation_id: r.get(1)?,
+                    role: r.get(2)?,
+                    content: r.get(3)?,
+                    task_id: r.get(4)?,
+                    created_at: r.get(5)?,
+                },
+                card: card.and_then(|j| serde_json::from_str(&j).ok()),
+            })
+        })?;
+        let mut v: Vec<an_core::MessageView> = rows.collect::<rusqlite::Result<_>>()?;
+        v.reverse();
+        Ok(v)
     }
 
     /// 按时间顺序返回消息；`last` 为 Some(n) 时只返回最近 n 条

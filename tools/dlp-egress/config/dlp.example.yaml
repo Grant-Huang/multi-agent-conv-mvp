@@ -11,6 +11,6 @@ destinations_file: destinations.example.yaml
 master_data_file: master_data.example.yaml
 # policy_file: my_policy.yaml        # 不填则使用内置 default_policy.yaml
 token_ttl_seconds: 86400
-allow_agent_restore: false           # 默认不让 Agent 恢复原值
+allow_restore: false                 # 原值恢复（只允许 local_ui）；AgentNexus 宿主恢复云端 LLM 输出时设为 true
 enable_gliner: false                 # 需本地已下载 GLiNER 模型
 # gliner_model: /models/gliner_multi-v2.1

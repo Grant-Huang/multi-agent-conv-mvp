@@ -18,6 +18,12 @@
 
 每次输出日志、测试结果和截图；失败保留 trace。正向通过只证明这些路径，未覆盖功能在地图中明确标注。另用校验器测试注入重复 ID、未知用例、缺文档和缺测试，确认地图失配确实失败。
 
+## R-20261118-H1 嵌套路由载荷
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-H1 | external_untrusted；to/attendees/cc下多层dict/list含合成凭证或客户名 | 调用evaluate；另注入字符串分析缺失 | 凭证及漏分析均BLOCK且不回传原值；客户名Token化，非字符串与结构保持 |
+
 ## MOM 独立服务验收
 
 以下浏览器用例为现有 MOM 实现的补充基线，不追称为实现前 Red。运行时测试先行与业务失败修复证据另见 MOM 实施说明。
@@ -51,6 +57,22 @@
 | RT-REP-07 | reports | 三章中第2章两次写作都失败，另两章成功 | 执行任务 | Succeeded（过半成功）；summary 写明缺失第2章；文件有第1、3章，无第2章正文标题 |
 | RT-REP-08 | reports | 同 RT-REP-03，章节写作阶段人为挂起 | 执行中 abort 该次 run | abort 后不再发出新的模型请求；报告文件不再增长 |
 | RT-REP-09 | reports | 规划与检索只有 [S1]；受控模型在第1章写了不存在的 [S9] | 执行任务 | Succeeded；正文无 `[S9]`；参考资料只有检索到的真实链接 |
+| RT-EGR-01 | egress | `[egress] mode = off` | General 调用 web_search（参数含客户名与凭证样式串） | 不启动 DLP；工具收到原参数；DLP 无调用记录 |
+| RT-EGR-02 | egress | enforce，web_search 已绑定 public-search，任务 task-42 | 调用 web_search（含客户名） | 工具只收到脱敏参数；DLP 收到的 task_id、channel、destination_id、purpose 来自任务上下文和配置 |
+| RT-EGR-03 | egress | enforce | 参数分别含凭证、机密信息 | 分别返回 E_EGRESS_BLOCKED、E_EGRESS_REVIEW；错误信息不含原文；工具未被调用 |
+| RT-EGR-04 | egress | enforce，current_time 未绑定 | 调用 current_time | 不经 DLP，工具正常调用 |
+| RT-EGR-05 | egress | audit | 调用含凭证的 web_search | DLP 有调用记录；工具仍收到原参数（只记录不拦截） |
+| RT-EGR-06 | egress | enforce；DLP 返回不符合 schema 的结构化结果 / 判定超时 | 调用 web_search | 启动失败或返回 E_EGRESS_UNAVAILABLE；工具未被调用；enforce 下守卫不得缺失 |
+| RT-EGR-07 | egress | enforce；DLP 进程在第一次判定后退出 | 连续调用 4 次 | 至少 2 次成功（重新拉起 DLP）；工具从未收到未脱敏参数 |
+| RT-EGR-08 | egress | enforce，cloud 后端已绑定 cloud-llm | 外发两条消息（含客户名）；再外发含凭证的消息 | 发出的消息已脱敏、角色不变；返回 Token→原值映射，restore 使用 local_ui；含凭证时返回 EgressBlocked |
+| RT-EGR-09 | egress | enforce；DLP 未开启恢复 | 外发含客户名的消息 | 仍发送脱敏内容；映射为空（输出中保留 Token，不影响安全） |
+| RT-EGR-10 | egress | enforce 配置 | 启动校验：绑定的工具不存在；web_fetch 未绑定；云端后端未绑定；audit 下云端后端未绑定 | 前三种拒绝启动并指明对象；本机后端无需绑定；audit 只给出警告 |
+| RT-EGR-11 | egress | Runtime 启动，enforce，只绑定 web_search，web_fetch 已注册 | with_mcp_diagnostics 启动 | 启动失败，错误含 web_fetch |
+| RT-EGR-12 | egress | Runtime 启动，enforce，web_search / web_fetch 均已绑定 | 启动后读取能力清单 | 启动成功；能力清单中没有任何 egress_* 工具 |
+| RT-EGR-13 | egress | LLM 地址为云端地址 | 分别以 enforce 未绑定、audit 未绑定、enforce 已绑定启动 | enforce 未绑定启动失败（错误含后端名 default）；另两种启动成功 |
+| RT-EGR-14 | egress | 未写 `[egress]`；另一配置 mode = audit | 解析配置；用同步构造创建 Runtime | 默认 mode = off；同步构造拒绝启用外发检查 |
+| RT-EGR-15 | egress | 模型服务替身流式返回，Token 被切在两个数据块之间 | 带外发检查的客户端 chat_stream / chat | 模型服务收到的请求只含 Token；用户看到的增量与结果都是恢复后的原值 |
+| RT-EGR-16 | egress | 外发检查判定 BLOCK | 调用 chat | 返回 EgressBlocked；模型服务没有收到任何请求 |
 | RT-TPL-10 | templates | 后端 llama_cpp 配置 background_slots=[2,3,4,5]；openai 配置 max_inflight=8、reserved_interactive=1；openai 不限并发 | 读取 background_capacity | 分别为 4、7、不限（None） |
 
 ## MOM 可配置持续仿真（实现前定义）
@@ -206,6 +228,118 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-HOST-01 | http-host | 启动真实 agentnexus/an-mom 二进制，恶意 Host 请求写入口、页面、API、SSE、同源 MOM | 请求在业务副作用前返回403；业务记录不变；转发头不能绕过 |
 | RT-HOST-02 | http-host | 本机 IPv4/localhost/IPv6 authority、错误端口、伪装域名、非法/缺失/重复 Host | 合法且端口匹配才允许；其余400或403 |
 
+## ACP 自动发现预设（AG.0，实现前定义）
+
+新增 4 个内置预设：`claude`（claude-agent-acp）、`codex-acp`（codex-acp）、`cursor`（cursor-agent acp）、`zcode`（zcode-acp-server），角色都是 coding。用临时目录中的假可执行文件模拟"已安装"，只检查文件、不运行。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-ACPD-01 | acp-discovery | PATH 只含临时目录，里面有 claude-agent-acp、codex-acp、cursor-agent、zcode-acp-server；auto_detect = true，构造 Runtime | 注册表出现 claude、codex-acp、cursor、zcode 四张卡片：kind=acp、role=coding、agent_type 等于 id、enabled=true |
+| RT-ACPD-02 | acp-discovery | PATH 里只有一个无关的 `agent` 可执行文件，没有 cursor-agent | 不出现 cursor 卡片 |
+| RT-ACPD-03 | acp-discovery | 用户在 [[acp.agents]] 写了 id = "claude"（不同命令、名称、角色），预设命令也已安装 | 只有一张 claude 卡片，名称和角色取用户配置 |
+| RT-ACPD-04 | acp-discovery | PATH 为空目录、HOME 为空目录（系统固定目录无法隔离） | 构造 Runtime 不报错；4 个新预设的卡片出现与否和"命令能否被找到"一致：找不到就不出现 |
+| RT-ACPD-05 | acp-discovery | 读取预设清单；PATH 同时有 opencode 和 claude-agent-acp | 前三个预设仍是 opencode、hermes、pi，命令与参数不变，新预设排在其后；opencode 与 claude 都被注册 |
+
+## Agent 目录与握手检测（AG.1，实现前定义）
+
+只读：`GET /api/agents/catalog` 列出预设目录及状态；`POST /api/agents/probe {"id"}` 对目录内或已注册的 ACP agent 握手并分类。不写配置。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGCAT-01 | agent-catalog | PATH 隔离：claude-agent-acp 已安装且自动发现开启；codex-acp 未安装 | 目录含全部 7 个预设；claude 为 registered 并带连接状态；codex-acp 为 not_installed |
+| RT-AGCAT-02 | agent-catalog | 读目录 | 每项都有名称、用途、角色、启动命令和至少一条安装步骤 |
+| RT-AGCAT-03 | agent-catalog | 已注册的假 ACP agent 握手正常 | kind = ok |
+| RT-AGCAT-04 | agent-catalog | 假 ACP agent 在新建会话时返回 -32000（auth_required） | kind = needs_login，并给出下一步说明 |
+| RT-AGCAT-05 | agent-catalog | 脚本向错误输出写 "env: node: No such file or directory" 后以 127 退出 | kind = missing_dependency；detail 含该错误输出 |
+| RT-AGCAT-06 | agent-catalog | 脚本记录 pid 后长时间不响应 | 约 10 秒后 kind = timeout；该进程已结束 |
+| RT-AGCAT-07 | agent-catalog | 目录内预设未安装 | kind = not_installed，立即返回 |
+| RT-AGCAT-08 | agent-catalog | 未知 id、非 ACP agent（general）；请求体附带 command 字段 | 未知和非 ACP 返回 404；带 command 的请求被拒绝，命令未被执行 |
+| RT-AGCAT-09 | agent-catalog | 检测已注册 agent 成功 | 健康接口中该 agent 的连接状态变为 connected |
+
+## 前台提速：先写理由 / 规则判风险 / 可疑时再思考（FT.1，实现前定义）
+
+用假模型服务记录每个请求体，按脚本返回结果。"不思考"指请求带 `chat_template_kwargs.enable_thinking = false`；"思考"指不带这个设置（沿用模型默认）。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-FT-01 | front-thinking | 不写任何新配置（基线） | 前台请求不带 enable_thinking；turn_decision 没有 reason 字段；route_decision 的 reason 仍在最后 |
+| RT-FT-02 | front-thinking | 不思考 + front_reason_first | turn_decision 与 route_decision 的第一个字段都是 reason，最长 40 字，且为必填 |
+| RT-FT-03 | front-thinking | 只开 front_reason_first、不关思考 | schema 与基线相同（A 只在不思考时生效） |
+| RT-FT-04 | front-thinking | risk_rules 开；模型给 low 的"删除生产环境数据库旧表"、给 low 的"修改 src/main.rs"、给 high 的"总结这篇文章" | 风险分别为 high、medium、high（只升不降） |
+| RT-FT-05 | front-thinking | risk_rules 不开；模型给 low 的"删除生产环境数据库旧表" | 风险保持 low |
+| RT-FT-06 | front-thinking | 不思考 + 升级；前台判断第一次输出不是 JSON，第二次合格 | 共 2 次请求：第 1 次不思考，第 2 次思考；结果取第 2 次 |
+| RT-FT-07 | front-thinking | 不思考 + 升级；路由第一次给 high，思考后给 medium | 共 2 次路由请求，第 2 次思考；最终风险 medium |
+| RT-FT-08 | front-thinking | 不思考 + 升级；路由第一次选了没有可用 agent 的 coding，思考后选 general | 路由成功，角色 general；第 2 次请求思考 |
+| RT-FT-09 | front-thinking | 不思考 + 升级；前台判断第一次给 delegate 但 task_goal 为空，思考后合格 | 共 2 次请求，第 2 次思考；结果为 delegate 且目标非空 |
+| RT-FT-10 | front-thinking | 不思考 + 升级，max_retries = 1；前台判断始终输出非 JSON | 返回错误；不思考的请求只有 1 次，之后都是思考请求（1 + max_retries 次），不会退回不思考 |
+| RT-FT-11 | front-thinking | 不思考但不开升级，或开升级但没关思考；第一次输出非 JSON、第二次合格 | 两次请求的思考设置相同（与现在的重试行为一致） |
+
+## 托管配置、热注册与撤销（AG.2，实现前定义）
+
+接口：`POST /api/agents/proposals`（只校验、不写入，返回提议与一次性确认凭证）、`POST /api/agents/proposals/{id}/apply {"token"}`。提议类型：add_preset、add_custom、set_default、disable、enable、remove、revert。托管文件放在数据库同目录的 `agents.managed.toml`。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGCFG-01 | agent-config | 自动发现关闭，claude-agent-acp 已安装；提议接入预设 claude 并确认 | 不重启即出现在注册表；目录状态为 registered；已做过一次握手检测；托管文件含 claude |
+| RT-AGCFG-02 | agent-config | 两个 coding agent m1、m2（config.toml 没写执行组）；提议把 coding 默认设为 m2 并确认 | 新的 coding 分配得到 m2 |
+| RT-AGCFG-03 | agent-config | 托管 agent 正在执行任务（持有名额）；停用它 | 新分配不再得到它；执行中的名额仍可用并能正常归还 |
+| RT-AGCFG-04 | agent-config | 唯一的 coding agent 忙，另一个分配在排队；停用它 | 排队的分配报 E_ROUTE_NO_AGENT，说明里有"已被停用或没有安装"之类的大白话 |
+| RT-AGCFG-05 | agent-config | 连续两次修改后撤销两次，再撤销一次 | 两次撤销依次恢复，注册表同步；第三次撤销被拒绝（没有可撤销的版本） |
+| RT-AGCFG-06 | agent-config | 托管文件有自定义 agent、默认执行者，以及与已安装预设同 id 的托管 agent；重新启动 | 托管内容生效；同 id 时托管配置优先于自动发现的预设 |
+| RT-AGCFG-07 | agent-config | config.toml 手写了 agent "hand" 和 coding 执行组 | 停用 hand、改 coding 默认、托管同 id agent 的提议都被拒绝，并说明要改 config.toml |
+| RT-AGCFG-08 | agent-config | 确认时不带凭证、凭证错误、提议已过期 | 分别被拒绝（403、403、410）；托管文件和注册表都不变 |
+| RT-AGCFG-09 | agent-config | 启动前托管文件内容损坏 | 启动正常；状态里报 E_AGENT_MANAGED_INVALID；坏文件内容不变；新提议被拒绝并说明原因 |
+| RT-AGCFG-10 | agent-config | 自定义 agent 的 env 写了明文值；另一个只写 `${VAR}` 引用 | 写明文的提议被拒绝；写引用的被接受，托管文件里只有引用 |
+| RT-AGCFG-11 | agent-config | 把两个不同类型的 agent 设为同一个执行组 | 提议被拒绝；注册表执行组不变 |
+| RT-AGCFG-12 | agent-config | 两个不同的修改同时确认 | 两个都生效；托管文件是完整的合法 TOML，包含两处修改 |
+| RT-AGCFG-13 | agent-config | 对话中派发写代码任务，但没有任何可用的 coding agent | 回复由前台模型生成，请求里带了原因和"用非专业用户能看懂的话"的要求；模型不可用时的兜底文字不以错误码开头 |
+| RT-AGCFG-14 | agent-config | 写代码任务在执行阶段因没有可用 coding agent 失败 | 交付消息由前台模型撰写，提供给它的材料里有原因和恢复办法，并要求用大白话 |
+
+## 助手页签与卡片（AG.3，实现前定义）
+
+测试服务里：`claude-agent-acp` 已安装（包装脚本指向自带的模拟 ACP agent，握手真实）；`zcode-acp-server` 未安装；config.toml 手写了一个 agent `hand`；自动发现关闭；没有内置 coding agent。用例按顺序执行，共享同一个服务。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| E2E-AGFIRST | agent-ui | 新浏览器首次打开 | 对话区顶部出现发现卡，列出可接入的助手；点"知道了"后刷新不再出现 |
+| E2E-AGLIST | agent-ui | 打开「助手」页签 | 显示 Claude Code（已安装、未接入）、ZCode（未安装）、hand（在 config.toml 中配置）、内置的通用执行，每项有用途说明 |
+| E2E-AGTOML | agent-ui | 查看 hand 一行 | 显示"在 config.toml 中配置"，没有"停用"按钮 |
+| E2E-AGGUIDE | agent-ui | ZCode 一行点"看安装步骤"，再点"我装好了，重新检测" | 引导卡列出安装步骤，命令带"复制"按钮；检测结果用大白话说明"还没有安装" |
+| E2E-AGCONNECT | agent-ui | Claude Code 一行点"接入"，在确认卡上确认 | 确认卡说明将会发生什么并显示将执行的命令；结果卡显示已接入和检测结果"已连通"；该行变为已接入 |
+| E2E-AGUNDO | agent-ui | 在结果卡上点"撤销"并确认 | Claude Code 恢复为已安装、未接入 |
+| E2E-AGDISABLE | agent-ui | 再次接入 Claude Code 后停用它，然后在对话里要求改代码 | 确认卡警告"写代码"类任务将没有执行者；之后对话中的回复是大白话，错误码只在末尾括号里 |
+
+## 对话里管理助手（AG.4，实现前定义）
+
+开关 `[conversation] agent_management`。受控模型按脚本给出前台判断；"不思考 / 思考"不涉及。卡片存在消息的 `card_json` 列，送给模型的历史只用 `content`。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGCHAT-01 | agent-chat | 开关关闭 | 前台判断请求的 schema 与现在相同（没有 manage_agents 和 agent_* 字段） |
+| RT-AGCHAT-02 | agent-chat | 开关打开，claude-agent-acp 已安装；模型判断"接入 claude" | 回复消息带确认卡（提议 id、凭证、说明）；消息正文是大白话，不含凭证 |
+| RT-AGCHAT-03 | agent-chat | 模型判断"接入"但没说是哪个，角色 coding | 回复选择卡，候选都是负责写代码、尚未接入的助手；在选择卡上点选（会话内提议接口）后，会话里追加一张确认卡 |
+| RT-AGCHAT-04 | agent-chat | 模型判断"停用 hand"（config.toml 里写的） | 大白话说明要改 config.toml，没有卡片 |
+| RT-AGCHAT-05 | agent-chat | 生成确认卡之后再发一条消息 | 送给模型的请求里没有凭证，也没有卡片数据，只有卡片消息的大白话正文 |
+| RT-AGCHAT-06 | agent-chat | 用卡片里的凭证确认 | 同一会话追加结果卡；原确认卡状态变为 applied；助手已注册 |
+| RT-AGCHAT-07 | agent-chat | 提议过期后再确认 | 410；原确认卡状态变为 expired |
+| RT-AGCHAT-08 | agent-chat | 旧数据库的 messages 表没有 card_json 列 | 打开时自动补列，可重复打开；旧消息可读，卡片为空 |
+| RT-AGCHAT-09 | agent-chat | 模型给的 agent_id 不在候选里 | 按格式不合格重试；第二次合格后正常生成卡片 |
+| E2E-AGCHAT | agent-ui | 对话里说"把 Claude Code 接进来" | 对话里出现确认卡 → 确认 → 对话里出现结果卡；刷新后两张卡仍在，确认卡显示已确认 |
+| E2E-AGCHOICE | agent-ui | 对话里说"帮我接个写代码的助手" | 对话里出现选择卡 → 点选一个 → 对话里出现确认卡 |
+
+## 助手排查：规则库与本机体检（AG.5 第 1、2 层，实现前定义）
+
+接口 `POST /api/agents/diagnose {"id"}`：先做一次握手检测，再做本机体检（只运行写死的只读检查），按规则给出大白话结论和修复步骤。不外发任何内容。RT-AGDIAG-05（诊断包脱敏）、07～12（外部助手排查）依赖 DLP，D1 定稿后再定义。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGDIAG-01 | agent-diagnose | 已安装的 claude-agent-acp 启动时向错误输出写"env: node: No such file or directory"并退出 | 检测分类为缺依赖；命中"找不到 Node.js"规则，给出大白话解释和安装步骤 |
+| RT-AGDIAG-02 | agent-diagnose | 服务的 PATH 里找不到 claude-agent-acp，登录 shell 的 PATH 里能找到 | 命中"服务找不到命令、终端能找到"规则，解释里给出终端里找到的完整路径和修复办法 |
+| RT-AGDIAG-03 | agent-diagnose | ZCode 要求 Node ≥ 22，本机 node 是 v18；Cursor 没有 Node 要求；node 命令卡住不返回 | ZCode 命中"Node 版本太低"；排查 Cursor 时不运行 node；node 卡住时 5 秒内结束并记为检查失败，不拖住整个排查 |
+| RT-AGDIAG-04 | agent-diagnose | ZCode 的凭证文件存在但不可读；另一次凭证文件不存在 | 不可读时检查结果仍为"存在"（只看是否存在，不读内容）；不存在时命中"缺少 ZCode 登录凭证"规则 |
+| RT-AGDIAG-06 | agent-diagnose | 自定义 agent 以未知报错退出 | 没有命中任何规则，结果标记为"未识别"；自定义命令不做登录 shell 检查 |
+| E2E-AGDIAG | agent-ui | 「助手」页签里未安装的 ZCode 点"排查" | 显示排查结果：大白话结论"还没有安装"、安装步骤（带复制按钮）和体检项 |
+
 ## Host 拒绝事件可观测性（实现前定义，R-20261113-L1）
 
 | Case | Feature | Given / When | Then |
@@ -315,8 +449,47 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-28 | mom-des | P0 固定剧本（基线） | 推进 30 分钟 | 只有一个 DES 案例，使用原 S1 模板，不建立协同事项，也没有成员关系 |
 | RT-DES-29 | mom-des | P0 案例已执行方案 C 并关闭（基线，来自 2026-11-17 审查） | 同键再到一条质量观测，再推进 | 观测进入新案例而不是已关闭的案例；已关闭案例的 `world.des` 不再刷新 |
 
+## 模拟工厂与 MCP 挂载（阶段⑤a-1）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a。对外约定：
+- 模拟工厂服务 `an_des::FactoryService`：调用入口是 `call(工具名, JSON 参数)`。
+- MCP 服务 `an-des-mcp`：经 stdio 提供同一套工具。成功时返回 `structuredContent`，业务错误作为工具错误返回（`isError`）；管理口令取自环境变量 `AN_DES_ADMIN_TOKEN`。
+- 工具名只用小写字母、数字和下划线，长度 ≤ 64，原因见 §11a 修订。
+- 13 个工具分四类：
+  - 观测：`equipment_status`、`equipment_trend`、`quality_capability`、`inventory_tooling`、`events_poll`、`order_status`；
+  - 执行：`maintenance_order_create`、`tooling_transfer_create`、`production_schedule_apply`；
+  - 控制：`simulation_create`、`simulation_advance`、`simulation_fault_inject`；
+  - 管理：`simulation_ground_truth`。
+
+测试位置：`crates/des/tests/factory.rs`（RT-DESF）、`crates/des-mcp/tests/stdio.rs`（RT-DESM）、`crates/runtime/tests/mom_des.rs`（RT-DES-30）。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DESF-01 | des-factory | 工具目录 | 读取 `tool_catalog()` | 恰好是上述 13 个工具，类别与设计表一致。工具名唯一、匹配 `^[a-z][a-z0-9_]{0,63}$`，不含 AgentNexus 专有概念（agentnexus、case、mom）。每个工具有说明，输入 schema 是 object 且拒绝未知字段。执行类工具的必填字段包含 `idempotency_key` 与 `approval_ref` |
+| RT-DESF-02 | des-factory | 两个服务实例，并发簇 seed 7 | 用相同输入创建仿真并推进到结束 | 事件逐字节相同，可观测状态相同。按游标分页拉取：遵守 limit；拼接结果等于一次拉取；同一游标重复拉取结果相同；不返回未来事件，没有重复；事件编号带仿真编号前缀；继续推进后，已投递的前缀不变 |
+| RT-DESF-03 | des-factory | 两个服务实例，P0 | 一个在推进过程中反复调用全部观测工具，另一个不调用 | 观测可重复，且两个服务的最终世界相同（读取不改变世界）。状态标注 `provenance: simulation`，含振动、分区、Cpk、运行状态、刀具在位等可观测字段 |
+| RT-DESF-04 | des-factory | P0 推进到报警后（CNC-XX 处于 C/D 区） | 下维修单：先缺审批引用、缺幂等键或审批引用为空白，再正常提交，然后同键重试，再同键改参数 | 缺字段的请求被拒绝且不改变世界。正常提交返回回执（单号、完成时刻）。同键同参数返回原回执、只生效一次（与只下一次单的世界相同）；同键不同参数被拒绝。`order_status` 从 accepted 变为 completed，维修后振动低于 2.8 mm/s。`production_schedule_apply` 返回 accepted 回执 |
+| RT-DESF-05 | des-factory | P0 推进到报警后 | 先调拨刀具，再注入"备用刀具丢失"，再调拨一次 | 第一次回执 accepted，完成时刻等于当前时刻加调拨时间（取自 `inventory_tooling`）。注入后的调拨回执为 failed，原因来自仿真（提到 spares） |
+| RT-DESF-06 | des-factory | 已配置管理口令的服务；未配置口令的服务 | 分别不带口令、带错误口令、带正确口令读取标准答案；读取全部观测工具 | 只有正确口令能读到标准答案；未配置口令时管理工具一律拒绝。观测输出不含 root_causes、mechanisms、spindle_wear、relations、contentions |
+| RT-DESF-07 | des-factory | P0 推进 30 分钟 | 调用未知工具、未知仿真、带未知字段、时钟倒退或超上限、limit 为 0 或超过 1000、未知设备、维修开始时刻早于当前、未知单号、未知故障、时长为 0 的仿真 | 每个请求都在 2 秒内报错，世界不变 |
+| RT-DESF-08 | des-factory | 一个服务 | 连续创建仿真 | 仿真编号形如 `DES-n` 且互不相同；达到上限时报错并说明 capacity |
+| RT-DESM-01 | des-factory | 经 stdio 启动 `an-des-mcp` | 列出工具 | 与 `tool_catalog()` 一致（数量、名称、说明、schema）。注解如下：观测类 `readOnlyHint = true`；执行类 `readOnlyHint = false`、`idempotentHint = true`；控制类不是只读；管理类是只读 |
+| RT-DESM-02 | des-factory | 一个 MCP 服务与一个进程内服务 | 依次执行同一组调用：创建、推进、拉取事件、四个观测工具、下维修单、同键重试、调拨、推进、再拉取、读取标准答案 | 每一步 MCP 的 `structuredContent` 与进程内结果逐字节相同 |
+| RT-DESM-03 | des-factory | MCP 服务已创建一个仿真 | 调用未知仿真、错误口令、缺审批引用的写操作；然后关闭 stdin | 业务错误作为工具错误返回，不带数据，服务继续可用。未知工具可以是协议错误。关闭 stdin 后进程在 5 秒内正常退出 |
+| RT-DES-30 | des-factory | P0 seed 1 与并发簇 seed 7 | 同一配置分别在 MOM 引擎（进程内）与模拟工厂服务中创建，在相同时刻推进 | 仿真编号相同，各时刻的可观测设备状态相同。服务事件等于内核事件加仿真编号前缀（种类、来源、设备、客户、时刻、载荷都相同）。服务的标准答案与审核层读到的相同 |
+
+### 阶段⑤a-2（AgentNexus 侧连接器）用例草案
+
+以下用例在⑤a-1 转绿后编写测试（依赖真实的服务接口），届时再按测试规范登记到 features.json：
+- RT-DESC-01：同 seed P0 与并发簇，MCP 模式（调度器推进模拟工厂 → 连接器拉取事件 → MOM 推进）与进程内模式一致。比较的内容包括案例、事件种类序列、`world.des` 快照、排产方案与执行结果。
+- RT-DESC-02：写操作只在审批并 `execute` 之后由连接器发出，幂等键为"案例:方案修订号:动作"，并带审批引用；回执写回动作。传输中断后重发，同键只生效一次。
+- RT-DESC-03：AgentNexus 暴露给 agent 与桌面的模拟工厂工具只有观测类，不含执行、控制与管理类。
+- RT-DESC-04：模拟工厂不在线（命令不存在、进程退出）时，连接器返回明确错误 `E_DES_UNAVAILABLE`，不回退到进程内仿真，也不写入假观测。
+- RT-DESC-05：MCP 模式下，审核层的标准答案来自模拟工厂管理入口，规则结果与进程内模式一致。
+
 ## R-20261118-M3 常见凭证与同形字
 
 | Case | Given | When | Then |
 |---|---|---|---|
 | PY-DLP-M3 | 中文密码/口令、token=、DB_PASS=、OpenAI项目key、Google key、同形字AWS/GitHub，共8种合成输入 | evaluate到external_untrusted | 全部BLOCK、不可发送且无原值；其余原文（含℃）不变；正常Unicode和术语不被改写 |
+

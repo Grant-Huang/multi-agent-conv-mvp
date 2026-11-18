@@ -65,6 +65,8 @@ pub trait Tool: Send + Sync {
 #[derive(Clone, Default)]
 pub struct ToolRegistry {
     tools: BTreeMap<String, Arc<dyn Tool>>,
+    /// 外发守卫：有外发绑定的工具在调用前先检查（见 egress.rs）；None = 不检查
+    egress: Option<Arc<crate::egress::EgressGuard>>,
 }
 
 impl ToolRegistry {
@@ -81,11 +83,20 @@ impl ToolRegistry {
     }
 
     pub async fn call(&self, name: &str, args: &Value) -> Result<ToolOutput> {
-        self.get(name)
-            .ok_or_else(|| anyhow!("E_TOOL_UNKNOWN: {name}"))?
-            .call(args)
-            .await
+        let tool = self
+            .get(name)
+            .ok_or_else(|| anyhow!("E_TOOL_UNKNOWN: {name}"))?;
+        match &self.egress {
+            // enforce 下检查不通过时直接返回错误，真实工具不会被调用；通过时只把脱敏后的参数交给工具
+            Some(guard) => tool.call(&guard.check_tool(name, args).await?).await,
+            None => tool.call(args).await,
+        }
     }
+    /// 设置外发守卫。之后所有经本注册表的调用（General 与报告流程）都会先检查
+    pub fn set_egress_guard(&mut self, guard: Arc<crate::egress::EgressGuard>) {
+        self.egress = Some(guard);
+    }
+
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.name().to_string(), tool);
     }
