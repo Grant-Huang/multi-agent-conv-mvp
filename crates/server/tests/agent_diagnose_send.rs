@@ -355,7 +355,7 @@ async fn rt_agdiag_05_package_with_dlp() {
     );
 }
 
-/// RT-AGDIAG-07 + RT-DLP-02 + RT-DLP-06：预览即所发；凭证校验；占位符只发出去、回复还原后显示；结束后撤销
+/// RT-AGDIAG-07：预览即所发；不带凭证、凭证错误、用过、过期都拒绝，且不启动帮手
 #[tokio::test]
 async fn rt_agdiag_07_preview_equals_sent_and_consent_rules() {
     let _g = ENV_LOCK.lock().await;
@@ -366,10 +366,6 @@ async fn rt_agdiag_07_preview_equals_sent_and_consent_rules() {
     assert_eq!(status, 200, "{p}");
     let content = p["content"].as_str().unwrap().to_string();
     assert!(content.contains(INSTRUCTION_MARK), "{content}");
-    assert!(
-        content.contains("[CUSTOMER_001]") && !content.contains("ACME"),
-        "{content}"
-    );
     assert!(
         p["destination"]
             .as_str()
@@ -400,7 +396,7 @@ async fn rt_agdiag_07_preview_equals_sent_and_consent_rules() {
     assert_eq!(status, 403, "{out}");
     assert!(sb.record().is_none(), "凭证无效时不应启动帮手");
 
-    // 正确的凭证：帮手收到的内容与预览一字不差，回复已还原
+    // 正确的凭证：帮手收到的内容与预览一字不差
     let (status, out) = send(&base, &p).await;
     assert_eq!(status, 200, "{out}");
     let rec = sb.record().expect("帮手应被启动");
@@ -409,30 +405,6 @@ async fn rt_agdiag_07_preview_equals_sent_and_consent_rules() {
         content,
         "发出的内容应与预览一致"
     );
-    let reply = out["reply"].as_str().unwrap();
-    assert!(
-        reply.contains("ACME 的配置文件"),
-        "回复应还原后显示：{reply}"
-    );
-    assert!(!reply.contains("[CUSTOMER_001]"), "{reply}");
-
-    // RT-DLP-06：用同一个 task_id 评估、还原（local_ui）和撤销；日志里没有待发内容
-    let log = sb.dlp_log();
-    let eval = log
-        .iter()
-        .find(|c| c["tool"] == "egress_evaluate" && c["channel"] == "agent")
-        .unwrap_or_else(|| panic!("{log:?}"));
-    assert_eq!(eval["destination_id"], "agent:helper");
-    assert!(log.iter().any(|c| c["tool"] == "egress_restore"
-        && c["task_id"] == eval["task_id"]
-        && c["context"] == "local_ui"));
-    assert!(log
-        .iter()
-        .any(|c| c["tool"] == "egress_revoke" && c["task_id"] == eval["task_id"]));
-    let logs = log_text();
-    assert!(logs.contains("agent.diagnose_sent"), "应记录外发事件");
-    assert!(!logs.contains(INSTRUCTION_MARK), "日志里不应有待发内容");
-    assert!(!logs.contains("ACME"), "日志里不应有原文");
 
     // 凭证用过：拒绝，帮手不再被启动
     std::fs::remove_file(sb.record_path()).unwrap();
@@ -450,6 +422,69 @@ async fn rt_agdiag_07_preview_equals_sent_and_consent_rules() {
     let (status, out) = send(&base, &p2).await;
     assert_eq!(status, 410, "{out}");
     assert!(sb.record().is_none());
+}
+
+/// RT-DLP-02：占位符只出现在发出去的内容里；帮手回复里的占位符还原后（local_ui）才显示给用户
+#[tokio::test]
+async fn rt_dlp_02_tokens_sent_and_restored_for_display() {
+    let _g = ENV_LOCK.lock().await;
+    let sb = Sandbox::new("dlp02", "anonymize");
+    let (base, _rt) = sb.serve("", true, 3).await;
+    let (status, p) = preview(&base, "helper").await;
+    assert_eq!(status, 200, "{p}");
+    let content = p["content"].as_str().unwrap();
+    assert!(
+        content.contains("[CUSTOMER_001]") && !content.contains("ACME"),
+        "预览里只应有占位符：{content}"
+    );
+    let (status, out) = send(&base, &p).await;
+    assert_eq!(status, 200, "{out}");
+    let sent = sb.record().unwrap()["prompt"].as_str().unwrap().to_string();
+    assert!(
+        sent.contains("[CUSTOMER_001]") && !sent.contains("ACME"),
+        "发出去的内容里只应有占位符：{sent}"
+    );
+    let reply = out["reply"].as_str().unwrap();
+    assert!(
+        reply.contains("ACME 的配置文件"),
+        "回复应还原后显示：{reply}"
+    );
+    assert!(!reply.contains("[CUSTOMER_001]"), "{reply}");
+    assert!(
+        sb.dlp_log()
+            .iter()
+            .any(|c| c["tool"] == "egress_restore" && c["context"] == "local_ui"),
+        "还原只用于本机显示"
+    );
+}
+
+/// RT-DLP-06：发送结束后用同一个 task_id 撤销；日志里没有待发内容的原文
+#[tokio::test]
+async fn rt_dlp_06_revoke_after_send_and_no_content_in_logs() {
+    let _g = ENV_LOCK.lock().await;
+    let sb = Sandbox::new("dlp06", "anonymize");
+    let (base, _rt) = sb.serve("", true, 3).await;
+    let (status, p) = preview(&base, "helper").await;
+    assert_eq!(status, 200, "{p}");
+    let (status, out) = send(&base, &p).await;
+    assert_eq!(status, 200, "{out}");
+    let log = sb.dlp_log();
+    let eval = log
+        .iter()
+        .find(|c| c["tool"] == "egress_evaluate" && c["channel"] == "agent")
+        .unwrap_or_else(|| panic!("{log:?}"));
+    assert_eq!(eval["destination_id"], "agent:helper");
+    assert_eq!(eval["purpose"], "diagnose");
+    assert!(
+        log.iter()
+            .any(|c| c["tool"] == "egress_revoke" && c["task_id"] == eval["task_id"]),
+        "应撤销：{log:?}"
+    );
+    let logs = log_text();
+    assert!(logs.contains("agent.diagnose_sent"), "应记录外发事件");
+    assert!(logs.contains("egress.evaluated"), "应记录评估事件");
+    assert!(!logs.contains(INSTRUCTION_MARK), "日志里不应有待发内容");
+    assert!(!logs.contains("ACME"), "日志里不应有原文");
 }
 
 /// RT-AGDIAG-08：帮手的权限请求一律拒绝，工作目录是临时空目录，结束后删除
@@ -478,7 +513,7 @@ async fn rt_agdiag_08_helper_deny_all_in_temp_dir() {
     assert!(!cwd.exists(), "临时目录应已删除：{cwd:?}");
 }
 
-/// RT-AGDIAG-10 + RT-DLP-06：帮手超时 → 大白话说明，进程已结束，映射已撤销
+/// RT-AGDIAG-10：帮手超时 → 大白话说明，进程已结束，映射也已撤销
 #[tokio::test]
 async fn rt_agdiag_10_helper_timeout() {
     let _g = ENV_LOCK.lock().await;
