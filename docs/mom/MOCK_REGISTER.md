@@ -60,7 +60,7 @@
 - M22：`web/mom/index.html` 和页面交互测试，支持人类运营看板、决策、证据、Mock缺口、机器视图。企业访问控制未验收，故不勾选。
 - M23：真实调用次数与硬配额，子任务按固定代价预留；未对账真实 token/金额。
 - M24：`crates/server/src/mom_relos.rs` 与 `mom/tools.rs`，RT-MOM-06～09、HTTP-MOM-RELOS-01/02。RelOS 接口真实调用，但其中知识为仿真数据，候选根因只是假设，故不勾选。
-- M27/M28：`crates/runtime/src/mom/des/`，RT-DES-01～05、16、17（`crates/runtime/tests/mom_des.rs`）。阶段①为开环：事件一次生成后按虚拟时钟投递，agent 处置不影响后续事件；P0 固定剧本为夹具，不由仿真产生。阶段②（RT-DES-06、07、20、21，HTTP-DES-01/02）：DES 案例的维护/质量/资源/排产工具改读仿真可观测快照（证据含 M27 与原 M03–M06），`schedule.simulate` 为基于可观测状态的 A/B/C 计划模型，仍是 MOCK，不代表真实求解器或现场能力。阶段③（RT-DES-08～11、18，HTTP-DES-03）：选定方案执行后，维修与刀具调拨作为仿真干预改变后续世界，动作完成时刻由仿真决定，备件丢失可注入；执行仍是模拟回执（M09–M12），不是现场执行。设计见 [DES_CLOSED_LOOP.md](DES_CLOSED_LOOP.md)。
+- M27/M28：`crates/runtime/src/mom/des/`，RT-DES-01～05、16、17（`crates/runtime/tests/mom_des.rs`）。阶段①为开环：事件一次生成后按虚拟时钟投递，agent 处置不影响后续事件；P0 固定剧本为夹具，不由仿真产生。阶段②（RT-DES-06、07、20、21，HTTP-DES-01/02）：DES 案例的维护/质量/资源/排产工具改读仿真可观测快照（证据含 M27 与原 M03–M06），`schedule.simulate` 为基于可观测状态的 A/B/C 计划模型，仍是 MOCK，不代表真实求解器或现场能力。阶段③（RT-DES-08～11、18，HTTP-DES-03）：选定方案执行后，维修与刀具调拨作为仿真干预改变后续世界，动作完成时刻由仿真决定，备件丢失可注入；执行仍是模拟回执（M09–M12），不是现场执行。阶段④（RT-DES-12～15、19，HTTP-DES-04）：审核层的标准答案来自 M28；AI 审核在测试中由脚本替身完成，不能说明真实审核质量；批量实验的审批与交接延迟是建模假设（对数正态，均值可配置），模拟审批沿用 M20 的夹具审批人。设计见 [DES_CLOSED_LOOP.md](DES_CLOSED_LOOP.md)。
 - 证据入口：`crates/runtime/tests/mom.rs`、`crates/server/tests/mom.rs`、`web/src/mom.test.ts`；`tools/mom/smoke.py` 可重放并生成带 mock_ids 的功能报告。
 - SQLite schema v1 为独立数据库；单进程仿真，跨实例陈旧写入会拒绝并要求重开。尚未提供多实例热加载和高可用调度。
 

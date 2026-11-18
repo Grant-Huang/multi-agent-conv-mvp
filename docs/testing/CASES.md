@@ -233,6 +233,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGCAT-07 | agent-catalog | 目录内预设未安装 | kind = not_installed，立即返回 |
 | RT-AGCAT-08 | agent-catalog | 未知 id、非 ACP agent（general）；请求体附带 command 字段 | 未知和非 ACP 返回 404；带 command 的请求被拒绝，命令未被执行 |
 | RT-AGCAT-09 | agent-catalog | 检测已注册 agent 成功 | 健康接口中该 agent 的连接状态变为 connected |
+| RT-AGCAT-10 | agent-catalog | 回归（2026-11-18 CI 偶发失败）：脚本向错误输出写 "env: node: No such file or directory" 后立刻以 127 退出，连续检测 50 次；另一个脚本不写任何错误输出就立刻退出 | 50 次全部 kind = missing_dependency（不能因为握手请求写失败报 Broken pipe 而归成 handshake_failed）；不写错误输出的脚本为 handshake_failed，且单次检测 2 秒内结束（补等错误输出有上限） |
 
 ## 前台提速：先写理由 / 规则判风险 / 可疑时再思考（FT.1，实现前定义）
 
@@ -402,3 +403,39 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-11 | mom-des | 同上，选定方案 C 并批准后，仓库备件被注入故障清空 | 执行，再推进 60 分钟 | 刀具调拨动作失败，案例进入 PARTIAL 并产生 `CompensationRequired`；CNC-XZ 仍然无刀 |
 | RT-DES-18 | mom-des | 资源竞争模式的 DES 仿真产生多个不同设备的报警案例 | 推进到仿真结束 | 同线、共用维修班组的报警案例之间互相记录 `RelatedCaseLinked`，理由写明共用资源；不与脚本案例关联 |
 | HTTP-DES-03 | mom-des | an-mom 服务中的 P0 DES 案例进入人工决策 | 依次发送 select_plan(B)、approve、execute、advance、close 命令 | 每步返回 200；推进后工厂视图显示 CNC-XX 恢复运行且振动低于 2.8 mm/s；案例全部动作核验并成功关闭 |
+
+## MOM 车间 DES 阶段④：审核层与批量实验（实现前定义）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §7、§8、§10 与阶段④修订说明。审核分三步：确定性规则检查 → AI 审核（`Reviewer` 接口，测试用脚本替身）→ 人工确认或推翻。规则：`hitl_before_write`（写操作之前有人工批准）、`root_cause_attribution`（记录的根因假设与标准答案比对）、`plan_safe`（执行的方案可行且不是"继续使用报警设备"）、`effectiveness`（维修完成后设备振动低于 2.8 mm/s 且 Cpk 不低于 1.33）、`timeliness`（各阶段耗时，仅信息）。AI 审核的每条结论必须引用输入中的证据编号（`rule:…`、`event:…`、`truth:…`）。审核模型按 `[models].mom_reviewer` → `[llm].model` 的顺序选择；与 MOM 主 agent 同模型时标注"非独立审核"。批量实验：同一组 seed 分别以 AI-Native 与传统 MOM 策略运行；两者都按推荐方案决策，差别只在决策延迟（传统策略为多次部门间交接的延迟之和，参数为建模假设）。runtime 测试在 `crates/runtime/tests/mom_des.rs`，HTTP 测试在 `crates/server/tests/mom_des.rs`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DES-12 | mom-des | P0 案例；以及人为构造的案例记录 | 记录错误根因假设、再记录正确假设；构造"先执行后批准"的记录；执行方案 C 后在维修完成前后检查 | 错误假设使 `root_cause_attribution` 失败并注明误判，正确假设通过；先执行后批准使 `hitl_before_write` 失败，先批准后执行则通过；`effectiveness` 在维修完成前为待定，完成且设备恢复后通过 |
+| RT-DES-13 | mom-des | P0 案例已执行 | 用脚本审核替身分别返回合规结论、报错、超时、引用不存在的证据 | 合规时报告 AI 状态为完成，每条结论引用的证据都在输入中；其余三种情况 AI 状态为不可用并写明原因（错误、timeout、invalid_output），规则检查结果照常在报告中；审核不改变案例和仿真状态 |
+| RT-DES-14 | mom-des | AI 审核已完成 | 人工推翻但不写理由；写理由推翻；再确认同意 | 无理由推翻被拒绝；有理由推翻被记录，并生成一条 AI 与人工的分歧记录；同意不产生新的分歧 |
+| RT-DES-15 | mom-des | P0 固定剧本，seed 1–100，AI-Native 与传统两种策略 | 运行两次批量实验并导出 CSV | 两次结果完全相同；每个 seed 两种策略各一行，共 200 行；CSV 有表头和 200 行数据；传统策略的平均决策耗时大于 AI-Native |
+| RT-DES-19 | mom-des | 三份配置：配置了不同于 `[llm].model` 的 `mom_reviewer`；未配置；配置为与 `[llm].model` 相同 | 解析配置并选择审核模型 | 第一份使用 `mom_reviewer`、为独立审核；后两份为非独立审核并带标注；配置项被识别，不出现未知字段警告 |
+| HTTP-DES-04 | mom-des | an-mom 服务配置了脚本审核替身，P0 DES 案例进入人工决策 | 记录根因假设、读取审核报告、触发 AI 审核、提交人工推翻 | 每步返回 200；报告含规则结果、AI 结论与分歧记录；案例的 agent 视图中不出现审核报告与标准答案字段 |
+
+## DES 审查修复 R-20261117-M1 / L1（实现前定义）
+
+移植自修复 PR #84（M1）与 #85（L1），按阶段③的干预与执行后延伸调整；修复在 DES 开发分支上完成。RT-DES-22/23（含补充的 22b）是 `crates/runtime/src/mom/des/engine_link.rs` 中的单元测试（需要只在单元测试中可见的重放计数器），不计入 runtime 集成测试映射；RT-DES-24 在 `crates/server/tests/mom_des_budget.rs`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DES-22 | mom-des | 32 台设备、2880 分钟的 P0 DES 仿真，已有关联案例 | 逐分钟推进 2880 分钟 | 重新推演累计至多 1 次；多个时刻的案例快照与直接重放逐值一致，工厂视图一致。补充 22b（阶段③）：执行方案后推进到场景结束后 300 分钟，重新推演至多 2 次，维修完成后设备恢复运行 |
+| RT-DES-23 | mom-des | 同上，快照序列化后恢复 | 依次读取工厂状态、预测、what-if，再推进 | 各入口共用至多 1 次重新推演；读取不改变持久状态；状态克隆不丢缓存；遥测和缓存不进入快照 |
+| RT-DES-24 | mom-des | an-mom 服务；32 台设备、2880 分钟、并发簇（窗口 1 分钟、至少 1000 个扰动） | 创建该仿真，同时并发读取案例列表 | 创建在 2 秒内返回含 "constraint" 的 400，读取在 2 秒内返回 200；被拒绝的创建没有留下任何记录 |
+
+
+## MOM 车间 DES 阶段③b：按报警触发的模板与产线协同事项（实现前定义）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §6.8。对外约定：模板名 `DAG-TPL-DES-EQUIPMENT@1`、`DAG-TPL-DES-QUALITY@1`、`DAG-TPL-DES-COMBINED@1`、`DAG-TPL-DES-DIAGNOSIS@1`、`DAG-TPL-DES-LINE-INCIDENT@1`；协同事项是批次为 `DES-n:INCIDENT:…` 的案例，`world.des_incident` 记录产线、成员与报警设备集合，成员案例的 `world.des_member_of` 指向事项。测试在 `crates/runtime/tests/mom_des.rs`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DES-25 | mom-des | 并发簇、资源竞争、无约束三种模式，seed 1–5 | 推进到仿真结束 | 每个未关闭的 DES 报警案例都有模板：属于协同事项的成员用诊断模板且没有排产节点；其余按报警类型选模板（只有振动 → EQUIPMENT，只有质量 → QUALITY，两类都有 → COMBINED，插单与两类报警齐全 → 原 S1 模板），并有排产节点 |
+| RT-DES-26 | mom-des | 并发簇，seed 1–5 | 推进到仿真结束 | 同一产线 60 分钟内有两个及以上 DES 案例时建立协同事项；事项使用 LINE-INCIDENT 模板，至少两个成员且成员都指回事项；任一时刻同一产线最多一个活动事项；事项的排产方案有 3 个、报警设备集合非空且都来自成员；成员加入后不再请求人工决策，加入前已请求的须在加入时撤回（`DecisionWithdrawn`，2026-11-17 用户批准方案 A 后修订） |
+| RT-DES-27 | mom-des | 资源竞争模式中，某个协同事项的报警设备集合至少两台、有推荐方案 | 选定推荐方案、批准、执行，推进到全部维修完成，关闭事项 | 集合中每台设备都有维修干预，只有 1 个维修班组时维修时段互不重叠；维修完成后各设备恢复运行、振动低于 2.8 mm/s；关闭事项后成员案例一并关闭 |
+| RT-DES-28 | mom-des | P0 固定剧本（基线） | 推进 30 分钟 | 只有一个 DES 案例，使用原 S1 模板，不建立协同事项，也没有成员关系 |
+| RT-DES-29 | mom-des | P0 案例已执行方案 C 并关闭（基线，来自 2026-11-17 审查） | 同键再到一条质量观测，再推进 | 观测进入新案例而不是已关闭的案例；已关闭案例的 `world.des` 不再刷新 |

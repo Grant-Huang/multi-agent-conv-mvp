@@ -165,6 +165,9 @@ pub struct Snapshot {
     /// DES 标准答案，只供审核层读取（`Engine::des_review_truth`），不进入任何视图。
     #[serde(default)]
     pub des_truth: BTreeMap<String, super::des::GroundTruth>,
+    /// DES 案例的审核记录（阶段④），按案例编号索引；只供审核层读写，不进入 agent 视图。
+    #[serde(default)]
+    pub des_reviews: BTreeMap<String, super::des::review::DesReview>,
     pub now: u64,
     pub cases: BTreeMap<String, Case>,
     pub seen: BTreeMap<String, String>,

@@ -265,7 +265,32 @@ fn is_alarmed(m: &MachineObservation) -> bool {
 
 /// 比较 A/B/C 三个方案。只读，不使用随机数，相同输入结果相同。
 pub(crate) fn whatif(o: &Observation, request: &WhatIfRequest) -> Result<Value> {
+    whatif_assets(
+        o,
+        std::slice::from_ref(&request.asset),
+        request.quantity,
+        request.due_minute,
+        false,
+    )
+}
+
+/// 对一组报警设备比较 A/B/C 三个方案（阶段③b 的产线协同事项）。方案作用于集合中所有设备，
+/// 同产线其余设备分担生产；单台设备时与 `whatif` 相同。
+pub(crate) fn whatif_assets(
+    o: &Observation,
+    assets: &[String],
+    quantity: u64,
+    due_minute: u64,
+    reported_alarms: bool,
+) -> Result<Value> {
+    let request = WhatIfRequest {
+        asset: assets.first().cloned().unwrap_or_default(),
+        quantity,
+        due_minute,
+    };
+    let request = &request;
     let now = o.observed_at;
+    ensure!(!assets.is_empty(), "at least one machine is required");
     ensure!(
         (1..=MAX_WHATIF_QUANTITY).contains(&request.quantity),
         "quantity must be 1..={MAX_WHATIF_QUANTITY}"
@@ -274,13 +299,14 @@ pub(crate) fn whatif(o: &Observation, request: &WhatIfRequest) -> Result<Value> 
         request.due_minute <= now + WHATIF_HORIZON_MINUTES,
         "due_minute must be within {WHATIF_HORIZON_MINUTES} minutes of the current virtual time"
     );
-    let asset = o
-        .machine(&request.asset)
-        .with_context(|| format!("unknown machine {}", request.asset))?;
+    let targets: Vec<&MachineObservation> = assets
+        .iter()
+        .map(|a| o.machine(a).with_context(|| format!("unknown machine {a}")))
+        .collect::<Result<_>>()?;
+    let line = targets[0].line.clone();
     let r = &o.resources;
     let share = r.urgent_capacity_share.clamp(0.0, 1.0);
     let rate = |m: &MachineObservation| 60.0 / f64::from(m.cycle_seconds) * share;
-    let alarmed = is_alarmed(asset);
 
     let specs = [
         PlanSpec {
@@ -310,36 +336,53 @@ pub(crate) fn whatif(o: &Observation, request: &WhatIfRequest) -> Result<Value> 
         let mut actions: Vec<String> = vec![];
         let mut units: Vec<Unit> = vec![];
         let mut spares = r.tool_spares;
+        // 维修班组空闲时刻（相对现在）：与执行时 `des_after_execute` 的排班一致，
+        // 每台设备依次分给最早空闲的班组；修好后按正常节拍恢复生产（阶段③b 修订）。
+        let maintenance_from = spec.asset_runs_for.unwrap_or(0);
+        let mut crews = vec![maintenance_from; r.maintenance_crews as usize];
 
-        // 报警设备自身。
-        if spec.asset_runs_for != Some(0) {
-            if asset.status != "running" {
-                violations.push(format!("machine_down:{}", asset.id));
-            } else {
-                if alarmed && spec.asset_runs_for.is_none() {
-                    violations.push(format!("quality_risk:{}", asset.id));
+        // 报警设备集合。
+        for asset in &targets {
+            // 协同事项的设备集合来自已报告的报警：报警在维修或检验处置前保持有效，
+            // 即使观测值暂时回落也按报警设备处理（`reported_alarms`）。
+            let alarmed = reported_alarms || is_alarmed(asset);
+            if spec.asset_runs_for != Some(0) {
+                if asset.status != "running" {
+                    violations.push(format!("machine_down:{}", asset.id));
+                } else {
+                    if alarmed && spec.asset_runs_for.is_none() {
+                        violations.push(format!("quality_risk:{}", asset.id));
+                    }
+                    units.push(Unit {
+                        id: asset.id.clone(),
+                        rate: rate(asset),
+                        from: 0,
+                        until: spec.asset_runs_for,
+                        risky: alarmed,
+                    });
                 }
+            }
+            if spec.needs_maintenance && r.maintenance_crews > 0 {
+                actions.push(format!("eam.maintenance:{}", asset.id));
+                let crew = (0..crews.len()).min_by_key(|&i| crews[i]).unwrap_or(0);
+                crews[crew] += r.maintenance_minutes;
                 units.push(Unit {
                     id: asset.id.clone(),
                     rate: rate(asset),
-                    from: 0,
-                    until: spec.asset_runs_for,
-                    risky: alarmed,
+                    from: crews[crew],
+                    until: None,
+                    risky: false,
                 });
             }
         }
-        if spec.needs_maintenance {
-            if r.maintenance_crews == 0 {
-                violations.push("maintenance_crew_unavailable".into());
-            } else {
-                actions.push(format!("eam.maintenance:{}", asset.id));
-            }
+        if spec.needs_maintenance && r.maintenance_crews == 0 {
+            violations.push("maintenance_crew_unavailable".into());
         }
         // 同线其他设备分担。
         for m in o
             .machines
             .iter()
-            .filter(|m| m.line == asset.line && m.id != asset.id)
+            .filter(|m| m.line == line && !assets.contains(&m.id))
         {
             if m.status != "running" {
                 violations.push(format!("machine_down:{}", m.id));
@@ -402,7 +445,13 @@ pub(crate) fn whatif(o: &Observation, request: &WhatIfRequest) -> Result<Value> 
             "on_time": on_time,
             "risk_parts": round(risk, 1),
             "violations": violations,
-            "uses": units.iter().map(|u| u.id.clone()).collect::<Vec<_>>(),
+            // 同一设备修前、修后各一个产能单元，这里只列一次。
+            "uses": units.iter().fold(Vec::<String>::new(), |mut v, u| {
+                if !v.contains(&u.id) {
+                    v.push(u.id.clone());
+                }
+                v
+            }),
             "prerequisites": prerequisites,
             "actions": actions,
         }));
@@ -430,6 +479,7 @@ pub(crate) fn whatif(o: &Observation, request: &WhatIfRequest) -> Result<Value> 
         "simulation_id": o.simulation_id,
         "observed_at": now,
         "request": request,
+        "assets": assets,
         "plans": plans,
         "recommended": recommended,
         "basis": "observable_state",
@@ -491,6 +541,41 @@ pub(crate) fn read_tool(c: &Case, tool: &str, now: u64) -> Option<Result<ToolRes
             })),
             ["M27", "M05"],
         ),
+        "schedule.simulate" if super::coordination::is_incident(c) => {
+            // 协同事项（阶段③b）：对报警设备集合排产；订单取成员插单中交期未到、交期最早的一张。
+            // 没有这样的插单时与单设备案例一致，按 500 件、8 小时估算。
+            let incident = &c.world["des_incident"];
+            let assets: Vec<String> = incident["assets"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let order = incident["orders"].as_array().and_then(|orders| {
+                orders
+                    .iter()
+                    .filter(|p| p["quantity"].is_u64())
+                    .filter(|p| p["due_minute"].as_u64().is_some_and(|d| d > o.observed_at))
+                    .min_by_key(|o| o["due_minute"].as_u64())
+                    .cloned()
+            });
+            let quantity = order
+                .as_ref()
+                .and_then(|p| p["quantity"].as_u64())
+                .unwrap_or(500);
+            let due = order
+                .as_ref()
+                .and_then(|p| p["due_minute"].as_u64())
+                .unwrap_or(o.observed_at + 480);
+            let data = whatif_assets(&o, &assets, quantity, due, true).map(|mut v| {
+                v["feasible"] = json!(v["recommended"].is_string());
+                v["quantity"] = json!(quantity);
+                v
+            });
+            (data, ["M27", "M06"])
+        }
         "schedule.simulate" => {
             // 订单数量与交期取自案例中的插单观测；没有插单时按 500 件、8 小时估算。
             let order = c

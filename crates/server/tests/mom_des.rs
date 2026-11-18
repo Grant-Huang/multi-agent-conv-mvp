@@ -273,3 +273,94 @@ async fn http_des_03_select_approve_execute_and_close_over_http() {
     command(&client, &url, &id, json!({"command":"close"})).await;
     task.abort();
 }
+
+#[tokio::test]
+async fn http_des_04_review_flow_over_http() {
+    use an_runtime::mom::des::review::{ReviewerChoice, ScriptedReviewer};
+    let reviewer = ScriptedReviewer {
+        choice: ReviewerChoice {
+            model: Some("scripted".into()),
+            source: "mom_reviewer".into(),
+            independent: true,
+            label: None,
+        },
+        response: Ok(
+            json!({"conclusions":[{"judgement":"reasonable","statement":"cause matches","evidence_refs":["rule:root_cause_attribution"]}],"summary":"ok"}),
+        ),
+        delay: Duration::from_millis(0),
+    };
+    let state = mom::AppState::scripted(Arc::new(Mutex::new(Engine::memory().unwrap())))
+        .with_reviewer(Arc::new(reviewer));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move {
+        axum::serve(listener, mom::router(state)).await.unwrap();
+    });
+    let client = reqwest::Client::new();
+    setup(&client, &url).await;
+    let list: Value = client
+        .get(format!("{url}/api/mom/cases"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = list["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["batch"].as_str().is_some_and(|b| b.starts_with("DES-")))
+        .expect("DES case listed")["case_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    command(
+        &client,
+        &url,
+        &id,
+        json!({"command":"claim_cause","causes":["spindle_wear:CNC-XX"],"actor":"master"}),
+    )
+    .await;
+    let r = client
+        .get(format!("{url}/api/mom/reviews/{id}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "review report available");
+    let report: Value = r.json().await.unwrap();
+    assert!(
+        report["rules"].as_array().is_some_and(|r| !r.is_empty()),
+        "{report}"
+    );
+    let r = client
+        .post(format!("{url}/api/mom/reviews/{id}/ai"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "AI review runs");
+    let report: Value = r.json().await.unwrap();
+    assert_eq!(report["ai"]["status"], "completed", "{report}");
+    let r = client
+        .post(format!("{url}/api/mom/reviews/{id}/decision"))
+        .json(&json!({"decision":"override","reason":"needs a second look","actor":"supervisor"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "human decision recorded");
+    let report: Value = r.json().await.unwrap();
+    assert_eq!(report["disagreements"].as_array().map(|d| d.len()), Some(1));
+    let agent: Value = client
+        .get(format!("{url}/api/mom/cases/{id}/agent?limit=999"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let text = agent.to_string();
+    for m in ["disagreements", "root_causes", "conclusions"] {
+        assert!(!text.contains(m), "agent view leaks {m}");
+    }
+    task.abort();
+}

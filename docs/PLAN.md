@@ -2,6 +2,8 @@
 
 新增授权工作：统一 MCP 能力卡片与 General 轻量 Harness，设计见 [mcp/DESIGN.md](mcp/DESIGN.md)，分阶段验收与状态见 [mcp/PLAN.md](mcp/PLAN.md)。不改变下列已有里程碑进度。
 
+新增授权工作：统一外发脱敏服务 dlp-egress（独立 MCP 工具），进度与待办见文末“DLP 外发脱敏”一节。不改变下列已有里程碑进度。
+
 > 最后更新：2026-11-05（M3 收尾：默认搜索 Exa，不合并来源、不缓存）
 > 规则：按里程碑逐步推进；每完成一步更新本文件（勾选进度、做必要的最小调整），用户确认后再进入下一步。
 > 新功能先写测试（TDD），测试冻结后只改业务代码；Python 部分覆盖率 ≥ 80%，通过 flake8。
@@ -490,7 +492,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 
 > 2026-11-17 用户确认：以 D（先快后慢）为主，配合 A（先写理由）、B（规则判风险）做实验；思考开关继续用配置文件，不做界面开关。与 AG 是两条独立的线。
 
-决策记录（FT-D1 起）统一放在 [`docs/DECISIONS.md`](DECISIONS.md) 的"FT 前台提速"一节。
+FT 的决策记录统一放在 [`docs/DECISIONS.md`](DECISIONS.md) 的"四、前台提速实验（FT）"（第 18～20、27～39 条）。
 
 ### 背景（pre-M3.9 实测，2026-11-05，95 条 `evals/routing.jsonl`）
 
@@ -512,7 +514,7 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 
 ### 目标与验收
 
-> 2026-11-17 起，准确率和 P95 的门槛已改为 [FT-D2](DECISIONS.md#ft-前台提速)（不低于同版本重跑的 E0，整轮 P95 ≤ 6 秒，准确率优先）；下面是最初的写法，保留作对照。
+> 2026-11-17 起，准确率和 P95 的门槛已改为 [DECISIONS.md 第 19 条](DECISIONS.md)（不低于同版本重跑的 E0，整轮 P95 ≤ 6 秒，准确率优先）；下面是最初的写法，保留作对照。
 
 - 前台两次结构化判断（conversation、router）**默认不思考**，在同一份 95 条评测集上：
   - 整体准确率 **≥ 85.3%**（不低于开思考基线；基线在同一版本代码上重跑一次为准）；
@@ -782,7 +784,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
     - 浏览器：E2E-AGCHAT 在对话里说"把 Claude Code 接进来"→ 对话里出现确认卡 → 确认 → 对话里出现结果卡；刷新后仍在。E2E-AGCHOICE 说"帮我接个写代码的助手"→ 选择卡 → 点选 → 确认卡。
   - **不做**：普通模式的展示；节点上的助手；按任务临时指定助手（"这次用 Cursor 做"）——现在的设计是按角色选默认，单次指定另行设计。
   - **回滚**：关掉 `agent_management` 即恢复原行为；`card_json` 列可留着不用（旧代码读不到它也不影响）。
-- [ ] **AG.5 助手检测失败时的排查：规则库 → 本机体检 → 诊断包 → 外部助手（逐次同意）**（第 1、2 层 2026-11-17 完成：RT-AGDIAG-01～04、06，E2E-AGDIAG，证据见 `docs/testing/evidence/ag-5.md`；第 3、4 层等 D1）（方案待批准，2026-11-17；用户确认新方向，并要求外部助手排查一并考虑、每次先展示将发送的完整内容并逐次同意）
+- [ ] **AG.5 助手检测失败时的排查：规则库 → 本机体检 → 诊断包 → 外部助手（逐次同意）**（第 1、2 层 2026-11-17 完成：RT-AGDIAG-01～04、06，E2E-AGDIAG，证据见 `docs/testing/evidence/ag-5.md`；D1 已于 2026-11-18 定稿，第 3、4 层改为经 DLP，实现方案待批准）（方案待批准，2026-11-17；用户确认新方向，并要求外部助手排查一并考虑、每次先展示将发送的完整内容并逐次同意）
   - **第 1 层：已知问题规则库（确定性，不调用模型）**
     - 目录元数据里给每个预设加"已知问题"，另有通用规则。每条：触发条件（检测分类 + 错误输出里的特征）、大白话标题和解释、修复步骤（可复制命令）、修好后"重新检测"。
     - 首批规则：未登录 / 登录过期（Claude Code、Codex、Cursor）；Node 版本过低或找不到 node（claude / codex 适配器、zcode-acp-server 要求 Node ≥ 22）；缺 ZCode 凭证文件；**服务的 PATH 与终端不一致**（`util.rs` 注释已记录"从桌面应用或服务方式启动时 PATH 往往不完整"）；参数不对、没进 ACP 模式（握手超时 / 失败）；首次用 npx 启动下载慢（超时）。
@@ -821,7 +823,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 
 ## D 外发脱敏（DLP）
 
-- [ ] **D1 接口约定**：`docs/dlp/CONTRACT.md` 草案已写；等用户告知工具的实际调用方式后定稿；Rust 侧用模拟 MCP 服务写 RT-DLP 用例
+- [x] **D1 接口约定**（2026-11-18 定稿，`docs/dlp/CONTRACT.md`）：以 `tools/dlp-egress/docs/INTERFACE.md` v0.1 为基础；用户确认 9 项建议全部同意（统一返回外壳、`task_id` 由编排器给、`channel` 枚举含 `agent`、`request_id`、暂不做 commit 由 AgentNexus 绑定预览与发送、还原只在本机、256 KB 上限、`api_version`、结构化返回 + output schema），两处缺口按建议补（新增 USERNAME / HOSTNAME / IP / FILE_PATH 类型并由 Rust 先做确定性处理；写代码类用 `profile: secrets_only` 目的地）。工具一侧的改动清单见 CONTRACT 第 8 节；Rust 侧用模拟 MCP 服务写 RT-DLP 用例
 - [ ] **D2 外发出口清单**：盘点所有会把数据发出本机的地方（云端模型后端、外部 ACP 助手、联网搜索 / 抓取、AG.5 第 4 层、节点、A2A），逐个标明能否接 DLP、接在哪里
 - [ ] **D3 云端模型出口接 DLP**：部署方案 B（General / Reviewer 用云端模型）时，`an-llm` 发请求前过 DLP、回复还原后再给用户看；写代码类任务按"只拦密钥"处理（改 `an-llm`，不改编排器；需单独出方案）
 - [ ] **D4 外发记录**：每次外发一条记录（目的地、摘要、命中计数、决定），界面可查看、可撤销映射；新增数据表属于 `store.rs` 高风险改动，先出方案
@@ -867,6 +869,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 8. ~~pre-M3.9 关闭思考对比实验~~（已确认 2026-11-05：前台结构化调用 `enable_thinking=false`，**必须用评测集确认准确率不降**才采用。同日结果：95 条从 85.3% 降到 76.8%，不采用，开关默认关闭）
 9. ~~pre-M3.1 配置设计~~（已确认 2026-11-05：`[backends.<名>]` + `[routing]`、`kind = llama_cpp | openai`、密钥只读环境变量、无 `[backends]` 沿用 `[llm]`；`router` 归前台）
 10. ~~部署 B 的云端边界~~（已确认 2026-11-05，并补充了能力扩展要求，见 pre-M3"能力扩展约束"）
+11. DLP D1 接口定稿：`tools/dlp-egress/docs/INTERFACE.md` 第 9 节的 9 个事项（尤其是统一返回外壳、`task_id` 由宿主注入）
+12. DLP 外发检查必经化方案：`docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md` 第 10 节（首期范围、默认模式、外发工具清单、云端 LLM）
 
 ## 已知问题
 
@@ -883,3 +887,36 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 ## 工程验证体系
 
 基于远端 929301a 审查 Feature Map 与端到端验证方案，设计见 `docs/testing/DESIGN.md`，实施步骤见 `docs/testing/PLAN.md`，先定义用例再实现验证基础设施。验证基础设施阶段不包含 M4.3 或 MOM 业务开发；后续已合入模板校验和 MOM 独立模拟，分别见功能地图与 MOM 实施说明。验证基础设施的实际结果见 `docs/testing/RESULTS.md`。
+
+## DLP 外发脱敏（dlp-egress）
+
+按《AgentNexus 统一外发脱敏服务：技术设计与验证方案 v0.1》实施。工具在 `tools/dlp-egress/`，使用说明见其 README。
+
+### 已完成
+
+| 编号 | 内容 | 证据 |
+|---|---|---|
+| DLP-0 | MVP：识别（Presidio + 规则 + 主数据 + detect-secrets，GLiNER 可插拔）、策略、Token Vault、保真校验、stdio MCP 三个工具、CI job | PR #88（2026-11-18 合并）；700 条与 36 条留出集评测见 `tools/dlp-egress/bench/results/SUMMARY.md` |
+| DLP-1 | 调用接口说明（供 D1 接口定稿） | `tools/dlp-egress/docs/INTERFACE.md` |
+| DLP-2 | 本地测试指南（含 GLiNER 评测步骤）；评测脚本支持 `--gliner-model` | `tools/dlp-egress/docs/LOCAL_TEST_GUIDE.md` |
+| DLP-3 | 测试集样本要求、标注规范、模板、校验与转换脚本 | `tools/dlp-egress/docs/ANNOTATION_GUIDE.md`、`bench/templates/annotation_template.csv`、`bench/convert_annotations.py` |
+| DLP-4 | 外发检查必经化方案（待审批） | `docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md` |
+
+### 进行中（等外部输入）
+
+- [ ] D1 接口定稿（用户 / AgentNexus 侧），定稿后按结论修改实现与测试
+- [ ] 本地测试：T1–T4 按 `LOCAL_TEST_GUIDE.md` 执行并回传结果，重点是 GLiNER（T3）
+- [ ] 正式测试集：≥ 300 条，按 `ANNOTATION_GUIDE.md` 准备，测试集不入库
+- [ ] 必经化方案审批；批准后按第一阶段先写测试再实现
+
+### 待补项（后续再做，按建议顺序）
+
+1. 根据 GLiNER 本地评测结果决定是否默认启用、选哪个模型和阈值，并补充中文分词配置
+2. `egress_commit` 接口：绑定载荷哈希、目的地、有效期、幂等键，防止 TOCTOU（设计文档第 7 节）
+3. 人工审批流：REVIEW → `NEEDS_HUMAN` → 审批后执行（随必经化方案第三阶段）
+4. 附件与文件解析：DOCX 隐藏批注、XLSX 隐藏表与公式、PDF 文本层、图片 EXIF、压缩包、Base64（设计文档 3.1、9.3 节）
+5. 外部响应扫描：外部返回内容进入 Agent 上下文前的检查与安全恢复
+6. Vault 接 KMS（envelope encryption）与多实例共享存储；密钥轮换与备份恢复测试
+7. 载荷大小上限与超限策略（接口文档 9.7）
+8. 网络层兜底：出站代理白名单与部署检查脚本（必经化方案第四阶段）
+9. 重识别风险：稀有指标组合、跨请求关联的评估与缓解（设计文档第 11 节第 8 项）

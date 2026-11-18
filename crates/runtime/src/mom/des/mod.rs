@@ -14,12 +14,16 @@
 //! - 仿真按虚拟分钟推进（与引擎时钟一致），遥测时间戳以秒记录；对外事件沿用 `EventInput.occurred_at`（虚拟分钟）。
 //! - 阶段①只产生 `order` / `vibration` / `quality` 三类事件（决策 D7）。
 //! - 标准答案（`GroundTruth`）只供审核层读取，不得进入 agent 视图、人类视图、工具返回或仿真列表。
+pub mod batch;
+mod coordination;
 mod engine_link;
 mod observe;
 mod physics;
+pub mod review;
 mod rng;
 mod scenario;
 
+pub(crate) use coordination::des_template;
 pub use engine_link::DesSimulation;
 pub(crate) use observe::read_tool;
 
@@ -53,6 +57,28 @@ pub struct FactoryConfig {
     /// 资源与工艺约束（阶段②）。旧配置没有此字段时取默认值。
     #[serde(default)]
     pub resources: ResourceConfig,
+    /// 产线协同事项的规则（阶段③b）。旧配置没有此字段时取默认值。
+    #[serde(default)]
+    pub coordination: CoordinationConfig,
+}
+
+/// 产线协同事项的触发规则（阶段③b，设计文档 §6.8）。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CoordinationConfig {
+    /// 同一产线上多少分钟内的案例视为同一协同窗口。
+    pub incident_window_minutes: u64,
+    /// 建立协同事项所需的最少案例数。
+    pub min_cases: usize,
+}
+
+impl Default for CoordinationConfig {
+    fn default() -> Self {
+        Self {
+            incident_window_minutes: 60,
+            min_cases: 2,
+        }
+    }
 }
 
 /// 工厂设备数上限（阶段②，RT-DES-21）。
@@ -143,6 +169,7 @@ impl FactoryConfig {
         Self {
             machines: vec![machine("CNC-XX"), machine("CNC-XY"), machine("CNC-XZ")],
             resources: ResourceConfig::default(),
+            coordination: CoordinationConfig::default(),
         }
     }
 }

@@ -25,6 +25,8 @@ pub struct AppState {
     active: Arc<Mutex<BTreeSet<String>>>,
     /// E1-C：配置后，S1 创建前从 RelOS 取回关系上下文（见 `mom_relos`）；未配置时完全使用 Mock
     pub relos: Option<Arc<crate::mom_relos::RelosClient>>,
+    /// 车间 DES 审核层的 AI 审核（阶段④）；未配置时 AI 审核不可用，只做规则检查。
+    pub reviewer: Option<Arc<dyn an_runtime::mom::des::review::Reviewer>>,
 }
 impl AppState {
     pub fn scripted(engine: Arc<Mutex<Engine>>) -> Self {
@@ -34,7 +36,16 @@ impl AppState {
             slots: Arc::new(Semaphore::new(4)),
             active: Arc::new(Mutex::new(BTreeSet::new())),
             relos: None,
+            reviewer: None,
         }
+    }
+    /// 配置车间 DES 审核层的 AI 审核（阶段④）。
+    pub fn with_reviewer(
+        mut self,
+        reviewer: Arc<dyn an_runtime::mom::des::review::Reviewer>,
+    ) -> Self {
+        self.reviewer = Some(reviewer);
+        self
     }
     /// 启用 RelOS 上下文（`base_url` 例如 `http://127.0.0.1:8000`）。
     pub fn with_relos(mut self, base_url: &str) -> anyhow::Result<Self> {
@@ -250,6 +261,11 @@ pub enum Command {
     SelectPlan {
         plan: String,
     },
+    /// 车间 DES 案例：记录根因假设（阶段④），供审核规则比对。
+    ClaimCause {
+        causes: Vec<String>,
+        actor: String,
+    },
 }
 async fn command(
     State(s): State<AppState>,
@@ -281,6 +297,7 @@ async fn command(
             Command::VerifyComplaint => e.verify_complaint(&id)?,
             Command::RefreshPlan => e.refresh_plan(&id)?,
             Command::SelectPlan { plan } => e.select_des_plan(&id, &plan)?,
+            Command::ClaimCause { causes, actor } => e.record_cause_claim(&id, causes, &actor)?,
             Command::Fault { key, value } => e.change_world(&id, &key, value)?,
             Command::Patch { node, dependency } => {
                 e.apply_intent(&id, Intent::ProposePatch { node, dependency })?

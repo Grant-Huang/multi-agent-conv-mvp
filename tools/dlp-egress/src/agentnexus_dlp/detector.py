@@ -66,7 +66,7 @@ class BlankNlpEngine(NlpEngine):
 
 class Detector:
     def __init__(self, master_data: dict[str, list[str]] | None = None, enable_gliner: bool = False,
-                 gliner_model: str | None = None, gliner_recognizer=None):
+                 gliner_model: str | None = None, gliner_recognizer=None, gliner_threshold: float = 0.5):
         registry = RecognizerRegistry(supported_languages=[LANG])
         for rec in builtin_recognizers():
             registry.add_recognizer(rec)
@@ -80,7 +80,7 @@ class Detector:
             from .gliner_adapter import GlinerRecognizer
             if not gliner_model:
                 raise RuntimeError("已启用 GLiNER，但未配置 DLP_GLINER_MODEL")
-            registry.add_recognizer(GlinerRecognizer.from_pretrained(gliner_model))
+            registry.add_recognizer(GlinerRecognizer.from_pretrained(gliner_model, threshold=gliner_threshold))
         nlp = BlankNlpEngine()
         nlp.load()
         self.engine = AnalyzerEngine(registry=registry, nlp_engine=nlp, supported_languages=[LANG])
