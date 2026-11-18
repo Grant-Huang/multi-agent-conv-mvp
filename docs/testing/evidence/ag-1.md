@@ -38,3 +38,17 @@ CARGO_TARGET_DIR=target cargo test -p an-core：重新生成 web/src/bindings（
 ```
 
 本地结果不代替 GitHub CI。
+
+## 补充：握手检测"进程一启动就退出"的偶发误判（2026-11-18，RT-AGCAT-10）
+
+- **现象**：CI 上 RT-AGDIAG-01 偶发失败：缺 node 被判成 `handshake_failed`，detail 为 `Internal error: "Broken pipe (os error 32)"`。本地用当时的代码复现：40 次里 RT-AGDIAG-01 失败 7 次，RT-AGCAT-05 失败 9 次。把 ACP 库退回 5.0.0 后分别失败 7 次和 5 次，说明与依赖升级无关，是 AG.1 起就有的问题。
+- **根因**：进程打印错误后立刻退出，写握手请求遇到 Broken pipe；SDK 有时先返回这个写错误，而不是"进程退出 + 错误输出末尾"，于是分类时看不到错误输出。
+- **Red**：`cargo test -p an-agents --test acp_probe`（每轮 8 个并发检测、连续 50 轮）。修复前连续 3 次，400 次检测里分别有 13、15、9 次被判为 HandshakeFailed。注意：只逐个串行检测时 50 次全对，复现不出来；CI 机器上这条用例也曾碰巧通过。
+- **试过但无效**：用 SDK 的 `with_debug` 回调自己留一份错误输出。出错返回时 SDK 还没读到错误输出，连接一结束读取也随之停止。改后仍有 5～12 次分错，已撤回。
+- **修复**（用户批准；改动在高风险文件 `crates/agents/src/acp.rs`，只改 `probe_detailed`）：
+  - 检测用的子进程由我们自己启动（`proc_group`：进程组、取消时 SIGKILL 整个组），把 stdin、stdout 通过 `ByteStreams` 接给 SDK，自己读完 stderr（只保留末尾 2000 字符）。
+  - 握手结束后最多等 0.5 秒让进程退出，退出了就清理组内残留进程，否则 SIGTERM，等 3 秒，再 SIGKILL。超时时同样结束整个进程组。
+  - 失败时，详情 = SDK 错误 + 退出状态 + 自己读到的错误输出，再分类。
+- **Green**：RT-AGCAT-10 连续 10 遍全部通过（4000 次检测无误判）。服务端 RT-AGDIAG-01、RT-AGCAT-05 各跑 40 次，失败均为 0。RT-AGCAT-01～09、RT-AGDIAG 全部通过，断言未改。
+- **完整检查**：`cargo fmt --check` exit=0；`cargo test --locked --no-fail-fast` passed=516 failed=0 ignored=2；`cargo clippy --locked --all-targets -D warnings` exit=0（本机工具链已是 1.100，与 CI 相同）；web：`npm test` 21 passed，`npm run build` ✓，`npm run test:map` 25 features。
+- **依赖**：开启已有依赖 `tokio-util` 的 `compat` 功能，`Cargo.lock` 没有新增包。
