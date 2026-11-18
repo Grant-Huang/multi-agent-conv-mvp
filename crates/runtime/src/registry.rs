@@ -62,6 +62,46 @@ pub struct Lease {
     pub epoch: Option<u64>,
 }
 
+/// 角色给非专业用户看的叫法
+pub fn role_label(role: Role) -> &'static str {
+    match role {
+        Role::General => "通用任务",
+        Role::Coding => "写代码",
+        Role::Reviewer => "审查",
+    }
+}
+
+/// 校验一个执行组（AG.2 提议时用，规则与分配时相同）：成员必须存在、角色一致、类型一致。
+/// `cards` 是修改生效后将会注册的全部 agent。
+pub fn check_group(cards: &[AgentCard], role: Role, ids: &[String]) -> Result<(), String> {
+    if ids.is_empty() {
+        return Err("执行组至少要有一个 agent".into());
+    }
+    let mut members = vec![];
+    for id in ids {
+        let Some(c) = cards.iter().find(|c| &c.id == id) else {
+            return Err(format!("没有名为 {id} 的 agent"));
+        };
+        if c.role != role {
+            return Err(format!(
+                "{} 的角色是 {}，不能做「{}」",
+                c.id,
+                c.role.as_str(),
+                role_label(role)
+            ));
+        }
+        members.push(c);
+    }
+    let ty = &members[0].agent_type;
+    if let Some(bad) = members.iter().find(|c| &c.agent_type != ty) {
+        return Err(format!(
+            "同一个执行组只能放同一类型的 agent：{} 是 {}，{} 是 {}",
+            members[0].id, ty, bad.id, bad.agent_type
+        ));
+    }
+    Ok(())
+}
+
 /// agent 给人看的名称："名称（接入方式，位置）"；节点 agent 的名称里已带机器名，只补接入方式
 pub fn display_name(card: &AgentCard) -> String {
     if card.kind == "node" {
@@ -148,6 +188,35 @@ impl AgentRegistry {
     /// 移除某个节点的全部 agent（解除配对时）
     pub fn remove_node(&self, node_id: &str) {
         self.replace_node_agents(node_id, vec![]);
+    }
+
+    /// 注销一个本机 agent（AG.2：停用 / 移除托管 agent 时）。节点上的 agent 不受影响。
+    /// 执行中的任务持有 agent 的引用，会照常跑完，归还名额时找不到条目也没有关系；
+    /// 排队的任务被唤醒后重新挑选，这个角色没人可用时按现有规则报 E_ROUTE_NO_AGENT。
+    pub fn unregister_local(&self, id: &str) -> bool {
+        let removed = {
+            let mut inner = self.lock();
+            let before = inner.agents.len();
+            inner
+                .agents
+                .retain(|e| !(e.node_id.is_none() && e.agent.card().id == id));
+            inner.agents.len() != before
+        };
+        if removed {
+            self.changed.notify_waiters();
+        }
+        removed
+    }
+
+    /// 当前的执行组配置
+    pub fn assign(&self) -> BTreeMap<String, Vec<String>> {
+        self.lock().assign.clone()
+    }
+
+    /// 替换执行组配置（AG.2）。调用方应先用 [`check_group`] 校验；这里不再校验，只替换并唤醒排队的任务。
+    pub fn set_assign(&self, assign: BTreeMap<String, Vec<String>>) {
+        self.lock().assign = assign;
+        self.changed.notify_waiters();
     }
 
     /// 解析某角色的执行组：返回成员（按优先顺序，含不可用的），或配置错误
@@ -265,7 +334,10 @@ impl AgentRegistry {
     fn reasons(inner: &Inner, role: Role, risk: Option<Risk>) -> Vec<String> {
         match Self::group_for(inner, role, risk) {
             Err(e) => vec![e.to_string()],
-            Ok(g) if g.is_empty() => vec![format!("没有 {} 角色的 agent", role.as_str())],
+            Ok(g) if g.is_empty() => vec![format!(
+                "没有能做「{}」的助手（可能被停用了，或者还没有安装）",
+                role_label(role)
+            )],
             Ok(g) => g
                 .iter()
                 .map(|e| {

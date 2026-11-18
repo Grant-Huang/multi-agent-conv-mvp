@@ -1,0 +1,101 @@
+// AG.4 对话里管理助手的评测集（由 evals/make_agents_dataset.py 生成，请修改脚本而不是直接改这个文件）
+// 用法：an-eval <config.toml> evals/agents.jsonl --agent-management
+//
+// 标注口径：
+// - 只有在说"助手本身"时才是 manage_agents：接入 / 接进来（connect）、以后某类任务交给谁（set_default）、
+//   停用 / 停掉 / 别再用（disable）、恢复 / 重新启用（enable）、有哪些助手（list）、撤销刚才对助手的修改（undo）
+// - agent_id：说了是哪个就填对应 id（cursor / claude / codex-acp / zcode / opencode / hermes / pi / general 等）；没说是哪个填空字符串
+// - 让某个助手干活（"用 Cursor 改这个函数"）不是 manage_agents，按原规则交给后台
+// - 比较、询问、安装方法、概念类提问是 respond
+// - 与进行中任务有关的取消 / 补充是 follow_up
+// - 正例 54 条、反例 36 条
+{"id": "ag-con-01", "text": "把 Cursor 接进来", "tags": ["agents", "pos", "connect"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "cursor"}
+{"id": "ag-con-02", "text": "帮我接入 Claude Code", "tags": ["agents", "pos", "connect"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "claude"}
+{"id": "ag-con-03", "text": "接一下 codex 的 ACP 版本", "tags": ["agents", "pos", "connect"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "codex-acp"}
+{"id": "ag-con-04", "text": "我装好了 zcode，帮我连上", "tags": ["agents", "pos", "connect"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "zcode"}
+{"id": "ag-con-05", "text": "把 opencode 加进来当写代码的助手", "tags": ["agents", "pos", "connect"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "opencode"}
+{"id": "ag-con-06", "text": "add cursor agent", "tags": ["agents", "pos", "connect", "english"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "cursor"}
+{"id": "ag-con-07", "text": "接入 claude code 吧", "tags": ["agents", "pos", "connect"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "claude"}
+{"id": "ag-con-08", "text": "把 hermes 接进来查资料用", "tags": ["agents", "pos", "connect"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "hermes"}
+{"id": "ag-con-09", "text": "帮我接个写代码的助手", "tags": ["agents", "pos", "connect", "unnamed"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": ""}
+{"id": "ag-con-10", "text": "再接一个能查资料的助手", "tags": ["agents", "pos", "connect", "unnamed"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": ""}
+{"id": "ag-con-11", "text": "curser 能接进来吗，帮我接上", "tags": ["agents", "pos", "connect", "typo"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "cursor"}
+{"id": "ag-con-12", "text": "把 pi 也接进来", "tags": ["agents", "pos", "connect"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "pi"}
+{"id": "ag-con-13", "text": "我想用 Cursor，帮我把它配置好", "tags": ["agents", "pos", "connect", "indirect"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "cursor"}
+{"id": "ag-con-14", "text": "把 Claude 的编码助手接进系统", "tags": ["agents", "pos", "connect", "indirect"], "expect_action": "manage_agents", "expect_agent_op": "connect", "expect_agent_id": "claude"}
+{"id": "ag-def-01", "text": "以后写代码都交给 Cursor", "tags": ["agents", "pos", "set_default"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": "cursor"}
+{"id": "ag-def-02", "text": "默认用 Claude Code 写代码", "tags": ["agents", "pos", "set_default"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": "claude"}
+{"id": "ag-def-03", "text": "写代码的默认助手换成 opencode", "tags": ["agents", "pos", "set_default"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": "opencode"}
+{"id": "ag-def-04", "text": "以后查资料用 hermes", "tags": ["agents", "pos", "set_default"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": "hermes"}
+{"id": "ag-def-05", "text": "把 codex acp 设成默认", "tags": ["agents", "pos", "set_default"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": "codex-acp"}
+{"id": "ag-def-06", "text": "以后改代码别用 pi 了，换成 cursor", "tags": ["agents", "pos", "set_default"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": "cursor", "note": "说的是以后换谁，不是停用 pi"}
+{"id": "ag-def-07", "text": "写代码的活默认给 zcode", "tags": ["agents", "pos", "set_default"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": "zcode"}
+{"id": "ag-def-08", "text": "set claude code as the default coder", "tags": ["agents", "pos", "set_default", "english"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": "claude"}
+{"id": "ag-def-09", "text": "把默认的写代码助手改一下", "tags": ["agents", "pos", "set_default", "unnamed"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": ""}
+{"id": "ag-def-10", "text": "以后通用任务交给内置的通用执行就行", "tags": ["agents", "pos", "set_default"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": "general"}
+{"id": "ag-def-11", "text": "默认用 Claude", "tags": ["agents", "pos", "set_default", "short"], "expect_action": "manage_agents", "expect_agent_op": "set_default", "expect_agent_id": "claude"}
+{"id": "ag-dis-01", "text": "把 zcode 停掉", "tags": ["agents", "pos", "disable"], "expect_action": "manage_agents", "expect_agent_op": "disable", "expect_agent_id": "zcode"}
+{"id": "ag-dis-02", "text": "停用 Cursor", "tags": ["agents", "pos", "disable"], "expect_action": "manage_agents", "expect_agent_op": "disable", "expect_agent_id": "cursor"}
+{"id": "ag-dis-03", "text": "别再用 pi 了", "tags": ["agents", "pos", "disable"], "expect_action": "manage_agents", "expect_agent_op": "disable", "expect_agent_id": "pi"}
+{"id": "ag-dis-04", "text": "暂时禁用 claude code", "tags": ["agents", "pos", "disable"], "expect_action": "manage_agents", "expect_agent_op": "disable", "expect_agent_id": "claude"}
+{"id": "ag-dis-05", "text": "把 opencode 关了", "tags": ["agents", "pos", "disable"], "expect_action": "manage_agents", "expect_agent_op": "disable", "expect_agent_id": "opencode"}
+{"id": "ag-dis-06", "text": "hermes 先别用了", "tags": ["agents", "pos", "disable"], "expect_action": "manage_agents", "expect_agent_op": "disable", "expect_agent_id": "hermes"}
+{"id": "ag-dis-07", "text": "停掉一个写代码的助手", "tags": ["agents", "pos", "disable", "unnamed"], "expect_action": "manage_agents", "expect_agent_op": "disable", "expect_agent_id": ""}
+{"id": "ag-dis-08", "text": "disable the cursor agent", "tags": ["agents", "pos", "disable", "english"], "expect_action": "manage_agents", "expect_agent_op": "disable", "expect_agent_id": "cursor"}
+{"id": "ag-dis-09", "text": "codex acp 先停一下", "tags": ["agents", "pos", "disable"], "expect_action": "manage_agents", "expect_agent_op": "disable", "expect_agent_id": "codex-acp"}
+{"id": "ag-dis-10", "text": "把那个 zcode 助手禁掉", "tags": ["agents", "pos", "disable"], "expect_action": "manage_agents", "expect_agent_op": "disable", "expect_agent_id": "zcode"}
+{"id": "ag-ena-01", "text": "把 cursor 重新启用", "tags": ["agents", "pos", "enable"], "expect_action": "manage_agents", "expect_agent_op": "enable", "expect_agent_id": "cursor"}
+{"id": "ag-ena-02", "text": "恢复 zcode", "tags": ["agents", "pos", "enable", "short"], "expect_action": "manage_agents", "expect_agent_op": "enable", "expect_agent_id": "zcode"}
+{"id": "ag-ena-03", "text": "pi 再打开吧", "tags": ["agents", "pos", "enable"], "expect_action": "manage_agents", "expect_agent_op": "enable", "expect_agent_id": "pi"}
+{"id": "ag-ena-04", "text": "重新启用 Claude Code", "tags": ["agents", "pos", "enable"], "expect_action": "manage_agents", "expect_agent_op": "enable", "expect_agent_id": "claude"}
+{"id": "ag-ena-05", "text": "把刚才停掉的助手恢复一下", "tags": ["agents", "pos", "enable", "unnamed"], "expect_action": "manage_agents", "expect_agent_op": "enable", "expect_agent_id": ""}
+{"id": "ag-ena-06", "text": "hermes 恢复使用", "tags": ["agents", "pos", "enable"], "expect_action": "manage_agents", "expect_agent_op": "enable", "expect_agent_id": "hermes"}
+{"id": "ag-ena-07", "text": "re-enable opencode", "tags": ["agents", "pos", "enable", "english"], "expect_action": "manage_agents", "expect_agent_op": "enable", "expect_agent_id": "opencode"}
+{"id": "ag-lst-01", "text": "现在有哪些助手可以用", "tags": ["agents", "pos", "list"], "expect_action": "manage_agents", "expect_agent_op": "list", "expect_agent_id": ""}
+{"id": "ag-lst-02", "text": "列一下接入的 agent", "tags": ["agents", "pos", "list"], "expect_action": "manage_agents", "expect_agent_op": "list", "expect_agent_id": ""}
+{"id": "ag-lst-03", "text": "我能用哪些编码助手", "tags": ["agents", "pos", "list"], "expect_action": "manage_agents", "expect_agent_op": "list", "expect_agent_id": ""}
+{"id": "ag-lst-04", "text": "看看本机装了哪些助手", "tags": ["agents", "pos", "list"], "expect_action": "manage_agents", "expect_agent_op": "list", "expect_agent_id": ""}
+{"id": "ag-lst-05", "text": "你后台都有哪些助手在干活", "tags": ["agents", "pos", "list"], "expect_action": "manage_agents", "expect_agent_op": "list", "expect_agent_id": ""}
+{"id": "ag-lst-06", "text": "show me the agents", "tags": ["agents", "pos", "list", "english"], "expect_action": "manage_agents", "expect_agent_op": "list", "expect_agent_id": ""}
+{"id": "ag-lst-07", "text": "现在默认是谁在写代码", "tags": ["agents", "pos", "list"], "expect_action": "manage_agents", "expect_agent_op": "list", "expect_agent_id": "", "note": "问现状，列出来看"}
+{"id": "ag-und-01", "text": "撤销刚才的修改", "tags": ["agents", "pos", "undo"], "expect_action": "manage_agents", "expect_agent_op": "undo", "expect_agent_id": "", "history": [{"role": "user", "content": "把 Cursor 接进来"}, {"role": "assistant", "content": "已完成：接入「Cursor CLI」，以后可以把「写代码」类的任务交给它"}]}
+{"id": "ag-und-02", "text": "刚才那个改回去", "tags": ["agents", "pos", "undo"], "expect_action": "manage_agents", "expect_agent_op": "undo", "expect_agent_id": "", "history": [{"role": "user", "content": "以后写代码交给 zcode"}, {"role": "assistant", "content": "已完成：以后「写代码」类的任务交给 zcode"}]}
+{"id": "ag-und-03", "text": "不对，撤回上一次对助手的修改", "tags": ["agents", "pos", "undo"], "expect_action": "manage_agents", "expect_agent_op": "undo", "expect_agent_id": "", "history": [{"role": "user", "content": "把 zcode 停掉"}, {"role": "assistant", "content": "已完成：停用「ZCode」：之后不再把任务交给它，正在做的任务会照常做完"}]}
+{"id": "ag-und-04", "text": "undo the last agent change", "tags": ["agents", "pos", "undo", "english"], "expect_action": "manage_agents", "expect_agent_op": "undo", "expect_agent_id": "", "history": [{"role": "user", "content": "disable cursor"}, {"role": "assistant", "content": "已完成：停用「Cursor CLI」"}]}
+{"id": "ag-und-05", "text": "刚才默认设错了，恢复原样", "tags": ["agents", "pos", "undo"], "expect_action": "manage_agents", "expect_agent_op": "undo", "expect_agent_id": "", "history": [{"role": "user", "content": "默认用 Claude Code 写代码"}, {"role": "assistant", "content": "已完成：以后「写代码」类的任务交给 claude"}]}
+{"id": "ag-neg-01", "text": "用 Cursor 帮我改一下 src/main.rs 里的函数", "tags": ["agents", "neg", "use-agent"], "expect_action": "delegate", "expect_role": "coding"}
+{"id": "ag-neg-02", "text": "让 Claude Code 修复登录接口偶尔返回 500 的问题", "tags": ["agents", "neg", "use-agent"], "expect_action": "delegate", "expect_role": "coding"}
+{"id": "ag-neg-03", "text": "用 opencode 跑一下项目的测试", "tags": ["agents", "neg", "use-agent"], "expect_action": "delegate", "expect_role": "coding"}
+{"id": "ag-neg-04", "text": "codex 帮我在仓库里写个斐波那契函数", "tags": ["agents", "neg", "use-agent"], "expect_action": "delegate", "expect_role": "coding"}
+{"id": "ag-neg-05", "text": "叫 zcode 重构 utils.py", "tags": ["agents", "neg", "use-agent"], "expect_action": "delegate", "expect_role": "coding"}
+{"id": "ag-neg-06", "text": "用 pi 给 order 模块补单元测试", "tags": ["agents", "neg", "use-agent"], "expect_action": "delegate", "expect_role": "coding"}
+{"id": "ag-neg-07", "text": "让 hermes 写一份本周质量周报并保存", "tags": ["agents", "neg", "use-agent"], "expect_action": "delegate", "expect_role": "general"}
+{"id": "ag-neg-08", "text": "让助手在仓库里写个脚本，把 data 下的 CSV 转成 JSON", "tags": ["agents", "neg", "use-agent"], "expect_action": "delegate", "expect_role": "coding"}
+{"id": "ag-neg-09", "text": "Cursor 和 Claude Code 哪个好", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-10", "text": "Cursor 怎么安装", "tags": ["agents", "neg", "ask"], "expect_action": "respond", "note": "问安装方法，回答即可"}
+{"id": "ag-neg-11", "text": "什么是 ACP 协议", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-12", "text": "opencode 是谁开发的", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-13", "text": "zcode 支持哪些模型", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-14", "text": "Claude Code 收费吗", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-15", "text": "助手和 agent 有什么区别", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-16", "text": "codex-acp 和 codex 命令行有什么不同", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-17", "text": "你是用什么模型做判断的", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-18", "text": "为什么要停用不用的助手", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-19", "text": "我该选哪个编码助手？说说你的建议", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-20", "text": "hermes 适合做什么", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-21", "text": "先停一下吧，这个不用做了", "tags": ["agents", "neg", "follow"], "expect_action": "follow_up", "active_tasks": [{"id": "task-cache", "goal": "给 MES 接口加一层缓存", "role": "coding", "status": "RUNNING"}], "expect_task_id": "task-cache", "expect_follow_up_kind": "cancel", "note": "停的是任务，不是助手"}
+{"id": "ag-neg-22", "text": "把这个任务撤销掉", "tags": ["agents", "neg", "follow"], "expect_action": "follow_up", "active_tasks": [{"id": "task-weekly", "goal": "汇总本周质量数据，生成质量周报保存到 reports/weekly.md", "role": "general", "status": "RUNNING"}], "expect_task_id": "task-weekly", "expect_follow_up_kind": "cancel", "note": "撤销的是任务，不是对助手的修改"}
+{"id": "ag-neg-23", "text": "缓存过期时间改成 10 分钟", "tags": ["agents", "neg", "follow"], "expect_action": "follow_up", "active_tasks": [{"id": "task-cache", "goal": "给 MES 接口加一层缓存", "role": "coding", "status": "RUNNING"}], "expect_task_id": "task-cache", "expect_follow_up_kind": "supplement"}
+{"id": "ag-neg-24", "text": "帮我算一下 (12+8)/4", "tags": ["agents", "neg"], "expect_action": "delegate", "expect_role": "general"}
+{"id": "ag-neg-25", "text": "现在几点", "tags": ["agents", "neg"], "expect_action": "delegate", "expect_role": "general"}
+{"id": "ag-neg-26", "text": "写一份关于编码助手选型的报告，保存成 Markdown", "tags": ["agents", "neg"], "expect_action": "delegate", "expect_role": "general"}
+{"id": "ag-neg-27", "text": "读一下 notes/agents.md，告诉我里面列了哪些助手", "tags": ["agents", "neg"], "expect_action": "delegate", "expect_role": "general", "note": "读文件，不是查看本机助手"}
+{"id": "ag-neg-28", "text": "帮我处理一下", "tags": ["agents", "neg"], "expect_action": "clarify"}
+{"id": "ag-neg-29", "text": "你好", "tags": ["agents", "neg"], "expect_action": "respond"}
+{"id": "ag-neg-30", "text": "谢谢", "tags": ["agents", "neg"], "expect_action": "respond"}
+{"id": "ag-neg-31", "text": "把 Cursor 的使用心得整理成文档保存下来", "tags": ["agents", "neg"], "expect_action": "delegate", "expect_role": "general"}
+{"id": "ag-neg-32", "text": "用 Claude Code 看看仓库里 src/order.rs 有没有并发问题", "tags": ["agents", "neg", "use-agent"], "expect_action": "delegate", "expect_role": "coding"}
+{"id": "ag-neg-33", "text": "在仓库里写个脚本，检查本机装了哪些命令行工具", "tags": ["agents", "neg"], "expect_action": "delegate", "expect_role": "coding"}
+{"id": "ag-neg-34", "text": "删除工作目录 tmp 下的日志文件", "tags": ["agents", "neg"], "expect_action": "delegate", "expect_role": "general"}
+{"id": "ag-neg-35", "text": "解释一下怎么把一个 agent 接入系统", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}
+{"id": "ag-neg-36", "text": "Cursor 有哪些常用快捷键", "tags": ["agents", "neg", "ask"], "expect_action": "respond"}

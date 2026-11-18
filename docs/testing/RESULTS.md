@@ -158,6 +158,10 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 `web/verification/check-map.test.mjs` 新增 4 个 runtime 映射测试：扩展前 3 条失败（未知用例、缺测试、未映射测试），扩展后 `node --test` 为 10 通过、0 失败。
 
+## 2026-11-18 R-20261118-H1
+
+Python端到端与全量78通过，覆盖率87.56%，flake8通过；700条/留出集两模式安全门槛保持。完整Rust440通过0失败2原有忽略，fmt/clippy通过；web 21通过、构建与地图检查通过。未运行浏览器/真实模型。Red→Green及实际输出见 [r-20261118-h1.md](evidence/r-20261118-h1.md)。
+
 ## 本次验证命令与结果
 
 - `npm run test:map`：`Feature map valid: 9 features, 6 browser cases`

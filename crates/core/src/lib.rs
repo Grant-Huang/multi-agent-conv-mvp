@@ -157,6 +157,52 @@ pub enum TurnDecision {
         kind: FollowUpKind,
         change: String,
     },
+    /// 管理助手本身（AG.4，开关 `[conversation] agent_management` 打开时才会出现）：
+    /// 接入 / 设为默认 / 停用 / 恢复 / 查看 / 撤销。后续流程全部由代码完成，生成卡片
+    ManageAgents {
+        op: AgentOp,
+        /// 哪个助手；没说是哪个时为空（随后给选择卡）
+        agent_id: String,
+        /// 负责什么；没说时为 None
+        role: Option<Role>,
+    },
+}
+
+/// 管理助手的操作（AG.4）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum AgentOp {
+    Connect,
+    SetDefault,
+    Disable,
+    Enable,
+    List,
+    Undo,
+}
+
+impl AgentOp {
+    pub const ALL: [AgentOp; 6] = [
+        AgentOp::Connect,
+        AgentOp::SetDefault,
+        AgentOp::Disable,
+        AgentOp::Enable,
+        AgentOp::List,
+        AgentOp::Undo,
+    ];
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AgentOp::Connect => "connect",
+            AgentOp::SetDefault => "set_default",
+            AgentOp::Disable => "disable",
+            AgentOp::Enable => "enable",
+            AgentOp::List => "list",
+            AgentOp::Undo => "undo",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|o| o.as_str() == s)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -229,6 +275,203 @@ pub struct AgentCard {
     pub enabled: bool,
     /// 不可用的原因
     pub disabled_reason: Option<String>,
+}
+
+// ───────────────────────── Agent 目录与握手检测（AG.1）─────────────────────────
+
+/// 安装或准备步骤中的一步（给用户看的引导）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct InstallStep {
+    /// 适用平台："all" / "macos" / "linux" / "windows"
+    pub platform: String,
+    /// 这一步做什么（中文说明）
+    pub text: String,
+    /// 需要用户在终端执行的命令（可复制）；纯说明性步骤为空
+    pub command: Option<String>,
+}
+
+/// 目录中一个 agent 在本机的状态
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum CatalogStatus {
+    /// 找不到启动命令
+    NotInstalled,
+    /// 命令已安装，但没有注册（例如关闭了自动发现）
+    Installed,
+    /// 已注册为可用的 agent（自动发现或用户配置）
+    Registered,
+}
+
+/// 目录中的一项：预设 agent 的说明 + 本机状态
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CatalogItem {
+    /// 预设 id（与 agent 卡片 id 相同）
+    pub id: String,
+    pub name: String,
+    /// 一句话用途
+    pub purpose: String,
+    pub role: Role,
+    /// 启动命令与参数（预设值）
+    pub command: String,
+    pub args: Vec<String>,
+    /// 安装与准备步骤（按顺序）
+    pub install: Vec<InstallStep>,
+    /// 登录方式说明；不需要登录时为空
+    pub login: Option<String>,
+    /// 依赖要求（文字说明，例如"Node.js ≥ 22"）
+    pub requirements: Vec<String>,
+    pub docs_url: Option<String>,
+    pub status: CatalogStatus,
+    /// 配置来源（AG.3）：config_toml（手写，不能在界面里改）/ managed（托管）/ auto（自动发现）/ preset（未接入的预设）
+    pub source: String,
+    /// 是否在托管配置里被停用（AG.3）
+    pub disabled: bool,
+    /// 已注册时的连接状态：connected / configured / unavailable
+    pub link_status: Option<String>,
+    /// 连接状态的原因说明
+    pub link_reason: Option<String>,
+}
+
+/// 握手检测的结果分类
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ProbeKind {
+    /// 握手成功
+    Ok,
+    /// 找不到命令（不会启动进程）
+    NotInstalled,
+    /// agent 要求先登录（ACP 错误码 -32000）
+    NeedsLogin,
+    /// 进程因缺少运行依赖退出（例如找不到 node）
+    MissingDependency,
+    /// 其他握手失败
+    HandshakeFailed,
+    /// 超时未完成握手
+    Timeout,
+}
+
+/// 一次握手检测的结果
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProbeOutcome {
+    pub id: String,
+    pub kind: ProbeKind,
+    /// 给用户看的中文结论
+    pub summary: String,
+    /// 建议的下一步；成功时为空
+    pub next_step: Option<String>,
+    /// 原始错误详情（含错误输出末尾，有长度上限），给专业用户和诊断用
+    pub detail: Option<String>,
+}
+
+// ───────────────────────── 助手排查（AG.5 第 1、2 层）─────────────────────────
+
+/// 本机体检的一项（只读检查的结果）
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CheckItem {
+    /// command_in_service_path / command_in_login_shell / node_version / credential_file
+    pub key: String,
+    /// 给人看的名称
+    pub name: String,
+    /// ok / problem / skipped / error
+    pub status: String,
+    /// 大白话说明
+    pub detail: String,
+}
+
+/// 规则命中的一条结论
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Finding {
+    /// 规则 id，例如 node_missing / path_mismatch / node_too_old / credential_missing / not_installed
+    pub rule: String,
+    pub title: String,
+    pub explain: String,
+    /// 修复步骤（可复制的命令）
+    pub steps: Vec<InstallStep>,
+}
+
+/// 一次排查的结果：握手检测 + 本机体检 + 规则结论。全部在本机完成，不外发
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DiagnoseReport {
+    pub id: String,
+    pub name: String,
+    pub probe: ProbeOutcome,
+    pub checks: Vec<CheckItem>,
+    pub findings: Vec<Finding>,
+    /// 检测失败但没有命中任何规则
+    pub unmatched: bool,
+}
+
+// ───────────────────────── 对话里的卡片（AG.4）─────────────────────────
+
+/// 选择卡里的一个候选助手
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ChoiceOption {
+    pub id: String,
+    pub name: String,
+    pub purpose: String,
+    pub role: Role,
+    /// 本机是否已安装（没安装的点了会先看到安装步骤）
+    pub installed: bool,
+}
+
+/// 对话里的卡片：由代码按结构化数据生成，前端组件渲染（不渲染模型生成的 HTML）。
+/// 卡片存在消息的 `card_json` 列；送给模型的历史只用消息正文，卡片数据（含确认凭证）不进模型上下文。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export)]
+pub enum ChatCard {
+    /// 发现卡：本机有哪些助手
+    Discovery { items: Vec<CatalogItem> },
+    /// 选择卡：没说是哪个助手时让用户点选
+    Choice {
+        op: AgentOp,
+        role: Option<Role>,
+        options: Vec<ChoiceOption>,
+    },
+    /// 引导卡：安装步骤
+    Guide { item: CatalogItem },
+    /// 确认卡：提议的说明与一次性确认凭证
+    Confirm {
+        proposal_id: String,
+        kind: String,
+        summary: String,
+        warnings: Vec<String>,
+        before: String,
+        after: String,
+        /// 一次性确认凭证（只给界面；不进模型上下文）
+        token: String,
+        expires_in_secs: u64,
+        /// 将会执行的命令（接入时才有）
+        command: Option<String>,
+        /// pending / applied / expired
+        state: String,
+    },
+    /// 结果卡
+    Result {
+        ok: bool,
+        summary: String,
+        probes: Vec<ProbeOutcome>,
+        error: Option<String>,
+    },
+}
+
+/// 消息 + 卡片（消息列表接口返回它；`Message` 本身不变）
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MessageView {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub message: Message,
+    pub card: Option<ChatCard>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -527,6 +770,14 @@ impl std::error::Error for AgentError {}
 pub mod codes {
     // 模型
     pub const LLM_UNREACHABLE: &str = "E_LLM_UNREACHABLE";
+    /// 外发检查判定 BLOCK，内容没有发出
+    pub const EGRESS_BLOCKED: &str = "E_EGRESS_BLOCKED";
+    /// 外发检查判定需要人工审批（REVIEW），内容没有发出
+    pub const EGRESS_REVIEW: &str = "E_EGRESS_REVIEW";
+    /// 外发检查服务不可用（enforce 模式下按 fail closed 处理），内容没有发出
+    pub const EGRESS_UNAVAILABLE: &str = "E_EGRESS_UNAVAILABLE";
+    /// 外发路径没有登记外发绑定（audit 模式下的启动警告）
+    pub const EGRESS_UNBOUND: &str = "W_EGRESS_UNBOUND";
     pub const LLM_HTTP: &str = "E_LLM_HTTP";
     pub const LLM_FORMAT: &str = "E_LLM_FORMAT";
     pub const LLM_FORMAT_RETRY: &str = "W_LLM_FORMAT_RETRY";
@@ -549,6 +800,8 @@ pub mod codes {
     pub const POOL_WAIT: &str = "W_POOL_WAIT";
     // agent 执行
     pub const AGENT_NOT_INSTALLED: &str = "E_AGENT_NOT_INSTALLED";
+    /// 托管配置文件（agents.managed.toml）读不出来或格式错误（AG.2）
+    pub const AGENT_MANAGED_INVALID: &str = "E_AGENT_MANAGED_INVALID";
     pub const AGENT_SPAWN: &str = "E_AGENT_SPAWN";
     pub const AGENT_TIMEOUT: &str = "E_AGENT_TIMEOUT";
     pub const AGENT_RUNTIME: &str = "E_AGENT_RUNTIME";

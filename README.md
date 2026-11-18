@@ -84,6 +84,10 @@ AgentNexus 通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP
 | [OpenCode](https://opencode.ai/docs/acp) | coding | `opencode acp` | 原生支持 |
 | [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/acp) | general | `hermes acp` | 原生支持，需安装 ACP 扩展 |
 | pi | coding | `pi-acp` | 需另装第三方适配器 pi-acp，成熟度较低 |
+| [Claude Code](https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp) | coding | `claude-agent-acp` | 先登录 Claude Code，再 `npm i -g @agentclientprotocol/claude-agent-acp` |
+| [Codex](https://www.npmjs.com/package/@agentclientprotocol/codex-acp) | coding | `codex-acp` | 先 `codex login`，再 `npm i -g @agentclientprotocol/codex-acp`；id 为 `codex-acp` |
+| [Cursor CLI](https://cursor.com/docs/cli/acp) | coding | `cursor-agent acp` | 原生支持；先 `agent login` |
+| [ZCode](https://www.npmjs.com/package/zcode-acp-server) | coding | `zcode-acp-server` | 社区桥接，需要 Node ≥ 22，先用 ZCode App 登录 |
 
 **第 1 步：指定由谁来做，加一行。** 不指定时，每类工作用第一个可用的 agent（内置和 Codex 排在前面）：
 

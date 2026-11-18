@@ -25,6 +25,7 @@ mcp = [
 [package.dev-dependencies]
 dev = [
     { name = "flake8" },
+    { name = "jsonschema" },
     { name = "mcp" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -43,6 +44,7 @@ provides-extras = ["mcp"]
 [package.metadata.requires-dev]
 dev = [
     { name = "flake8", specifier = ">=7.5.0" },
+    { name = "jsonschema", specifier = ">=4.20" },
     { name = "mcp", specifier = ">=2.0" },
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },

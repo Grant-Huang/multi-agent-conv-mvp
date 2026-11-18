@@ -1739,6 +1739,83 @@ fn rt_des_29_closed_des_case_is_not_reused_or_refreshed() {
     );
 }
 
+// ───────────────────── 阶段⑤a-1：模拟工厂服务与进程内内核一致 ─────────────────────
+
+#[test]
+fn rt_des_30_factory_service_matches_the_in_process_engine() {
+    use an_des::{FactoryService, ServiceConfig};
+    for (seed, pattern, horizon) in [(1, Pattern::Script, 240), (7, cluster(), 240)] {
+        let config = des_config(seed, pattern.clone(), horizon);
+        let mut e = Engine::memory().unwrap();
+        let sim = e.create_des_simulation(config.clone()).unwrap();
+        let mut svc = FactoryService::new(ServiceConfig {
+            admin_token: Some("t".into()),
+        });
+        let created = svc
+            .call("simulation_create", serde_json::to_value(&config).unwrap())
+            .expect("simulation_create");
+        assert_eq!(created["simulation_id"], sim.as_str(), "same simulation id");
+
+        // 同一时刻的可观测状态一致。
+        for t in [START + 10, START + 60, START + horizon] {
+            e.advance(t).unwrap();
+            svc.call(
+                "simulation_advance",
+                serde_json::json!({"simulation_id": sim, "to_minute": t}),
+            )
+            .unwrap();
+            let remote = svc
+                .call(
+                    "equipment_status",
+                    serde_json::json!({"simulation_id": sim}),
+                )
+                .unwrap();
+            let local = e.des_factory_view(&sim).unwrap();
+            assert_eq!(
+                remote["machines"], local["machines"],
+                "seed {seed} minute {t}: observable machines must match"
+            );
+        }
+
+        // 事件：服务给出的事件等于内核事件加仿真编号前缀。
+        let page = svc
+            .call(
+                "events_poll",
+                serde_json::json!({"simulation_id": sim, "cursor": 0, "limit": 1000}),
+            )
+            .unwrap();
+        let remote: Vec<Value> = page["events"].as_array().unwrap().clone();
+        let kernel = run_open_loop(&FactoryConfig::line_b_default(), &config.scenario).unwrap();
+        assert_eq!(
+            remote.len(),
+            kernel.events.len(),
+            "seed {seed}: event count"
+        );
+        for (r, k) in remote.iter().zip(&kernel.events) {
+            assert_eq!(r["id"], format!("{sim}:{}", k.id));
+            assert_eq!(r["batch"], format!("{sim}:{}", k.batch));
+            for f in ["kind", "source", "asset", "customer"] {
+                assert_eq!(r[f], serde_json::to_value(k).unwrap()[f], "seed {seed} {f}");
+            }
+            assert_eq!(r["occurred_at"], k.occurred_at);
+            assert_eq!(r["payload"], k.payload, "seed {seed}: payload");
+        }
+
+        // 标准答案：管理入口与审核层读到的相同。
+        let truth = svc
+            .call(
+                "simulation_ground_truth",
+                serde_json::json!({"simulation_id": sim, "admin_token": "t"}),
+            )
+            .unwrap();
+        assert_eq!(
+            truth,
+            e.des_review_truth(&sim).unwrap(),
+            "seed {seed}: truth"
+        );
+    }
+}
+
 #[test]
 fn rt_des_31_incident_close_preserves_safety_blocked_member() {
     for seed in 1..=10 {

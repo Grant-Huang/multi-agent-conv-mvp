@@ -243,7 +243,13 @@ impl Backends {
             if matches!(role, LlmRole::Conversation | LlmRole::Router)
                 && spec.front_structured_thinking == Some(false)
             {
-                client = client.disable_structured_thinking();
+                client =
+                    client
+                        .disable_structured_thinking()
+                        .with_front_options(an_llm::FrontOptions {
+                            reason_first: spec.front_reason_first == Some(true),
+                            thinking_escalation: spec.front_thinking_escalation == Some(true),
+                        });
             }
             bindings.push(RoleBinding {
                 role,
