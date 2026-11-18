@@ -110,6 +110,106 @@ fn write_fields() -> [(&'static str, Value, bool); 2] {
     ]
 }
 
+/// `simulation_create.factory` 的 schema（与 `FactoryConfig` 的反序列化规则一致；null 使用默认 Line-B）。
+fn factory_schema() -> Value {
+    let count = |desc: &str| json!({"type": "integer", "minimum": 0, "description": desc});
+    json!({
+        "type": ["object", "null"],
+        "description": "Factory configuration; null uses the default Line-B (CNC-XX, CNC-XY, CNC-XZ)",
+        "properties": {
+            "machines": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": crate::MAX_MACHINES,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": string("Machine id, e.g. CNC-XX"),
+                        "line": string("Production line, e.g. Line-B"),
+                        "cycle_seconds": {"type": "integer", "minimum": 1, "description": "Cycle time per part (seconds)"}
+                    },
+                    "required": ["id", "line", "cycle_seconds"],
+                    "additionalProperties": false
+                }
+            },
+            "resources": {
+                "type": "object",
+                "description": "Resource and process assumptions; omitted fields take defaults",
+                "properties": {
+                    "uncertified": {"type": "array", "items": {"type": "string"}},
+                    "missing_tool": {"type": "array", "items": {"type": "string"}},
+                    "tool_spares": count("Spare tools in the store"),
+                    "tool_transfer_minutes": count("Tool transfer lead time (minutes)"),
+                    "maintenance_minutes": count("Repair time (minutes)"),
+                    "maintenance_crews": count("Maintenance crews"),
+                    "finish_batch_minutes": count("Time to finish the current batch (minutes)"),
+                    "inspection_minutes": count("Release inspection time (minutes)"),
+                    "urgent_capacity_share": {"type": "number", "minimum": 0, "maximum": 1}
+                },
+                "additionalProperties": false
+            },
+            "coordination": {
+                "type": "object",
+                "description": "Caller-side coordination parameters carried with the factory; the simulation ignores them",
+                "properties": {
+                    "incident_window_minutes": count("Window (minutes)"),
+                    "min_cases": count("Minimum cases")
+                },
+                "additionalProperties": false
+            }
+        },
+        "required": ["machines"],
+        "additionalProperties": false
+    })
+}
+
+/// `simulation_create.scenario` 的 schema（与 `ScenarioConfig` 的反序列化规则一致）。
+fn scenario_schema() -> Value {
+    let simple = |kind: &str| json!({"type": "object", "properties": {"kind": {"const": kind}}, "required": ["kind"], "additionalProperties": false});
+    json!({
+        "type": "object",
+        "properties": {
+            "seed": {"type": "integer", "minimum": 0, "description": "Random seed; same inputs give byte-identical results"},
+            "pattern": {
+                "description": "Scenario pattern constraint",
+                "oneOf": [
+                    simple("script"),
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"const": "concurrent_cluster"},
+                            "window_minutes": {"type": "integer", "minimum": 1},
+                            "min_disruptions": {"type": "integer", "minimum": 1}
+                        },
+                        "required": ["kind", "window_minutes", "min_disruptions"],
+                        "additionalProperties": false
+                    },
+                    simple("decoy"),
+                    simple("cascade"),
+                    simple("resource_contention"),
+                    simple("quiet"),
+                    simple("unconstrained")
+                ]
+            },
+            "start_minute": {"type": "integer", "minimum": 0, "description": "Virtual minute the simulation starts"},
+            "horizon_minutes": {"type": "integer", "minimum": 1, "maximum": crate::scenario::MAX_HORIZON_MINUTES, "description": "Simulated duration (minutes)"},
+            "mechanisms": {
+                "type": ["object", "null"],
+                "description": "Causal mechanism switches; null lets the generator sample them",
+                "properties": {
+                    "spindle_wear_to_dimension": {"type": "boolean"},
+                    "tool_wear_to_dimension": {"type": "boolean"},
+                    "material_lot_to_dimension": {"type": "boolean"}
+                },
+                "required": ["spindle_wear_to_dimension", "tool_wear_to_dimension", "material_lot_to_dimension"],
+                "additionalProperties": false
+            }
+        },
+        "required": ["seed", "pattern", "start_minute", "horizon_minutes"],
+        "additionalProperties": false
+    })
+}
+
 fn tool(name: &str, category: ToolCategory, description: &str, input_schema: Value) -> ToolSpec {
     ToolSpec {
         name: name.into(),
@@ -203,8 +303,8 @@ pub fn tool_catalog() -> Vec<ToolSpec> {
                 "type": "object",
                 "properties": {
                     "name": string("Display name"),
-                    "factory": {"type": ["object", "null"], "description": "Factory configuration; null uses the default Line-B"},
-                    "scenario": {"type": "object", "description": "seed, pattern, start_minute, horizon_minutes, mechanisms"}
+                    "factory": factory_schema(),
+                    "scenario": scenario_schema()
                 },
                 "required": ["name", "factory", "scenario"],
                 "additionalProperties": false

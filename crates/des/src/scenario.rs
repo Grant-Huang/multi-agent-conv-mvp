@@ -22,7 +22,7 @@ const MAX_ATTEMPTS: u32 = 256;
 /// 一条最大规模轨迹（32 × 2881）在预算内；多次完整轨迹则不在。
 const MAX_MACHINE_MINUTES: u64 = 100_000;
 /// 仿真最长时长（虚拟分钟），与脚本仿真扰动窗口一致（48 小时）。
-const MAX_HORIZON_MINUTES: u64 = 2880;
+pub const MAX_HORIZON_MINUTES: u64 = 2880;
 /// 两个报警相隔不超过此值且需要同一资源时，记为资源竞争。
 const CONTENTION_WINDOW_MINUTES: u64 = 120;
 /// 插单在此时间内都视为可能加快了同线设备的磨损。
