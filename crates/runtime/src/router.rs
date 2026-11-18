@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use an_core::{PolicyVerdict, Risk, Role, RouteDecision};
+use an_core::{PolicyVerdict, Risk, Role, RouteDecision, TaskClass};
 use an_llm::{ChatMessage, LlmClient, Structured, StructuredError};
 use serde_json::{json, Value};
 
@@ -21,6 +21,45 @@ pub struct Router {
     policy: Policy,
     /// FT 实验 B：按规则把风险只升不降
     risk_rules: bool,
+    /// FT.5：类别不让模型直接选，改为回答两个是/否问题，由代码算出 L1–L4
+    class_questions: bool,
+}
+
+/// FT.5 打开时模型的输出：两个是/否问题代替 task_class，其余字段与 `RouteDecision` 相同。
+/// 只在路由内部使用，转换成 `RouteDecision` 后再交给 Policy 和下游，对外结构不变。
+#[derive(Debug, Clone, serde::Deserialize)]
+struct RouteAnswer {
+    /// 需要用工具获取数据或计算结果吗（保存结果用的 write_file 不算）
+    needs_data_tools: bool,
+    /// 需要生成或修改文档、报告吗
+    needs_document: bool,
+    execution_role: Role,
+    required_tools: Vec<String>,
+    risk_level: Risk,
+    reason: String,
+}
+
+impl RouteAnswer {
+    fn into_decision(self) -> RouteDecision {
+        RouteDecision {
+            task_class: class_from_answers(self.needs_data_tools, self.needs_document),
+            execution_role: self.execution_role,
+            required_tools: self.required_tools,
+            risk_level: self.risk_level,
+            reason: self.reason,
+        }
+    }
+}
+
+/// FT.5：按现有定义由两个答案确定性地算出类别（与系统提示词里 L1–L4 的定义一致）。
+/// - 不取数、不写文档 → L1；只取数 → L2；只写文档 → L3；两者都要 → L4
+pub fn class_from_answers(needs_data_tools: bool, needs_document: bool) -> TaskClass {
+    match (needs_data_tools, needs_document) {
+        (false, false) => TaskClass::L1,
+        (true, false) => TaskClass::L2,
+        (false, true) => TaskClass::L3,
+        (true, true) => TaskClass::L4,
+    }
 }
 
 /// 判断依据字段的最大长度（FT 实验 A）
@@ -120,6 +159,7 @@ impl Router {
             tool_names,
             policy,
             risk_rules: false,
+            class_questions: false,
         }
     }
 
@@ -129,9 +169,18 @@ impl Router {
         self
     }
 
+    /// FT.5：类别改为回答两个是/否问题，由代码算出（与是否思考无关）
+    pub fn with_class_questions(mut self, on: bool) -> Self {
+        self.class_questions = on;
+        self
+    }
+
     /// 路由用的 JSON Schema：角色和工具都用 enum 限定在注册表范围内
     fn schema(&self, roles: &[Role]) -> Value {
         let role_enum: Vec<&str> = roles.iter().map(|r| r.as_str()).collect();
+        if self.class_questions {
+            return self.class_questions_schema(&role_enum);
+        }
         // FT 实验 A：不思考时让模型先写判断依据（llama.cpp 按属性顺序生成，所以 reason 放第一个）
         if self.llm.front_options().reason_first {
             return json!({
@@ -159,6 +208,69 @@ impl Router {
         })
     }
 
+    /// FT.5 的 schema：两个是/否问题代替 task_class，放在 execution_role 之前；
+    /// A（先写理由）打开时 reason 仍在第一位（llama.cpp 按属性顺序生成）。
+    fn class_questions_schema(&self, role_enum: &[&str]) -> Value {
+        let reason_first = self.llm.front_options().reason_first;
+        let mut props = serde_json::Map::new();
+        if reason_first {
+            props.insert(
+                "reason".into(),
+                json!({ "type": "string", "maxLength": REASON_MAX_CHARS }),
+            );
+        }
+        props.insert("needs_data_tools".into(), json!({ "type": "boolean" }));
+        props.insert("needs_document".into(), json!({ "type": "boolean" }));
+        props.insert(
+            "execution_role".into(),
+            json!({ "type": "string", "enum": role_enum }),
+        );
+        props.insert(
+            "required_tools".into(),
+            json!({ "type": "array", "items": { "type": "string", "enum": self.tool_names } }),
+        );
+        props.insert(
+            "risk_level".into(),
+            json!({ "type": "string", "enum": ["low", "medium", "high"] }),
+        );
+        if !reason_first {
+            props.insert("reason".into(), json!({ "type": "string" }));
+        }
+        // required 与属性顺序一致
+        let required: Vec<String> = props.keys().cloned().collect();
+        json!({ "type": "object", "properties": props, "required": required })
+    }
+
+    /// 系统提示词里"任务类别"一节：默认让模型选 L1–L4；FT.5 打开时改为两个是/否问题的口径
+    fn class_section(&self) -> &'static str {
+        if self.class_questions {
+            "## 两个判断问题（不要输出类别，类别由系统根据答案计算）\n\
+             - needs_data_tools：完成任务是否需要用工具获取数据或计算结果。\
+             精确计算、查当前时间或日期、列出或读取工作目录中的文件、联网搜索都算 true（即使你自己会算或知道答案）；\
+             只为保存结果而写文件（write_file）不算\n\
+             - needs_document：是否需要生成或修改一份文档、报告、笔记、清单等文字成果（通常保存成文件）；\
+             只在对话里回答问题或给出结论不算\n\n"
+        } else {
+            "## 任务类别（task_class）\n\
+             - L1：不需要工具，也不需要生成文档\n\
+             - L2：需要工具（查询、计算、读文件等），不需要生成文档\n\
+             - L3：不需要获取数据的工具，但需要生成文档/报告（保存文档用的 write_file 不算\"需要工具\"）\n\
+             - L4：既需要获取数据的工具（读文件、计算、查时间等），也需要生成文档/报告\n\n"
+        }
+    }
+
+    /// 规则 5a（需要联网获取外部事实）：默认按类别描述；FT.5 打开时按 needs_data_tools 描述
+    fn web_rule(&self) -> &'static str {
+        if !self.tool_names.iter().any(|t| t == "web_search") {
+            return "";
+        }
+        if self.class_questions {
+            "5a. 任务需要最新事实、新闻、行情、选举、政策等外部信息，或要求引用公开资料 → needs_data_tools 为 true，required_tools 必须包含 web_search（需要打开具体网页时加 web_fetch）；\n"
+        } else {
+            "5a. 任务需要最新事实、新闻、行情、选举、政策等外部信息，或要求引用公开资料 → 不是 L3：生成文档时为 L4，required_tools 必须包含 web_search（需要打开具体网页时加 web_fetch）；\n"
+        }
+    }
+
     fn system_prompt(
         &self,
         roles: &[Role],
@@ -174,11 +286,7 @@ impl Router {
             "你是 AgentNexus 的任务路由器（Router）。你只负责分类和选择执行者，不负责完成任务。\n\n\
              ## 可选执行角色\n{agents}\n\n\
              ## General 可用工具\n{tools}\n\n\
-             ## 任务类别（task_class）\n\
-             - L1：不需要工具，也不需要生成文档\n\
-             - L2：需要工具（查询、计算、读文件等），不需要生成文档\n\
-             - L3：不需要获取数据的工具，但需要生成文档/报告（保存文档用的 write_file 不算\"需要工具\"）\n\
-             - L4：既需要获取数据的工具（读文件、计算、查时间等），也需要生成文档/报告\n\n\
+             {class_section}\
              ## 选择规则\n\
              1. 需要修改代码仓库、写程序、修 bug、跑测试，或生成网页（HTML/CSS/JS）、脚本、程序等代码产物（即使任务描述称之为文档或页面）→ coding；\n\
              2. 用户要求审查/评估/挑错对话中给出的内容 → reviewer；\n\
@@ -189,13 +297,50 @@ impl Router {
              {web}\
              6. reason 用一句中文说明理由。{corrections}",
             tools = if self.tool_names.is_empty() { "无".into() } else { self.tool_names.join(", ") },
-            web = if self.tool_names.iter().any(|t| t == "web_search") {
-                "5a. 任务需要最新事实、新闻、行情、选举、政策等外部信息，或要求引用公开资料 → 不是 L3：生成文档时为 L4，required_tools 必须包含 web_search（需要打开具体网页时加 web_fetch）；\n"
-            } else {
-                ""
-            },
+            class_section = self.class_section(),
+            web = self.web_rule(),
             corrections = crate::prompts::correction_section(examples),
         )
+    }
+
+    /// 调一次路由模型，返回统一的 `RouteDecision`。
+    /// FT.5 打开时模型回答两个是/否问题（`RouteAnswer`），这里换算成类别；否则直接解析 `RouteDecision`。
+    /// 两种情况下的业务校验相同：工具名必须存在（即使有语法约束，prompt_only 模式下也需要）。
+    async fn ask(
+        &self,
+        llm: &LlmClient,
+        messages: &[ChatMessage],
+        schema: &Value,
+    ) -> Result<Structured<RouteDecision>, StructuredError> {
+        let tool_names = &self.tool_names;
+        let check_tools = |tools: &[String]| {
+            if let Some(bad) = tools.iter().find(|t| !tool_names.contains(t)) {
+                return Err(format!(
+                    "工具 {bad} 不存在，可用工具：{}",
+                    tool_names.join(", ")
+                ));
+            }
+            Ok(())
+        };
+        if !self.class_questions {
+            return llm
+                .chat_json::<RouteDecision, _>(messages, "route_decision", schema, |d| {
+                    check_tools(&d.required_tools)
+                })
+                .await;
+        }
+        let s = llm
+            .chat_json::<RouteAnswer, _>(messages, "route_decision", schema, |a| {
+                check_tools(&a.required_tools)
+            })
+            .await?;
+        Ok(Structured {
+            value: s.value.into_decision(),
+            raw_outputs: s.raw_outputs,
+            attempts: s.attempts,
+            latency_ms: s.latency_ms,
+            escalated: s.escalated,
+        })
     }
 
     /// FT 实验 D：不思考的路由结果是否可疑（需要开思考重判）。返回触发原因。
@@ -234,19 +379,7 @@ impl Router {
             ChatMessage::system(self.system_prompt(&roles, examples)),
             ChatMessage::user(user),
         ];
-        let tool_names = self.tool_names.clone();
         let schema = self.schema(&roles);
-
-        // 业务校验：工具名必须存在（即使有语法约束，prompt_only 模式下也需要）
-        let validate = |d: &RouteDecision| {
-            if let Some(bad) = d.required_tools.iter().find(|t| !tool_names.contains(t)) {
-                return Err(format!(
-                    "工具 {bad} 不存在，可用工具：{}",
-                    tool_names.join(", ")
-                ));
-            }
-            Ok(())
-        };
         let to_failure = |e: StructuredError| RouteFailure {
             message: e.message,
             decision: None,
@@ -264,9 +397,7 @@ impl Router {
         } else {
             self.llm.clone()
         };
-        let first = fast
-            .chat_json::<RouteDecision, _>(&messages, "route_decision", &schema, &validate)
-            .await;
+        let first = self.ask(&fast, &messages, &schema).await;
         let trigger = match &first {
             _ if !escalation => None,
             Err(e) if e.code == an_core::codes::LLM_FORMAT => Some("format"),
@@ -281,9 +412,7 @@ impl Router {
                     Err(e) => (e.latency_ms, e.raw_outputs.clone(), e.attempts),
                 };
                 let think = self
-                    .llm
-                    .with_thinking()
-                    .chat_json::<RouteDecision, _>(&messages, "route_decision", &schema, &validate)
+                    .ask(&self.llm.with_thinking(), &messages, &schema)
                     .await;
                 let total_ms = started.elapsed().as_millis() as u64;
                 tracing::info!(
@@ -423,5 +552,46 @@ mod tests {
                 .contains("引用公开资料"),
             "没有联网工具时不能要求 web_search"
         );
+    }
+
+    /// FT.5：四种答案组合对应 L1–L4（与提示词里的类别定义一致）
+    #[test]
+    fn class_from_answers_maps_all_four_combinations() {
+        assert_eq!(class_from_answers(false, false), TaskClass::L1);
+        assert_eq!(class_from_answers(true, false), TaskClass::L2);
+        assert_eq!(class_from_answers(false, true), TaskClass::L3);
+        assert_eq!(class_from_answers(true, true), TaskClass::L4);
+    }
+
+    /// FT.5 守护：开关关闭时，类别一节和规则 5a 与改动前逐字相同（默认行为不变）
+    #[test]
+    fn class_questions_off_keeps_original_prompt_text() {
+        let p =
+            router_with(&["web_search", "web_fetch", "write_file"]).system_prompt(&Role::ALL, &[]);
+        let original_class = "## 任务类别（task_class）\n\
+             - L1：不需要工具，也不需要生成文档\n\
+             - L2：需要工具（查询、计算、读文件等），不需要生成文档\n\
+             - L3：不需要获取数据的工具，但需要生成文档/报告（保存文档用的 write_file 不算\"需要工具\"）\n\
+             - L4：既需要获取数据的工具（读文件、计算、查时间等），也需要生成文档/报告\n\n\
+             ## 选择规则\n";
+        assert!(p.contains(original_class), "{p}");
+        assert!(p.contains("5a. 任务需要最新事实、新闻、行情、选举、政策等外部信息，或要求引用公开资料 → 不是 L3：生成文档时为 L4，required_tools 必须包含 web_search（需要打开具体网页时加 web_fetch）；\n"), "{p}");
+        assert!(!p.contains("needs_data_tools"), "{p}");
+    }
+
+    /// FT.5：开关打开时，规则 5a 改为按 needs_data_tools 描述，提示词不再提 L1–L4 的选择
+    #[test]
+    fn class_questions_on_rewrites_class_section_and_web_rule() {
+        let p = router_with(&["web_search", "web_fetch", "write_file"])
+            .with_class_questions(true)
+            .system_prompt(&Role::ALL, &[]);
+        assert!(!p.contains("task_class"), "{p}");
+        assert!(!p.contains("L4"), "{p}");
+        let rule = p
+            .lines()
+            .find(|l| l.contains("引用公开资料"))
+            .unwrap_or_default();
+        assert!(rule.contains("needs_data_tools 为 true"), "{p}");
+        assert!(rule.contains("web_search"), "{p}");
     }
 }

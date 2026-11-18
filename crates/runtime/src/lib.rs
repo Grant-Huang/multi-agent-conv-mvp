@@ -340,7 +340,8 @@ impl Runtime {
                     approval_risk: o.approval_risk,
                 },
             )
-            .with_risk_rules(config.conversation.risk_rules),
+            .with_risk_rules(config.conversation.risk_rules)
+            .with_class_questions(config.conversation.route_class_questions),
         );
         let orchestrator = Arc::new(Orchestrator::new(
             store.clone(),

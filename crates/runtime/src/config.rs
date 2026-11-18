@@ -127,6 +127,10 @@ pub struct ConversationSection {
     /// 写文件 / 改代码 → 至少 medium）。默认不开。
     #[serde(default)]
     pub risk_rules: bool,
+    /// FT.5：路由不直接选 L1–L4，改为回答"需要取数工具吗""需要生成文档吗"两个是/否问题，
+    /// 由代码按现有定义算出类别。与是否思考无关。默认不开。
+    #[serde(default)]
+    pub route_class_questions: bool,
     /// AG.4：在对话里管理助手（"把 Cursor 接进来"等）。会改变前台判断的 schema，默认关；
     /// 用户本机评测达标后再决定是否打开
     #[serde(default)]
@@ -139,6 +143,7 @@ impl Default for ConversationSection {
             review_requests: Default::default(),
             stream_replies: true,
             risk_rules: false,
+            route_class_questions: false,
             agent_management: false,
         }
     }
