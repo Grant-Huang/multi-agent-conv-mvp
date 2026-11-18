@@ -81,7 +81,7 @@ dlp_args = ["--config", "tools/dlp-egress/config/dlp.host.yaml"]
 audit 阶段的注意事项、enforce 下的行为见 [部署与使用说明](../../docs/mcp/DLP_EGRESS_DEPLOYMENT.md)。
 
 已实测（2026-11-18）：AgentNexus 的 Rust 集成测试 `real_dlp_service_roundtrip_when_configured` 连接真实的本服务，
-通过 output schema 校验，完成工具参数脱敏、凭证拦截与 LLM 消息脱敏及 Token 映射获取。
+结果：结构化返回符合 schema；工具参数被脱敏；带凭证样式串的调用被拦下；LLM 消息被脱敏，并取得 Token 映射。
 
 ## 测试
 

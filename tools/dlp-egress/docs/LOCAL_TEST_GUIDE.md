@@ -209,7 +209,7 @@ target/debug/agentnexus config.toml
 - 再让 General 搜索“Authorization: Bearer DEMO-NOT-A-REAL-TOKEN-0001 是什么”：
   任务证据中出现 `E_EGRESS_BLOCKED`，日志出现 `egress.blocked`，搜索命令没有执行。
 - 如果配置了云端模型（`[[egress.llm]]`）：正常对话可用，回答中出现的客户名是原值（已在本机恢复）；
-  发送含凭证样式串的消息时，回答失败并带 `E_EGRESS_BLOCKED`。
+  消息里带有凭证样式串时，回答失败并带 `E_EGRESS_BLOCKED`。
 
 记录：模型名称、各步是否符合期望、日志中 `egress.evaluate` 的 `elapsed_ms` 范围。
 

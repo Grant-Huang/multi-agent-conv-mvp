@@ -411,14 +411,14 @@ pub struct EgressGuard {
 
 /// 判定结论（enforce 下的处理依据）
 enum Verdict {
-    Send(Evaluation),
+    Pass(Evaluation),
     Review(Evaluation),
     Block(Evaluation),
 }
 
 fn verdict(ev: Evaluation) -> Verdict {
     match (ev.decision.as_str(), ev.ready_to_send) {
-        ("ALLOW" | "ANONYMIZE", true) => Verdict::Send(ev),
+        ("ALLOW" | "ANONYMIZE", true) => Verdict::Pass(ev),
         ("REVIEW", _) => Verdict::Review(ev),
         _ => Verdict::Block(ev),
     }
@@ -535,7 +535,7 @@ impl EgressGuard {
             return Ok(args.clone());
         }
         match verdict(ev) {
-            Verdict::Send(ev) => ev.sanitized_json.clone().ok_or_else(|| {
+            Verdict::Pass(ev) => ev.sanitized_json.clone().ok_or_else(|| {
                 self.log_unavailable(tool, &task, &anyhow!("missing sanitized_json"));
                 anyhow!(
                     "{}: 外发检查返回不完整，未调用 {tool}",
@@ -607,7 +607,7 @@ impl EgressGuard {
         let mut tokens = vec![];
         for ev in evs {
             match verdict(ev) {
-                Verdict::Send(ev) => tokens.extend(ev.tokens),
+                Verdict::Pass(ev) => tokens.extend(ev.tokens),
                 Verdict::Review(ev) => {
                     self.log_blocked(&path, &task, codes::EGRESS_REVIEW, &ev);
                     return Err(LlmError::new(
