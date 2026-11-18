@@ -1,0 +1,11 @@
+id,language,channel,scenario,destination_trust,purpose,constraints,annotated_text,expected_action,difficulty,annotator,reviewer,notes
+EX-001,zh,external_api,normal,external_untrusted,vendor_diagnostics,,将{PLANT:滨江四厂}的{DEVICE_ID:AGV-11}停机记录发给供应商，关联{ORDER_ID:WO-118820}，责任人{PERSON:郑厂长}，{METRIC:稼动率81.5%}。,ANONYMIZE,normal,张三,李四,常规：标识符脱敏，设备号与指标保留
+EX-002,zh,email,confidential,external_untrusted,quotation,,请把{CUSTOMER:松岩液压}的报价发给经销商，附件里有{INTERNAL_INFO:内部报价底线}。,REVIEW,normal,张三,李四,含机密信息需审批
+EX-003,en,external_api,secret,external_untrusted,integration,,Tool header Authorization: Bearer {SECRET:DEMO-NOT-A-REAL-TOKEN-0001} for the partner webhook.,BLOCK,normal,张三,李四,凭证一律用合成占位串，不得使用真实或真实格式的密钥
+EX-004,zh,file_upload,amount,external_untrusted,audit,preserve:AMOUNT,第三方审计核对{CUSTOMER:恒屹汽配}的应收款{AMOUNT:96.5万元}。,ANONYMIZE,normal,张三,李四,经批准用于计算：金额保留
+EX-005,zh,mcp,toolcall,external_untrusted,notify,,"send_email(to=""{EMAIL:qa@partner-demo.com}"", body=""{CUSTOMER:松岩液压} {METRIC:良率97.0%}，抄送 {EMAIL:ops@partner-demo.com}"")",ANONYMIZE,normal,张三,李四,to= 中的收件人是路由字段，保留；正文中的邮箱脱敏
+EX-006,zh,slack,clean,external_untrusted,training,,项目管理培训资料：如何拆分工单与排产，适用于任何工厂。,ALLOW,hard,张三,李四,干净负例：含“项目”“工厂”等易误报词
+EX-007,zh,slack,internal,internal,knowledge_base,,把{CUSTOMER:松岩液压}的{INTERNAL_INFO:客户定制工艺窗口}更新到内部知识库。,ALLOW,normal,张三,李四,内部目的地：除凭证外原样保留
+EX-008,zh,external_api,unknown_destination,unknown,unknown,,把{ORDER_ID:PO-771203}的明细粘贴到一个没登记过的网站。,BLOCK,normal,张三,李四,未登记目的地：一律阻断
+EX-009,zh,email,hard,external_untrusted,report,,请把周报发给{PERSON:王晓峰}，他负责{CUSTOMER:蓝鲸}的对接，字面量花括号示例：{{模板变量}}。,ANONYMIZE,hard,张三,李四,困难样本：无称谓人名、无后缀公司名；字面量花括号写成双括号
+EX-010,zh,mcp,adversarial,external_untrusted,support,,Ping {PERSON:Dana Brooks} 关于 {ORDER_ID:PO-771203} 的进度，联系电话 {CONTACT:+44 20 7946 0958}。,ANONYMIZE,hard,张三,李四,中英混排请标 zh

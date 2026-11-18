@@ -46,6 +46,7 @@ class ServiceConfig:
     policy_path: str | Path | None = None
     enable_gliner: bool = False
     gliner_model: str | None = None
+    gliner_threshold: float = 0.5
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -66,6 +67,7 @@ class ServiceConfig:
             policy_path=env.get("DLP_POLICY_FILE") or None,
             enable_gliner=env.get("DLP_ENABLE_GLINER", "0") == "1",
             gliner_model=env.get("DLP_GLINER_MODEL") or None,
+            gliner_threshold=float(env.get("DLP_GLINER_THRESHOLD", "0.5")),
         )
 
 
@@ -92,7 +94,7 @@ class EgressService:
         self.policy = Policy.load(config.policy_path)
         self.destinations = load_destinations(config.destinations)
         self.detector = Detector(_load_master_data(config.master_data), enable_gliner=config.enable_gliner,
-                                 gliner_model=config.gliner_model)
+                                 gliner_model=config.gliner_model, gliner_threshold=config.gliner_threshold)
         self.vault = TokenVault(config.vault_path, decode_key(config.vault_key), config.token_ttl_seconds)
 
     def close(self) -> None:

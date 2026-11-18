@@ -92,6 +92,7 @@ _CONFIG_KEYS = {
     "master_data_file": "DLP_MASTER_DATA_FILE", "policy_file": "DLP_POLICY_FILE",
     "token_ttl_seconds": "DLP_TOKEN_TTL_SECONDS", "allow_agent_restore": "DLP_ALLOW_AGENT_RESTORE",
     "enable_gliner": "DLP_ENABLE_GLINER", "gliner_model": "DLP_GLINER_MODEL",
+    "gliner_threshold": "DLP_GLINER_THRESHOLD",
 }
 
 

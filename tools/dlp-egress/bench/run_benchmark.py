@@ -49,6 +49,14 @@ def master_data_from_rows(rows: list[dict]) -> dict[str, list[str]]:
     return {k: sorted(v) for k, v in md.items()}
 
 
+def _destination_for(row: dict) -> str:
+    trust = row.get("destination_trust")
+    if trust is None:  # 700 条评测集：按通道映射到已登记的外部目的地
+        return f"registered-{row['channel']}"
+    return {"external_untrusted": "registered-external", "internal": "registered-internal"}.get(
+        trust, "unregistered-destination")
+
+
 def constraints_for(row: dict) -> list[str]:
     if "constraints" in row:  # 留出集直接给出约束
         return list(row["constraints"])
@@ -80,18 +88,26 @@ def pct(values: list[float], q: float) -> float:
     return round(s[k], 3)
 
 
-def run_benchmark(path: str | Path | None, mode: str, workdir: str | Path, rows: list[dict] | None = None) -> dict:
+def run_benchmark(path: str | Path | None, mode: str, workdir: str | Path, rows: list[dict] | None = None,
+                  gliner_model: str | None = None, gliner_threshold: float = 0.5) -> dict:
     rows = rows if rows is not None else load_rows(Path(path))
     channels = sorted({r["channel"] for r in rows})
     destinations = {f"registered-{c}": {"trust": "external_untrusted"} for c in channels}
+    # 人工标注集按行指定目的地信任等级（见 bench/convert_annotations.py）；unknown 映射到未登记的目的地
+    destinations.update({"registered-external": {"trust": "external_untrusted"},
+                         "registered-internal": {"trust": "internal"}})
     master = master_data_from_rows(rows) if mode == "A_master_data" else None
     key = base64.urlsafe_b64encode(os.urandom(32))
     svc = EgressService(ServiceConfig(destinations=destinations, master_data=master,
-                                      vault_path=Path(workdir) / f"vault-{mode}.sqlite3", vault_key=key))
+                                      vault_path=Path(workdir) / f"vault-{mode}.sqlite3", vault_key=key,
+                                      enable_gliner=bool(gliner_model), gliner_model=gliner_model,
+                                      gliner_threshold=gliner_threshold))
     try:
-        return _run(svc, rows, mode)
+        rep = _run(svc, rows, mode)
     finally:
         svc.close()
+    rep["config"] = {"gliner_model": gliner_model, "gliner_threshold": gliner_threshold if gliner_model else None}
+    return rep
 
 
 def _run(svc: EgressService, rows: list[dict], mode: str) -> dict:
@@ -113,7 +129,7 @@ def _run(svc: EgressService, rows: list[dict], mode: str) -> dict:
 
     for row in rows:
         src = row["source_text"]
-        req = EvaluateRequest(TENANT, ACTOR, row["id"], row["channel"], f"registered-{row['channel']}",
+        req = EvaluateRequest(TENANT, ACTOR, row["id"], row["channel"], _destination_for(row),
                               "dataset_regression", text=src, constraints=constraints_for(row),
                               language=row["language"])
         res = svc.evaluate(req)
@@ -245,7 +261,7 @@ def _run(svc: EgressService, rows: list[dict], mode: str) -> dict:
 
 def to_markdown(reports: list[dict], meta: dict) -> str:
     lines = ["# 700 条评测结果", "", f"- 数据集：`{meta['dataset']}`（sha256 `{meta['sha256'][:16]}…`）",
-             f"- 运行时间：{meta['time']}；Python {meta['python']}；GLiNER：未启用", ""]
+             f"- 运行时间：{meta['time']}；Python {meta['python']}；GLiNER：{meta.get('gliner', '未启用')}", ""]
     for r in reports:
         e, d, s = r["entities"], r["decisions"], r["safety"]
         lines += [f"## 口径 {r['mode']}", "",
@@ -300,26 +316,31 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="运行 700 条外发脱敏评测")
     ap.add_argument("--data", default=str(Path(__file__).parent / "data" / "agentnexus_dlp_700.jsonl"))
     ap.add_argument("--out", default=str(Path(__file__).parent / "results"))
+    ap.add_argument("--gliner-model", default=None,
+                    help="本地 GLiNER 模型目录；不填则不启用 GLiNER（需先 pip install gliner）")
+    ap.add_argument("--gliner-threshold", type=float, default=0.5, help="GLiNER 置信度阈值，默认 0.5")
     args = ap.parse_args(argv)
+    gl = {"gliner_model": args.gliner_model, "gliner_threshold": args.gliner_threshold}
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     reports = []
     with tempfile.TemporaryDirectory() as tmp:  # Vault 文件放临时目录，评测后删除
         for mode in ("A_master_data", "B_no_dictionary"):
             t0 = time.perf_counter()
-            rep = run_benchmark(args.data, mode, tmp)
+            rep = run_benchmark(args.data, mode, tmp, **gl)
             rep["wall_seconds"] = round(time.perf_counter() - t0, 2)
             reports.append(rep)
             (out / f"report_{mode}.json").write_text(dump_json(rep), "utf-8")
         from bench.holdout import holdout_rows
         ho = holdout_rows()
         for mode in ("A_master_data", "B_no_dictionary"):
-            rep = run_benchmark(None, mode, tmp, rows=ho)
+            rep = run_benchmark(None, mode, tmp, rows=ho, **gl)
             rep["mode"] = f"HOLDOUT_{mode}"
             reports.append(rep)
             (out / f"report_HOLDOUT_{mode}.json").write_text(dump_json(rep), "utf-8")
     meta = {"dataset": Path(args.data).name, "sha256": hashlib.sha256(Path(args.data).read_bytes()).hexdigest(),
-            "time": time.strftime("%Y-%m-%d %H:%M:%S"), "python": platform.python_version()}
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"), "python": platform.python_version(),
+            "gliner": f"{args.gliner_model}（阈值 {args.gliner_threshold}）" if args.gliner_model else "未启用"}
     (out / "SUMMARY.md").write_text(to_markdown(reports, meta), "utf-8")
     print(to_markdown(reports, meta))
     return 0
