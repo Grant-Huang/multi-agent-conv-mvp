@@ -1,0 +1,247 @@
+{
+  "mode": "HOLDOUT_A_master_data",
+  "rows": 36,
+  "errors": 0,
+  "entities": {
+    "micro": {
+      "precision": 0.9333,
+      "recall": 0.9655,
+      "f1": 0.9492,
+      "tp": 56,
+      "fp": 4,
+      "fn": 2,
+      "support": 58
+    },
+    "macro_f1": 0.9204,
+    "per_type": {
+      "AMOUNT": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "support": 3
+      },
+      "CONTACT": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "fp": 0,
+        "fn": 0,
+        "support": 2
+      },
+      "CUSTOMER": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 14,
+        "fp": 0,
+        "fn": 0,
+        "support": 14
+      },
+      "DEVICE_ID": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "fp": 0,
+        "fn": 0,
+        "support": 2
+      },
+      "EMAIL": {
+        "precision": 0.3333,
+        "recall": 1.0,
+        "f1": 0.5,
+        "tp": 1,
+        "fp": 2,
+        "fn": 0,
+        "support": 1
+      },
+      "INTERNAL_INFO": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "support": 3
+      },
+      "METRIC": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 6,
+        "fp": 0,
+        "fn": 0,
+        "support": 6
+      },
+      "ORDER_ID": {
+        "precision": 1.0,
+        "recall": 0.8889,
+        "f1": 0.9412,
+        "tp": 8,
+        "fp": 0,
+        "fn": 1,
+        "support": 9
+      },
+      "PERSON": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 7,
+        "fp": 0,
+        "fn": 0,
+        "support": 7
+      },
+      "PLANT": {
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.8571,
+        "tp": 3,
+        "fp": 1,
+        "fn": 0,
+        "support": 3
+      },
+      "PROJECT": {
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.8571,
+        "tp": 3,
+        "fp": 1,
+        "fn": 0,
+        "support": 3
+      },
+      "SECRET": {
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1": 0.8889,
+        "tp": 4,
+        "fp": 0,
+        "fn": 1,
+        "support": 5
+      }
+    },
+    "per_language": {
+      "en": {
+        "precision": 0.96,
+        "recall": 0.96,
+        "f1": 0.96,
+        "tp": 24,
+        "fp": 1,
+        "fn": 1,
+        "support": 25
+      },
+      "zh": {
+        "precision": 0.9143,
+        "recall": 0.9697,
+        "f1": 0.9412,
+        "tp": 32,
+        "fp": 3,
+        "fn": 1,
+        "support": 33
+      }
+    },
+    "boundary_near_miss": 0
+  },
+  "decisions": {
+    "accuracy": 0.9444,
+    "confusion": {
+      "ALLOW": {
+        "ALLOW": 5,
+        "ANONYMIZE": 1,
+        "REVIEW": 0,
+        "BLOCK": 0
+      },
+      "ANONYMIZE": {
+        "ALLOW": 0,
+        "ANONYMIZE": 22,
+        "REVIEW": 0,
+        "BLOCK": 0
+      },
+      "REVIEW": {
+        "ALLOW": 0,
+        "ANONYMIZE": 0,
+        "REVIEW": 3,
+        "BLOCK": 0
+      },
+      "BLOCK": {
+        "ALLOW": 1,
+        "ANONYMIZE": 0,
+        "REVIEW": 0,
+        "BLOCK": 4
+      }
+    },
+    "per_channel_accuracy": {
+      "external_api": 0.9444
+    }
+  },
+  "safety": {
+    "dangerous_release": 1,
+    "over_blocking": 0,
+    "secret_total": 5,
+    "secret_missed": 1,
+    "secret_value_in_output": 1
+  },
+  "sanitized_exact_match": {
+    "match": 32,
+    "total": 36,
+    "rate": 0.8889
+  },
+  "invariants": {
+    "device_total": 2,
+    "device_kept": 2,
+    "metric_total": 6,
+    "metric_kept": 6
+  },
+  "vault": {
+    "restoration_map_match": 0,
+    "restoration_map_total": 0,
+    "roundtrip_ok": 23,
+    "roundtrip_total": 23,
+    "cross_scope_attempts": 23,
+    "cross_task_restored": 0,
+    "cross_tenant_restored": 0
+  },
+  "supplementary": {
+    "unknown_destination_total": 2,
+    "unknown_destination_blocked": 2
+  },
+  "latency_ms": {
+    "p50": 2.735,
+    "p95": 5.343,
+    "p99": 6.377,
+    "max": 6.377
+  },
+  "failures": [
+    {
+      "id": "HO-008",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ANONYMIZE",
+      "expected": "请联系[PERSON_001]，电话[CONTACT_001]，确认[ORDER_ID_001]的批次放行。",
+      "got": "请联系[PERSON_001]，电话[CONTACT_001]，确认LOT-7Q的批次放行。"
+    },
+    {
+      "id": "HO-020",
+      "expected_action": "BLOCK",
+      "got_action": "ALLOW",
+      "expected": "token: [BLOCKED_SECRET]",
+      "got": "token: <SECRET:40>"
+    },
+    {
+      "id": "HO-029",
+      "expected_action": "ANONYMIZE",
+      "got_action": "ANONYMIZE",
+      "expected": "请把报告发给[PERSON_001]，他负责[CUSTOMER_001]项目对接。",
+      "got": "请把报告发给[PERSON_001]，他负责[CUSTOMER_001][PROJECT_001]。"
+    },
+    {
+      "id": "HO-032",
+      "expected_action": "ALLOW",
+      "got_action": "ANONYMIZE",
+      "expected": "项目管理培训资料：如何拆分工单与排产，适用于任何工厂。",
+      "got": "项目管理培训资料：如何拆分工单与排产，适用于[PLANT_001]。"
+    }
+  ]
+}

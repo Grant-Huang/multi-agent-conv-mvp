@@ -1,0 +1,54 @@
+# 外发策略（默认版本）。可通过 DLP_POLICY_FILE 指向自定义文件覆盖。
+#
+# 决策优先级（设计文档第 4 节）：
+#   硬阻断（凭证 / 未登记目的地）> 缺少授权 > 高敏人工审批 > 最小化脱敏 > 放行
+# 每个实体按目的地信任等级映射到一个动作，整条请求取最严动作对应的决策：
+#   BLOCK_SECRET  → 替换为 [BLOCKED_SECRET]，决策 BLOCK（凭证永不外发、永不可恢复）
+#   REDACT_REVIEW → 替换为 [REDACTED_CONFIDENTIAL]，决策 REVIEW（未经人工审批不发送）
+#   TOKENIZE      → 替换为可逆 Token [TYPE_001]，决策 ANONYMIZE
+#   PRESERVE      → 原样保留，决策 ALLOW
+policy_version: egress-v1
+
+trust_levels:
+  # 已登记、但按不可信对待的外部接收方：标识符脱敏，指标与设备号按“已批准的诊断用途”保留
+  external_untrusted:
+    SECRET: BLOCK_SECRET
+    INTERNAL_INFO: REDACT_REVIEW
+    CUSTOMER: TOKENIZE
+    PROJECT: TOKENIZE
+    PLANT: TOKENIZE
+    PERSON: TOKENIZE
+    ORDER_ID: TOKENIZE
+    EMAIL: TOKENIZE
+    CONTACT: TOKENIZE
+    AMOUNT: TOKENIZE
+    DEVICE_ID: PRESERVE
+    METRIC: PRESERVE
+  # 已登记的企业内部系统：凭证仍然阻断，其余原样
+  internal:
+    SECRET: BLOCK_SECRET
+    INTERNAL_INFO: PRESERVE
+    CUSTOMER: PRESERVE
+    PROJECT: PRESERVE
+    PLANT: PRESERVE
+    PERSON: PRESERVE
+    ORDER_ID: PRESERVE
+    EMAIL: PRESERVE
+    CONTACT: PRESERVE
+    AMOUNT: PRESERVE
+    DEVICE_ID: PRESERVE
+    METRIC: PRESERVE
+
+# 调用方可以通过 constraints: ["preserve:AMOUNT"] 申请保留某类实体，
+# 但只有下表允许的 (实体类型, 信任等级) 组合才会生效；凭证与机密信息永远不能被申请保留。
+preserve_on_request:
+  AMOUNT: [external_untrusted, internal]
+  ORDER_ID: [internal]
+
+never_preserve: [SECRET, INTERNAL_INFO]
+
+# Token 恢复只允许在这些上下文中进行（本地可信 UI、任务内后处理），不允许在外发路径上恢复
+allowed_restore_contexts: [local_ui, task_postprocess]
+
+# 结构化载荷中的“路由字段”：校验而不改写（改写收件人会让邮件发错/发不出）
+routing_keys: [to, cc, bcc, guests, recipients, attendees, recipient, reply_to]

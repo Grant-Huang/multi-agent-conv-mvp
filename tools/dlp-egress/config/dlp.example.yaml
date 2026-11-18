@@ -1,0 +1,16 @@
+# dlp-egress-mcp 配置示例：dlp-egress-mcp --config config/dlp.example.yaml
+# 相对路径相对于本文件所在目录解析。环境变量（DLP_*）优先于本文件。
+# 可信身份：由运维为每个 AgentNexus 部署单独配置，Agent 无法在工具参数里改写。
+tenant_id: demo-tenant
+actor_id: agentnexus-general
+# Vault：SQLite 文件 + 32 字节 base64 密钥文件（权限应为 600）。不允许把密钥直接写在本文件里。
+# 生成密钥：python3 -c "import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())" > dlp-vault.key
+vault_path: ../.data/dlp-vault.sqlite3
+vault_key_file: ../.data/dlp-vault.key
+destinations_file: destinations.example.yaml
+master_data_file: master_data.example.yaml
+# policy_file: my_policy.yaml        # 不填则使用内置 default_policy.yaml
+token_ttl_seconds: 86400
+allow_agent_restore: false           # 默认不让 Agent 恢复原值
+enable_gliner: false                 # 需本地已下载 GLiNER 模型
+# gliner_model: /models/gliner_multi-v2.1
