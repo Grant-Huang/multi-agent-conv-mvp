@@ -18,6 +18,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// 拒绝抽样的最大尝试次数。
 const MAX_ATTEMPTS: u32 = 256;
+/// 每次创建的确定性工作量预算（含全部拒绝抽样尝试），单位：设备·分钟（R-20261117-L1，移植自 PR #85）。
+/// 一条最大规模轨迹（32 × 2881）在预算内；多次完整轨迹则不在。
+const MAX_MACHINE_MINUTES: u64 = 100_000;
 /// 仿真最长时长（虚拟分钟），与脚本仿真扰动窗口一致（48 小时）。
 const MAX_HORIZON_MINUTES: u64 = 2880;
 /// 两个报警相隔不超过此值且需要同一资源时，记为资源竞争。
@@ -225,6 +228,8 @@ pub(super) fn run_with_attempt(
     } else {
         MAX_ATTEMPTS
     };
+    let per_attempt = factory.machines.len() as u64 * (cfg.horizon_minutes + 1);
+    let attempts = attempts.min((MAX_MACHINE_MINUTES / per_attempt.max(1)).max(1) as u32);
     for attempt in 0..attempts {
         let mech = mechanisms(cfg, attempt);
         let sim = simulate(factory, cfg, &knobs(&cfg.pattern), mech, attempt, &[], 0);
@@ -239,7 +244,7 @@ pub(super) fn run_with_attempt(
         }
     }
     bail!(
-        "scenario constraint not satisfiable: {:?} within {MAX_ATTEMPTS} attempts (seed {})",
+        "scenario constraint not satisfiable: {:?} within {attempts} attempts and {MAX_MACHINE_MINUTES} machine-minutes work budget (seed {})",
         cfg.pattern,
         cfg.seed
     )
@@ -259,6 +264,8 @@ pub(super) fn rerun(
     interventions: &[Intervention],
     until_minute: u64,
 ) -> DesRun {
+    #[cfg(test)]
+    REVIEW_REPLAY_COUNT.with(|count| count.set(count.get() + 1));
     if cfg.pattern == Pattern::Script {
         return script(factory, cfg, interventions, until_minute);
     }
@@ -278,6 +285,12 @@ pub(super) fn rerun(
         truth,
         telemetry: sim.telemetry,
     }
+}
+
+// 测试用：统计重新推演次数（R-20261117-M1 的可计数验收，RT-DES-22/23）。
+#[cfg(test)]
+thread_local! {
+    pub(super) static REVIEW_REPLAY_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 // ───────────────────────── 逐分钟仿真 ─────────────────────────

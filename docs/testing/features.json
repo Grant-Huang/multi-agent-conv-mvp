@@ -225,9 +225,13 @@
       "crates/runtime/src/mom/des/physics.rs",
       "crates/runtime/src/mom/des/engine_link.rs",
       "crates/runtime/src/mom/des/observe.rs",
+      "crates/runtime/src/mom/des/coordination.rs",
+      "crates/runtime/src/mom/des/review.rs",
+      "crates/runtime/src/mom/des/batch.rs",
       "crates/runtime/tests/mom_des.rs",
       "crates/server/src/mom_sim.rs",
-      "crates/server/tests/mom_des.rs"
+      "crates/server/tests/mom_des.rs",
+      "crates/server/tests/mom_des_budget.rs"
     ],
     "coverage": "backend",
     "cases": [],
@@ -243,13 +247,24 @@
       "RT-DES-09",
       "RT-DES-10",
       "RT-DES-11",
+      "RT-DES-12",
+      "RT-DES-13",
+      "RT-DES-14",
+      "RT-DES-15",
       "RT-DES-16",
       "RT-DES-17",
       "RT-DES-18",
+      "RT-DES-19",
       "RT-DES-20",
-      "RT-DES-21"
+      "RT-DES-21",
+      "RT-DES-24",
+      "RT-DES-25",
+      "RT-DES-26",
+      "RT-DES-27",
+      "RT-DES-28",
+      "RT-DES-29"
     ],
-    "note": "阶段①（开环）已实现，RT-DES 由 Red 转 Green；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。"
+    "note": "阶段①～③已实现，阶段④实现前 Red；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。RT-DES-22/23 为 engine_link.rs 中的单元测试（重放计数与缓存共享），不计入 runtime 集成测试映射。"
   },
   {
     "id": "agent-links",

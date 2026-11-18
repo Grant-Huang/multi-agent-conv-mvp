@@ -384,7 +384,9 @@ impl Engine {
                 events,
             );
             Ok(())
-        })
+        })?;
+        // 车间 DES 产线协同事项（阶段③b）：关闭事项时一并关闭成员案例；其他案例不受影响。
+        self.des_after_close(id)
     }
     /// Refresh stale read evidence without granting new authority or budget.
     pub fn refresh_plan(&mut self, id: &str) -> Result<()> {
@@ -800,6 +802,41 @@ fn instantiate(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
             events,
         );
         return Ok(());
+    }
+    // 车间 DES 案例（阶段③b）：按报警类型选模板，成员只做诊断；未执行动作前报警类型变化时升级模板。
+    // 脚本案例与三类事件齐全的 DES 案例返回 None，走原有逻辑。
+    if let Some((template, nodes)) = super::des::des_template(c) {
+        if (c.template == template && !c.nodes.is_empty()) || !c.actions.is_empty() {
+            return Ok(());
+        }
+        c.template = template;
+        c.nodes = nodes;
+        c.proposal = None;
+        validate_dag(&c.nodes)?;
+        c.stage = "ASSESS".into();
+        emit(
+            c,
+            now,
+            "PlanAccepted",
+            json!({"template":c.template,"plan_revision":c.plan_revision}),
+            events,
+        );
+        return Ok(());
+    }
+    // DES 案例未执行前集齐三类事件：作废单报警模板，改走下面的 S1 模板（P0 行为不变）。
+    if c.template.starts_with("DAG-TPL-DES-") && c.actions.is_empty() {
+        c.template.clear();
+        c.nodes.clear();
+        c.proposal = None;
+        c.approvals.clear();
+        c.plan_revision += 1;
+        emit(
+            c,
+            now,
+            "PlanInvalidated",
+            json!({"reason":"all three event kinds observed"}),
+            events,
+        );
     }
     if !c.nodes.is_empty() {
         return Ok(());

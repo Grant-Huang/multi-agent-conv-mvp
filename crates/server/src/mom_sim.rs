@@ -8,7 +8,7 @@ use crate::mom::AppState;
 use an_runtime::mom::des::{DesSimulationConfig, WhatIfRequest};
 use an_runtime::mom::Engine;
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
@@ -26,16 +26,23 @@ fn bad_request(e: impl std::fmt::Display) -> (StatusCode, Json<Value>) {
     )
 }
 
-/// 在引擎锁内执行一次调用；计算都有上限，不会长时间占用锁。
-fn with_engine(
-    state: &AppState,
-    f: impl FnOnce(&mut Engine) -> anyhow::Result<Value>,
+/// 在阻塞线程中等待引擎锁并执行一次调用，不占用 Tokio 异步工作线程（R-20261117-L1，移植自 PR #85）。
+///
+/// 计算量有确定性上限：创建时的拒绝抽样受设备·分钟预算限制，查询复用遥测缓存。
+/// 阻塞闭包开始后不能通过取消 HTTP 请求强制中断；它会在有界时间内完成并释放锁，被拒绝的创建不写状态。
+async fn with_engine(
+    state: AppState,
+    f: impl FnOnce(&mut Engine) -> anyhow::Result<Value> + Send + 'static,
 ) -> ApiResult {
-    let mut engine = state
-        .engine
-        .lock()
-        .map_err(|_| bad_request("runtime unavailable"))?;
-    f(&mut engine).map(Json).map_err(bad_request)
+    tokio::task::spawn_blocking(move || {
+        let mut engine = state
+            .engine
+            .lock()
+            .map_err(|_| bad_request("runtime unavailable"))?;
+        f(&mut engine).map(Json).map_err(bad_request)
+    })
+    .await
+    .map_err(|_| bad_request("runtime unavailable"))?
 }
 
 pub(crate) fn routes() -> Router<AppState> {
@@ -44,6 +51,62 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/mom/factory", get(factory))
         .route("/api/mom/factory/forecast", get(forecast))
         .route("/api/mom/factory/whatif", post(whatif))
+        .route("/api/mom/reviews/{case_id}", get(review_report))
+        .route("/api/mom/reviews/{case_id}/ai", post(ai_review))
+        .route("/api/mom/reviews/{case_id}/decision", post(human_review))
+}
+
+/// 审核报告（阶段④）：规则检查、AI 审核记录、人工结论与分歧。
+async fn review_report(State(s): State<AppState>, Path(case_id): Path<String>) -> ApiResult {
+    with_engine(s, move |e| e.des_review_report(&case_id)).await
+}
+
+/// AI 审核的超时（阶段④）。
+const AI_REVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// 触发 AI 审核；未配置审核模型时返回规则检查结果并标注 AI 审核不可用。
+async fn ai_review(State(s): State<AppState>, Path(case_id): Path<String>) -> ApiResult {
+    let Some(reviewer) = s.reviewer.clone() else {
+        // 只做规则检查：报告照常返回，AI 审核标为不可用（不写入审核记录）。
+        return with_engine(s, move |e| {
+            let mut report = e.des_review_report(&case_id)?;
+            report["ai"] =
+                json!({"status": "unavailable", "reason": "no reviewer configured; rules only"});
+            Ok(report)
+        })
+        .await;
+    };
+    an_runtime::mom::des::review::run_ai_review(
+        &s.engine,
+        &case_id,
+        reviewer.as_ref(),
+        AI_REVIEW_TIMEOUT,
+    )
+    .await
+    .map(Json)
+    .map_err(bad_request)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HumanReviewBody {
+    decision: String,
+    #[serde(default)]
+    reason: String,
+    actor: String,
+}
+
+/// 人工确认或推翻 AI 审核结论（推翻必须写理由）。
+async fn human_review(
+    State(s): State<AppState>,
+    Path(case_id): Path<String>,
+    Json(body): Json<HumanReviewBody>,
+) -> ApiResult {
+    with_engine(s, move |e| {
+        e.des_human_review(&case_id, &body.decision, &body.reason, &body.actor)?;
+        e.des_review_report(&case_id)
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -63,17 +126,18 @@ struct WhatIfBody {
 }
 
 async fn create(State(s): State<AppState>, Json(config): Json<DesSimulationConfig>) -> ApiResult {
-    with_engine(&s, |e| {
+    with_engine(s, move |e| {
         Ok(json!({"simulation_id": e.create_des_simulation(config)?, "provenance": "simulation"}))
     })
+    .await
 }
 
 async fn factory(State(s): State<AppState>, Query(q): Query<SimulationQuery>) -> ApiResult {
-    with_engine(&s, |e| e.des_factory_view(&q.simulation))
+    with_engine(s, move |e| e.des_factory_view(&q.simulation)).await
 }
 
 async fn forecast(State(s): State<AppState>, Query(q): Query<SimulationQuery>) -> ApiResult {
-    with_engine(&s, |e| e.des_forecast(&q.simulation))
+    with_engine(s, move |e| e.des_forecast(&q.simulation)).await
 }
 
 async fn whatif(State(s): State<AppState>, Json(body): Json<WhatIfBody>) -> ApiResult {
@@ -82,5 +146,5 @@ async fn whatif(State(s): State<AppState>, Json(body): Json<WhatIfBody>) -> ApiR
         quantity: body.quantity,
         due_minute: body.due_minute,
     };
-    with_engine(&s, |e| e.des_whatif(&body.simulation_id, &request))
+    with_engine(s, move |e| e.des_whatif(&body.simulation_id, &request)).await
 }

@@ -1097,3 +1097,644 @@ fn rt_des_18_cases_sharing_resources_are_linked() {
         );
     }
 }
+
+// ───────────────────── 阶段④：审核层与批量实验 ─────────────────────
+
+use an_runtime::mom::des::batch::{run_batch, to_csv, ApproverPolicy, BatchConfig, DecisionPolicy};
+use an_runtime::mom::des::review::*;
+
+fn rule<'a>(report: &'a Value, id: &str) -> &'a Value {
+    report["rules"]
+        .as_array()
+        .expect("rules array")
+        .iter()
+        .find(|r| r["rule"] == id)
+        .unwrap_or_else(|| panic!("rule {id} missing: {report}"))
+}
+
+fn rule_in<'a>(rules: &'a [RuleResult], id: &str) -> &'a RuleResult {
+    rules
+        .iter()
+        .find(|r| r.rule == id)
+        .unwrap_or_else(|| panic!("rule {id} missing: {rules:?}"))
+}
+
+#[test]
+fn rt_des_12_rule_checks_detect_wrong_handling() {
+    // 根因假设：错误的被判为误判，正确的通过。
+    let (mut e, _sim) = p0_engine(None);
+    let id = p0_waiting(&mut e);
+    e.record_cause_claim(&id, vec!["material_lot:Line-B-LOT-1".into()], "master")
+        .expect("cause claims are recorded");
+    let report = e.des_review_report(&id).expect("review report");
+    let r = rule(&report, RULE_ROOT_CAUSE);
+    assert_eq!(r["status"], "fail", "a wrong cause must fail: {r}");
+    assert!(
+        r["detail"].as_str().unwrap().contains("misattributed"),
+        "{r}"
+    );
+    e.record_cause_claim(&id, vec!["spindle_wear:CNC-XX".into()], "master")
+        .unwrap();
+    let report = e.des_review_report(&id).unwrap();
+    assert_eq!(rule(&report, RULE_ROOT_CAUSE)["status"], "pass");
+
+    // 人为构造的记录：先执行后批准必须被检出；先批准后执行通过。
+    let entry = |seq: u64, kind: &str| TimelineEntry {
+        seq,
+        kind: kind.into(),
+        at: 500 + seq,
+    };
+    let mut record = e.des_review_record(&id).expect("review record");
+    record.timeline = vec![entry(1, "ActionAccepted"), entry(2, "DecisionApproved")];
+    let truth: GroundTruth = serde_json::from_value(e.des_review_truth("DES-1").unwrap()).unwrap();
+    assert_eq!(
+        rule_in(&check_rules(&record, &truth), RULE_HITL_BEFORE_WRITE).status,
+        RuleStatus::Fail,
+        "a write before approval must fail"
+    );
+    record.timeline = vec![entry(1, "DecisionApproved"), entry(2, "ActionAccepted")];
+    assert_eq!(
+        rule_in(&check_rules(&record, &truth), RULE_HITL_BEFORE_WRITE).status,
+        RuleStatus::Pass
+    );
+
+    // 效果核验：维修完成前待定，完成且设备恢复后通过。
+    let t0 = run_plan(&mut e, &id, "C");
+    let end = t0
+        + FactoryConfig::line_b_default()
+            .resources
+            .maintenance_minutes;
+    e.advance(t0 + 10).unwrap();
+    let report = e.des_review_report(&id).unwrap();
+    assert_eq!(rule(&report, RULE_EFFECTIVENESS)["status"], "pending");
+    assert_eq!(rule(&report, RULE_PLAN_SAFE)["status"], "pass");
+    e.advance(end + 5).unwrap();
+    let report = e.des_review_report(&id).unwrap();
+    assert_eq!(
+        rule(&report, RULE_EFFECTIVENESS)["status"],
+        "pass",
+        "{report}"
+    );
+    assert_eq!(rule(&report, RULE_HITL_BEFORE_WRITE)["status"], "pass");
+}
+
+fn reviewer(response: Result<Value, String>, delay_ms: u64) -> ScriptedReviewer {
+    ScriptedReviewer {
+        choice: ReviewerChoice {
+            model: Some("scripted".into()),
+            source: "mom_reviewer".into(),
+            independent: true,
+            label: None,
+        },
+        response,
+        delay: std::time::Duration::from_millis(delay_ms),
+    }
+}
+
+/// 已执行方案 C 的 P0 引擎（放在锁里，供异步审核使用）。
+fn executed_case() -> (std::sync::Mutex<Engine>, String) {
+    let (mut e, _sim) = p0_engine(None);
+    let id = p0_waiting(&mut e);
+    run_plan(&mut e, &id, "C");
+    (std::sync::Mutex::new(e), id)
+}
+
+fn case_state(e: &Engine, id: &str) -> Value {
+    serde_json::json!({"case": e.case(id).unwrap(), "simulations": e.simulations_view()})
+}
+
+#[tokio::test]
+async fn rt_des_13_ai_review_cites_evidence_or_degrades() {
+    // 合规结论：引用输入中的证据编号。
+    let (engine, id) = executed_case();
+    let input = engine
+        .lock()
+        .unwrap()
+        .des_ai_review_input(&id)
+        .expect("AI review input");
+    let refs: Vec<String> = input["evidence_ids"]
+        .as_array()
+        .expect("evidence ids")
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    assert!(!refs.is_empty(), "input must list citable evidence");
+    let before = case_state(&engine.lock().unwrap(), &id);
+    let ok = reviewer(
+        Ok(
+            serde_json::json!({"conclusions":[{"judgement":"reasonable","statement":"stopped the alarmed machine","evidence_refs":[refs[0]]}],"summary":"ok"}),
+        ),
+        0,
+    );
+    let report = run_ai_review(&engine, &id, &ok, std::time::Duration::from_secs(5))
+        .await
+        .expect("AI review runs");
+    assert_eq!(report["ai"]["status"], "completed", "{report}");
+    for c in report["ai"]["conclusions"].as_array().expect("conclusions") {
+        let cited = c["evidence_refs"].as_array().unwrap();
+        assert!(!cited.is_empty(), "every conclusion cites evidence");
+        assert!(
+            cited.iter().all(|r| refs.iter().any(|k| r == k)),
+            "cited evidence must exist"
+        );
+    }
+    assert_eq!(
+        before,
+        case_state(&engine.lock().unwrap(), &id),
+        "review must not change the case"
+    );
+
+    // 报错、超时、引用不存在的证据：AI 不可用，规则结果照常。
+    let cases = [
+        (reviewer(Err("model offline".into()), 0), "model offline"),
+        (
+            reviewer(Ok(serde_json::json!({"conclusions":[]})), 300),
+            "timeout",
+        ),
+        (
+            reviewer(
+                Ok(
+                    serde_json::json!({"conclusions":[{"judgement":"wrong","statement":"x","evidence_refs":["event:999999"]}]}),
+                ),
+                0,
+            ),
+            "invalid_output",
+        ),
+    ];
+    for (r, reason) in cases {
+        let (engine, id) = executed_case();
+        let report = run_ai_review(&engine, &id, &r, std::time::Duration::from_millis(100))
+            .await
+            .expect("degraded review still returns a report");
+        assert_eq!(report["ai"]["status"], "unavailable", "{report}");
+        assert!(
+            report["ai"]["reason"]
+                .as_str()
+                .is_some_and(|s| s.contains(reason)),
+            "reason must mention {reason}: {report}"
+        );
+        assert!(
+            report["rules"].as_array().is_some_and(|r| !r.is_empty()),
+            "rules are still reported"
+        );
+    }
+}
+
+#[tokio::test]
+async fn rt_des_14_human_override_is_recorded_as_disagreement() {
+    let (engine, id) = executed_case();
+    let input = engine.lock().unwrap().des_ai_review_input(&id).unwrap();
+    let first = input["evidence_ids"][0]
+        .as_str()
+        .expect("evidence id")
+        .to_string();
+    let ok = reviewer(
+        Ok(
+            serde_json::json!({"conclusions":[{"judgement":"reasonable","statement":"fine","evidence_refs":[first]}],"summary":"fine"}),
+        ),
+        0,
+    );
+    run_ai_review(&engine, &id, &ok, std::time::Duration::from_secs(5))
+        .await
+        .unwrap();
+    let mut e = engine.lock().unwrap();
+    assert!(
+        e.des_human_review(&id, "override", "", "supervisor")
+            .is_err(),
+        "override without a reason must be rejected"
+    );
+    e.des_human_review(
+        &id,
+        "override",
+        "plan C idles CNC-XX too long",
+        "supervisor",
+    )
+    .expect("override with a reason");
+    let report = e.des_review_report(&id).unwrap();
+    assert_eq!(report["human"]["decision"], "override");
+    let disagreements = report["disagreements"].as_array().expect("disagreements");
+    assert_eq!(disagreements.len(), 1);
+    assert!(disagreements[0].to_string().contains("idles CNC-XX"));
+    e.des_human_review(&id, "agree", "", "supervisor").unwrap();
+    let report = e.des_review_report(&id).unwrap();
+    assert_eq!(
+        report["disagreements"].as_array().unwrap().len(),
+        1,
+        "agreeing adds no disagreement"
+    );
+}
+
+#[test]
+fn rt_des_15_batch_runs_are_reproducible_and_export_csv() {
+    let cfg = BatchConfig {
+        factory: None,
+        pattern: Pattern::Script,
+        horizon_minutes: 60,
+        seeds: (1..=100).collect(),
+        policies: vec![DecisionPolicy::AiNative, DecisionPolicy::Traditional],
+        approver: ApproverPolicy::default(),
+    };
+    let a = run_batch(&cfg).expect("batch runs");
+    let b = run_batch(&cfg).expect("batch runs again");
+    assert_eq!(a, b, "batch results must be reproducible");
+    assert_eq!(a.len(), 200, "one row per seed and policy");
+    for seed in 1..=100 {
+        for p in [DecisionPolicy::AiNative, DecisionPolicy::Traditional] {
+            assert!(
+                a.iter().any(|r| r.seed == seed && r.policy == p),
+                "seed {seed} {p:?} missing"
+            );
+        }
+    }
+    let csv = to_csv(&a);
+    let lines: Vec<&str> = csv.lines().collect();
+    assert_eq!(lines.len(), 201, "header plus 200 rows");
+    assert!(lines[0].starts_with("seed,policy,"), "header: {}", lines[0]);
+    let mean = |p: DecisionPolicy| {
+        let v: Vec<f64> = a
+            .iter()
+            .filter(|r| r.policy == p)
+            .filter_map(|r| r.mean_decision_minutes)
+            .collect();
+        assert!(!v.is_empty(), "{p:?} must make decisions");
+        v.iter().sum::<f64>() / v.len() as f64
+    };
+    assert!(
+        mean(DecisionPolicy::Traditional) > mean(DecisionPolicy::AiNative),
+        "traditional coordination takes longer to decide"
+    );
+}
+
+#[test]
+fn rt_des_19_reviewer_model_choice_and_independence() {
+    let base = "[llm]\nbase_url = \"http://127.0.0.1:1/v1\"\nmodel = \"local\"\n";
+    let parse = |extra: &str| {
+        let (cfg, unknown) =
+            an_runtime::config::AppConfig::parse(&format!("{base}{extra}")).expect("config parses");
+        assert!(
+            unknown.is_empty(),
+            "mom_reviewer must be a known field: {unknown:?}"
+        );
+        resolve_reviewer(&cfg)
+    };
+    let own = parse("[models]\nmom_reviewer = \"big\"\n");
+    assert_eq!(own.model.as_deref(), Some("big"));
+    assert_eq!(own.source, "mom_reviewer");
+    assert!(
+        own.independent,
+        "a different model is an independent review"
+    );
+    assert!(own.label.is_none());
+    for c in [parse(""), parse("[models]\nmom_reviewer = \"local\"\n")] {
+        assert_eq!(c.model.as_deref(), Some("local"));
+        assert!(
+            !c.independent,
+            "the master's model is not an independent reviewer"
+        );
+        assert!(c.label.is_some(), "non-independent review must be labelled");
+    }
+}
+
+// ───────────────────── 阶段③b：按报警触发的模板与产线协同事项 ─────────────────────
+
+const S1_TEMPLATE: &str = "DAG-TPL-COMPOSITE-MAINT-QUAL-RESCHEDULE@1";
+
+fn run_des(pattern: Pattern, seed: u64, horizon: u64) -> Engine {
+    let mut e = Engine::memory().unwrap();
+    e.create_des_simulation(des_config(seed, pattern, horizon))
+        .unwrap();
+    e.advance(START + horizon).unwrap();
+    e
+}
+
+fn is_incident(c: &an_runtime::mom::Case) -> bool {
+    c.world.get("des_incident").is_some_and(Value::is_object)
+}
+
+fn is_open(c: &an_runtime::mom::Case) -> bool {
+    !matches!(c.stage.as_str(), "CLOSED" | "CANCELLED")
+}
+
+fn kinds(c: &an_runtime::mom::Case) -> BTreeSet<String> {
+    c.observations
+        .iter()
+        .map(|o| o.event.kind.clone())
+        .collect()
+}
+
+fn alarm_cases(e: &Engine) -> Vec<an_runtime::mom::Case> {
+    e.case_ids()
+        .into_iter()
+        .map(|id| e.case(&id).unwrap().clone())
+        .filter(|c| c.batch.starts_with("DES-") && !is_incident(c))
+        .filter(|c| {
+            let k = kinds(c);
+            k.contains("vibration") || k.contains("quality")
+        })
+        .collect()
+}
+
+fn incidents(e: &Engine) -> Vec<an_runtime::mom::Case> {
+    e.case_ids()
+        .into_iter()
+        .map(|id| e.case(&id).unwrap().clone())
+        .filter(is_incident)
+        .collect()
+}
+
+#[test]
+fn rt_des_25_every_alarm_case_gets_a_plan_or_joins_an_incident() {
+    let mut checked = 0;
+    for (pattern, horizon) in [
+        (cluster(), 240),
+        (Pattern::ResourceContention, 480),
+        (Pattern::Unconstrained, 480),
+    ] {
+        for seed in 1..=5 {
+            let e = run_des(pattern.clone(), seed, horizon);
+            for c in alarm_cases(&e).iter().filter(|c| is_open(c)) {
+                checked += 1;
+                let k = kinds(c);
+                assert!(
+                    !c.template.is_empty(),
+                    "{pattern:?} seed {seed}: {} has no plan ({k:?})",
+                    c.id
+                );
+                if c.world.get("des_member_of").is_some_and(Value::is_string) {
+                    assert_eq!(
+                        c.template, "DAG-TPL-DES-DIAGNOSIS@1",
+                        "member {} uses diagnosis",
+                        c.id
+                    );
+                    assert!(
+                        !c.nodes.contains_key("schedule"),
+                        "member {} must not schedule",
+                        c.id
+                    );
+                } else {
+                    let (v, q, o) = (
+                        k.contains("vibration"),
+                        k.contains("quality"),
+                        k.contains("order"),
+                    );
+                    let expected = match (v, q, o) {
+                        (true, true, true) => S1_TEMPLATE,
+                        (true, true, false) => "DAG-TPL-DES-COMBINED@1",
+                        (true, false, _) => "DAG-TPL-DES-EQUIPMENT@1",
+                        _ => "DAG-TPL-DES-QUALITY@1",
+                    };
+                    assert_eq!(
+                        c.template, expected,
+                        "{pattern:?} seed {seed}: {} kinds {k:?}",
+                        c.id
+                    );
+                    assert!(c.nodes.contains_key("schedule"), "{} must schedule", c.id);
+                }
+            }
+        }
+    }
+    assert!(checked > 0, "the patterns must produce alarm cases");
+}
+
+#[test]
+fn rt_des_26_line_incident_coordinates_concurrent_cases() {
+    let mut found = 0;
+    for seed in 1..=5 {
+        let mut e = Engine::memory().unwrap();
+        e.create_des_simulation(des_config(seed, cluster(), 240))
+            .unwrap();
+        // 逐分钟检查：同一产线任一时刻最多一个活动事项。
+        for t in START..=START + 240 {
+            e.advance(t).unwrap();
+            let active = incidents(&e).iter().filter(|i| is_open(i)).count();
+            assert!(
+                active <= 1,
+                "seed {seed} minute {t}: {active} active incidents on Line-B"
+            );
+        }
+        // 两个以上 DES 案例的首次观测在 60 分钟内 → 必须有事项。
+        let mut firsts: Vec<u64> = e
+            .case_ids()
+            .into_iter()
+            .map(|id| e.case(&id).unwrap().clone())
+            .filter(|c| c.batch.starts_with("DES-") && !is_incident(c))
+            .filter_map(|c| c.observations.iter().map(|o| o.event.occurred_at).min())
+            .collect();
+        firsts.sort();
+        let close_pair = firsts.windows(2).any(|w| w[1] - w[0] <= 60);
+        let incs = incidents(&e);
+        if close_pair {
+            assert!(
+                !incs.is_empty(),
+                "seed {seed}: concurrent cases on one line need an incident"
+            );
+        }
+        for inc in &incs {
+            found += 1;
+            assert_eq!(inc.template, "DAG-TPL-DES-LINE-INCIDENT@1");
+            let members: Vec<String> = inc.world["des_incident"]["members"]
+                .as_array()
+                .expect("members")
+                .iter()
+                .map(|m| m.as_str().unwrap().to_string())
+                .collect();
+            assert!(members.len() >= 2, "incident {} needs two members", inc.id);
+            let mut member_assets = BTreeSet::new();
+            for m in &members {
+                let mc = e.case(m).unwrap();
+                assert_eq!(
+                    mc.world["des_member_of"],
+                    inc.id.as_str(),
+                    "member {m} points back"
+                );
+                assert!(
+                    !mc.nodes.contains_key("schedule"),
+                    "member {m} must not schedule"
+                );
+                // 方案 A（2026-11-17 用户批准）：加入前已请人决策的成员，决策请求必须在加入时撤回；
+                // 加入后不再请人决策。
+                let log = e.events(m, 0, 1000).unwrap();
+                let joined_at = log
+                    .iter()
+                    .position(|ev| ev.kind == "JoinedLineIncident")
+                    .unwrap_or_else(|| panic!("member {m} records joining"));
+                if log[..joined_at]
+                    .iter()
+                    .any(|ev| ev.kind == "DecisionRequested")
+                {
+                    assert!(
+                        log[..=joined_at]
+                            .iter()
+                            .any(|ev| ev.kind == "DecisionWithdrawn"),
+                        "member {m} decided before joining: its request must be withdrawn"
+                    );
+                }
+                assert!(
+                    !log[joined_at..]
+                        .iter()
+                        .any(|ev| ev.kind == "DecisionRequested"),
+                    "member {m} must not request a decision after joining"
+                );
+                if kinds(mc).iter().any(|k| k == "vibration" || k == "quality") {
+                    member_assets.insert(mc.asset.clone());
+                }
+            }
+            if let Some(p) = &inc.proposal {
+                assert_eq!(
+                    p["plans"].as_array().map(|x| x.len()),
+                    Some(3),
+                    "incident has three plans"
+                );
+                let assets: Vec<String> = p["assets"]
+                    .as_array()
+                    .expect("incident plan names its alarmed machines")
+                    .iter()
+                    .map(|a| a.as_str().unwrap().to_string())
+                    .collect();
+                assert!(!assets.is_empty());
+                assert!(
+                    assets.iter().all(|a| member_assets.contains(a)),
+                    "{assets:?} ⊆ {member_assets:?}"
+                );
+            }
+        }
+    }
+    assert!(
+        found > 0,
+        "the cluster pattern must produce at least one line incident"
+    );
+}
+
+#[test]
+fn rt_des_27_incident_decision_applies_to_all_alarmed_machines() {
+    for seed in 1..=10 {
+        let mut e = Engine::memory().unwrap();
+        let sim = e
+            .create_des_simulation(des_config(seed, Pattern::ResourceContention, 480))
+            .unwrap();
+        let mut target = None;
+        for t in START..=START + 480 {
+            e.advance(t).unwrap();
+            target = incidents(&e).into_iter().find(|i| {
+                i.stage == "WAITING_HUMAN"
+                    && i.proposal.as_ref().is_some_and(|p| {
+                        p["recommended"].is_string()
+                            && p["assets"].as_array().is_some_and(|a| a.len() >= 2)
+                    })
+            });
+            if target.is_some() {
+                break;
+            }
+        }
+        let Some(inc) = target else { continue };
+        let plan_id = inc.proposal.as_ref().unwrap()["recommended"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let assets: Vec<String> = inc.proposal.as_ref().unwrap()["assets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a.as_str().unwrap().to_string())
+            .collect();
+        let seq = e.sequence();
+        run_plan(&mut e, &inc.id, &plan_id);
+        let applied = e
+            .events(&inc.id, seq, 1000)
+            .unwrap()
+            .into_iter()
+            .find(|ev| ev.kind == "DesPlanApplied")
+            .expect("plan applied to the simulation");
+        let windows: Vec<(String, u64, u64)> = applied.payload["interventions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|iv| iv["kind"] == "maintenance")
+            .map(|iv| {
+                (
+                    iv["machine"].as_str().unwrap().to_string(),
+                    iv["start_minute"].as_u64().unwrap(),
+                    iv["end_minute"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        let maintained: BTreeSet<&String> = windows.iter().map(|w| &w.0).collect();
+        assert!(
+            assets.iter().all(|a| maintained.contains(a)),
+            "every alarmed machine is maintained: {windows:?} vs {assets:?}"
+        );
+        let mut sorted = windows.clone();
+        sorted.sort_by_key(|w| w.1);
+        assert!(
+            sorted.windows(2).all(|w| w[1].1 >= w[0].2),
+            "one crew maintains machines one after another: {sorted:?}"
+        );
+        let last_end = sorted.iter().map(|w| w.2).max().unwrap();
+        e.advance(last_end + 5).unwrap();
+        let view = e.des_factory_view(&sim).unwrap();
+        for a in &assets {
+            let m = machine(&view, a);
+            assert_eq!(m["status"], "running", "{a} back in service: {m}");
+            assert!(
+                m["vibration_mm_s"].as_f64().unwrap() < 2.8,
+                "{a} recovered: {m}"
+            );
+        }
+        e.close(&inc.id).expect("verified incident can be closed");
+        for m in inc.world["des_incident"]["members"].as_array().unwrap() {
+            let mc = e.case(m.as_str().unwrap()).unwrap();
+            assert_eq!(
+                mc.stage, "CLOSED",
+                "member {} closes with the incident",
+                mc.id
+            );
+        }
+        return;
+    }
+    panic!("resource contention must yield an incident with two alarmed machines and a recommended plan within seeds 1–10");
+}
+
+#[test]
+fn rt_des_28_p0_keeps_single_case_without_incident() {
+    let (mut e, _sim) = p0_engine(None);
+    e.advance(START + 30).unwrap();
+    let ids = e.case_ids();
+    assert_eq!(ids.len(), 1, "P0 forms one case");
+    let c = e.case(&ids[0]).unwrap();
+    assert_eq!(c.template, S1_TEMPLATE);
+    assert!(!is_incident(c));
+    assert!(c.world.get("des_member_of").is_none_or(Value::is_null));
+}
+
+#[test]
+fn rt_des_29_closed_des_case_is_not_reused_or_refreshed() {
+    let (mut e, _sim) = p0_engine(None);
+    let id = p0_waiting(&mut e);
+    let t0 = run_plan(&mut e, &id, "C");
+    let end = t0
+        + FactoryConfig::line_b_default()
+            .resources
+            .maintenance_minutes;
+    e.advance(end + 5).unwrap();
+    e.close(&id).unwrap();
+    let frozen = e.case(&id).unwrap().world["des"].clone();
+    let mut later = e
+        .case(&id)
+        .unwrap()
+        .observations
+        .iter()
+        .find(|o| o.event.kind == "quality")
+        .unwrap()
+        .event
+        .clone();
+    later.id = format!("{}-after-close", later.id);
+    later.occurred_at = e.now();
+    let new_case = e.ingest(later).unwrap();
+    assert_ne!(new_case, id, "a closed case must not receive new events");
+    e.advance(e.now() + 10).unwrap();
+    assert_eq!(
+        e.case(&id).unwrap().world["des"],
+        frozen,
+        "closed case is not refreshed"
+    );
+}
