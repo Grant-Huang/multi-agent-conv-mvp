@@ -6,6 +6,15 @@
 > **这不是不可绕过的强制拦截。** 本工具需要 Agent 或编排器主动调用。设计文档 2 节要求的网络 egress
 > 限制、受控连接器、以及在 Rust 编排器中强制调用，均未在本次实现（涉及高风险文件，需另行评审）。
 
+## 文档
+
+| 文档 | 给谁看 |
+|---|---|
+| [docs/INTERFACE.md](docs/INTERFACE.md) | 调用方：工具参数、返回、决策语义，以及 D1 接口定稿待决事项 |
+| [docs/LOCAL_TEST_GUIDE.md](docs/LOCAL_TEST_GUIDE.md) | 本地测试人员：安装、复现、GLiNER 评测、AgentNexus 接入验证、结果回传 |
+| [docs/ANNOTATION_GUIDE.md](docs/ANNOTATION_GUIDE.md) | 测试集编写与标注人员：样本要求、标注规范、交付流程 |
+| [../../docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md](../../docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md) | 审批人：把外发检查变成必经步骤的方案（待审批） |
+
 ## 组成
 
 | 模块 | 作用 | 对应设计文档 |

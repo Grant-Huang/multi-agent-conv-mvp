@@ -2,6 +2,8 @@
 
 新增授权工作：统一 MCP 能力卡片与 General 轻量 Harness，设计见 [mcp/DESIGN.md](mcp/DESIGN.md)，分阶段验收与状态见 [mcp/PLAN.md](mcp/PLAN.md)。不改变下列已有里程碑进度。
 
+新增授权工作：统一外发脱敏服务 dlp-egress（独立 MCP 工具），进度与待办见文末“DLP 外发脱敏”一节。不改变下列已有里程碑进度。
+
 > 最后更新：2026-11-05（M3 收尾：默认搜索 Exa，不合并来源、不缓存）
 > 规则：按里程碑逐步推进；每完成一步更新本文件（勾选进度、做必要的最小调整），用户确认后再进入下一步。
 > 新功能先写测试（TDD），测试冻结后只改业务代码；Python 部分覆盖率 ≥ 80%，通过 flake8。
@@ -496,6 +498,8 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 8. ~~pre-M3.9 关闭思考对比实验~~（已确认 2026-11-05：前台结构化调用 `enable_thinking=false`，**必须用评测集确认准确率不降**才采用。同日结果：95 条从 85.3% 降到 76.8%，不采用，开关默认关闭）
 9. ~~pre-M3.1 配置设计~~（已确认 2026-11-05：`[backends.<名>]` + `[routing]`、`kind = llama_cpp | openai`、密钥只读环境变量、无 `[backends]` 沿用 `[llm]`；`router` 归前台）
 10. ~~部署 B 的云端边界~~（已确认 2026-11-05，并补充了能力扩展要求，见 pre-M3"能力扩展约束"）
+11. DLP D1 接口定稿：`tools/dlp-egress/docs/INTERFACE.md` 第 9 节的 9 个事项（尤其是统一返回外壳、`task_id` 由宿主注入）
+12. DLP 外发检查必经化方案：`docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md` 第 10 节（首期范围、默认模式、外发工具清单、云端 LLM）
 
 ## 已知问题
 
@@ -512,3 +516,36 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 ## 工程验证体系
 
 基于远端 929301a 审查 Feature Map 与端到端验证方案，设计见 `docs/testing/DESIGN.md`，实施步骤见 `docs/testing/PLAN.md`，先定义用例再实现验证基础设施。验证基础设施阶段不包含 M4.3 或 MOM 业务开发；后续已合入模板校验和 MOM 独立模拟，分别见功能地图与 MOM 实施说明。验证基础设施的实际结果见 `docs/testing/RESULTS.md`。
+
+## DLP 外发脱敏（dlp-egress）
+
+按《AgentNexus 统一外发脱敏服务：技术设计与验证方案 v0.1》实施。工具在 `tools/dlp-egress/`，使用说明见其 README。
+
+### 已完成
+
+| 编号 | 内容 | 证据 |
+|---|---|---|
+| DLP-0 | MVP：识别（Presidio + 规则 + 主数据 + detect-secrets，GLiNER 可插拔）、策略、Token Vault、保真校验、stdio MCP 三个工具、CI job | PR #88（2026-11-18 合并）；700 条与 36 条留出集评测见 `tools/dlp-egress/bench/results/SUMMARY.md` |
+| DLP-1 | 调用接口说明（供 D1 接口定稿） | `tools/dlp-egress/docs/INTERFACE.md` |
+| DLP-2 | 本地测试指南（含 GLiNER 评测步骤）；评测脚本支持 `--gliner-model` | `tools/dlp-egress/docs/LOCAL_TEST_GUIDE.md` |
+| DLP-3 | 测试集样本要求、标注规范、模板、校验与转换脚本 | `tools/dlp-egress/docs/ANNOTATION_GUIDE.md`、`bench/templates/annotation_template.csv`、`bench/convert_annotations.py` |
+| DLP-4 | 外发检查必经化方案（待审批） | `docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md` |
+
+### 进行中（等外部输入）
+
+- [ ] D1 接口定稿（用户 / AgentNexus 侧），定稿后按结论修改实现与测试
+- [ ] 本地测试：T1–T4 按 `LOCAL_TEST_GUIDE.md` 执行并回传结果，重点是 GLiNER（T3）
+- [ ] 正式测试集：≥ 300 条，按 `ANNOTATION_GUIDE.md` 准备，测试集不入库
+- [ ] 必经化方案审批；批准后按第一阶段先写测试再实现
+
+### 待补项（后续再做，按建议顺序）
+
+1. 根据 GLiNER 本地评测结果决定是否默认启用、选哪个模型和阈值，并补充中文分词配置
+2. `egress_commit` 接口：绑定载荷哈希、目的地、有效期、幂等键，防止 TOCTOU（设计文档第 7 节）
+3. 人工审批流：REVIEW → `NEEDS_HUMAN` → 审批后执行（随必经化方案第三阶段）
+4. 附件与文件解析：DOCX 隐藏批注、XLSX 隐藏表与公式、PDF 文本层、图片 EXIF、压缩包、Base64（设计文档 3.1、9.3 节）
+5. 外部响应扫描：外部返回内容进入 Agent 上下文前的检查与安全恢复
+6. Vault 接 KMS（envelope encryption）与多实例共享存储；密钥轮换与备份恢复测试
+7. 载荷大小上限与超限策略（接口文档 9.7）
+8. 网络层兜底：出站代理白名单与部署检查脚本（必经化方案第四阶段）
+9. 重识别风险：稀有指标组合、跨请求关联的评估与缓解（设计文档第 11 节第 8 项）

@@ -37,3 +37,23 @@ def test_rules_win_over_gliner_on_overlap():
 def test_enabled_without_model_fails_at_startup():
     with pytest.raises(RuntimeError):
         Detector(master_data=None, enable_gliner=True, gliner_model=None)
+
+
+def test_benchmark_can_enable_gliner(monkeypatch, tmp_path):
+    """本地测试指南依赖：评测脚本可通过 gliner_model 开启 GLiNER，并在报告中记录配置。"""
+    from bench.holdout import holdout_rows
+    from bench.run_benchmark import run_benchmark
+
+    seen = {}
+
+    def fake_from_pretrained(cls, model_name, threshold=0.5):
+        seen.update(model=model_name, threshold=threshold)
+        return cls(FakeGliner(), threshold=threshold)
+
+    monkeypatch.setattr(GlinerRecognizer, "from_pretrained", classmethod(fake_from_pretrained))
+    rep = run_benchmark(None, "B_no_dictionary", tmp_path, rows=holdout_rows(),
+                        gliner_model="/models/fake", gliner_threshold=0.3)
+    assert seen == {"model": "/models/fake", "threshold": 0.3}
+    assert rep["config"]["gliner_model"] == "/models/fake"
+    assert rep["config"]["gliner_threshold"] == 0.3
+    assert rep["safety"]["secret_missed"] == 0
