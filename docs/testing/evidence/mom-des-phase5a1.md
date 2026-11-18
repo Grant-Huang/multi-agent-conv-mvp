@@ -45,4 +45,35 @@ MCP 测试的每个等待都有 20 秒超时，服务未实现时测试会失败
 
 ## Green
 
-待实现后补充。实现时不修改上述断言；如果发现用例本身有误，先说明并经用户确认。
+用户确认用例后实现，分两个提交，没有修改任何测试断言：
+
+1. `refactor(des)`：仿真内核迁入 `an-des`，行为不变。MOM 侧重新导出原名称，原有测试一行未改，全部通过。迁移后 an-runtime 的测试中只有 RT-DES-30 失败，仍是预期的 Red。
+2. `feat(des-factory)`：实现 `FactoryService` 的 13 个工具，以及 `an-des-mcp`（rmcp 3.9 服务端，stdio）。
+
+```text
+CARGO_TARGET_DIR=target cargo test --locked --workspace --no-fail-fast   → 452 passed，0 failed，exit=0
+  rt_desf_01_tool_catalog_is_generic_and_categorised ... ok
+  rt_desf_02_same_seed_same_results_and_cursor_paging ... ok
+  rt_desf_03_observation_tools_are_read_only ... ok
+  rt_desf_04_write_tools_need_approval_and_are_idempotent ... ok
+  rt_desf_05_tool_transfer_and_injected_fault ... ok
+  rt_desf_06_ground_truth_needs_admin_token_and_never_leaks ... ok
+  rt_desf_07_invalid_requests_fail_fast_without_side_effects ... ok
+  rt_desf_08_simulation_count_is_bounded_and_ids_are_sequential ... ok
+  rt_desm_01_mcp_lists_the_factory_catalog ... ok
+  rt_desm_02_mcp_results_match_the_in_process_service ... ok
+  rt_desm_03_errors_are_tool_errors_and_stdin_close_exits ... ok
+  rt_des_30_factory_service_matches_the_in_process_engine ... ok
+CARGO_TARGET_DIR=target cargo clippy --locked --all-targets              → 无警告
+cargo fmt --all -- --check                                                → 通过
+cd web && npm run test:map                                                → Feature map valid: 19 features, 14 browser cases
+cd web && npm run build                                                   → ✓ built
+```
+
+本机磁盘额度有限，以上命令在设置 `CARGO_PROFILE_DEV_DEBUG=0` 的环境中运行。这个变量只去掉调试信息，不影响测试行为，也没有写进仓库配置；CI 仍按默认配置构建。
+
+**超时、取消与清理**
+- `an-des-mcp`：不启动子进程，不访问网络与文件；stdin 关闭后会话结束、进程退出（RT-DESM-03 验证 5 秒内退出）。
+- 仿真计算在 `spawn_blocking` 中执行。同一时刻只处理一个调用；计算量受仿真时长、设备数与推进上限约束。
+- 测试启动的子进程设置了 `kill_on_drop`；每个等待都有 20 秒超时。
+

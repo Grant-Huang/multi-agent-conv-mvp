@@ -315,7 +315,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-28 | mom-des | P0 固定剧本（基线） | 推进 30 分钟 | 只有一个 DES 案例，使用原 S1 模板，不建立协同事项，也没有成员关系 |
 | RT-DES-29 | mom-des | P0 案例已执行方案 C 并关闭（基线，来自 2026-11-17 审查） | 同键再到一条质量观测，再推进 | 观测进入新案例而不是已关闭的案例；已关闭案例的 `world.des` 不再刷新 |
 
-## 模拟工厂与 MCP 挂载（阶段⑤a-1：实现前定义）
+## 模拟工厂与 MCP 挂载（阶段⑤a-1）
 
 设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a。对外约定：
 - 模拟工厂服务 `an_des::FactoryService`：调用入口是 `call(工具名, JSON 参数)`。
