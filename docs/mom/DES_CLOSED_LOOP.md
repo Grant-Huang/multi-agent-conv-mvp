@@ -2,6 +2,8 @@
 
 日期：2026-11-17（America/Vancouver）。状态（2026-11-18 更新）：阶段①～④与③b 已实现，见 `crates/runtime/src/mom/des/` 与 `crates/server/src/mom_sim.rs`。阶段⑤a-1 也已实现：仿真内核已迁入独立的模拟工厂 crate `crates/des/`（`an-des`），并新增 MCP stdio 服务 `crates/des-mcp/`（`an-des-mcp`）。阶段⑤a-2（连接器）与⑤（车间视图）尚在设计。本文是后续实施的基线；实施时按 §15 分阶段提交，每阶段先写用例和失败测试，再改实现。
 
+决策记录（每个决定的结论、理由与排查提示，用简单的话写）：[DES_DECISIONS.md](DES_DECISIONS.md)。
+
 相关文档：[DESIGN.md](DESIGN.md)（MOM 主架构）、[MOCK_REGISTER.md](MOCK_REGISTER.md)（Mock 台账）、[TEST_PLAN.md](TEST_PLAN.md)、[UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md)、[SPC_TASK_WORKSPACE.md](SPC_TASK_WORKSPACE.md)、[测试指南](../testing/README.md)。
 
 ## 0. 决策记录
