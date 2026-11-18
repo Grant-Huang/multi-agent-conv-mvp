@@ -316,6 +316,10 @@ def _iter_strings(node, path):
     elif isinstance(node, list):
         for i, v in enumerate(node):
             yield from _iter_strings(v, f"{path}[{i}]")
+    elif isinstance(node, dict):
+        for key, value in node.items():
+            child = f"{path}.{key}" if path else str(key)
+            yield from _iter_strings(value, child)
 
 
 def _rebuild_json(node, path, rendered: dict[str, str]):
@@ -324,7 +328,7 @@ def _rebuild_json(node, path, rendered: dict[str, str]):
     if isinstance(node, list):
         return [_rebuild_json(v, f"{path}[{i}]", rendered) for i, v in enumerate(node)]
     if isinstance(node, str):
-        return rendered.get(path, node)
+        return rendered[path]  # Missing analysis must fail closed, never return the original leaf.
     return copy.deepcopy(node)
 
 
