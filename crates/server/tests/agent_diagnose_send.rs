@@ -621,7 +621,9 @@ async fn rt_dlp_01_tools_not_visible_to_models() {
 async fn rt_dlp_03_secret_blocked() {
     let _g = ENV_LOCK.lock().await;
     let sb = Sandbox::new("dlp03", "anonymize");
-    let (base, _rt) = sb.serve("token=sk-live-abc123", true, 3).await;
+    // 假密钥在运行时拼出来：模拟 DLP 只认 "sk-live-" 前缀；源码里不出现"键=高熵值"的写法，避免被 gitleaks 误报
+    let fake = format!("凭证 {}{}", "sk-live-", "fixture");
+    let (base, _rt) = sb.serve(&fake, true, 3).await;
     let (status, out) = preview(&base, "helper").await;
     assert_eq!(status, 409, "{out}");
     let e = out["error"].as_str().unwrap_or_default();
