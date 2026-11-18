@@ -67,7 +67,14 @@ const AI_REVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60
 /// 触发 AI 审核；未配置审核模型时返回规则检查结果并标注 AI 审核不可用。
 async fn ai_review(State(s): State<AppState>, Path(case_id): Path<String>) -> ApiResult {
     let Some(reviewer) = s.reviewer.clone() else {
-        return with_engine(s, move |e| e.des_review_report(&case_id)).await;
+        // 只做规则检查：报告照常返回，AI 审核标为不可用（不写入审核记录）。
+        return with_engine(s, move |e| {
+            let mut report = e.des_review_report(&case_id)?;
+            report["ai"] =
+                json!({"status": "unavailable", "reason": "no reviewer configured; rules only"});
+            Ok(report)
+        })
+        .await;
     };
     an_runtime::mom::des::review::run_ai_review(
         &s.engine,

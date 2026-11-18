@@ -45,7 +45,7 @@ RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS �
 
 车间 DES 阶段③（`mom-des`，闭环）：RT-DES-08～11、18 与 HTTP-DES-03 定义方案选定、执行回写仿真世界（维修停机与复位、刀具调拨到达）、执行后同源观测作为核验证据、仿真故障导致补偿、共用资源的案例关联；实现位于 `des/engine_link.rs`、`des/scenario.rs` 与 `engine.rs` 两处 DES 钩子，Red→Green 证据见 [mom-des-phase3.md](evidence/mom-des-phase3.md)。
 
-车间 DES 阶段④（`mom-des`）：RT-DES-12～15、19 与 HTTP-DES-04 定义审核层（规则检查、AI 审核与降级、人工确认与分歧记录、审核模型选择与独立性标注）和批量实验（两种策略、同一组 seed、CSV）；实现前 Red。
+车间 DES 阶段④（`mom-des`）：RT-DES-12～15、19 与 HTTP-DES-04 定义审核层（规则检查、AI 审核与降级、人工确认与分歧记录、审核模型选择与独立性标注）和批量实验（两种策略、同一组 seed、CSV）；已实现并转绿（真实审核模型未接入，测试用脚本替身）。
 
 DES 审查修复（R-20261117-M1/L1，移植自 PR #84/#85 并适配阶段③）：RT-DES-22/23（`engine_link.rs` 单元测试）验证遥测缓存——推进 2880 分钟至多重新推演一次、恢复快照后各读取入口共用一次、缓存不持久化，干预后与场景结束后的推进也不逐分钟重放；RT-DES-24（`server/tests/mom_des_budget.rs`，真实 HTTP）验证无法满足的大场景在 2 秒内返回 400 constraint，并发读取在 2 秒内返回。证据见 [r-20261117-m1-l1-des.md](evidence/r-20261117-m1-l1-des.md)。
 

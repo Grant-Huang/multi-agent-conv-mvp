@@ -336,6 +336,13 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 - **HTTP**：`GET /api/mom/reviews/{case_id}`（规则检查与已有审核记录）、`POST /api/mom/reviews/{case_id}/ai`（触发 AI 审核）、`POST /api/mom/reviews/{case_id}/decision`（人工同意或推翻，推翻必须写理由）。
 - **批量实验**：`des::batch::run_batch` 与 `to_csv`。两种策略都按推荐方案决策，差别只在决策延迟：AI-Native 为一次人工审批延迟；传统 MOM 为若干次部门间交接延迟之和（次数与均值为建模假设，可配置）。目前只有 P0 固定剧本能让单个案例同时收到插单、振动、质量三类事件并进入决策，其他模式的事件分散在不同案例中、不会触发 S1 模板，所以批量实验先以 P0 为主；让其他模式也能进入决策需要扩展模板机制，留待后续。
 
+**实现时的修订（2026-11-18）：**
+- **规则判定口径**：`hitl_before_write` 看第一个 `ActionAccepted` 之前是否有 `DecisionApproved`，没有写操作时不适用；`root_cause_attribution` 有不在标准答案中的假设判 fail（`misattributed`），假设都正确但遗漏真实根因判 warn，未记录假设为 pending；`plan_safe` 看执行的方案在决策时是否可行、无违规；`effectiveness` 在动作全部核验后看报警设备是否回到振动 A/B 区且 Cpk ≥ 1.33，之前为 pending；`timeliness` 只作信息（各阶段分钟数）。
+- **审核记录存放**：快照新字段 `des_reviews`（按案例编号），含根因假设、最近一次 AI 审核、人工审核历史与分歧；不写入案例，不进入 agent 视图。根因假设另在案例事件中留一条 `CauseClaimed` 审计痕迹。
+- **AI 审核降级**：超时、模型报错（重试一次后仍失败）、输出不合规（无结论、缺字段、引用不存在的证据编号）都标为 `unavailable` 并写明原因；未配置审核模型时 HTTP 接口只返回规则结果。真实审核模型（`LlmReviewer`）尚未接入，留待真实模型接入里程碑。
+- **批量实验的证据过期**：传统策略的决策延迟常超过证据有效期，引擎拒绝批准。批量实验按引擎规则刷新计划后立即按新推荐方案决策（等待时间从最初请求算起）；刷新后没有可行方案时计为 `late`，并单独统计 `expired_decisions`。模拟审批人沿用夹具审批人 `supervisor`。
+- **适用模式**：阶段③b 之后，其他场景模式的报警案例与协同事项也会进入决策，批量实验不再限于 P0。
+
 ## 9. 会话和桌面可调用的仿真接口
 
 新代码放在新文件（例如 `crates/server/src/mom_sim.rs`，参照 `mom_relos.rs` 的做法），在 `mom.rs` 的路由中只增加注册。接口均为只读：
