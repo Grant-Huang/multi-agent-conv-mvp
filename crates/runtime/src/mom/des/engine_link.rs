@@ -149,10 +149,15 @@ impl DesReplay {
 ///
 /// `coordinated` 为真时在载荷中标记来源仿真，启用阶段③b 的报警模板与产线协同事项；
 /// P0 固定剧本（`Pattern::Script`）不标记，保持原 S1 行为不变（设计文档 §6.8）。
-fn prefixed_queue(id: &str, events: Vec<DesEvent>, coordinated: bool) -> Vec<ScheduledEvent> {
+fn prefixed_queue(
+    id: &str,
+    events: Vec<an_des::FactoryEvent>,
+    coordinated: bool,
+) -> Vec<ScheduledEvent> {
     events
         .into_iter()
-        .map(|mut event| {
+        .map(|event| {
+            let mut event = DesEvent::from(event);
             event.id = format!("{id}:{}", event.id);
             event.batch = format!("{id}:{}", event.batch);
             if coordinated {
@@ -919,6 +924,25 @@ impl Engine {
                     continue;
                 };
                 if matches!(c.stage.as_str(), "CLOSED" | "CANCELLED") {
+                    continue;
+                }
+                let skip_reason = if c.world["safety_trip"] == true {
+                    Some("safety_trip")
+                } else if c.stage == "BLOCKED" {
+                    Some("blocked")
+                } else if c.actions.values().any(|action| action.state != "VERIFIED") {
+                    Some("verification_incomplete")
+                } else {
+                    None
+                };
+                if let Some(reason) = skip_reason {
+                    emit(
+                        c,
+                        now,
+                        "CaseCloseSkipped",
+                        json!({"incident": case_id, "reason": reason}),
+                        events,
+                    );
                     continue;
                 }
                 c.stage = "CLOSED".into();

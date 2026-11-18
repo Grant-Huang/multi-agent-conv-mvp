@@ -82,8 +82,8 @@ pub struct Runtime {
     pub agent_config: Arc<agent_config::AgentConfigManager>,
     /// 管理助手（AG.4）：HTTP 接口和对话里的向导共用
     pub agents: Arc<agent_chat::AgentAdmin>,
-    /// 外发脱敏客户端（`[dlp]` 配置了才有）
-    pub dlp: Option<Arc<an_agents::dlp::DlpClient>>,
+    /// 外发检查守卫（`[egress]` 的 mode 不是 off 时才有）；AG.5 排查第 3、4 层也用它评估、还原、撤销
+    pub egress: Option<Arc<an_agents::egress::EgressGuard>>,
     /// 排查第 4 层的同意凭证、并发闸门和时限（AG.5）
     pub diagnose_send: Arc<agent_diagnose::SendState>,
 }
@@ -185,7 +185,11 @@ impl Runtime {
             config.mcp.servers.is_empty(),
             "MCP requires Runtime::with_mcp_diagnostics().await"
         );
-        Self::assemble(config, store, diagnostics, ToolRegistry::default())
+        anyhow::ensure!(
+            config.egress.mode == an_agents::egress::EgressMode::Off,
+            "[egress] requires Runtime::with_mcp_diagnostics().await"
+        );
+        Self::assemble(config, store, diagnostics, ToolRegistry::default(), None)
     }
 
     pub async fn with_mcp_diagnostics(
@@ -198,7 +202,9 @@ impl Runtime {
             "MCP requires General to be enabled"
         );
         let tools = an_agents::mcp::connect(&config.mcp.servers).await?;
-        Self::assemble(config, store, diagnostics, tools)
+        // 外发守卫：off 时不启动任何进程；enforce 下 DLP 不可用则拒绝启动
+        let egress = an_agents::egress::EgressGuard::start(&config.egress).await?;
+        Self::assemble(config, store, diagnostics, tools, egress)
     }
 
     fn assemble(
@@ -206,6 +212,7 @@ impl Runtime {
         store: Store,
         diagnostics: Arc<an_observe::Diagnostics>,
         mcp_tools: ToolRegistry,
+        egress: Option<Arc<an_agents::egress::EgressGuard>>,
     ) -> Result<Self> {
         let store = Arc::new(store);
         let n = store.fail_interrupted_tasks()?;
@@ -221,7 +228,30 @@ impl Runtime {
         // 按角色创建 LLM 客户端：角色 → 后端（[routing]）→ 地址 / 模型 / 限流方式（[backends]、[models]）
         let backends = Arc::new(Backends::build(&config)?);
         backends.log_bindings();
-        let llm_for = |role: LlmRole| backends.client(role);
+        // 云端后端登记了外发绑定时，该后端的客户端在每次请求前先经外发检查
+        let llm_for = |role: LlmRole| {
+            let client = backends.client(role);
+            let hook = match (&egress, client.backend()) {
+                (Some(g), Some(b)) => g.llm_hook(&b.name),
+                _ => None,
+            };
+            match hook {
+                Some(h) => client.with_egress(h),
+                None => client,
+            }
+        };
+        // 启动校验用：每个角色实际使用的 (后端名, 地址)。旧写法中角色可以覆盖地址，所以按角色列出
+        let llm_paths: Vec<(String, String)> = LlmRole::ALL
+            .iter()
+            .map(|r| {
+                let c = backends.client(*r);
+                let name = c
+                    .backend()
+                    .map_or("default".to_string(), |b| b.name.clone());
+                (name, c.config().base_url.clone())
+            })
+            .collect();
+        let mut egress_checked = false;
 
         // 注册 Agent（顺序即未配置执行组时的默认选择顺序：内置 → Codex → 本机 ACP → 节点）
         // 托管配置（AG.2）：读不出来时不影响启动，只记录原因
@@ -264,6 +294,11 @@ impl Runtime {
             if !tools.register_websearch(&a.general.websearch_command, timeout) {
                 tracing::info!("未注册联网工具：{} 不可用", a.general.websearch_command);
             }
+            if let Some(g) = &egress {
+                check_egress(&config, &tools, &llm_paths)?;
+                egress_checked = true;
+                tools.set_egress_guard(g.clone());
+            }
             tool_names = tools.names();
             capabilities = tools.capabilities();
             tool_listing = tools
@@ -282,6 +317,10 @@ impl Runtime {
                 .with_report_max_searches(a.general.report_max_searches)
                 .with_report_parallel(a.general.report_parallel),
             ));
+        }
+        if egress.is_some() && !egress_checked {
+            // General 未启用时没有工具，只校验 LLM 路径
+            check_egress(&config, &ToolRegistry::default(), &llm_paths)?;
         }
         let reviewer = a
             .reviewer
@@ -385,7 +424,6 @@ impl Runtime {
             stream_replies = config.conversation.stream_replies
         );
 
-        let config_dlp = config.dlp.clone();
         Ok(Self {
             capabilities,
             config,
@@ -397,14 +435,14 @@ impl Runtime {
             conversation,
             nodes,
             diagnostics,
-            llm: backends.client(LlmRole::Conversation),
+            llm: llm_for(LlmRole::Conversation),
             backends: backends.clone(),
             probers,
             admission,
             probe_gate: Arc::default(),
             agent_config,
             agents,
-            dlp: config_dlp.map(|c| Arc::new(an_agents::dlp::DlpClient::new(c))),
+            egress,
             diagnose_send: Arc::default(),
         })
     }
@@ -533,4 +571,40 @@ fn a2a_agent(
             timeout: Duration::from_secs(timeout_secs.max(1)),
         },
     )?)))
+}
+
+/// 外发守卫的启动校验：绑定的工具 / 后端必须存在；enforce 下所有外发路径必须登记，否则拒绝启动
+fn check_egress(
+    config: &AppConfig,
+    tools: &ToolRegistry,
+    llm_paths: &[(String, String)],
+) -> Result<()> {
+    use an_agents::{capability::Effect, egress::PathKind, mcp::McpTransport};
+    let http_servers: Vec<&str> = config
+        .mcp
+        .servers
+        .iter()
+        .filter(|s| matches!(s.transport, McpTransport::Http { .. }))
+        .map(|s| s.id.as_str())
+        .collect();
+    let paths: Vec<(String, PathKind)> = tools
+        .capabilities()
+        .into_iter()
+        .map(|c| {
+            let kind = if matches!(c.tool_id.as_str(), "web_search" | "web_fetch") {
+                PathKind::Tool
+            } else if http_servers.contains(&c.provider.as_str()) {
+                PathKind::HttpMcpTool
+            } else if matches!(c.effect, Effect::ExternalWrite) {
+                PathKind::ExternalWriteTool
+            } else {
+                PathKind::Local
+            };
+            (c.tool_id, kind)
+        })
+        .collect();
+    for w in an_agents::egress::validate_bindings(&config.egress, &paths, llm_paths)? {
+        tracing::warn!(event = "config.egress", code = an_core::codes::EGRESS_UNBOUND, warning = %w, "外发路径未登记（audit 模式只提示，enforce 模式会拒绝启动）");
+    }
+    Ok(())
 }

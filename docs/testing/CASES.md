@@ -18,6 +18,12 @@
 
 每次输出日志、测试结果和截图；失败保留 trace。正向通过只证明这些路径，未覆盖功能在地图中明确标注。另用校验器测试注入重复 ID、未知用例、缺文档和缺测试，确认地图失配确实失败。
 
+## R-20261118-H1 嵌套路由载荷
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-H1 | external_untrusted；to/attendees/cc下多层dict/list含合成凭证或客户名 | 调用evaluate；另注入字符串分析缺失 | 凭证及漏分析均BLOCK且不回传原值；客户名Token化，非字符串与结构保持 |
+
 ## MOM 独立服务验收
 
 以下浏览器用例为现有 MOM 实现的补充基线，不追称为实现前 Red。运行时测试先行与业务失败修复证据另见 MOM 实施说明。
@@ -51,6 +57,22 @@
 | RT-REP-07 | reports | 三章中第2章两次写作都失败，另两章成功 | 执行任务 | Succeeded（过半成功）；summary 写明缺失第2章；文件有第1、3章，无第2章正文标题 |
 | RT-REP-08 | reports | 同 RT-REP-03，章节写作阶段人为挂起 | 执行中 abort 该次 run | abort 后不再发出新的模型请求；报告文件不再增长 |
 | RT-REP-09 | reports | 规划与检索只有 [S1]；受控模型在第1章写了不存在的 [S9] | 执行任务 | Succeeded；正文无 `[S9]`；参考资料只有检索到的真实链接 |
+| RT-EGR-01 | egress | `[egress] mode = off` | General 调用 web_search（参数含客户名与凭证样式串） | 不启动 DLP；工具收到原参数；DLP 无调用记录 |
+| RT-EGR-02 | egress | enforce，web_search 已绑定 public-search，任务 task-42 | 调用 web_search（含客户名） | 工具只收到脱敏参数；DLP 收到的 task_id、channel、destination_id、purpose 来自任务上下文和配置 |
+| RT-EGR-03 | egress | enforce | 参数分别含凭证、机密信息 | 分别返回 E_EGRESS_BLOCKED、E_EGRESS_REVIEW；错误信息不含原文；工具未被调用 |
+| RT-EGR-04 | egress | enforce，current_time 未绑定 | 调用 current_time | 不经 DLP，工具正常调用 |
+| RT-EGR-05 | egress | audit | 调用含凭证的 web_search | DLP 有调用记录；工具仍收到原参数（只记录不拦截） |
+| RT-EGR-06 | egress | enforce；DLP 返回不符合 schema 的结构化结果 / 判定超时 | 调用 web_search | 启动失败或返回 E_EGRESS_UNAVAILABLE；工具未被调用；enforce 下守卫不得缺失 |
+| RT-EGR-07 | egress | enforce；DLP 进程在第一次判定后退出 | 连续调用 4 次 | 至少 2 次成功（重新拉起 DLP）；工具从未收到未脱敏参数 |
+| RT-EGR-08 | egress | enforce，cloud 后端已绑定 cloud-llm | 外发两条消息（含客户名）；再外发含凭证的消息 | 发出的消息已脱敏、角色不变；返回 Token→原值映射，restore 使用 local_ui；含凭证时返回 EgressBlocked |
+| RT-EGR-09 | egress | enforce；DLP 未开启恢复 | 外发含客户名的消息 | 仍发送脱敏内容；映射为空（输出中保留 Token，不影响安全） |
+| RT-EGR-10 | egress | enforce 配置 | 启动校验：绑定的工具不存在；web_fetch 未绑定；云端后端未绑定；audit 下云端后端未绑定 | 前三种拒绝启动并指明对象；本机后端无需绑定；audit 只给出警告 |
+| RT-EGR-11 | egress | Runtime 启动，enforce，只绑定 web_search，web_fetch 已注册 | with_mcp_diagnostics 启动 | 启动失败，错误含 web_fetch |
+| RT-EGR-12 | egress | Runtime 启动，enforce，web_search / web_fetch 均已绑定 | 启动后读取能力清单 | 启动成功；能力清单中没有任何 egress_* 工具 |
+| RT-EGR-13 | egress | LLM 地址为云端地址 | 分别以 enforce 未绑定、audit 未绑定、enforce 已绑定启动 | enforce 未绑定启动失败（错误含后端名 default）；另两种启动成功 |
+| RT-EGR-14 | egress | 未写 `[egress]`；另一配置 mode = audit | 解析配置；用同步构造创建 Runtime | 默认 mode = off；同步构造拒绝启用外发检查 |
+| RT-EGR-15 | egress | 模型服务替身流式返回，Token 被切在两个数据块之间 | 带外发检查的客户端 chat_stream / chat | 模型服务收到的请求只含 Token；用户看到的增量与结果都是恢复后的原值 |
+| RT-EGR-16 | egress | 外发检查判定 BLOCK | 调用 chat | 返回 EgressBlocked；模型服务没有收到任何请求 |
 | RT-TPL-10 | templates | 后端 llama_cpp 配置 background_slots=[2,3,4,5]；openai 配置 max_inflight=8、reserved_interactive=1；openai 不限并发 | 读取 background_capacity | 分别为 4、7、不限（None） |
 
 ## MOM 可配置持续仿真（实现前定义）
@@ -333,7 +355,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 
 ## 助手排查：诊断包与请其他助手帮忙（AG.5 第 3、4 层，实现前定义）
 
-用模拟的 DLP 服务（`crates/server/tests/fixtures/dlp_server.py`，按 `docs/dlp/CONTRACT.md` 返回结构化结果）和模拟的 ACP 助手 `an-mock-acp`（可记录收到的提示词和工作目录、可指定回复文字）。不依赖真实的 dlp-egress 和真实助手。
+用模拟的 DLP 服务（`crates/server/tests/fixtures/dlp_server.py`，按 `tools/dlp-egress/docs/INTERFACE.md` 返回结构化结果，经 `[egress]` 的外发检查守卫调用）和模拟的 ACP 助手 `an-mock-acp`（可记录收到的提示词和工作目录、可指定回复文字）。不依赖真实的 dlp-egress 和真实助手。
 
 | Case | Feature | Given / When | Then |
 |---|---|---|---|
@@ -343,11 +365,11 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGDIAG-10 | agent-diagnose | 帮手超过时限不回复 | 返回大白话的超时说明；帮手进程已结束 |
 | RT-AGDIAG-11 | agent-diagnose | 一次发送还在进行时，再发第二次 | 第二次被拒绝，提示稍后再试；第一次正常完成 |
 | RT-AGDIAG-12 | agent-diagnose | 选出问题的那个助手、未连通的助手、未知助手当帮手 | 都被拒绝（409 / 404），不生成预览 |
-| RT-DLP-01 | dlp-egress | 配置了 `[dlp]` | DLP 的三个工具不出现在能力目录（`GET /api/capabilities`）里，也不在 General 的工具清单里 |
+| RT-DLP-01 | dlp-egress | 开启了 `[egress]`（2026-11-18 合并 master 后由 `[dlp]` 改为 `[egress]`） | DLP 的三个工具不出现在能力目录（`GET /api/capabilities`）里，也不在 General 的工具清单里 |
 | RT-DLP-02 | dlp-egress | DLP 把内容里的客户名替换成 `[CUSTOMER_001]`（ANONYMIZE）；帮手的回复里带着这个占位符 | 预览和发给帮手的内容里只有占位符、没有原文；显示给用户的帮手回复已还原成原文（context 为 `local_ui`） |
 | RT-DLP-03 | dlp-egress | 内容里有疑似密钥（BLOCK，`secret_blocked`） | 不生成预览、不发送；大白话说明"有密钥或凭证，已拦下"并建议更换 |
 | RT-DLP-04 | dlp-egress | DLP 返回 REVIEW | 不生成预览、不发送；说明需要人工判断 |
-| RT-DLP-05 | dlp-egress | 没有配置 `[dlp]`；DLP 超时；返回结构不合规；`api_version` 不是 "1" | 都不发送，说明原因；不出本机的排查（第 1～3 层）照常可用 |
+| RT-DLP-05 | dlp-egress | 没有开启 `[egress]`；DLP 超时；返回结构不合规；`api_version` 不是 "1.0"（与 INTERFACE.md 定稿一致） | 都不发送，说明原因；不出本机的排查（第 1～3 层）照常可用 |
 | RT-DLP-06 | dlp-egress | 一次发送结束（成功或帮手超时） | 用同一个 `task_id` 调用了 `egress_revoke`；日志里没有待发内容的原文 |
 | E2E-AGHELP | agent-ui | 检测失败的助手点"排查" → 看到诊断包（可复制）→ 选已连通的助手当帮手 → 看到完整预览和目的地 → 点"同意发送这一次" | 显示帮手的回复（占位符已还原） |
 
@@ -448,6 +470,12 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-24 | mom-des | an-mom 服务；32 台设备、2880 分钟、并发簇（窗口 1 分钟、至少 1000 个扰动） | 创建该仿真，同时并发读取案例列表 | 创建在 2 秒内返回含 "constraint" 的 400，读取在 2 秒内返回 200；被拒绝的创建没有留下任何记录 |
 
 
+## R-20261118-H2 协同事项关闭与安全联锁
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| RT-DES-31 | 资源竞争事项已执行推荐方案，一成员收到同源safety_trip并BLOCKED | 维修完成后关闭事项 | 安全成员保持BLOCKED和联锁事实及预留；发出含原因的CaseCloseSkipped；其他成员正常关闭 |
+
 ## MOM 车间 DES 阶段③b：按报警触发的模板与产线协同事项（实现前定义）
 
 设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §6.8。对外约定：模板名 `DAG-TPL-DES-EQUIPMENT@1`、`DAG-TPL-DES-QUALITY@1`、`DAG-TPL-DES-COMBINED@1`、`DAG-TPL-DES-DIAGNOSIS@1`、`DAG-TPL-DES-LINE-INCIDENT@1`；协同事项是批次为 `DES-n:INCIDENT:…` 的案例，`world.des_incident` 记录产线、成员与报警设备集合，成员案例的 `world.des_member_of` 指向事项。测试在 `crates/runtime/tests/mom_des.rs`。
@@ -459,3 +487,48 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-27 | mom-des | 资源竞争模式中，某个协同事项的报警设备集合至少两台、有推荐方案 | 选定推荐方案、批准、执行，推进到全部维修完成，关闭事项 | 集合中每台设备都有维修干预，只有 1 个维修班组时维修时段互不重叠；维修完成后各设备恢复运行、振动低于 2.8 mm/s；关闭事项后成员案例一并关闭 |
 | RT-DES-28 | mom-des | P0 固定剧本（基线） | 推进 30 分钟 | 只有一个 DES 案例，使用原 S1 模板，不建立协同事项，也没有成员关系 |
 | RT-DES-29 | mom-des | P0 案例已执行方案 C 并关闭（基线，来自 2026-11-17 审查） | 同键再到一条质量观测，再推进 | 观测进入新案例而不是已关闭的案例；已关闭案例的 `world.des` 不再刷新 |
+
+## 模拟工厂与 MCP 挂载（阶段⑤a-1）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a。对外约定：
+- 模拟工厂服务 `an_des::FactoryService`：调用入口是 `call(工具名, JSON 参数)`。
+- MCP 服务 `an-des-mcp`：经 stdio 提供同一套工具。成功时返回 `structuredContent`，业务错误作为工具错误返回（`isError`）；管理口令取自环境变量 `AN_DES_ADMIN_TOKEN`。
+- 工具名只用小写字母、数字和下划线，长度 ≤ 64，原因见 §11a 修订。
+- 13 个工具分四类：
+  - 观测：`equipment_status`、`equipment_trend`、`quality_capability`、`inventory_tooling`、`events_poll`、`order_status`；
+  - 执行：`maintenance_order_create`、`tooling_transfer_create`、`production_schedule_apply`；
+  - 控制：`simulation_create`、`simulation_advance`、`simulation_fault_inject`；
+  - 管理：`simulation_ground_truth`。
+
+测试位置：`crates/des/tests/factory.rs`（RT-DESF）、`crates/des-mcp/tests/stdio.rs`（RT-DESM）、`crates/runtime/tests/mom_des.rs`（RT-DES-30）。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DESF-01 | des-factory | 工具目录 | 读取 `tool_catalog()` | 恰好是上述 13 个工具，类别与设计表一致。工具名唯一、匹配 `^[a-z][a-z0-9_]{0,63}$`，不含 AgentNexus 专有概念（agentnexus、case、mom）。每个工具有说明，输入 schema 是 object 且拒绝未知字段。执行类工具的必填字段包含 `idempotency_key` 与 `approval_ref` |
+| RT-DESF-02 | des-factory | 两个服务实例，并发簇 seed 7 | 用相同输入创建仿真并推进到结束 | 事件逐字节相同，可观测状态相同。按游标分页拉取：遵守 limit；拼接结果等于一次拉取；同一游标重复拉取结果相同；不返回未来事件，没有重复；事件编号带仿真编号前缀；继续推进后，已投递的前缀不变 |
+| RT-DESF-03 | des-factory | 两个服务实例，P0 | 一个在推进过程中反复调用全部观测工具，另一个不调用 | 观测可重复，且两个服务的最终世界相同（读取不改变世界）。状态标注 `provenance: simulation`，含振动、分区、Cpk、运行状态、刀具在位等可观测字段 |
+| RT-DESF-04 | des-factory | P0 推进到报警后（CNC-XX 处于 C/D 区） | 下维修单：先缺审批引用、缺幂等键或审批引用为空白，再正常提交，然后同键重试，再同键改参数 | 缺字段的请求被拒绝且不改变世界。正常提交返回回执（单号、完成时刻）。同键同参数返回原回执、只生效一次（与只下一次单的世界相同）；同键不同参数被拒绝。`order_status` 从 accepted 变为 completed，维修后振动低于 2.8 mm/s。`production_schedule_apply` 返回 accepted 回执 |
+| RT-DESF-05 | des-factory | P0 推进到报警后 | 先调拨刀具，再注入"备用刀具丢失"，再调拨一次 | 第一次回执 accepted，完成时刻等于当前时刻加调拨时间（取自 `inventory_tooling`）。注入后的调拨回执为 failed，原因来自仿真（提到 spares） |
+| RT-DESF-06 | des-factory | 已配置管理口令的服务；未配置口令的服务 | 分别不带口令、带错误口令、带正确口令读取标准答案；读取全部观测工具 | 只有正确口令能读到标准答案；未配置口令时管理工具一律拒绝。观测输出不含 root_causes、mechanisms、spindle_wear、relations、contentions |
+| RT-DESF-07 | des-factory | P0 推进 30 分钟 | 调用未知工具、未知仿真、带未知字段、时钟倒退或超上限、limit 为 0 或超过 1000、未知设备、维修开始时刻早于当前、未知单号、未知故障、时长为 0 的仿真 | 每个请求都在 2 秒内报错，世界不变 |
+| RT-DESF-08 | des-factory | 一个服务 | 连续创建仿真 | 仿真编号形如 `DES-n` 且互不相同；达到上限时报错并说明 capacity |
+| RT-DESM-01 | des-factory | 经 stdio 启动 `an-des-mcp` | 列出工具 | 与 `tool_catalog()` 一致（数量、名称、说明、schema）。注解如下：观测类 `readOnlyHint = true`；执行类 `readOnlyHint = false`、`idempotentHint = true`；控制类不是只读；管理类是只读 |
+| RT-DESM-02 | des-factory | 一个 MCP 服务与一个进程内服务 | 依次执行同一组调用：创建、推进、拉取事件、四个观测工具、下维修单、同键重试、调拨、推进、再拉取、读取标准答案 | 每一步 MCP 的 `structuredContent` 与进程内结果逐字节相同 |
+| RT-DESM-03 | des-factory | MCP 服务已创建一个仿真 | 调用未知仿真、错误口令、缺审批引用的写操作；然后关闭 stdin | 业务错误作为工具错误返回，不带数据，服务继续可用。未知工具可以是协议错误。关闭 stdin 后进程在 5 秒内正常退出 |
+| RT-DES-30 | des-factory | P0 seed 1 与并发簇 seed 7 | 同一配置分别在 MOM 引擎（进程内）与模拟工厂服务中创建，在相同时刻推进 | 仿真编号相同，各时刻的可观测设备状态相同。服务事件等于内核事件加仿真编号前缀（种类、来源、设备、客户、时刻、载荷都相同）。服务的标准答案与审核层读到的相同 |
+
+### 阶段⑤a-2（AgentNexus 侧连接器）用例草案
+
+以下用例在⑤a-1 转绿后编写测试（依赖真实的服务接口），届时再按测试规范登记到 features.json：
+- RT-DESC-01：同 seed P0 与并发簇，MCP 模式（调度器推进模拟工厂 → 连接器拉取事件 → MOM 推进）与进程内模式一致。比较的内容包括案例、事件种类序列、`world.des` 快照、排产方案与执行结果。
+- RT-DESC-02：写操作只在审批并 `execute` 之后由连接器发出，幂等键为"案例:方案修订号:动作"，并带审批引用；回执写回动作。传输中断后重发，同键只生效一次。
+- RT-DESC-03：AgentNexus 暴露给 agent 与桌面的模拟工厂工具只有观测类，不含执行、控制与管理类。
+- RT-DESC-04：模拟工厂不在线（命令不存在、进程退出）时，连接器返回明确错误 `E_DES_UNAVAILABLE`，不回退到进程内仿真，也不写入假观测。
+- RT-DESC-05：MCP 模式下，审核层的标准答案来自模拟工厂管理入口，规则结果与进程内模式一致。
+
+## R-20261118-M3 常见凭证与同形字
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-M3 | 中文密码/口令、token=、DB_PASS=、OpenAI项目key、Google key、同形字AWS/GitHub，共8种合成输入 | evaluate到external_untrusted | 全部BLOCK、不可发送且无原值；其余原文（含℃）不变；正常Unicode和术语不被改写 |
+

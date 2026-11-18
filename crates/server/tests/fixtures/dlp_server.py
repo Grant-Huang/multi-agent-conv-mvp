@@ -1,11 +1,11 @@
-"""模拟的 DLP 服务（MCP stdio），按 docs/dlp/CONTRACT.md 返回结构化结果。只用于测试，不联网、不读用户文件。
+"""模拟的 DLP 服务（MCP stdio），按 tools/dlp-egress/docs/INTERFACE.md（api_version 1.0）返回结构化结果。只用于测试，不联网、不读用户文件。
 
 行为（由环境变量控制）：
 - DLP_MODE：
   - anonymize（默认）：把文本里的 "ACME" 换成 [CUSTOMER_001]（同一任务内稳定）；没有就 ALLOW
   - review：一律 REVIEW
   - bad_output：返回不符合 output schema 的结构
-  - bad_version：api_version 为 "2"
+  - bad_version：api_version 为 "2.0"
   - slow：每次调用先睡 30 秒（用来测超时）
 - 文本里含 "sk-live-" 时一律 BLOCK（secret_blocked），不论模式
 - DLP_LOG：每次调用追加一行 JSON（工具名、task_id、channel、destination_id、purpose、context），不记文本内容
@@ -69,7 +69,7 @@ def log(tool, args):
 
 
 def ok(data):
-    return {"status": "success", "api_version": "2" if MODE == "bad_version" else "1", "data": data, "error": None}
+    return {"status": "success", "api_version": "2.0" if MODE == "bad_version" else "1.0", "data": data, "error": None}
 
 
 def evaluate(a):

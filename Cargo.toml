@@ -3,9 +3,11 @@
 #   server  ->  runtime  ->  agents  ->  llm  ->  core
 #   node    ->  agents（节点只负责在本机执行 agent）
 #   observe：日志与诊断，被 server / node 共用
+#   runtime ->  des（模拟工厂内核，不依赖其他 crate）
+#   des-mcp ->  des（模拟工厂的 MCP stdio 服务）
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/observe", "crates/llm", "crates/agents", "crates/runtime", "crates/node", "crates/server"]
+members = ["crates/core", "crates/observe", "crates/llm", "crates/agents", "crates/runtime", "crates/node", "crates/server", "crates/des", "crates/des-mcp"]
 
 [workspace.package]
 edition = "2021"
@@ -20,6 +22,7 @@ an-agents = { path = "crates/agents" }
 an-runtime = { path = "crates/runtime" }
 an-observe = { path = "crates/observe" }
 an-node = { path = "crates/node" }
+an-des = { path = "crates/des" }
 
 anyhow = "1"
 thiserror = "2"

@@ -1,54 +1,41 @@
-# dlp-egress 调用接口说明（v0.1，供 D1 接口定稿）
+# dlp-egress 调用接口（D1 定稿，api_version 1.0）
 
-本文描述 `tools/dlp-egress` **当前已实现**的调用方式（以 master `8fd24e2` 为准），并在第 9 节列出定稿前需要拍板的事项和我的建议。
-示例输出均来自实际运行，耗时字段已省略。
+本文是 dlp-egress 与 AgentNexus 之间的接口约定，2026-11-18 由 AgentNexus 侧确认（定稿记录见第 9 节）。
+示例输出来自实际运行，耗时和请求 ID 已省略。
 
 ## 1. 定位
 
-- 职责：在内容**发出 AgentNexus 之前**判断能不能发、怎么发。
-  返回 `ALLOW / ANONYMIZE / REVIEW / BLOCK` 和脱敏后的载荷。
+- 职责：在内容**发出 AgentNexus 之前**判定能不能发、怎么发。返回 `ALLOW / ANONYMIZE / REVIEW / BLOCK` 和脱敏后的载荷。
 - 不负责：实际发送、人工审批流、附件二进制解析、外部响应扫描。
-- 当前接入形态：stdio MCP 服务（`dlp-egress-mcp`）。同一套逻辑也可以作为 Python 库调用（`EgressService`）。
-- 当前**不是强制拦截**：调用方不调用就不会生效。强制化方案见 `docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md`（待审批）。
+- 调用方：AgentNexus 的 **Rust 宿主直接调用**（`crates/agents/src/egress.rs`），三个工具**不注册给模型**。
+  部署与使用见 `docs/mcp/DLP_EGRESS_DEPLOYMENT.md`。
+- 接入形态：stdio MCP 服务（`dlp-egress-mcp`）；同一套逻辑也可作为 Python 库使用（`EgressService`）。
 
 ## 2. 部署与身份
 
 | 项 | 说明 |
 |---|---|
-| 启动 | `dlp-egress-mcp --config <dlp.yaml>`，或用 `DLP_*` 环境变量启动，环境变量优先 |
-| 可信身份 | `tenant_id`、`actor_id` 只来自服务端配置。工具参数里**没有**这两个字段，Agent 无法自报或伪造 |
+| 启动 | `dlp-egress-mcp --config <dlp.yaml>`，或用 `DLP_*` 环境变量（环境变量优先） |
+| 可信身份 | `tenant_id`、`actor_id` 只来自服务端配置。工具参数里没有这两个字段 |
+| `task_id` | 由 AgentNexus 编排器提供（任务上下文），模型接触不到 |
 | 目的地注册表 | `destinations_file`。未登记的 `destination_id` 一律 BLOCK |
-| 主数据 | `master_data_file`（客户、项目、厂区、人员名单），可选 |
+| 主数据 | `master_data_file`（客户 / 项目 / 厂区 / 人员名单），可选 |
 | Vault | `vault_path` + `vault_key_file`（32 字节 base64）。缺少密钥时拒绝启动 |
-| 启动失败 | 缺少身份或密钥、配置非法：进程以退出码 2 退出，不会以不安全的配置运行 |
+| 恢复开关 | `allow_restore`（环境变量 `DLP_ALLOW_RESTORE`），默认 false。AgentNexus 宿主需要恢复 LLM 输出时设为 true（模型接触不到这个工具）。旧名 `allow_agent_restore` 仍可用 |
+| 启动失败 | 缺少身份 / 密钥、配置非法：进程以退出码 2 退出 |
 
-AgentNexus 配置（`config.toml`）：
+## 3. 返回格式（所有工具一致）
 
-```toml
-[[mcp.servers]]
-id = "dlp"
-transport = "stdio"
-command = "tools/dlp-egress/.venv/bin/dlp-egress-mcp"
-args = ["--config", "tools/dlp-egress/config/dlp.example.yaml"]
-timeout_ms = 30000
-[[mcp.servers.tools]]
-name = "egress_evaluate"
-capability_id = "dlp.egress_evaluate"
-description = "外发前检查载荷：返回 ALLOW/ANONYMIZE/REVIEW/BLOCK 与脱敏载荷"
-effect = "workspace_write"          # evaluate 会写本地 Vault
-input_types = ["application/json"]
-output_types = ["application/json"]
+结构化返回（MCP `structuredContent`），并为每个工具发布 output schema（`tools/list` 的 `outputSchema`）。
+文本内容是同一份 JSON，供不支持结构化返回的客户端使用。
+
+```json
+{"api_version": "1.0", "status": "success", "data": { ... }, "error": null}
+{"api_version": "1.0", "status": "error",   "data": null,      "error": {"code": "restore_disabled", "message": "…"}}
 ```
 
-## 3. 工具一览
-
-| 工具 | 用途 | 谁可以调用 |
-|---|---|---|
-| `egress_evaluate` | 外发前评估并脱敏 | Agent / 编排器 |
-| `egress_restore` | 把响应里的 Token 换回原值 | **默认关闭**（`allow_agent_restore: false`）。建议只由本地可信 UI 或编排器后处理调用 |
-| `egress_revoke` | 撤销某任务全部 Token 映射并擦除密文 | 编排器（任务结束或取消时） |
-
-所有工具都以**一段 JSON 字符串**作为 MCP 文本内容返回（`structured_output=false`）。
+调用方必须：按 output schema 校验 `structuredContent`，检查 `api_version == "1.0"` 和 `status == "success"`。
+校验不过视为失败，**不外发**（AgentNexus 的实现即如此）。
 
 ## 4. `egress_evaluate`
 
@@ -57,84 +44,87 @@ output_types = ["application/json"]
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `task_id` | string | 是 | Token 作用域。同一任务内同一实体得到同一 Token，不同任务相互隔离 |
-| `channel` | string | 是 | `email` / `slack` / `external_api` / `file_upload` / `mcp`。**当前只写入审计，不参与判定，也不校验取值** |
+| `channel` | string | 是 | 固定取值：`email` / `slack` / `external_api` / `file_upload` / `mcp` / `agent`（发给外部助手）。其他取值 → BLOCK（`invalid_channel`） |
 | `destination_id` | string | 是 | 必须在目的地注册表中，否则 BLOCK |
-| `purpose` | string | 是 | 用途。若目的地配置了 `purposes`，不在列表中就 BLOCK |
+| `purpose` | string | 是 | 用途。目的地配置了 `purposes` 时，不在列表中就 BLOCK |
 | `text` | string \| null | 二选一 | 自由文本载荷 |
-| `json_body` | object \| array \| null | 二选一 | 结构化载荷（工具参数、API 请求体）。键名和非字符串值保持不变 |
-| `constraints` | string[] \| null | 否 | 目前只支持 `preserve:<TYPE>`，例如 `preserve:AMOUNT`。只有策略允许的组合才生效，`SECRET`、`INTERNAL_INFO` 永远不能被申请保留 |
+| `json_body` | object \| array \| null | 二选一 | 结构化载荷，键名和非字符串值保持不变 |
+| `constraints` | string[] \| null | 否 | 目前只支持 `preserve:<TYPE>`，例如 `preserve:AMOUNT`。只有策略允许的组合才生效 |
 
-`text` 与 `json_body` 同时为空或同时给出：BLOCK（`empty_payload` / `ambiguous_payload`）。
+载荷上限 **256 KB**（UTF-8 字节；JSON 按紧凑序列化计算），超出即 BLOCK（`payload_too_large`）。
 
-### 4.2 返回
+### 4.2 返回 `data`
 
 ```json
 {
-  "decision": "ANONYMIZE",
-  "policy_version": "egress-v1",
-  "sanitized_text": null,
-  "sanitized_json": {
-    "to": "buyer@acme-demo.com",
-    "client": "[CUSTOMER_001]",
-    "order": "[ORDER_ID_001]",
-    "yield": "良率97.5%"
+  "api_version": "1.0",
+  "status": "success",
+  "data": {
+    "decision": "ANONYMIZE",
+    "policy_version": "egress-v1",
+    "request_id": "req_…",
+    "sanitized_text": null,
+    "sanitized_json": {"to": "buyer@acme-demo.com", "client": "[CUSTOMER_001]",
+                       "order": "[ORDER_ID_001]", "yield": "良率97.5%"},
+    "entities": [
+      {"type": "EMAIL", "start": 0, "end": 19, "score": 0.9, "source": "rule", "field_path": "to"},
+      {"type": "CUSTOMER", "start": 0, "end": 4, "score": 0.99, "source": "master_data", "field_path": "client"},
+      {"type": "ORDER_ID", "start": 0, "end": 9, "score": 0.85, "source": "rule", "field_path": "order"},
+      {"type": "METRIC", "start": 0, "end": 7, "score": 0.8, "source": "rule", "field_path": "yield"}
+    ],
+    "reason_codes": ["customer_tokenized", "metric_preserved_by_policy", "order_id_tokenized", "routing_preserved"],
+    "tokens": ["[CUSTOMER_001]", "[ORDER_ID_001]"],
+    "validation": {"schema_ok": true, "preserved_values_ok": true, "no_secret_in_output": true, "routing_unchanged": true},
+    "ready_to_send": true,
+    "elapsed_ms": 4.1
   },
-  "entities": [
-    {"type": "EMAIL", "start": 0, "end": 19, "score": 0.9, "source": "rule", "field_path": "to"},
-    {"type": "CUSTOMER", "start": 0, "end": 4, "score": 0.99, "source": "master_data", "field_path": "client"},
-    {"type": "ORDER_ID", "start": 0, "end": 9, "score": 0.85, "source": "rule", "field_path": "order"},
-    {"type": "METRIC", "start": 0, "end": 7, "score": 0.8, "source": "rule", "field_path": "yield"}
-  ],
-  "reason_codes": ["customer_tokenized", "metric_preserved_by_policy", "order_id_tokenized", "routing_preserved"],
-  "tokens": ["[CUSTOMER_001]", "[ORDER_ID_001]"],
-  "vault_ref": "req_f4b4df789909484a",
-  "validation": {"schema_ok": true, "preserved_values_ok": true, "no_secret_in_output": true, "routing_unchanged": true},
-  "ready_to_send": true,
-  "elapsed_ms": 4.1
+  "error": null
 }
 ```
 
-（请求：`json_body = {"to":"buyer@acme-demo.com","client":"青川重工","order":"WO-559120","yield":"良率97.5%"}`）
+（请求：`channel = "agent"`，`json_body = {"to":"buyer@acme-demo.com","client":"青川重工","order":"WO-559120","yield":"良率97.5%"}`）
 
 | 字段 | 说明 |
 |---|---|
 | `decision` | `ALLOW` / `ANONYMIZE` / `REVIEW` / `BLOCK`，含义见 4.3 |
-| `policy_version` | 判定所用的策略版本，审计时用 |
-| `sanitized_text` / `sanitized_json` | 与请求载荷类型对应，另一个为 null。BLOCK 且未进入识别阶段（目的地未登记、空载荷、内部异常）时两者都是 null |
-| `entities` | 识别出的实体：类型、偏移（Python Unicode 码点，相对于该字段原文）、分数、来源（`rule` / `master_data` / `detect_secrets` / `gliner`）、JSON 字段路径。**不含原文** |
+| `policy_version` | 判定所用策略版本 |
+| `request_id` | 本次评估的 ID，用于审计关联（**每次都有**，含 BLOCK） |
+| `sanitized_text` / `sanitized_json` | 与请求载荷类型对应，另一个为 null。在识别之前就 BLOCK 时两者都是 null（未登记目的地、非法通道、超过上限、空载荷、内部异常） |
+| `entities` | 识别出的实体：类型、偏移（Unicode 码点，相对于字段原文）、分数、来源、字段路径。**不含原文** |
 | `reason_codes` | 判定原因，见 4.4 |
 | `tokens` | 本次使用的可逆 Token（不含原值） |
-| `vault_ref` | 当前实现是本次请求 ID，**不能**用来查映射（见 9.4） |
-| `validation` | 保真校验结果，任一为 false 时 decision 强制为 BLOCK |
+| `validation` | 保真校验，任一为 false 时 decision 强制为 BLOCK |
 | `ready_to_send` | 仅当 decision 为 ALLOW 或 ANONYMIZE 且校验全部通过时为 true |
 
 ### 4.3 决策语义与调用方义务
 
 | decision | 含义 | 调用方必须做的事 |
 |---|---|---|
-| `ALLOW` | 无敏感实体，或只有按策略可以原样保留的实体 | 发送 `sanitized_*`（与原文相同） |
-| `ANONYMIZE` | 标识符已替换为 Token | **只发送 `sanitized_*`，不能发原文**。外部返回的内容如需恢复，走 `egress_restore` |
-| `REVIEW` | 含机密信息（`[REDACTED_CONFIDENTIAL]`） | **不发送**。转人工审批。`sanitized_*` 只是给审批人看的预览 |
-| `BLOCK` | 凭证、未登记目的地、校验失败、内部异常等 | **不发送**。若原因是 `secret_blocked`，通知用户尽快更换（轮换）被检出的密钥 |
+| `ALLOW` | 无敏感实体，或只有可以原样保留的实体 | 发送 `sanitized_*`（与原文相同） |
+| `ANONYMIZE` | 标识符已替换为 Token | **只发送 `sanitized_*`**；外部返回的内容需要恢复时，在本机用 `egress_restore` |
+| `REVIEW` | 含机密信息（`[REDACTED_CONFIDENTIAL]`） | **不发送**，转人工审批；`sanitized_*` 只是给审批人看的预览 |
+| `BLOCK` | 凭证、未登记目的地、非法通道、超过上限、校验失败、内部异常等 | **不发送**。若原因是 `secret_blocked`，通知用户尽快更换（轮换）被检出的密钥 |
 
 一句话规则：**`ready_to_send` 为 true 才发，且只发 `sanitized_*`。**
 
 ### 4.4 reason_codes
 
-| 代码 | 触发条件 | 对应决策 |
+| 代码 | 触发条件 | 决策 |
 |---|---|---|
+| `invalid_channel` | channel 不在固定取值中 | BLOCK |
+| `payload_too_large` | 载荷超过 256 KB | BLOCK |
 | `destination_unknown` | 目的地未登记 | BLOCK |
 | `purpose_not_allowed` | 用途不在该目的地允许的列表中 | BLOCK |
 | `empty_payload` / `ambiguous_payload` | 没有载荷 / 同时给了 text 和 json_body | BLOCK |
 | `internal_error_fail_closed` | 识别、策略或 Vault 异常 | BLOCK |
 | `validation_failed` | 保真校验未通过 | BLOCK |
 | `secret_blocked` | 检出凭证 | BLOCK |
-| `recipient_not_allowed` | 路由收件人不在目的地 `allowed_recipient_domains` 中 | BLOCK |
+| `recipient_not_allowed` | 收件人不在目的地 `allowed_recipient_domains` 中 | BLOCK |
 | `confidential_requires_review` | 检出机密信息 | REVIEW |
 | `<type>_tokenized` | 某类实体被 Token 化，如 `customer_tokenized` | ANONYMIZE |
-| `<type>_preserved_by_policy` | 某类实体按策略原样保留，如 `metric_preserved_by_policy` | — |
+| `<type>_preserved_by_policy` | 某类实体按策略原样保留 | — |
 | `routing_preserved` | 收件人等路由字段未改写 | — |
-| `token_like_input` | 输入中已有 `[TYPE_001]` 形状的字符串（可能是二次外发，也可能是 Token 注入），仅作标记 | — |
+| `token_like_input` | 输入中已有 `[TYPE_001]` 形状的字符串，仅作标记 | — |
 
 ### 4.5 实体类型与默认处理（目的地 trust = `external_untrusted`）
 
@@ -142,73 +132,68 @@ output_types = ["application/json"]
 |---|---|---|
 | `SECRET` | BLOCK | `[BLOCKED_SECRET]`（不可恢复，不写 Vault） |
 | `INTERNAL_INFO` | REVIEW | `[REDACTED_CONFIDENTIAL]`（不可恢复） |
-| `CUSTOMER` `PROJECT` `PLANT` `PERSON` `ORDER_ID` `EMAIL` `CONTACT` `AMOUNT` | Token 化 | `[CUSTOMER_001]` 等，任务内稳定、可恢复 |
+| `CUSTOMER` `PROJECT` `PLANT` `PERSON` `ORDER_ID` `EMAIL` `CONTACT` `AMOUNT` | Token 化 | `[CUSTOMER_001]` 等 |
 | `METRIC` `DEVICE_ID` | 原样保留 | — |
 | 路由字段中的邮箱（`to` `cc` `bcc` `guests` `recipients` `attendees` …） | 原样保留并校验收件域 | — |
 
-`AMOUNT` 默认 Token 化，带 `constraints: ["preserve:AMOUNT"]` 时保留。trust = `internal` 的目的地：除 `SECRET` 外全部原样保留。
-策略文件：`src/agentnexus_dlp/default_policy.yaml`，可用 `policy_file` 覆盖。
+`AMOUNT` 带 `constraints: ["preserve:AMOUNT"]` 时保留。trust = `internal` 的目的地：除 `SECRET` 外全部原样保留。
 
 ### 4.6 Token 格式
 
-`[<TYPE>_<NNN>]`，例如 `[CUSTOMER_001]`。编号在 `(tenant, task, type)` 范围内从 001 起，按首次出现的顺序递增。正则：`\[([A-Z][A-Z_]*?)_(\d{3,})\]`。
+`[<TYPE>_<NNN>]`，编号在 `(tenant, task, type)` 内从 001 起按首次出现顺序递增。正则：`\[([A-Z][A-Z_]*?)_(\d{3,})\]`。
 
 ## 5. `egress_restore`
 
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `task_id` | string | 是 | 只恢复该任务创建的 Token |
-| `text` | string | 是 | 含 Token 的文本，例如外部系统的返回 |
-| `context` | string | 否 | 默认 `task_postprocess`。必须在策略的 `allowed_restore_contexts` 中（默认 `local_ui`、`task_postprocess`） |
-
-返回（未开启时）：`{"status":"error","code":"restore_disabled","message":"…"}`
-
-返回（开启时）：
+| `text` | string | 是 | 含 Token 的文本 |
+| `context` | string | 否 | 默认 `local_ui`，**只允许 `local_ui`**（D1 定稿 9.6），其他取值返回 `refused_reason: "context_not_allowed"` |
 
 ```json
-{"status": "success", "text": "供应商回复：青川重工 的 WO-559120 已处理，[CUSTOMER_009] 待定",
- "restored": 2, "unknown_tokens": ["[CUSTOMER_009]"], "refused_reason": null}
+{"api_version": "1.0", "status": "success", "error": null,
+ "data": {"text": "回复：青川重工 的 WO-559120，[CUSTOMER_009]", "restored": 2,
+          "unknown_tokens": ["[CUSTOMER_009]"], "refused_reason": null}}
 ```
 
-- 只有同租户、同任务、同 actor、上下文允许、未过期且未撤销的 Token 才会被恢复。
-- 伪造或越界的 Token 原样保留，并列入 `unknown_tokens`。
-- `context` 不允许时返回 `refused_reason: "context_not_allowed"`，`restored: 0`。
+未开启恢复时：`status = "error"`，`error.code = "restore_disabled"`，`data = null`。
+只恢复同租户、同任务、同 actor、未过期且未撤销的 Token；伪造或越界的 Token 原样保留并列入 `unknown_tokens`。
 
 ## 6. `egress_revoke`
 
-参数：`task_id`。返回 `{"status":"success","revoked":<条数>}`。撤销后该任务的密文立即擦除，之后无法再恢复。建议在任务结束、取消或删除时调用。
+参数 `task_id`。返回 `data = {"revoked": <条数>}`。撤销后该任务的密文立即擦除，无法再恢复。
 
-## 7. 推荐调用流程
+## 7. 调用流程（AgentNexus 宿主）
 
 ```
-Agent 要外发
-  → egress_evaluate(task_id, channel, destination_id, purpose, text | json_body)
-      ready_to_send = true  → 用 sanitized_* 调用真实外发工具 → 外部返回
-                               → （可选）egress_restore(task_id, 返回文本)，仅在可信后处理中
-      decision = REVIEW     → 停止外发，生成审批单（展示 sanitized_* 预览 + reason_codes）
-      decision = BLOCK      → 停止外发，向用户说明 reason_codes
-任务结束 → egress_revoke(task_id)
+工具调用 / 云端 LLM 请求（宿主拦截，模型无感知）
+  → egress_evaluate(task_id=任务上下文, channel/destination_id/purpose=配置, text | json_body)
+      ready_to_send = true → 用 sanitized_* 发出
+                             LLM：再用 egress_restore(context=local_ui) 取 Token→原值映射，在本机恢复模型输出
+      REVIEW               → 不发出，返回 E_EGRESS_REVIEW
+      BLOCK                → 不发出，返回 E_EGRESS_BLOCKED
+      超时 / 异常 / 校验不过 → enforce 下不发出，返回 E_EGRESS_UNAVAILABLE
 ```
 
-## 8. 性能与限制（当前实现）
+## 8. 性能与限制
 
-- 单条评估 P95 约 6 ms（不含 GLiNER，CPU，≤ 200 字文本）。700 条评测的实测数据见 `bench/results/SUMMARY.md`。
-- 同一个 MCP 服务实例内串行执行（AgentNexus 对同一服务串行调用）。
-- 没有载荷大小上限、没有附件和二进制解析、没有外部响应扫描。
+- 单条评估 P95 约 4–6 ms（不含 GLiNER，CPU）。DLP 进程冷启动需要数秒（加载 Presidio / spaCy），AgentNexus 启动时预先拉起。
+- 同一 MCP 会话内串行执行。
+- 没有附件和二进制解析、没有外部响应扫描、没有 `commit` 接口（见 9.5）。
 - Vault 为单机 SQLite，不支持多实例共享。
 
-## 9. D1 定稿需要拍板的事项（附建议）
+## 9. D1 定稿记录（2026-11-18）
 
-| # | 问题 | 现状 | 建议 |
+| # | 事项 | 结论 | 实现 |
 |---|---|---|---|
-| 9.1 | 返回外壳不统一 | evaluate 直接返回结果对象；restore 和 revoke 带 `status` 字段 | 统一为 `{"status":"success\|error","data":{…},"error":{code,message}}`，与 `tools/websearch` 一致 |
-| 9.2 | `task_id` 由谁提供 | Agent 在参数里传 | 改为由编排器注入（与 tenant/actor 同级的可信上下文），防止 Agent 借用其他任务的 Token 空间 |
-| 9.3 | `channel` 取值 | 自由字符串，不校验 | 定为枚举并校验；不同通道可以有不同的默认策略 |
-| 9.4 | `vault_ref` | 实为请求 ID | 改名为 `request_id`，用于审计关联；不暴露 Vault 内部引用 |
-| 9.5 | 审批与发送的绑定 | 无 `commit` 接口，evaluate 后内容可能被调包（TOCTOU） | 新增 `egress_commit(request_id, payload_hash, approval_id?)`，由执行侧校验 hash、目的地、有效期和幂等键（设计文档第 7 节） |
-| 9.6 | 恢复的调用方 | Agent 可调用（默认关闭） | 恢复只在编排器后处理或本地 UI 中进行，不向 General 暴露 |
-| 9.7 | 载荷大小上限 | 无 | 定一个上限（如 256 KB），超出时 BLOCK 或转异步 |
-| 9.8 | 接口版本 | 无显式版本字段 | 返回中加 `api_version`，工具名保持不变，按版本做兼容 |
-| 9.9 | 结构化返回 | 文本中的 JSON 字符串 | 启用 MCP `structured_output`，提供 output schema，便于 AgentNexus 校验 |
+| 9.1 | 统一返回格式 | 同意 | 第 3 节外壳 |
+| 9.2 | task_id 由谁提供 | 由编排器提供；三个工具不交给模型，只由 Rust 宿主直接调用 | 参数保留，取值来自任务上下文 |
+| 9.3 | channel 固定取值 | 同意，并增加 `agent`（AG.5 第 4 层：发给外部助手） | 非法取值 BLOCK |
+| 9.4 | 改名 request_id | 同意 | 每次评估都返回 |
+| 9.5 | `egress_commit` | **D1 不做**。AG.5 由 Rust 侧用一次性凭证（同 AG.2）绑定“展示的内容”与“实际发出的内容”；强制拦截阶段再加 | 未实现 |
+| 9.6 | 恢复只在本机做 | 同意，场景为 `local_ui` | 策略 `allowed_restore_contexts: [local_ui]` |
+| 9.7 | 载荷上限 256 KB | 同意（AG.5 诊断包自行控制在 32 KB 以内） | 超出 BLOCK |
+| 9.8 | 接口版本号 | 同意 | `api_version: "1.0"` |
+| 9.9 | 结构化返回 | 强烈同意；Rust 侧 MCP 客户端按输出 schema 校验，不过即失败、不外发 | `structured_output` + output schema |
 
-定稿后，我会按结论修改实现与测试，并同步更新本文档。
+不兼容变更（相对 v0.1）：返回改为外壳结构；`vault_ref` 改名 `request_id`；恢复默认上下文由 `task_postprocess` 改为 `local_ui`，且只允许 `local_ui`。

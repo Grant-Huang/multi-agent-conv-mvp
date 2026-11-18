@@ -79,6 +79,15 @@ SECRET_RULES = [
         r"refresh[_-]?token|password|passwd|pwd|private[_-]?token|auth[_-]?token)"
         r"\s*[\"']?\s*[:=]\s*[\"']?(?P<v>[^\s\"',;，。；]{6,})"),
         0.9, "v"),
+    # Explicit credential labels in Chinese and environment/token assignments.
+    Rule("SECRET", re.compile(
+        r"(?i)(?<![A-Za-z0-9_])(?:token|[A-Za-z][A-Za-z0-9_]*_PASS)"
+        r"\s*[:=]\s*[\"']?(?P<v>[^\s\"',;，。；]{6,})"), 0.95, "v"),
+    Rule("SECRET", re.compile(
+        r"(?:密码|口令)(?:\s*[:=]\s*|\s+)[\"']?(?P<v>[^\s\"',;，。；]{6,})"), 0.95, "v"),
+    # Known provider token shapes; values in tests are synthesized at runtime.
+    Rule("SECRET", re.compile(r"(?<![A-Za-z0-9_])sk-proj-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])"), 0.99),
+    Rule("SECRET", re.compile(r"(?<![A-Za-z0-9_])AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])"), 0.99),
     # PEM 私钥块
     Rule("SECRET", re.compile(
         r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]+?-----END (?:[A-Z ]+ )?PRIVATE KEY-----"), 0.99),

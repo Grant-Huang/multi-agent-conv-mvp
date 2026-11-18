@@ -149,7 +149,7 @@ impl Sandbox {
             .collect()
     }
 
-    /// 配置：出问题的助手 broken、帮手 helper（已连通）、未连通的 helper2；`with_dlp` 时加上 [dlp]
+    /// 配置：出问题的助手 broken、帮手 helper（已连通）、未连通的 helper2；`with_dlp` 时加上 [egress]（mode = audit，指向模拟 DLP 服务）
     async fn serve(
         &self,
         broken_extra: &str,
@@ -159,8 +159,9 @@ impl Sandbox {
         let broken = self.broken(broken_extra);
         let dlp = if with_dlp {
             format!(
-                "[dlp]\ncommand = \"{py}\"\nargs = [\"{fixture}\"]\ntimeout_secs = {dlp_timeout}\n",
+                "[egress]\nmode = \"audit\"\ndlp_command = \"{py}\"\ndlp_args = [\"{fixture}\"]\ntimeout_ms = {ms}\n",
                 py = python3(),
+                ms = dlp_timeout * 1000,
                 fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/fixtures/dlp_server.py")
                     .display(),
@@ -210,7 +211,16 @@ role = "coding"
         );
         let (config, _) = AppConfig::parse(&text).unwrap();
         let rt =
-            Arc::new(Runtime::new(config, Store::open(Path::new(":memory:")).unwrap()).unwrap());
+            // 开启 [egress] 时要用异步构造（启动外发检查守卫）
+            Arc::new(
+                Runtime::with_mcp_diagnostics(
+                    config,
+                    Store::open(Path::new(":memory:")).unwrap(),
+                    an_observe::Diagnostics::new(16),
+                )
+                .await
+                .unwrap(),
+            );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let for_serve = rt.clone();
@@ -482,7 +492,8 @@ async fn rt_dlp_06_revoke_after_send_and_no_content_in_logs() {
     );
     let logs = log_text();
     assert!(logs.contains("agent.diagnose_sent"), "应记录外发事件");
-    assert!(logs.contains("egress.evaluated"), "应记录评估事件");
+    // 事件名以 DESIGN 第 10 节为准（合并 master 的外发守卫后统一为 egress.evaluate）
+    assert!(logs.contains("egress.evaluate"), "应记录评估事件");
     assert!(!logs.contains(INSTRUCTION_MARK), "日志里不应有待发内容");
     assert!(!logs.contains("ACME"), "日志里不应有原文");
 }
@@ -638,7 +649,7 @@ async fn rt_dlp_04_review_not_sent() {
 #[tokio::test]
 async fn rt_dlp_05_fail_closed() {
     let _g = ENV_LOCK.lock().await;
-    // 没有配置 [dlp]
+    // 没有配置 [egress]
     {
         let sb = Sandbox::new("dlp05a", "anonymize");
         let (base, _rt) = sb.serve("", false, 3).await;

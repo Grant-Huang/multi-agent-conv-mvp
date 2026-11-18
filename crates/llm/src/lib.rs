@@ -9,6 +9,7 @@
 
 mod backend;
 mod budget;
+pub mod egress;
 mod error;
 mod policy;
 mod scheduler;
@@ -177,6 +178,8 @@ pub struct LlmClient {
     timeouts: Timeouts,
     /// 为 true 时，带 `response_format` 的请求关闭思考。直接回答（没有 response_format）不受影响。
     disable_structured_thinking: bool,
+    /// 外发检查（云端后端才配置）；None = 不检查，行为与以前相同
+    egress: Option<Arc<dyn egress::LlmEgress>>,
     /// 前台判断不思考时的附加做法（FT）：只在 `disable_structured_thinking` 为 true 时由后端配置打开
     front: FrontOptions,
 }
@@ -290,8 +293,21 @@ impl LlmClient {
             priority: Priority::Interactive,
             timeouts,
             disable_structured_thinking: false,
+            egress: None,
             front: FrontOptions::default(),
         })
+    }
+
+    /// 复制一个带外发检查的客户端：每次请求发出前先经 `egress` 检查，输出中的 Token 在本机恢复
+    pub fn with_egress(&self, egress: Arc<dyn egress::LlmEgress>) -> Self {
+        let mut c = self.clone();
+        c.egress = Some(egress);
+        c
+    }
+
+    /// 是否配置了外发检查
+    pub fn has_egress(&self) -> bool {
+        self.egress.is_some()
     }
 
     /// 复制一个使用其他分段超时的客户端
@@ -761,7 +777,50 @@ impl LlmClient {
     /// 带退避的调用：连接失败 / 超时 / 429 / 5xx / 流中断才重试，最多 `max_transient` 次
     /// （前台最多 1 次、后台用 `max_retries`），每次重试前按指数退避 + 抖动等待，且受调用期限约束；
     /// 已经向用户推送了部分文本时不再重试（否则会重复输出）
+    /// 外发检查包装：配置了 `egress` 时，先检查并换成脱敏后的消息再发出；检查不通过则不发出任何请求。
+    /// 模型输出（含流式增量）中的 Token 在本机按映射恢复后再交给调用方。
     async fn run<F: FnMut(&str)>(
+        &self,
+        req: &CallReq<'_>,
+        deadline: &Deadline,
+        on_delta: &mut F,
+    ) -> std::result::Result<Attempt, LlmError> {
+        let Some(egress) = self.egress.clone() else {
+            return self.run_inner(req, deadline, on_delta).await;
+        };
+        let out = egress.outbound(req.messages).await?;
+        let req2 = CallReq {
+            messages: &out.messages,
+            response_format: req.response_format.clone(),
+            max_tokens: req.max_tokens,
+            schema: req.schema,
+            req_id: req.req_id,
+            format_attempt: req.format_attempt,
+            streaming: req.streaming,
+        };
+        if out.restore.is_empty() {
+            return self.run_inner(&req2, deadline, on_delta).await;
+        }
+        let mut restorer = egress::Restorer::new(out.restore.clone());
+        let result = {
+            let mut forward = |d: &str| {
+                let ready = restorer.push(d);
+                if !ready.is_empty() {
+                    on_delta(&ready);
+                }
+            };
+            self.run_inner(&req2, deadline, &mut forward).await
+        };
+        let tail = restorer.finish();
+        if !tail.is_empty() {
+            on_delta(&tail);
+        }
+        let mut a = result?;
+        a.text = egress::restore_all(&out.restore, &a.text);
+        Ok(a)
+    }
+
+    async fn run_inner<F: FnMut(&str)>(
         &self,
         req: &CallReq<'_>,
         deadline: &Deadline,

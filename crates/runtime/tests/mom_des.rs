@@ -1738,3 +1738,170 @@ fn rt_des_29_closed_des_case_is_not_reused_or_refreshed() {
         "closed case is not refreshed"
     );
 }
+
+// ───────────────────── 阶段⑤a-1：模拟工厂服务与进程内内核一致 ─────────────────────
+
+#[test]
+fn rt_des_30_factory_service_matches_the_in_process_engine() {
+    use an_des::{FactoryService, ServiceConfig};
+    for (seed, pattern, horizon) in [(1, Pattern::Script, 240), (7, cluster(), 240)] {
+        let config = des_config(seed, pattern.clone(), horizon);
+        let mut e = Engine::memory().unwrap();
+        let sim = e.create_des_simulation(config.clone()).unwrap();
+        let mut svc = FactoryService::new(ServiceConfig {
+            admin_token: Some("t".into()),
+        });
+        let created = svc
+            .call("simulation_create", serde_json::to_value(&config).unwrap())
+            .expect("simulation_create");
+        assert_eq!(created["simulation_id"], sim.as_str(), "same simulation id");
+
+        // 同一时刻的可观测状态一致。
+        for t in [START + 10, START + 60, START + horizon] {
+            e.advance(t).unwrap();
+            svc.call(
+                "simulation_advance",
+                serde_json::json!({"simulation_id": sim, "to_minute": t}),
+            )
+            .unwrap();
+            let remote = svc
+                .call(
+                    "equipment_status",
+                    serde_json::json!({"simulation_id": sim}),
+                )
+                .unwrap();
+            let local = e.des_factory_view(&sim).unwrap();
+            assert_eq!(
+                remote["machines"], local["machines"],
+                "seed {seed} minute {t}: observable machines must match"
+            );
+        }
+
+        // 事件：服务给出的事件等于内核事件加仿真编号前缀。
+        let page = svc
+            .call(
+                "events_poll",
+                serde_json::json!({"simulation_id": sim, "cursor": 0, "limit": 1000}),
+            )
+            .unwrap();
+        let remote: Vec<Value> = page["events"].as_array().unwrap().clone();
+        let kernel = run_open_loop(&FactoryConfig::line_b_default(), &config.scenario).unwrap();
+        assert_eq!(
+            remote.len(),
+            kernel.events.len(),
+            "seed {seed}: event count"
+        );
+        for (r, k) in remote.iter().zip(&kernel.events) {
+            assert_eq!(r["id"], format!("{sim}:{}", k.id));
+            assert_eq!(r["batch"], format!("{sim}:{}", k.batch));
+            for f in ["kind", "source", "asset", "customer"] {
+                assert_eq!(r[f], serde_json::to_value(k).unwrap()[f], "seed {seed} {f}");
+            }
+            assert_eq!(r["occurred_at"], k.occurred_at);
+            assert_eq!(r["payload"], k.payload, "seed {seed}: payload");
+        }
+
+        // 标准答案：管理入口与审核层读到的相同。
+        let truth = svc
+            .call(
+                "simulation_ground_truth",
+                serde_json::json!({"simulation_id": sim, "admin_token": "t"}),
+            )
+            .unwrap();
+        assert_eq!(
+            truth,
+            e.des_review_truth(&sim).unwrap(),
+            "seed {seed}: truth"
+        );
+    }
+}
+
+#[test]
+fn rt_des_31_incident_close_preserves_safety_blocked_member() {
+    for seed in 1..=10 {
+        let mut e = Engine::memory().unwrap();
+        e.create_des_simulation(des_config(seed, Pattern::ResourceContention, 480))
+            .unwrap();
+        let mut target = None;
+        for t in START..=START + 480 {
+            e.advance(t).unwrap();
+            target = incidents(&e).into_iter().find(|i| {
+                i.stage == "WAITING_HUMAN"
+                    && i.proposal.as_ref().is_some_and(|p| {
+                        p["recommended"].is_string()
+                            && p["assets"].as_array().is_some_and(|a| a.len() >= 2)
+                    })
+            });
+            if target.is_some() {
+                break;
+            }
+        }
+        let Some(inc) = target else { continue };
+        let plan = inc.proposal.as_ref().unwrap()["recommended"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        run_plan(&mut e, &inc.id, &plan);
+        let members: Vec<String> = inc.world["des_incident"]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m.as_str().unwrap().to_string())
+            .collect();
+        let member = e.case(&members[0]).unwrap().clone();
+        e.ingest(EventInput {
+            id: format!("review-safety-{seed}"),
+            scenario: member.scenario.clone(),
+            batch: member.batch.clone(),
+            customer: member.customer.clone(),
+            asset: member.asset.clone(),
+            source: "EAM".into(),
+            kind: "vibration".into(),
+            occurred_at: e.now(),
+            payload: serde_json::json!({"safety_trip":true}),
+        })
+        .unwrap();
+        assert_eq!(e.case(&member.id).unwrap().stage, "BLOCKED");
+        assert!(e.close(&member.id).is_err());
+        let end = e
+            .events(&inc.id, 0, 1000)
+            .unwrap()
+            .into_iter()
+            .find(|ev| ev.kind == "DesPlanApplied")
+            .unwrap()
+            .payload["interventions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v["end_minute"].as_u64())
+            .max()
+            .unwrap();
+        e.advance(end + 5).unwrap();
+        let reservations = e.case(&member.id).unwrap().world["reservations"].clone();
+        let seq = e.sequence();
+        e.close(&inc.id).unwrap();
+        let blocked = e.case(&member.id).unwrap();
+        assert_eq!(
+            blocked.stage, "BLOCKED",
+            "incident close must preserve member safety interlock"
+        );
+        assert_eq!(blocked.world["safety_trip"], true);
+        assert_eq!(blocked.world["reservations"], reservations);
+        assert!(e
+            .events(&member.id, seq, 100)
+            .unwrap()
+            .iter()
+            .any(|ev| ev.kind == "CaseCloseSkipped"
+                && ev.payload["reason"] == "safety_trip"
+                && ev.payload["incident"] == inc.id));
+        for m in members.iter().skip(1) {
+            assert_eq!(
+                e.case(m).unwrap().stage,
+                "CLOSED",
+                "safe members still close"
+            );
+        }
+        return;
+    }
+    panic!("resource contention must produce an incident in seeds 1–10");
+}

@@ -1,6 +1,7 @@
 # 方案：把外发检查变成必经步骤（待审批）
 
-> 状态：**方案稿，等待审批，尚未修改任何代码。** 基线代码：master `8fd24e2`。
+> 状态：**2026-11-18 已批准；第一、二阶段已实施**（部署与使用见 [DLP_EGRESS_DEPLOYMENT.md](DLP_EGRESS_DEPLOYMENT.md)）。
+> 第三、四阶段尚未开始。审批结论与实施中的调整见文末“实施记录”。方案正文保留审批时的原稿，配置以实施记录和部署说明为准。
 > 依据：AGENTS.md“先停下来问人”（涉及对外发送、权限策略；第三阶段涉及 `orchestrator.rs` / `store.rs`）。
 
 ## 1. 目标与验收标准
@@ -151,3 +152,31 @@ purpose = "vendor_diagnostics"
 5. **D1 接口定稿**的结论（`docs/INTERFACE.md` 第 9 节），尤其是统一返回外壳和 `task_id` 由宿主注入这两项，会直接影响第一阶段的实现。建议先定稿接口，再开始第一阶段。
 
 批准后，我会先提交第一阶段的测试用例（Red），再写实现。
+
+## 11. 实施记录（2026-11-18）
+
+### 审批结论
+
+| 问题 | 结论 |
+|---|---|
+| 首期范围 | 第一、二阶段一起做 |
+| 默认模式 | 代码默认 `off`；部署先用 `audit`，注意事项写进部署说明（第 3 节） |
+| 外发工具清单 | 按建议：`web_search`、`web_fetch`、HTTP 远程 MCP 工具；stdio 本地 MCP 工具逐个确认 |
+| 云端 LLM | 需要支持 |
+| D1 接口 | 9 项中 9.5（commit）D1 不做，其余同意，见 `tools/dlp-egress/docs/INTERFACE.md` 第 9 节 |
+
+### 与方案稿的差异
+
+| 方案稿 | 实施 | 原因 |
+|---|---|---|
+| `[egress]` 中有 `tenant_id` / `actor_id` | 去掉；身份只在 DLP 自己的配置里 | 避免两处配置不一致；DLP 不接受调用方传入的身份 |
+| 统一的 `[[egress.bindings]]` | 拆为 `[[egress.tools]]` 与 `[[egress.llm]]` | 两类路径需要的字段不同（LLM 的 channel 固定为 external_api） |
+| 新增 `ToolRegistry::call_with_ctx` 显式传 task_id | `ToolRegistry::call` 内部检查；task_id 放在 task-local（`an_llm::egress::TASK_ID`），由 General 在任务开始时设置 | 报告流程等所有经注册表的调用都能覆盖，且不用改 `Tool` trait 与各调用点 |
+| LLM 消息逐条检查 | 合并成一次 `json_body` 检查（≤ 200 KB），超过则逐条检查 | 减少调用次数；同一 task 作用域保证 Token 一致 |
+| — | 启动校验同时检查“每个角色实际使用的地址”（旧写法允许角色覆盖地址） | 防止某个角色指向云端而漏检 |
+| — | 新增警告码 `W_EGRESS_UNBOUND` | 区分“未登记”与“服务不可用” |
+
+### 测试
+
+RT-EGR-01 至 RT-EGR-16（`docs/testing/CASES.md`），均先 Red 后 Green。另有与真实 dlp-egress 联调的测试
+`real_dlp_service_roundtrip_when_configured`（设置 `AN_TEST_DLP_COMMAND`、`AN_TEST_DLP_CONFIG` 时运行，已在开发环境通过）。

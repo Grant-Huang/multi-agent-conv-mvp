@@ -2,18 +2,21 @@
 
 按《AgentNexus 统一外发脱敏服务：技术设计与验证方案 v0.1》实现的独立 MCP 服务。外发前调用，返回
 `ALLOW / ANONYMIZE / REVIEW / BLOCK` 判定和脱敏载荷。只有 `ready_to_send=true` 时才可发送返回的载荷。
+接口为 D1 定稿版（api_version 1.0，统一外壳 + 结构化返回）。
 
-> **这不是不可绕过的强制拦截。** 本工具需要 Agent 或编排器主动调用。设计文档 2 节要求的网络 egress
-> 限制、受控连接器、以及在 Rust 编排器中强制调用，均未在本次实现（涉及高风险文件，需另行评审）。
+AgentNexus 通过 `[egress]` 配置由 **Rust 宿主直接调用**本服务（工具调用守卫 + 云端 LLM 检查），不交给模型。
+宿主侧覆盖了工具调用与 LLM 请求；编码 agent 子进程、网络层出站等仍未覆盖，详见
+[部署与使用说明](../../docs/mcp/DLP_EGRESS_DEPLOYMENT.md) 第 5 节。
 
 ## 文档
 
 | 文档 | 给谁看 |
 |---|---|
-| [docs/INTERFACE.md](docs/INTERFACE.md) | 调用方：工具参数、返回、决策语义，以及 D1 接口定稿待决事项 |
+| [docs/INTERFACE.md](docs/INTERFACE.md) | 调用方：工具参数、统一返回外壳、决策语义、D1 定稿记录 |
+| [../../docs/mcp/DLP_EGRESS_DEPLOYMENT.md](../../docs/mcp/DLP_EGRESS_DEPLOYMENT.md) | 部署与运维：`[egress]` 配置、audit 注意事项、enforce 行为、覆盖范围、回滚 |
 | [docs/LOCAL_TEST_GUIDE.md](docs/LOCAL_TEST_GUIDE.md) | 本地测试人员：安装、复现、GLiNER 评测、AgentNexus 接入验证、结果回传 |
 | [docs/ANNOTATION_GUIDE.md](docs/ANNOTATION_GUIDE.md) | 测试集编写与标注人员：样本要求、标注规范、交付流程 |
-| [../../docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md](../../docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md) | 审批人：把外发检查变成必经步骤的方案（待审批） |
+| [../../docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md](../../docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md) | 必经化方案（已批准；第一、二阶段已实施） |
 
 ## 组成
 
@@ -39,8 +42,10 @@
   收件人（`to=` / `guests=` 等路由字段）不做 Token 化，可按 `allowed_recipient_domains` 校验；JSON 载荷键名、
   结构与非字符串值保持不变。校验不通过 → BLOCK。
 - **Fail closed**：识别异常、空载荷、缺少密钥或身份配置（启动失败）均不会放行原文。
-- **恢复**：`egress_restore` 默认关闭（`allow_agent_restore: false`）。恢复要求同租户、同任务、同属主、允许的上下文、
+- **恢复**：`egress_restore` 默认关闭（`allow_restore: false`），只允许 `local_ui` 场景。恢复要求同租户、同任务、同属主、
   未过期未撤销；外部响应中伪造或越界的 Token 原样保留并列入 `unknown_tokens`。
+- **接口约束**：`channel` 只能是 `email / slack / external_api / file_upload / mcp / agent`；载荷上限 256 KB；
+  每次评估返回 `request_id`；三个工具都发布 output schema，返回统一外壳 `{api_version, status, data, error}`。
 
 ## 安装与运行
 
@@ -63,36 +68,24 @@ tools/dlp-egress/.venv/bin/dlp-egress-mcp --config tools/dlp-egress/config/dlp.e
 
 ## 接入 AgentNexus
 
-`config.example.toml` 的 MCP 段落已附示例（注释状态）。复制到 `config.toml` 后取消注释：
+不要把本服务配置成 `[[mcp.servers]]`（那会把工具交给模型）。在 `config.toml` 中配置 `[egress]`，由宿主直接调用：
 
 ```toml
-[[mcp.servers]]
-id = "dlp"
-transport = "stdio"
-command = "tools/dlp-egress/.venv/bin/dlp-egress-mcp"
-args = ["--config", "tools/dlp-egress/config/dlp.example.yaml"]
-timeout_ms = 30000
-[[mcp.servers.tools]]
-name = "egress_evaluate"
-capability_id = "dlp.egress_evaluate"
-description = "外发前检查载荷：返回 ALLOW/ANONYMIZE/REVIEW/BLOCK 与脱敏载荷"
-effect = "workspace_write"
-input_types = ["application/json"]
-output_types = ["application/json"]
+[egress]
+mode = "audit"   # off（默认）/ audit / enforce
+dlp_command = "tools/dlp-egress/.venv/bin/dlp-egress-mcp"
+dlp_args = ["--config", "tools/dlp-egress/config/dlp.host.yaml"]
 ```
 
-- `effect` 声明为 `workspace_write`：evaluate 会写本地 Vault。AgentNexus 拒绝调用 `external_write`。
-- AgentNexus 的 stdio 配置没有 `env` 字段，所以用 `--config` 传配置文件。子进程会继承 AgentNexus 的环境变量，
-  `DLP_*` 变量同样生效。
-- 没有把 `egress_restore` / `egress_revoke` 暴露给 General：恢复应在本地可信界面中做。
+宿主用的 DLP 配置需要 `allow_restore: true`（用于恢复云端 LLM 输出中的 Token）。工具与 LLM 后端的登记、
+audit 阶段的注意事项、enforce 下的行为见 [部署与使用说明](../../docs/mcp/DLP_EGRESS_DEPLOYMENT.md)。
 
-已实测（2026-11-17）：用上述配置启动本仓库编译的 `agentnexus`，完成 MCP 握手与工具发现。
-`GET /api/capabilities` 返回 `dlp.egress_evaluate`（provider=dlp，effect=workspace_write），
-输入 Schema 中没有 `tenant_id` / `actor_id`。由 General 在真实对话中发起的 `tools/call` 需要真实 LLM，
-本次未测；调用路径由 `tests/test_mcp_server.py` 的协议级测试覆盖。
+已实测（2026-11-18）：AgentNexus 的 Rust 集成测试 `real_dlp_service_roundtrip_when_configured` 连接真实的本服务，
+结果：结构化返回符合 schema；工具参数被脱敏；带凭证样式串的调用被拦下；LLM 消息被脱敏，并取得 Token 映射。
 
-调用参数：`task_id`、`channel`（email / slack / external_api / file_upload / mcp）、`destination_id`、`purpose`，
-以及 `text` 与 `json_body` 二选一，可选 `constraints`。
+### R-20261118-M3 修复约定
+
+补充中文密码/口令、token和环境变量_PASS赋值、OpenAI项目key及Google key检测；希腊/西里尔常见同形字仅在额外的SECRET识别通道折叠，原文字段及主数据规范值不变。匹配后仍映射原文偏移遮盖，非凭证内容不改写。
 
 ## 测试
 
@@ -108,6 +101,8 @@ cd tools/dlp-egress && uv run pytest --cov --cov-report=term && uv run flake8 .
 | `test_gliner_adapter.py` | 假模型验证 GLiNER 接入与合并优先级；启用但未配置模型时启动失败 |
 | `test_mcp_server.py` | 真实 stdio 子进程 + MCP 客户端：握手、工具发现、调用；`--config`；缺身份配置时退出 |
 | `test_benchmark_gate.py` | 700 条与留出集上的**安全底线**：凭证零漏放、零危险放行、零跨作用域恢复 |
+| `test_d1_interface.py` | D1 定稿：统一外壳与 output schema、request_id、通道取值（含 agent）、256 KB 上限、恢复只允许 local_ui |
+| `test_annotations.py` | 标注格式解析、期望结果推导、校验与转换脚本、模板有效性 |
 
 评测：`uv run python -m bench.run_benchmark --out bench/results`（结果见 `bench/results/SUMMARY.md`）。
 
@@ -125,6 +120,13 @@ cd tools/dlp-egress && uv run pytest --cov --cov-report=term && uv run flake8 .
 | 700 条 · B 无词典 | 0.993 | 1.000 | 682/700 | 0 | 0/10 |
 | 留出集 36 条 · A | 0.958 | 0.972 | 33/36 | 0 | 0/5 |
 | 留出集 36 条 · B | 0.862 | 0.917 | 26/36 | 0 | 0/5 |
+| **1000 条模拟测试集 · A** | **0.743** | **0.848** | **652/1000** | **141** | **152/200** |
+| **1000 条模拟测试集 · B** | **0.477** | **0.768** | **420/1000** | **141** | **152/200** |
+
+1000 条模拟测试集（`dlp-gold-v1-simulated-1000`，由 AI 按 `docs/ANNOTATION_GUIDE.md` 生成，不入库）是目前
+**唯一与开发隔离**的测试集，结果最能说明真实水平：凭证漏放、危险放行均远未达标，机密信息的实体识别几乎为 0，
+无词典时人员 / 厂区 / 项目识别为 0。原始文件中 22 条中英混排被标为 `en`，评测时按规范改为 `zh`（只影响分语言统计）。
+**按“测试集不用于调参”的约定，本次没有根据这份结果修改任何识别规则。**
 
 两种口径下的共同结果：往返恢复 = 原文 100%，跨任务/跨租户恢复成功 0 次，指标与设备号 100% 原样保留，
 未登记目的地 100% BLOCK。单条评估延迟 P95 约 6 ms（不含 GLiNER）。
@@ -155,3 +157,7 @@ HO-021 原先用的是 Stripe 文档里公开的 `sk_test_...` 示例密钥，�
 - 无词典时的组织/人员识别是启发式规则，中文精度有限；上线需要租户主数据同步，或启用经过评估的 NER 模型。
 - 留出集只有 36 条，且由同一作者编写、标注。正式基准应由工业领域人员独立编写与审核（设计文档 9.3 节）。
 - 评测集字段 → 请求的映射（目的地、`preserve:AMOUNT` 约束）是调用方上下文，见 `bench/run_benchmark.py` 头部说明。
+
+### R-20261118-H1 修复约定
+
+路由字段下任意层dict/list中的字符串仍须检测；重建JSON时任何字符串缺少分析结果会抛错并由evaluate统一返回BLOCK，不回传原文。路由邮箱的既有规则不在本条调整。

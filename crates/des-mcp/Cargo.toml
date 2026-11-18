@@ -1,0 +1,19 @@
+[package]
+name = "an-des-mcp"
+version.workspace = true
+edition.workspace = true
+
+# 模拟工厂的 MCP 服务（stdio）：把 an-des 的工具目录原样暴露给 MCP 客户端（设计文档 §11a）。
+[[bin]]
+name = "an-des-mcp"
+path = "src/main.rs"
+
+[dependencies]
+an-des.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+rmcp = { version = "=3.9.0", default-features = false, features = ["server", "transport-async-rw"] }
+
+[dev-dependencies]
+rmcp = { version = "=3.9.0", default-features = false, features = ["client", "transport-async-rw"] }

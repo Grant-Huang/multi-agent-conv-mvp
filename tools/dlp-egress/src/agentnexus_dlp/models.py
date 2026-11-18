@@ -14,6 +14,13 @@ ANONYMIZE = "ANONYMIZE"
 REVIEW = "REVIEW"
 BLOCK = "BLOCK"
 
+# 接口版本（D1 定稿：返回中带版本号，工具名不变，按版本做兼容）
+API_VERSION = "1.0"
+# 通道固定取值（D1 定稿 9.3）。agent = 发给外部助手（AG.5 第 4 层）
+CHANNELS = ("email", "slack", "external_api", "file_upload", "mcp", "agent")
+# 单次载荷上限（D1 定稿 9.7）：按 UTF-8 字节数计，超出即 BLOCK
+MAX_PAYLOAD_BYTES = 256 * 1024
+
 # 决策严重程度，用于“取最严”合并
 DECISION_RANK = {ALLOW: 0, ANONYMIZE: 1, REVIEW: 2, BLOCK: 3}
 
@@ -58,7 +65,7 @@ class EvaluateResult:
     entities: list[DetectedEntity] = field(default_factory=list)
     reason_codes: list[str] = field(default_factory=list)
     tokens: list[str] = field(default_factory=list)  # 本次使用的 Token，不含原值
-    vault_ref: str | None = None
+    request_id: str = ""  # 本次评估的请求 ID，用于审计关联（D1 定稿 9.4，原 vault_ref）
     validation: dict[str, bool] = field(default_factory=dict)
     ready_to_send: bool = False
     elapsed_ms: float = 0.0

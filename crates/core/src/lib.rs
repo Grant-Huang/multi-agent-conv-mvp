@@ -809,6 +809,14 @@ impl std::error::Error for AgentError {}
 pub mod codes {
     // 模型
     pub const LLM_UNREACHABLE: &str = "E_LLM_UNREACHABLE";
+    /// 外发检查判定 BLOCK，内容没有发出
+    pub const EGRESS_BLOCKED: &str = "E_EGRESS_BLOCKED";
+    /// 外发检查判定需要人工审批（REVIEW），内容没有发出
+    pub const EGRESS_REVIEW: &str = "E_EGRESS_REVIEW";
+    /// 外发检查服务不可用（enforce 模式下按 fail closed 处理），内容没有发出
+    pub const EGRESS_UNAVAILABLE: &str = "E_EGRESS_UNAVAILABLE";
+    /// 外发路径没有登记外发绑定（audit 模式下的启动警告）
+    pub const EGRESS_UNBOUND: &str = "W_EGRESS_UNBOUND";
     pub const LLM_HTTP: &str = "E_LLM_HTTP";
     pub const LLM_FORMAT: &str = "E_LLM_FORMAT";
     pub const LLM_FORMAT_RETRY: &str = "W_LLM_FORMAT_RETRY";

@@ -19,13 +19,14 @@
 | agent-ui | 右侧「助手」页签；首次打开时对话区顶部的发现卡 | 列出状态、来源、用途；安装引导与重新检测；确认卡 → 结果卡；撤销；停用最后一个写代码的助手后对话用大白话回复 | E2E-AGFIRST、E2E-AGLIST、E2E-AGTOML、E2E-AGGUIDE、E2E-AGCONNECT、E2E-AGUNDO、E2E-AGDISABLE（`web/e2e/agents.spec.ts`，模拟 ACP agent 冒充已安装的 claude-agent-acp）；"普通"使用水平未实现 |
 | agent-chat | 对话里说"把 Cursor 接进来"等（`[conversation] agent_management` 打开时） | 前台判断 manage_agents（操作 / 助手 / 角色都是候选枚举）；代码生成确认卡、选择卡、引导卡、发现卡；卡片存进消息；送给模型的历史只用正文；确认后追加结果卡 | RT-AGCHAT-01 至 RT-AGCHAT-09（`crates/server/tests/agent_chat.rs`、`crates/runtime/tests/agent_chat_migration.rs`）；E2E-AGCHAT、E2E-AGCHOICE；真实模型的识别准确率由用户本机评测 |
 | agent-diagnose | 「助手」页签每行的"排查"；`POST /api/agents/diagnose` | 握手检测 + 只读本机体检（服务 / 登录 shell 的 PATH、node 版本、凭证文件是否存在）+ 规则给出大白话结论和修复步骤；不外发 | RT-AGDIAG-01～04、06（`crates/server/tests/agent_diagnose.rs`）、RT-AGDIAG-05、07、08、10～12（`crates/server/tests/agent_diagnose_send.rs`）、E2E-AGDIAG、E2E-AGHELP；诊断包（第 3 层）和请其他助手帮忙（第 4 层，每次预览、逐次同意） |
-| dlp-egress | `config.toml` 的 `[dlp]`；排查第 3、4 层自动调用 | 外发前经 DLP 评估：只有 `ready_to_send` 才发，且只发脱敏文本；帮手回复还原后只用于显示；结束后撤销映射；任何失败都不发；DLP 工具不进模型可见的清单 | RT-DLP-01～06（`crates/server/tests/agent_diagnose_send.rs`，模拟 DLP 服务）；真实 dlp-egress 待工具一侧按 CONTRACT 第 8 节改完后接入验收 |
+| dlp-egress | `config.toml` 的 `[egress]`（mode 为 audit 或 enforce）；排查第 3、4 层自动调用，复用外发检查守卫 | 外发前经 DLP 评估：只有 `ready_to_send` 才发，且只发脱敏文本；帮手回复还原后只用于显示；结束后撤销映射；任何失败都不发；DLP 工具不进模型可见的清单 | RT-DLP-01～06（`crates/server/tests/agent_diagnose_send.rs`，模拟 DLP 服务）；真实 dlp-egress 待工具一侧按 CONTRACT 第 8 节改完后接入验收 |
 | nodes | “节点”→按地址添加/发现节点→配对；解除也两步确认 | 以测试节点核对授权、执行、解除后的不可用状态 | 现有 server/tests/e2e.rs node_flow/ACP；真实 LAN 未覆盖 |
 | feedback | 展开可匹配用户消息的任务→“派错了”→动作/角色/说明→保存 | POST /api/feedback 信封、持久化记录；非法动作/角色被拒；导出仅为草稿 | 现有 misroute 组件及 Rust HTTP 测试；本次无模板纠正字段 |
 | reports | 对话中要求“写报告并引用公开资料/最新信息”，General 后台执行 | 同时要求 web_search+write_file 时走代码控制流程：规划→检索（≤6、去重）→章节并行写作→汇合；过半章成功才完成；无效引用剔除；取消后不再请求。仅要求 web_search 时仍走逐步循环（先搜后写） | RT-REP-01 至 RT-REP-09（Rust 集成测试，受控模型）；Router 提示词与重复追加为单元测试；真实模型质量与搜索时效需实际 E2E 验收 |
 | templates | 当前无界面入口（M4.3 尚未接入编排器） | 模板校验、Router 拆分决定、分支信封与汇合输入在 Runtime 集成层验证 | RT-TPL-01 至 RT-TPL-10；Rust 集成测试与单元测试；并行执行与 Composer 汇合回复未实现 |
 | admission | 无界面入口；HTTP `/api/admission/*`（开启 `[admission]` 时才有） | S1→S7 顺序、澄清问题、加权打分与等级、人工审批闸门、确定性抽检、警告与降级、撤权与凭证代际、重启恢复、旧库自动建表；按等级分配、凭证过期结果丢弃、撤权中止进行中任务并由备份接手、外部 agent 试用期记录；HTTP 接口走完准入流程、激活后注册外部 agent（kind=a2a）并完成任务、重启后自动重新注册、未开启时 404；外部 agent HTTP 适配器 | RT-ADM-01 至 RT-ADM-17；实验工具：`cargo run -p an-runtime --example admission_replay`（用正式账本回放 A1/A2/A3）、`cargo run -p an-server --example admission_revoke_bench`（撤权实测）；Rust 集成测试；未接入网页界面，S2/S3 的大模型澄清与评分由实验脚本完成 |
 | tools-evals | 聊天委派工具；终端 websearch、an-eval、dream；外发脱敏 MCP（tools/dlp-egress） | 计算/文件/CLI证据、JSON错误、逐条评分和失败草稿；不自动改主评测集 | 现有 Rust/Python 测试；dlp-egress 有 MCP 协议测试与 700 条+留出集评测（GLiNER 未评测）；真实搜索时效与模型质量另验 |
+| egress | `[egress]` 外发检查（off / audit / enforce）：工具调用守卫与云端 LLM 检查，调用 dlp-egress | enforce 下只发送脱敏内容；REVIEW/BLOCK/DLP 异常不发送；DLP 工具不暴露给模型；启动校验外发路径登记；LLM 输出 Token 本机恢复 | RT-EGR-01 至 RT-EGR-16（Rust 集成测试，DLP 与模型服务均为替身）；另有与真实 dlp-egress 的联调测试（设置 AN_TEST_DLP_COMMAND 时运行）；真实模型与真实部署需按部署说明验收 |
 
 应用为单页布局，网页没有 /tasks、/settings 或 /templates/run 路径。API 以 crates/server/src/lib.rs 为准；状态和中文文案见 web/src/labels.ts。
 
@@ -53,11 +54,15 @@ RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS �
 
 车间 DES 阶段③（`mom-des`，闭环）：RT-DES-08～11、18 与 HTTP-DES-03 定义方案选定、执行回写仿真世界（维修停机与复位、刀具调拨到达）、执行后同源观测作为核验证据、仿真故障导致补偿、共用资源的案例关联；实现位于 `des/engine_link.rs`、`des/scenario.rs` 与 `engine.rs` 两处 DES 钩子，Red→Green 证据见 [mom-des-phase3.md](evidence/mom-des-phase3.md)。
 
+R-20261118-H2：RT-DES-31以真实Runtime验证关闭协同事项时跳过安全联锁成员并保留预留，其他成员照常关闭。CaseCloseSkipped为案例事件，不是新增运行日志。 证据见 [r-20261118-h2.md](evidence/r-20261118-h2.md)。
+
 车间 DES 阶段④（`mom-des`）：RT-DES-12～15、19 与 HTTP-DES-04 定义审核层（规则检查、AI 审核与降级、人工确认与分歧记录、审核模型选择与独立性标注）和批量实验（两种策略、同一组 seed、CSV）；已实现并转绿（真实审核模型未接入，测试用脚本替身）。
 
 DES 审查修复（R-20261117-M1/L1，移植自 PR #84/#85 并适配阶段③）：RT-DES-22/23（`engine_link.rs` 单元测试）验证遥测缓存——推进 2880 分钟至多重新推演一次、恢复快照后各读取入口共用一次、缓存不持久化，干预后与场景结束后的推进也不逐分钟重放；RT-DES-24（`server/tests/mom_des_budget.rs`，真实 HTTP）验证无法满足的大场景在 2 秒内返回 400 constraint，并发读取在 2 秒内返回。证据见 [r-20261117-m1-l1-des.md](evidence/r-20261117-m1-l1-des.md)。
 
 车间 DES 阶段③b（`mom-des`）：RT-DES-25～29 定义按报警触发的模板（单设备层）与产线协同事项（协调层：同线 60 分钟内多个案例时统一决策、成员只做诊断、执行覆盖报警设备集合、关闭时级联），以及 P0 不变与关闭后事件的两条基线；已实现并转绿（已请人决策的案例撤回请求后加入事项，见设计文档 §6.8 实现修订）。
+
+模拟工厂与 MCP 挂载阶段⑤a-1（`des-factory`）：RT-DESF-01～08、RT-DESM-01～03 与 RT-DES-30 定义独立的模拟工厂服务（13 个通用风格工具，分观测、执行、控制、管理四类；写操作需幂等键与审批引用；标准答案需管理口令）、经 stdio 挂载的 MCP 服务与进程内结果逐字节一致、以及与 MOM 进程内仿真一致；已实现并转绿（仿真内核迁入 `crates/des`）。⑤a-2 连接器用例为草案。
 
 专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
 
@@ -68,6 +73,8 @@ R-20261107-M1：终态案例拒绝手动故障注入；RT-MOM-10（runtime 集�
 R-FIRST-05：补充要求先完成 Router/Policy 校验，再取消旧任务并创建替代任务。RT-CONV-01/02 位于 `crates/server/tests/supplement_routing.rs`，使用受控模型与真实 Runtime/SQLite；覆盖传输失败、格式失败、Policy 拒绝时旧任务状态/事件不变，以及成功时合并目标后替换。证据见 [R-FIRST-05](evidence/r-first-05.md)。本组不是浏览器验证；取消与新任务持久化之间尚非原子事务。
 
 R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不允许就地改写接入地址、角色、类型或并发。RT-ADM-18 为 Runtime 集成；`server/tests/admission.rs::active_agent_reactivation_returns_conflict_without_binding_or_event_changes` 为 HTTP 回归，验证重复 activate 返回 409 且记录、审计事件、注册卡片不变。证据见 [R-20261110-H1](evidence/r-20261110-h1.md)；不代表准入接口已经有身份认证或 endpoint 网络白名单。
+R-20261118-H1：PY-DLP-H1以真实evaluate管线验证路由字段下嵌套dict/list凭证BLOCK、客户Token化，以及漏分析字符串的fail closed。 证据见 [r-20261118-h1.md](evidence/r-20261118-h1.md)。
+
 ## MOM 独立设计原型
 
 | Feature | 用户路径 | 验证及边界 |
@@ -90,3 +97,5 @@ R-20261113-L1 11-15预审补充：RT-HOST-08验证文件日志降级时不再误
 
 R-20261113-L1 11-16预审：RT-HOST-10确定性验证其他监听者不能满足自己的子进程就绪。host_log_limits/host_diagnostics共用support/service_readiness.rs，等待独立捕获的自身监听日志、存活状态与端口连接；只串行化启动交接。原业务断言不变，host_log_limits连续50次默认并行验证。证据见[evidence/r-20261113-l1-pre-review-20261116.md](evidence/r-20261113-l1-pre-review-20261116.md)。
 R-20261116-L1：RT-HOST-11确定性验证外国监听者不能满足自身子进程就绪。host_guard共用support/service_readiness.rs，确认独立捕获的自身监听日志、Child存活及端口；只串行化启动交接，原RT-HOST-01/02断言不变，连续100次默认并行验证。证据见[evidence/r-20261116-l1.md](evidence/r-20261116-l1.md)。
+
+R-20261118-M3：PY-DLP-M3以真实evaluate管线验证8种凭证全部BLOCK、非凭证Unicode保留，700条与留出集安全门槛照常执行。 证据见 [r-20261118-m3.md](evidence/r-20261118-m3.md)。

@@ -20,3 +20,9 @@ async-trait.workspace = true
 mdns-sd.workspace = true
 ts-rs.workspace = true
 an-observe.workspace = true
+# 模拟工厂内核（阶段⑤a-1）
+an-des.workspace = true
+
+[dev-dependencies]
+# 阶段⑤a：模拟工厂服务与进程内内核的一致性（RT-DES-30）
+an-des.workspace = true

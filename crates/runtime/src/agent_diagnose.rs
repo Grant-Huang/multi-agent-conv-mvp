@@ -1,6 +1,8 @@
 //! 排查第 3、4 层（AG.5）：诊断包；请其他助手帮忙查（每次预览、逐次同意，经 DLP）。
 //!
-//! 设计（docs/DECISIONS.md 第 12～14、17 条；docs/dlp/CONTRACT.md 第 4～6 节）：
+//! 设计（docs/DECISIONS.md 第 12～14、17、41 条；DLP 接口见 tools/dlp-egress/docs/INTERFACE.md）：
+//! - DLP 复用 `[egress]` 的外发检查守卫（mode 不是 off 时才有），不另起进程；无论 audit 还是 enforce，
+//!   这里都只在 `ready_to_send` 时发送；
 //! - 第 3 层诊断包：先做本机确定性处理（`an_agents::diagnose::scrub_local`）；配置了 DLP 时再经它检查
 //!   （渠道 clipboard），用完即撤销。没配置或 DLP 不可用时照样显示，并注明"未经外发脱敏检查"——
 //!   这一步系统不往外发，由用户自己决定复制给谁；
@@ -20,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use an_agents::acp::PermissionMode;
-use an_agents::dlp::DlpClient;
+use an_agents::egress::EgressGuard;
 use an_agents::AcpAgent;
 use an_core::{
     AgentAdapter, DiagnosePackage, DiagnosePreview, DiagnoseSendResult, EventPublisher, EventSink,
@@ -111,6 +113,11 @@ impl Drop for TempDir {
     }
 }
 
+/// 错误说明只保留前 120 个字符
+fn short_err(e: &anyhow::Error) -> String {
+    an_core::truncate_chars(&format!("{e}"), 120)
+}
+
 /// 待发内容的摘要（只用于审计日志关联，不是加密摘要）
 fn digest(text: &str) -> String {
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -119,8 +126,8 @@ fn digest(text: &str) -> String {
 }
 
 impl Runtime {
-    fn dlp_client(&self) -> Option<&Arc<DlpClient>> {
-        self.dlp.as_ref()
+    fn dlp_client(&self) -> Option<&Arc<EgressGuard>> {
+        self.egress.as_ref()
     }
 
     /// 第 3 层：诊断包。本机处理过的原文 → 配置了 DLP 时再经它检查（渠道 clipboard），用完即撤销
@@ -130,12 +137,14 @@ impl Runtime {
             return DiagnosePackage {
                 text: Some(local_text),
                 dlp_checked: false,
-                note: format!("未经外发脱敏检查：没有配置外发脱敏工具。{LOCAL_ONLY}"),
+                note: format!(
+                    "未经外发脱敏检查：没有开启外发检查（config.toml 的 [egress]）。{LOCAL_ONLY}"
+                ),
             };
         };
         let task_id = an_core::new_id("diag-pkg");
         let result = dlp
-            .evaluate(
+            .evaluate_text(
                 &task_id,
                 "clipboard",
                 "user:clipboard",
@@ -149,6 +158,24 @@ impl Runtime {
                 dlp_checked: true,
                 note: "已经过外发脱敏检查：敏感信息已换成占位符（例如 [CUSTOMER_001]）。".into(),
             },
+            // 工具还不支持 clipboard 渠道、或没有登记 user:clipboard：属于配置问题，不是内容问题，
+            // 按"没有经过检查"处理（第 3 层不外发，照样给本机处理过的版本）
+            Ok(e) if e.reason_codes.iter().all(|c| {
+                matches!(
+                    c.as_str(),
+                    "invalid_channel" | "destination_unknown" | "purpose_not_allowed"
+                )
+            }) && e.decision == "BLOCK" =>
+            {
+                DiagnosePackage {
+                    text: Some(local_text),
+                    dlp_checked: false,
+                    note: format!(
+                        "未经外发脱敏检查：外发检查工具还不支持或没有登记诊断包这个去向（{}）。{LOCAL_ONLY}",
+                        e.reason_codes.join("、")
+                    ),
+                }
+            }
             Ok(e) => DiagnosePackage {
                 text: None,
                 dlp_checked: true,
@@ -157,7 +184,7 @@ impl Runtime {
             Err(err) => DiagnosePackage {
                 text: Some(local_text),
                 dlp_checked: false,
-                note: format!("未经外发脱敏检查：{err}。{LOCAL_ONLY}"),
+                note: format!("未经外发脱敏检查：外发检查暂时不可用（{}）。{LOCAL_ONLY}", short_err(&err)),
             },
         };
         // 交给用户复制的是脱敏文本，之后不需要还原：立即撤销映射
@@ -182,7 +209,7 @@ impl Runtime {
         let (_, helper_name) = self.helper_config(helper)?;
         let Some(dlp) = self.dlp_client().cloned() else {
             return Err(Conflict(
-                "没有配置外发脱敏工具（config.toml 的 [dlp]），不能把内容发给其他助手。可以复制诊断包，自己决定怎么用。（技术信息：E_DLP_UNCONFIGURED）".into(),
+                "没有配置外发脱敏（config.toml 的 [egress]，mode 需为 audit 或 enforce），不能把内容发给其他助手。可以复制诊断包，自己决定怎么用。（技术信息：E_DLP_UNCONFIGURED）".into(),
             ));
         };
         let Some((_, local_text)) = self.diagnose_core(id).await else {
@@ -190,7 +217,7 @@ impl Runtime {
         };
         let task_id = an_core::new_id("diag");
         let evaluation = dlp
-            .evaluate(
+            .evaluate_text(
                 &task_id,
                 "agent",
                 &format!("agent:{helper}"),
@@ -198,7 +225,12 @@ impl Runtime {
                 &local_text,
             )
             .await
-            .map_err(|e| Conflict(format!("{e}。（技术信息：E_DLP_UNAVAILABLE）")))?;
+            .map_err(|e| {
+                Conflict(format!(
+                    "外发脱敏检查暂时不可用（{}），这次不能发送。（技术信息：E_DLP_UNAVAILABLE）",
+                    short_err(&e)
+                ))
+            })?;
         let sanitized = match (&evaluation.sanitized_text, evaluation.ready_to_send) {
             (Some(text), true) => text.clone(),
             _ => {
@@ -299,7 +331,7 @@ impl Runtime {
         let outcome = match result {
             Ok((helper_name, reply)) => {
                 let (reply, restored) = match &dlp {
-                    Some(d) => match d.restore(&consent.task_id, &reply).await {
+                    Some(d) => match d.restore_text(&consent.task_id, &reply).await {
                         Ok(text) => (text, true),
                         Err(_) => (reply, false),
                     },

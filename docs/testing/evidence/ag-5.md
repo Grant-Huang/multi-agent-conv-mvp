@@ -86,3 +86,17 @@
 - 只用模拟的 DLP 服务测过。真实的 `tools/dlp-egress` 要等工具一侧按 CONTRACT 第 8 节改完，包括结构化返回、`api_version`、`channel` 增加 `agent` 和 `clipboard`、新增实体类型，以及修复审查发现的 H1、M2～M5，再做一次接入验收。
 - 只用模拟的帮手测过。真实的 Claude Code 等助手在"权限一律拒绝"下会怎么回复，需要在本机验收（AG.6 的 J8）。
 - 错误详情里 SDK 的报错文本和附加数据有重复（AG.1 起就是这种写法），诊断包里会出现两次，不影响判断。
+
+## 补充：合并 master 时的调整（2026-11-18）
+
+master 已合入"外发检查必经化"第一、二阶段（`[egress]`、`crates/agents/src/egress.rs`，接口版本 `1.0`）。为了只保留一套 DLP 配置和客户端，做了以下调整（见 DECISIONS 第 41 条）：
+
+- 删除 `an-agents/src/dlp.rs` 和 `[dlp]` 配置；`EgressGuard` 新增 `evaluate_text`、`restore_text`、`revoke` 三个宿主内部方法；`Runtime.dlp` 改为 `Runtime.egress`。
+- 测试搭建（断言未改）：
+  - 配置改为 `[egress] mode = "audit"`；
+  - 开启外发检查时，运行时改用异步构造 `with_mcp_diagnostics`；
+  - 模拟 DLP 服务返回的版本号改为 `1.0`；
+  - 浏览器测试服务同样改为 `[egress]`。
+- 一处断言文字改动：RT-DLP-06 原来检查日志里有 `egress.evaluated`（我自己起的事件名），改为检查 master 在 DESIGN 第 10 节定义的 `egress.evaluate`。检查内容不变：有评估记录、没有原文。
+- 用例清单 RT-DLP-01、05 的前提描述随配置改名更新（`[dlp]` → `[egress]`，版本 `"1"` → `"1.0"`），断言不变。
+- 结果：`agent_diagnose_send` 13 passed，`agent_diagnose` 5 passed。
