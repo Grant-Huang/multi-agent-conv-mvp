@@ -3,12 +3,17 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message } from "../bindings/Message";
+import type { ChatCard } from "../bindings/ChatCard";
+
+/** 对话区的消息：原有消息，可选带一张卡片（AG.4；旧数据和旧调用方没有 card） */
+export type ChatMessageItem = Message & { card?: ChatCard | null };
 import type { TaskRecord } from "../bindings/TaskRecord";
 import { taskStatusLine } from "../labels";
 import { ApprovalInfo } from "./ApprovalInfo";
 import { ArtifactList } from "./ArtifactList";
 import { ConfirmButton } from "./ConfirmButton";
 import { TaskTicker } from "./TaskTicker";
+import { ChatCardView } from "./ChatCards";
 
 /** 对话里可以直接对任务做的操作（批准 / 取消），由 App 执行并负责刷新 */
 export type TaskActionKind = "approve" | "cancel";
@@ -25,7 +30,9 @@ const EXAMPLES = [
 
 /** 助手回复按 Markdown 渲染（react-markdown 默认不渲染原始 HTML） */
 const MessageRow = memo(function MessageRow(props: {
-  m: Message;
+  m: ChatMessageItem;
+  /** 卡片上的操作完成后重新读取消息（AG.4） */
+  onCardChanged?: () => void;
   /** 任务的最后一条消息：显示状态、操作和产物 */
   task: TaskRecord | null;
   /** 任务的第一条消息（简短回复）：走马灯挂在这里，最终正文在它之后 */
@@ -35,7 +42,7 @@ const MessageRow = memo(function MessageRow(props: {
   busy: boolean;
   onAct?: (kind: TaskActionKind, taskId: string) => void;
 }) {
-  const { m, task, tickerTask, rank, lines, busy, onAct } = props;
+  const { m, task, tickerTask, rank, lines, busy, onAct, onCardChanged } = props;
   // 有进度或仍在运行时才显示走马灯；没有任务的消息不显示
   // 失败任务也显示走马灯：失败原因就是历史的最后一行
   const showTicker = !!tickerTask && (isRunning(tickerTask) || lines.length > 0 || tickerTask.status === "FAILED");
@@ -43,6 +50,10 @@ const MessageRow = memo(function MessageRow(props: {
     <div className={`msg ${m.role}`}>
       <div className={m.role === "user" ? "bubble" : "bubble md"}>
         {m.role === "user" ? m.content : <MarkdownText text={m.content} />}
+        {/* AG.4：对话里的卡片（确认 / 选择 / 引导 / 结果 / 发现） */}
+        {m.card && (
+          <ChatCardView card={m.card} conversationId={m.conversation_id} onChanged={() => onCardChanged?.()} />
+        )}
         {showTicker && tickerTask && (
           <TaskTicker lines={lines} running={isRunning(tickerTask)} failed={tickerTask.status === "FAILED"} />
         )}
@@ -85,6 +96,8 @@ const MessageRow = memo(function MessageRow(props: {
     </div>
   );
 }, (a, b) => a.m.id === b.m.id && a.m.content === b.m.content && a.m.role === b.m.role
+  // 卡片状态会变（例如确认卡变为已确认），也要比较
+  && JSON.stringify(a.m.card) === JSON.stringify(b.m.card)
   && a.task?.status === b.task?.status && a.rank === b.rank && a.lines === b.lines && a.busy === b.busy
   && a.onAct === b.onAct
   && a.tickerTask?.id === b.tickerTask?.id && a.tickerTask?.status === b.tickerTask?.status
@@ -151,7 +164,9 @@ function Thinking() {
 }
 
 export function ChatView(props: {
-  messages: Message[];
+  messages: ChatMessageItem[];
+  /** 卡片上的操作完成后重新读取消息（AG.4） */
+  onRefresh?: () => void;
   onSend: (text: string) => Promise<void>;
   /** 正在流式生成的回答（最终消息到达后不再显示） */
   streaming: { id: string; text: string } | null;
@@ -246,6 +261,7 @@ export function ChatView(props: {
               lines={tickerTask && tid ? withFailure(notes[tid] ?? EMPTY_LINES, tickerTask) : EMPTY_LINES}
               busy={!!task && busyTask === task.id}
               onAct={props.onTaskAction ? act : undefined}
+              onCardChanged={props.onRefresh}
             />
           );
         })}

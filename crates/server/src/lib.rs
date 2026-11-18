@@ -70,6 +70,15 @@ pub fn api(rt: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/agents", get(agents))
+        .route("/api/agents/catalog", get(agent_catalog))
+        .route("/api/agents/probe", post(probe_agent))
+        .route("/api/agents/diagnose", post(diagnose_agent))
+        .route("/api/agents/config", get(agent_config_view))
+        .route("/api/agents/proposals", post(propose_agent_change))
+        .route(
+            "/api/agents/proposals/{id}/apply",
+            post(apply_agent_proposal),
+        )
         .route("/api/capabilities", get(capabilities))
         .route(
             "/api/conversations",
@@ -78,6 +87,10 @@ pub fn api(rt: AppState) -> Router {
         .route(
             "/api/conversations/{id}/messages",
             get(list_messages).post(send_message),
+        )
+        .route(
+            "/api/conversations/{id}/agent-proposals",
+            post(propose_in_conversation),
         )
         .route("/api/tasks", get(list_tasks))
         .route("/api/tasks/{id}", get(get_task))
@@ -162,6 +175,100 @@ async fn agents(State(rt): State<AppState>) -> Json<Vec<an_core::AgentCard>> {
     Json(rt.registry.cards())
 }
 
+/// Agent 目录（AG.1，只读）：全部预设 + 本机状态；已注册的附上与健康接口相同规则的连接状态
+async fn agent_catalog(State(rt): State<AppState>) -> Json<Vec<an_core::CatalogItem>> {
+    let links = agent_links(&rt);
+    let mut items = rt.agent_catalog();
+    for item in &mut items {
+        if item.status != an_core::CatalogStatus::Registered {
+            continue;
+        }
+        if let Some(link) = links.iter().find(|l| l["id"] == item.id.as_str()) {
+            item.link_status = link["link"]["status"].as_str().map(String::from);
+            item.link_reason = link["link"]["reason"].as_str().map(String::from);
+        }
+    }
+    Json(items)
+}
+
+/// 托管配置错误 → HTTP 状态码
+fn config_error(e: an_runtime::agent_config::ConfigError) -> AppError {
+    use an_runtime::agent_config::ConfigError as E;
+    let status = match &e {
+        E::NotFound(_) => StatusCode::NOT_FOUND,
+        E::BadToken => StatusCode::FORBIDDEN,
+        E::Expired => StatusCode::GONE,
+        E::Conflict(_) => StatusCode::CONFLICT,
+        E::Invalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        E::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    AppError(status, e.to_string())
+}
+
+/// 托管配置的概况（AG.3，只读）
+async fn agent_config_view(
+    State(rt): State<AppState>,
+) -> Json<an_runtime::agent_config::AgentConfigView> {
+    Json(rt.agent_config_view())
+}
+
+/// 提议修改 agent 配置（AG.2）：只校验、不写入；返回说明、修改前后内容和一次性确认凭证
+async fn propose_agent_change(
+    State(rt): State<AppState>,
+    Json(change): Json<an_runtime::agent_config::ChangeRequest>,
+) -> ApiResult<an_runtime::agent_config::Proposal> {
+    rt.propose_agent_change(change)
+        .map(Json)
+        .map_err(config_error)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApplyRequest {
+    token: String,
+}
+
+/// 确认提议（AG.2）：凭证正确且未过期才写入，并立即生效
+async fn apply_agent_proposal(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<ApplyRequest>,
+) -> ApiResult<an_runtime::agent_config::Applied> {
+    rt.apply_agent_proposal(&id, &req.token)
+        .await
+        .map(Json)
+        .map_err(config_error)
+}
+
+/// 排查（AG.5 第 1、2 层，不外发）：握手检测 + 本机体检 + 规则结论。请求体同握手检测，只接受 id
+async fn diagnose_agent(
+    State(rt): State<AppState>,
+    Json(req): Json<ProbeRequest>,
+) -> ApiResult<an_core::DiagnoseReport> {
+    rt.diagnose_agent(&req.id)
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found(&format!("可排查的 ACP agent `{}`", req.id)))
+}
+
+/// 握手检测的请求体：只接受 agent id。多余字段（例如 command）直接拒绝，不会被执行。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProbeRequest {
+    id: String,
+}
+
+/// 握手检测（AG.1，只读）：目录内或已注册的 ACP agent；其他 id 返回 404
+async fn probe_agent(
+    State(rt): State<AppState>,
+    Json(req): Json<ProbeRequest>,
+) -> ApiResult<an_core::ProbeOutcome> {
+    rt.probe_agent(&req.id)
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found(&format!("可检测的 ACP agent `{}`", req.id)))
+}
+
 #[derive(Deserialize)]
 struct NewConversation {
     title: Option<String>,
@@ -181,14 +288,30 @@ async fn list_conversations(State(rt): State<AppState>) -> ApiResult<Vec<Convers
     Ok(Json(rt.store.list_conversations()?))
 }
 
+/// 消息列表：在原有字段之外多一个 `card`（AG.4 对话里的卡片；没有卡片时为 null）
 async fn list_messages(
     State(rt): State<AppState>,
     Path(id): Path<String>,
-) -> ApiResult<Vec<an_core::Message>> {
+) -> ApiResult<Vec<an_core::MessageView>> {
     rt.store
         .get_conversation(&id)?
         .ok_or_else(|| not_found("会话"))?;
-    Ok(Json(rt.store.list_messages(&id, None)?))
+    Ok(Json(rt.store.list_message_views(&id, None)?))
+}
+
+/// 在会话里生成确认卡（AG.4：用户在选择卡上点选后调用）。只校验、不写配置；确认仍要凭证
+async fn propose_in_conversation(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(change): Json<an_runtime::agent_config::ChangeRequest>,
+) -> ApiResult<an_core::MessageView> {
+    rt.store
+        .get_conversation(&id)?
+        .ok_or_else(|| not_found("会话"))?;
+    rt.agents
+        .propose_in_conversation(&id, change)
+        .map(Json)
+        .map_err(config_error)
 }
 
 #[derive(Deserialize)]

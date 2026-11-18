@@ -302,3 +302,42 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
 .approval-info dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .approval-info .candidate { display: inline-block; margin-right: 8px; }
 .approval-info code { margin-right: 4px; }
+
+/* ───── AG.3 助手页签与卡片 ───── */
+.agents-toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+.agent-list { display: flex; flex-direction: column; gap: 8px; }
+.agent-row { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.agent-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.agent-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.agent-state.connected { color: #1f8a4c; }
+.agent-state.unavailable { color: #c0392b; }
+.agent-purpose { color: var(--text, inherit); }
+.agent-role { color: var(--muted); }
+.agent-source { font-size: 12px; color: var(--muted); }
+.agent-card { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; background: var(--panel); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.agent-card h3 { margin: 0; font-size: 14px; }
+.agent-card h4 { margin: 4px 0 0; font-size: 12px; color: var(--muted); font-weight: 600; }
+.agent-card ul, .agent-card ol { margin: 0; padding-left: 18px; }
+.agent-card .hint { margin: 0; color: var(--muted); font-size: 12px; }
+.agent-card .summary { margin: 0; font-weight: 600; }
+.agent-card .warnings { list-style: none; padding: 0; color: #b26a00; }
+.agent-card .result-line { margin: 0; }
+.agent-card .cmd { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 2px 0; }
+.agent-card code { background: rgba(127,127,127,.12); padding: 1px 4px; border-radius: 4px; word-break: break-all; }
+.agent-card .diff { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.agent-card pre { margin: 0; max-height: 160px; overflow: auto; font-size: 11px; background: rgba(127,127,127,.08); padding: 6px; border-radius: 4px; white-space: pre-wrap; }
+.agent-card label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.agent-card input, .agent-card select, .agent-card textarea { font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg, transparent); color: inherit; }
+.agent-card.discovery { margin: 10px 16px 0; }
+.card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.error-text { color: #c0392b; margin: 0; font-size: 12px; }
+@media (max-width: 560px) { .agent-card .diff { grid-template-columns: 1fr; } }
+/* AG.4 对话里的卡片 */
+.chat-card { margin-top: 8px; }
+.chat-card .agent-card { background: var(--bg, transparent); }
+.choice-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+/* AG.5 排查结果 */
+.finding { border-top: 1px dashed var(--border); padding-top: 6px; }
+.checks { list-style: none; padding: 0; margin: 4px 0 0; font-size: 12px; }
+.check.problem, .check.error { color: #b26a00; }
+.check.ok { color: #1f8a4c; }

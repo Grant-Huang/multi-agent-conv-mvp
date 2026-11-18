@@ -222,6 +222,118 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-HOST-01 | http-host | 启动真实 agentnexus/an-mom 二进制，恶意 Host 请求写入口、页面、API、SSE、同源 MOM | 请求在业务副作用前返回403；业务记录不变；转发头不能绕过 |
 | RT-HOST-02 | http-host | 本机 IPv4/localhost/IPv6 authority、错误端口、伪装域名、非法/缺失/重复 Host | 合法且端口匹配才允许；其余400或403 |
 
+## ACP 自动发现预设（AG.0，实现前定义）
+
+新增 4 个内置预设：`claude`（claude-agent-acp）、`codex-acp`（codex-acp）、`cursor`（cursor-agent acp）、`zcode`（zcode-acp-server），角色都是 coding。用临时目录中的假可执行文件模拟"已安装"，只检查文件、不运行。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-ACPD-01 | acp-discovery | PATH 只含临时目录，里面有 claude-agent-acp、codex-acp、cursor-agent、zcode-acp-server；auto_detect = true，构造 Runtime | 注册表出现 claude、codex-acp、cursor、zcode 四张卡片：kind=acp、role=coding、agent_type 等于 id、enabled=true |
+| RT-ACPD-02 | acp-discovery | PATH 里只有一个无关的 `agent` 可执行文件，没有 cursor-agent | 不出现 cursor 卡片 |
+| RT-ACPD-03 | acp-discovery | 用户在 [[acp.agents]] 写了 id = "claude"（不同命令、名称、角色），预设命令也已安装 | 只有一张 claude 卡片，名称和角色取用户配置 |
+| RT-ACPD-04 | acp-discovery | PATH 为空目录、HOME 为空目录（系统固定目录无法隔离） | 构造 Runtime 不报错；4 个新预设的卡片出现与否和"命令能否被找到"一致：找不到就不出现 |
+| RT-ACPD-05 | acp-discovery | 读取预设清单；PATH 同时有 opencode 和 claude-agent-acp | 前三个预设仍是 opencode、hermes、pi，命令与参数不变，新预设排在其后；opencode 与 claude 都被注册 |
+
+## Agent 目录与握手检测（AG.1，实现前定义）
+
+只读：`GET /api/agents/catalog` 列出预设目录及状态；`POST /api/agents/probe {"id"}` 对目录内或已注册的 ACP agent 握手并分类。不写配置。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGCAT-01 | agent-catalog | PATH 隔离：claude-agent-acp 已安装且自动发现开启；codex-acp 未安装 | 目录含全部 7 个预设；claude 为 registered 并带连接状态；codex-acp 为 not_installed |
+| RT-AGCAT-02 | agent-catalog | 读目录 | 每项都有名称、用途、角色、启动命令和至少一条安装步骤 |
+| RT-AGCAT-03 | agent-catalog | 已注册的假 ACP agent 握手正常 | kind = ok |
+| RT-AGCAT-04 | agent-catalog | 假 ACP agent 在新建会话时返回 -32000（auth_required） | kind = needs_login，并给出下一步说明 |
+| RT-AGCAT-05 | agent-catalog | 脚本向错误输出写 "env: node: No such file or directory" 后以 127 退出 | kind = missing_dependency；detail 含该错误输出 |
+| RT-AGCAT-06 | agent-catalog | 脚本记录 pid 后长时间不响应 | 约 10 秒后 kind = timeout；该进程已结束 |
+| RT-AGCAT-07 | agent-catalog | 目录内预设未安装 | kind = not_installed，立即返回 |
+| RT-AGCAT-08 | agent-catalog | 未知 id、非 ACP agent（general）；请求体附带 command 字段 | 未知和非 ACP 返回 404；带 command 的请求被拒绝，命令未被执行 |
+| RT-AGCAT-09 | agent-catalog | 检测已注册 agent 成功 | 健康接口中该 agent 的连接状态变为 connected |
+
+## 前台提速：先写理由 / 规则判风险 / 可疑时再思考（FT.1，实现前定义）
+
+用假模型服务记录每个请求体，按脚本返回结果。"不思考"指请求带 `chat_template_kwargs.enable_thinking = false`；"思考"指不带这个设置（沿用模型默认）。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-FT-01 | front-thinking | 不写任何新配置（基线） | 前台请求不带 enable_thinking；turn_decision 没有 reason 字段；route_decision 的 reason 仍在最后 |
+| RT-FT-02 | front-thinking | 不思考 + front_reason_first | turn_decision 与 route_decision 的第一个字段都是 reason，最长 40 字，且为必填 |
+| RT-FT-03 | front-thinking | 只开 front_reason_first、不关思考 | schema 与基线相同（A 只在不思考时生效） |
+| RT-FT-04 | front-thinking | risk_rules 开；模型给 low 的"删除生产环境数据库旧表"、给 low 的"修改 src/main.rs"、给 high 的"总结这篇文章" | 风险分别为 high、medium、high（只升不降） |
+| RT-FT-05 | front-thinking | risk_rules 不开；模型给 low 的"删除生产环境数据库旧表" | 风险保持 low |
+| RT-FT-06 | front-thinking | 不思考 + 升级；前台判断第一次输出不是 JSON，第二次合格 | 共 2 次请求：第 1 次不思考，第 2 次思考；结果取第 2 次 |
+| RT-FT-07 | front-thinking | 不思考 + 升级；路由第一次给 high，思考后给 medium | 共 2 次路由请求，第 2 次思考；最终风险 medium |
+| RT-FT-08 | front-thinking | 不思考 + 升级；路由第一次选了没有可用 agent 的 coding，思考后选 general | 路由成功，角色 general；第 2 次请求思考 |
+| RT-FT-09 | front-thinking | 不思考 + 升级；前台判断第一次给 delegate 但 task_goal 为空，思考后合格 | 共 2 次请求，第 2 次思考；结果为 delegate 且目标非空 |
+| RT-FT-10 | front-thinking | 不思考 + 升级，max_retries = 1；前台判断始终输出非 JSON | 返回错误；不思考的请求只有 1 次，之后都是思考请求（1 + max_retries 次），不会退回不思考 |
+| RT-FT-11 | front-thinking | 不思考但不开升级，或开升级但没关思考；第一次输出非 JSON、第二次合格 | 两次请求的思考设置相同（与现在的重试行为一致） |
+
+## 托管配置、热注册与撤销（AG.2，实现前定义）
+
+接口：`POST /api/agents/proposals`（只校验、不写入，返回提议与一次性确认凭证）、`POST /api/agents/proposals/{id}/apply {"token"}`。提议类型：add_preset、add_custom、set_default、disable、enable、remove、revert。托管文件放在数据库同目录的 `agents.managed.toml`。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGCFG-01 | agent-config | 自动发现关闭，claude-agent-acp 已安装；提议接入预设 claude 并确认 | 不重启即出现在注册表；目录状态为 registered；已做过一次握手检测；托管文件含 claude |
+| RT-AGCFG-02 | agent-config | 两个 coding agent m1、m2（config.toml 没写执行组）；提议把 coding 默认设为 m2 并确认 | 新的 coding 分配得到 m2 |
+| RT-AGCFG-03 | agent-config | 托管 agent 正在执行任务（持有名额）；停用它 | 新分配不再得到它；执行中的名额仍可用并能正常归还 |
+| RT-AGCFG-04 | agent-config | 唯一的 coding agent 忙，另一个分配在排队；停用它 | 排队的分配报 E_ROUTE_NO_AGENT，说明里有"已被停用或没有安装"之类的大白话 |
+| RT-AGCFG-05 | agent-config | 连续两次修改后撤销两次，再撤销一次 | 两次撤销依次恢复，注册表同步；第三次撤销被拒绝（没有可撤销的版本） |
+| RT-AGCFG-06 | agent-config | 托管文件有自定义 agent、默认执行者，以及与已安装预设同 id 的托管 agent；重新启动 | 托管内容生效；同 id 时托管配置优先于自动发现的预设 |
+| RT-AGCFG-07 | agent-config | config.toml 手写了 agent "hand" 和 coding 执行组 | 停用 hand、改 coding 默认、托管同 id agent 的提议都被拒绝，并说明要改 config.toml |
+| RT-AGCFG-08 | agent-config | 确认时不带凭证、凭证错误、提议已过期 | 分别被拒绝（403、403、410）；托管文件和注册表都不变 |
+| RT-AGCFG-09 | agent-config | 启动前托管文件内容损坏 | 启动正常；状态里报 E_AGENT_MANAGED_INVALID；坏文件内容不变；新提议被拒绝并说明原因 |
+| RT-AGCFG-10 | agent-config | 自定义 agent 的 env 写了明文值；另一个只写 `${VAR}` 引用 | 写明文的提议被拒绝；写引用的被接受，托管文件里只有引用 |
+| RT-AGCFG-11 | agent-config | 把两个不同类型的 agent 设为同一个执行组 | 提议被拒绝；注册表执行组不变 |
+| RT-AGCFG-12 | agent-config | 两个不同的修改同时确认 | 两个都生效；托管文件是完整的合法 TOML，包含两处修改 |
+| RT-AGCFG-13 | agent-config | 对话中派发写代码任务，但没有任何可用的 coding agent | 回复由前台模型生成，请求里带了原因和"用非专业用户能看懂的话"的要求；模型不可用时的兜底文字不以错误码开头 |
+| RT-AGCFG-14 | agent-config | 写代码任务在执行阶段因没有可用 coding agent 失败 | 交付消息由前台模型撰写，提供给它的材料里有原因和恢复办法，并要求用大白话 |
+
+## 助手页签与卡片（AG.3，实现前定义）
+
+测试服务里：`claude-agent-acp` 已安装（包装脚本指向自带的模拟 ACP agent，握手真实）；`zcode-acp-server` 未安装；config.toml 手写了一个 agent `hand`；自动发现关闭；没有内置 coding agent。用例按顺序执行，共享同一个服务。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| E2E-AGFIRST | agent-ui | 新浏览器首次打开 | 对话区顶部出现发现卡，列出可接入的助手；点"知道了"后刷新不再出现 |
+| E2E-AGLIST | agent-ui | 打开「助手」页签 | 显示 Claude Code（已安装、未接入）、ZCode（未安装）、hand（在 config.toml 中配置）、内置的通用执行，每项有用途说明 |
+| E2E-AGTOML | agent-ui | 查看 hand 一行 | 显示"在 config.toml 中配置"，没有"停用"按钮 |
+| E2E-AGGUIDE | agent-ui | ZCode 一行点"看安装步骤"，再点"我装好了，重新检测" | 引导卡列出安装步骤，命令带"复制"按钮；检测结果用大白话说明"还没有安装" |
+| E2E-AGCONNECT | agent-ui | Claude Code 一行点"接入"，在确认卡上确认 | 确认卡说明将会发生什么并显示将执行的命令；结果卡显示已接入和检测结果"已连通"；该行变为已接入 |
+| E2E-AGUNDO | agent-ui | 在结果卡上点"撤销"并确认 | Claude Code 恢复为已安装、未接入 |
+| E2E-AGDISABLE | agent-ui | 再次接入 Claude Code 后停用它，然后在对话里要求改代码 | 确认卡警告"写代码"类任务将没有执行者；之后对话中的回复是大白话，错误码只在末尾括号里 |
+
+## 对话里管理助手（AG.4，实现前定义）
+
+开关 `[conversation] agent_management`。受控模型按脚本给出前台判断；"不思考 / 思考"不涉及。卡片存在消息的 `card_json` 列，送给模型的历史只用 `content`。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGCHAT-01 | agent-chat | 开关关闭 | 前台判断请求的 schema 与现在相同（没有 manage_agents 和 agent_* 字段） |
+| RT-AGCHAT-02 | agent-chat | 开关打开，claude-agent-acp 已安装；模型判断"接入 claude" | 回复消息带确认卡（提议 id、凭证、说明）；消息正文是大白话，不含凭证 |
+| RT-AGCHAT-03 | agent-chat | 模型判断"接入"但没说是哪个，角色 coding | 回复选择卡，候选都是负责写代码、尚未接入的助手；在选择卡上点选（会话内提议接口）后，会话里追加一张确认卡 |
+| RT-AGCHAT-04 | agent-chat | 模型判断"停用 hand"（config.toml 里写的） | 大白话说明要改 config.toml，没有卡片 |
+| RT-AGCHAT-05 | agent-chat | 生成确认卡之后再发一条消息 | 送给模型的请求里没有凭证，也没有卡片数据，只有卡片消息的大白话正文 |
+| RT-AGCHAT-06 | agent-chat | 用卡片里的凭证确认 | 同一会话追加结果卡；原确认卡状态变为 applied；助手已注册 |
+| RT-AGCHAT-07 | agent-chat | 提议过期后再确认 | 410；原确认卡状态变为 expired |
+| RT-AGCHAT-08 | agent-chat | 旧数据库的 messages 表没有 card_json 列 | 打开时自动补列，可重复打开；旧消息可读，卡片为空 |
+| RT-AGCHAT-09 | agent-chat | 模型给的 agent_id 不在候选里 | 按格式不合格重试；第二次合格后正常生成卡片 |
+| E2E-AGCHAT | agent-ui | 对话里说"把 Claude Code 接进来" | 对话里出现确认卡 → 确认 → 对话里出现结果卡；刷新后两张卡仍在，确认卡显示已确认 |
+| E2E-AGCHOICE | agent-ui | 对话里说"帮我接个写代码的助手" | 对话里出现选择卡 → 点选一个 → 对话里出现确认卡 |
+
+## 助手排查：规则库与本机体检（AG.5 第 1、2 层，实现前定义）
+
+接口 `POST /api/agents/diagnose {"id"}`：先做一次握手检测，再做本机体检（只运行写死的只读检查），按规则给出大白话结论和修复步骤。不外发任何内容。RT-AGDIAG-05（诊断包脱敏）、07～12（外部助手排查）依赖 DLP，D1 定稿后再定义。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGDIAG-01 | agent-diagnose | 已安装的 claude-agent-acp 启动时向错误输出写"env: node: No such file or directory"并退出 | 检测分类为缺依赖；命中"找不到 Node.js"规则，给出大白话解释和安装步骤 |
+| RT-AGDIAG-02 | agent-diagnose | 服务的 PATH 里找不到 claude-agent-acp，登录 shell 的 PATH 里能找到 | 命中"服务找不到命令、终端能找到"规则，解释里给出终端里找到的完整路径和修复办法 |
+| RT-AGDIAG-03 | agent-diagnose | ZCode 要求 Node ≥ 22，本机 node 是 v18；Cursor 没有 Node 要求；node 命令卡住不返回 | ZCode 命中"Node 版本太低"；排查 Cursor 时不运行 node；node 卡住时 5 秒内结束并记为检查失败，不拖住整个排查 |
+| RT-AGDIAG-04 | agent-diagnose | ZCode 的凭证文件存在但不可读；另一次凭证文件不存在 | 不可读时检查结果仍为"存在"（只看是否存在，不读内容）；不存在时命中"缺少 ZCode 登录凭证"规则 |
+| RT-AGDIAG-06 | agent-diagnose | 自定义 agent 以未知报错退出 | 没有命中任何规则，结果标记为"未识别"；自定义命令不做登录 shell 检查 |
+| E2E-AGDIAG | agent-ui | 「助手」页签里未安装的 ZCode 点"排查" | 显示排查结果：大白话结论"还没有安装"、安装步骤（带复制按钮）和体检项 |
+
 ## Host 拒绝事件可观测性（实现前定义，R-20261113-L1）
 
 | Case | Feature | Given / When | Then |

@@ -116,6 +116,14 @@ pub struct BackendConfig {
     /// `false` 只给这两个角色的结构化请求加上 `enable_thinking=false`，直接回答和后台任务不变。
     #[serde(default)]
     pub front_structured_thinking: Option<bool>,
+    /// FT 实验 A：前台判断不思考时，结构化输出的第一个字段为简短的判断依据（限 40 字）。
+    /// 只在 `front_structured_thinking = false` 时生效。默认不开。
+    #[serde(default)]
+    pub front_reason_first: Option<bool>,
+    /// FT 实验 D：前台判断不思考时，结果可疑（格式不合格、风险 high、角色没有可用 agent）就开思考重判一次。
+    /// 只在 `front_structured_thinking = false` 时生效。默认不开。
+    #[serde(default)]
+    pub front_thinking_escalation: Option<bool>,
     #[serde(default)]
     pub connect_secs: Option<u64>,
     #[serde(default)]
