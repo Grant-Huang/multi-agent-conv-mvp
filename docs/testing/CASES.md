@@ -303,6 +303,12 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-24 | mom-des | an-mom 服务；32 台设备、2880 分钟、并发簇（窗口 1 分钟、至少 1000 个扰动） | 创建该仿真，同时并发读取案例列表 | 创建在 2 秒内返回含 "constraint" 的 400，读取在 2 秒内返回 200；被拒绝的创建没有留下任何记录 |
 
 
+## R-20261118-H2 协同事项关闭与安全联锁
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| RT-DES-31 | 资源竞争事项已执行推荐方案，一成员收到同源safety_trip并BLOCKED | 维修完成后关闭事项 | 安全成员保持BLOCKED和联锁事实及预留；发出含原因的CaseCloseSkipped；其他成员正常关闭 |
+
 ## MOM 车间 DES 阶段③b：按报警触发的模板与产线协同事项（实现前定义）
 
 设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §6.8。对外约定：模板名 `DAG-TPL-DES-EQUIPMENT@1`、`DAG-TPL-DES-QUALITY@1`、`DAG-TPL-DES-COMBINED@1`、`DAG-TPL-DES-DIAGNOSIS@1`、`DAG-TPL-DES-LINE-INCIDENT@1`；协同事项是批次为 `DES-n:INCIDENT:…` 的案例，`world.des_incident` 记录产线、成员与报警设备集合，成员案例的 `world.des_member_of` 指向事项。测试在 `crates/runtime/tests/mom_des.rs`。

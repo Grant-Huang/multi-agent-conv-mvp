@@ -484,3 +484,7 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 12. J. Pearl, *Causality: Models, Reasoning, and Inference*, 2nd ed., Cambridge University Press, 2009. ISBN 978-0-521-89560-6.
 13. L. Zheng et al., "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena," NeurIPS 2023 Datasets and Benchmarks. https://arxiv.org/abs/2306.05685
 14. A. Panickssery, S. R. Bowman, S. Feng, "LLM Evaluators Recognize and Favor Their Own Generations," NeurIPS 2024. https://arxiv.org/abs/2404.13076
+
+### R-20261118-H2 修复约定
+
+协同事项关闭会跳过world.safety_trip为true、stage=BLOCKED或存在未VERIFIED动作的成员，并在成员上记录CaseCloseSkipped（incident与reason）；不改变该成员状态、子任务或预留。其余非终态成员保持原级联关闭行为。
