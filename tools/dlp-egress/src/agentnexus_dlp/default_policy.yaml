@@ -47,8 +47,8 @@ preserve_on_request:
 
 never_preserve: [SECRET, INTERNAL_INFO]
 
-# Token 恢复只允许在这些上下文中进行（本地可信 UI、任务内后处理），不允许在外发路径上恢复
-allowed_restore_contexts: [local_ui, task_postprocess]
+# Token 恢复只允许在本机可信场景中进行（D1 定稿 9.6：只用 local_ui），不允许在外发路径上恢复
+allowed_restore_contexts: [local_ui]
 
 # 结构化载荷中的“路由字段”：校验而不改写（改写收件人会让邮件发错/发不出）
 routing_keys: [to, cc, bcc, guests, recipients, attendees, recipient, reply_to]

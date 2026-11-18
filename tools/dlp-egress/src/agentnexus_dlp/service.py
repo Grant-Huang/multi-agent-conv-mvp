@@ -22,8 +22,8 @@ from typing import Any
 import yaml
 
 from .detector import Detector
-from .models import (ALLOW, ANONYMIZE, BLOCK, REVIEW, DetectedEntity, EvaluateRequest, EvaluateResult,
-                     RestoreResult)
+from .models import (ALLOW, ANONYMIZE, BLOCK, CHANNELS, MAX_PAYLOAD_BYTES, REVIEW, DetectedEntity,
+                     EvaluateRequest, EvaluateResult, RestoreResult)
 from .normalize import canonical, detect_language
 from .policy import (ACTION_DECISION, BLOCK_SECRET, PRESERVE, REDACT_REVIEW, TOKENIZE, Policy, combine,
                      load_destinations)
@@ -47,6 +47,7 @@ class ServiceConfig:
     enable_gliner: bool = False
     gliner_model: str | None = None
     gliner_threshold: float = 0.5
+    max_payload_bytes: int = MAX_PAYLOAD_BYTES
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -111,7 +112,7 @@ class EgressService:
             result = EvaluateResult(decision=BLOCK, policy_version=self.policy.version,
                                     reason_codes=["internal_error_fail_closed"], ready_to_send=False)
         result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 3)
-        result.vault_ref = f"{request_id}" if result.tokens else None
+        result.request_id = request_id
         self._audit(request_id, req, result)
         return result
 
@@ -119,6 +120,11 @@ class EgressService:
         return EvaluateResult(decision=BLOCK, policy_version=self.policy.version, reason_codes=list(reasons))
 
     def _evaluate(self, req: EvaluateRequest) -> EvaluateResult:
+        # 0. 通道必须是固定取值之一；载荷不得超过上限（D1 定稿 9.3、9.7）
+        if req.channel not in CHANNELS:
+            return self._blocked("invalid_channel")
+        if _payload_bytes(req) > self.config.max_payload_bytes:
+            return self._blocked("payload_too_large")
         # 1. 目的地与用途校验（先于内容检查）
         dest = self.destinations.get(req.destination_id)
         if dest is None:
@@ -279,6 +285,15 @@ class EgressService:
 
 
 # ---------------------------------------------------------------------- helpers
+def _payload_bytes(req: EvaluateRequest) -> int:
+    """载荷大小（UTF-8 字节）。JSON 载荷按紧凑序列化计算。"""
+    if req.text is not None:
+        return len(req.text.encode("utf-8"))
+    if req.json_body is not None:
+        return len(json.dumps(req.json_body, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    return 0
+
+
 def _text_routing_ranges(text: str, routing_keys: set[str]) -> list[tuple[int, int]]:
     """在工具调用文本里找路由参数的值区间，如 send_email(to="a@b.com") 中引号内的部分。"""
     if not routing_keys:
