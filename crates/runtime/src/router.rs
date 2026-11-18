@@ -98,7 +98,8 @@ pub struct RouteOutcome {
 /// 路由失败：模型输出不合格，或 Policy 拒绝
 pub struct RouteFailure {
     pub message: String,
-    pub decision: Option<RouteDecision>,
+    /// 装箱：RouteDecision 较大，避免 Result<_, RouteFailure> 的错误分支过大（clippy::result_large_err）
+    pub decision: Option<Box<RouteDecision>>,
     pub raw_outputs: Vec<String>,
     pub attempts: u32,
     pub latency_ms: u64,
@@ -331,7 +332,7 @@ impl Router {
             }),
             Err(message) => Err(RouteFailure {
                 message,
-                decision: Some(decision),
+                decision: Some(Box::new(decision)),
                 raw_outputs: structured.raw_outputs,
                 attempts: structured.attempts,
                 latency_ms: structured.latency_ms,

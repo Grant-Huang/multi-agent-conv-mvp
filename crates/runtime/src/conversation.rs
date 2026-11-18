@@ -555,7 +555,7 @@ impl ConversationRuntime {
                 log.raw_outputs.extend(f.raw_outputs);
                 log.attempts += f.attempts;
                 let role = f.decision.as_ref().map(|d| d.execution_role);
-                log.route_decision = f.decision;
+                log.route_decision = f.decision.map(|d| *d);
                 log.error = Some(f.message.clone());
                 // 没有可用的执行者：不改派给别的角色，由前台模型用大白话说明并给出替代办法（AG.2）
                 let reply = if f.message.contains(an_core::codes::ROUTE_NO_AGENT) {
