@@ -1106,3 +1106,71 @@ async fn model_list_and_server_status_are_cached_across_callers() {
         .await
         .is_none());
 }
+
+// ───────────────────────── 外发检查（必经化方案第二阶段） ─────────────────────────
+
+/// 替身：把 "ACME" 换成 Token；block=true 时模拟 DLP 判定 BLOCK
+struct FakeEgress {
+    block: bool,
+}
+
+impl an_llm::egress::LlmEgress for FakeEgress {
+    fn outbound<'a>(
+        &'a self,
+        messages: &'a [ChatMessage],
+    ) -> an_llm::egress::BoxFut<'a, Result<an_llm::egress::Outbound, LlmError>> {
+        Box::pin(async move {
+            if self.block {
+                return Err(LlmError::new(ErrorKind::EgressBlocked, "E_EGRESS_BLOCKED"));
+            }
+            let messages = messages
+                .iter()
+                .map(|m| ChatMessage {
+                    role: m.role.clone(),
+                    content: m.content.replace("ACME", "[CUSTOMER_001]"),
+                })
+                .collect();
+            Ok(an_llm::egress::Outbound {
+                messages,
+                restore: [("[CUSTOMER_001]".to_string(), "ACME".to_string())].into(),
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn egress_sanitizes_request_and_restores_streamed_tokens() {
+    // Token 被切在两个数据块之间，恢复后用户看到的仍是原值
+    let m = start(|_, _| ok_reply(&["答复：", "[CUSTO", "MER_001]", " 已确认"])).await;
+    let c = plain(&m.url, 0, timeouts(2000, 2000, 5000))
+        .with_egress(Arc::new(FakeEgress { block: false }));
+    let mut deltas = String::new();
+    let out = c
+        .chat_stream(&[ChatMessage::user("ACME 的交期")], |d| {
+            deltas.push_str(d)
+        })
+        .await
+        .unwrap();
+    assert_eq!(out, "答复：ACME 已确认");
+    assert_eq!(deltas, out);
+    let sent = m.body(0)["messages"].to_string();
+    assert!(
+        sent.contains("[CUSTOMER_001]") && !sent.contains("ACME"),
+        "{sent}"
+    );
+    assert_eq!(
+        c.chat(&[ChatMessage::user("ACME")]).await.unwrap(),
+        "答复：ACME 已确认"
+    );
+}
+
+#[tokio::test]
+async fn egress_block_never_contacts_the_backend() {
+    let m = start(|_, _| ok_reply(&["x"])).await;
+    let c = plain(&m.url, 0, timeouts(2000, 2000, 5000))
+        .with_egress(Arc::new(FakeEgress { block: true }));
+    let err = c.chat(&msgs()).await.unwrap_err();
+    let e = err.downcast_ref::<LlmError>().expect("LlmError");
+    assert_eq!(e.kind, ErrorKind::EgressBlocked);
+    assert_eq!(m.count(), 0, "被拦截时不得向模型服务发送任何请求");
+}

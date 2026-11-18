@@ -161,6 +161,13 @@ impl AgentAdapter for GeneralAgent {
     }
 
     async fn run(&self, task: TaskSpec, events: EventSink) -> Result<TaskResult> {
+        // 任务 ID 放进 task-local：外发守卫（工具与 LLM）据此确定 Token 作用域，不依赖模型输出
+        an_llm::egress::scope_task(task.task_id.clone(), self.run_task(task, events)).await
+    }
+}
+
+impl GeneralAgent {
+    async fn run_task(&self, task: TaskSpec, events: EventSink) -> Result<TaskResult> {
         if self.is_report(&task) {
             return crate::report::run(
                 &self.llm,
