@@ -1815,3 +1815,93 @@ fn rt_des_30_factory_service_matches_the_in_process_engine() {
         );
     }
 }
+
+#[test]
+fn rt_des_31_incident_close_preserves_safety_blocked_member() {
+    for seed in 1..=10 {
+        let mut e = Engine::memory().unwrap();
+        e.create_des_simulation(des_config(seed, Pattern::ResourceContention, 480))
+            .unwrap();
+        let mut target = None;
+        for t in START..=START + 480 {
+            e.advance(t).unwrap();
+            target = incidents(&e).into_iter().find(|i| {
+                i.stage == "WAITING_HUMAN"
+                    && i.proposal.as_ref().is_some_and(|p| {
+                        p["recommended"].is_string()
+                            && p["assets"].as_array().is_some_and(|a| a.len() >= 2)
+                    })
+            });
+            if target.is_some() {
+                break;
+            }
+        }
+        let Some(inc) = target else { continue };
+        let plan = inc.proposal.as_ref().unwrap()["recommended"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        run_plan(&mut e, &inc.id, &plan);
+        let members: Vec<String> = inc.world["des_incident"]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m.as_str().unwrap().to_string())
+            .collect();
+        let member = e.case(&members[0]).unwrap().clone();
+        e.ingest(EventInput {
+            id: format!("review-safety-{seed}"),
+            scenario: member.scenario.clone(),
+            batch: member.batch.clone(),
+            customer: member.customer.clone(),
+            asset: member.asset.clone(),
+            source: "EAM".into(),
+            kind: "vibration".into(),
+            occurred_at: e.now(),
+            payload: serde_json::json!({"safety_trip":true}),
+        })
+        .unwrap();
+        assert_eq!(e.case(&member.id).unwrap().stage, "BLOCKED");
+        assert!(e.close(&member.id).is_err());
+        let end = e
+            .events(&inc.id, 0, 1000)
+            .unwrap()
+            .into_iter()
+            .find(|ev| ev.kind == "DesPlanApplied")
+            .unwrap()
+            .payload["interventions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v["end_minute"].as_u64())
+            .max()
+            .unwrap();
+        e.advance(end + 5).unwrap();
+        let reservations = e.case(&member.id).unwrap().world["reservations"].clone();
+        let seq = e.sequence();
+        e.close(&inc.id).unwrap();
+        let blocked = e.case(&member.id).unwrap();
+        assert_eq!(
+            blocked.stage, "BLOCKED",
+            "incident close must preserve member safety interlock"
+        );
+        assert_eq!(blocked.world["safety_trip"], true);
+        assert_eq!(blocked.world["reservations"], reservations);
+        assert!(e
+            .events(&member.id, seq, 100)
+            .unwrap()
+            .iter()
+            .any(|ev| ev.kind == "CaseCloseSkipped"
+                && ev.payload["reason"] == "safety_trip"
+                && ev.payload["incident"] == inc.id));
+        for m in members.iter().skip(1) {
+            assert_eq!(
+                e.case(m).unwrap().stage,
+                "CLOSED",
+                "safe members still close"
+            );
+        }
+        return;
+    }
+    panic!("resource contention must produce an incident in seeds 1–10");
+}

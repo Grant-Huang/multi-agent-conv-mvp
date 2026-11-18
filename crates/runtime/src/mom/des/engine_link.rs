@@ -926,6 +926,25 @@ impl Engine {
                 if matches!(c.stage.as_str(), "CLOSED" | "CANCELLED") {
                     continue;
                 }
+                let skip_reason = if c.world["safety_trip"] == true {
+                    Some("safety_trip")
+                } else if c.stage == "BLOCKED" {
+                    Some("blocked")
+                } else if c.actions.values().any(|action| action.state != "VERIFIED") {
+                    Some("verification_incomplete")
+                } else {
+                    None
+                };
+                if let Some(reason) = skip_reason {
+                    emit(
+                        c,
+                        now,
+                        "CaseCloseSkipped",
+                        json!({"incident": case_id, "reason": reason}),
+                        events,
+                    );
+                    continue;
+                }
                 c.stage = "CLOSED".into();
                 for ch in &mut c.children {
                     if ch.status == "RUNNING" {
