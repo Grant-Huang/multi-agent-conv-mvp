@@ -22,18 +22,18 @@ fn fnv(label: &str) -> u64 {
     h
 }
 
-pub(super) struct Rng {
+pub struct Rng {
     state: u64,
 }
 
 impl Rng {
     /// 派生一条独立的随机流。
-    pub(super) fn stream(seed: u64, attempt: u32, label: &str) -> Self {
+    pub fn stream(seed: u64, attempt: u32, label: &str) -> Self {
         let state = mix(seed ^ mix(fnv(label) ^ mix(u64::from(attempt))));
         Self { state }
     }
 
-    pub(super) fn next_u64(&mut self) -> u64 {
+    pub fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut x = self.state;
         x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -42,27 +42,27 @@ impl Rng {
     }
 
     /// (0, 1) 开区间均匀分布，避免取对数时出现 0。
-    pub(super) fn unit(&mut self) -> f64 {
+    pub fn unit(&mut self) -> f64 {
         ((self.next_u64() >> 11) as f64 + 0.5) / (1u64 << 53) as f64
     }
 
-    pub(super) fn uniform(&mut self, lo: f64, hi: f64) -> f64 {
+    pub fn uniform(&mut self, lo: f64, hi: f64) -> f64 {
         lo + (hi - lo) * self.unit()
     }
 
     /// 标准正态分布（Box-Muller）。
-    pub(super) fn normal(&mut self) -> f64 {
+    pub fn normal(&mut self) -> f64 {
         let (u1, u2) = (self.unit(), self.unit());
         (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
     }
 
     /// 均值为 `mean` 的指数分布（泊松过程的到达间隔）。
-    pub(super) fn exponential(&mut self, mean: f64) -> f64 {
+    pub fn exponential(&mut self, mean: f64) -> f64 {
         -mean * self.unit().ln()
     }
 
     /// 形状参数为 `shape`、尺度为 1 的 Gamma 分布（Marsaglia–Tsang；shape < 1 时用提升法）。
-    pub(super) fn gamma(&mut self, shape: f64) -> f64 {
+    pub fn gamma(&mut self, shape: f64) -> f64 {
         if shape < 1.0 {
             let boost = self.unit().powf(1.0 / shape);
             return self.gamma(shape + 1.0) * boost;
