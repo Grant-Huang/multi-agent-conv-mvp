@@ -1815,3 +1815,203 @@ fn rt_des_30_factory_service_matches_the_in_process_engine() {
         );
     }
 }
+
+// ───────────────────── 审查修复 2026-11-18：R-20261118-H2、M1 ─────────────────────
+
+/// 资源竞争模式中第一个"多设备 + 有推荐方案"的协同事项，选推荐方案、批准、执行。
+/// 返回（引擎、事项编号、全部维修完成的时刻）。
+fn executed_incident() -> (Engine, String, u64) {
+    for seed in 1..=10 {
+        let mut e = Engine::memory().unwrap();
+        e.create_des_simulation(des_config(seed, Pattern::ResourceContention, 480))
+            .unwrap();
+        let mut target = None;
+        for t in START..=START + 480 {
+            e.advance(t).unwrap();
+            target = incidents(&e).into_iter().find(|i| {
+                i.stage == "WAITING_HUMAN"
+                    && i.proposal.as_ref().is_some_and(|p| {
+                        p["recommended"].is_string()
+                            && p["assets"].as_array().is_some_and(|a| a.len() >= 2)
+                    })
+            });
+            if target.is_some() {
+                break;
+            }
+        }
+        let Some(inc) = target else { continue };
+        let plan = inc.proposal.as_ref().unwrap()["recommended"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let seq = e.sequence();
+        run_plan(&mut e, &inc.id, &plan);
+        let applied = e
+            .events(&inc.id, seq, 1000)
+            .unwrap()
+            .into_iter()
+            .find(|ev| ev.kind == "DesPlanApplied")
+            .expect("plan applied");
+        let done = applied.payload["interventions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|iv| iv["end_minute"].as_u64().or(iv["arrive_minute"].as_u64()))
+            .max()
+            .unwrap_or(e.now());
+        return (e, inc.id, done);
+    }
+    panic!("resource contention must yield an executed incident within seeds 1–10");
+}
+
+#[test]
+fn rt_des_31_closing_an_incident_never_closes_a_safety_blocked_member() {
+    let (mut e, inc, done) = executed_incident();
+    let members: Vec<String> = e.case(&inc).unwrap().world["des_incident"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap().to_string())
+        .collect();
+    assert!(members.len() >= 2, "incident needs two members");
+    // 一个成员收到同源的安全联锁事件。
+    let m0 = members[0].clone();
+    let c = e.case(&m0).unwrap().clone();
+    e.ingest(EventInput {
+        id: format!("{}:safety-trip", c.id),
+        scenario: c.scenario.clone(),
+        kind: "vibration".into(),
+        source: "EAM".into(),
+        occurred_at: e.now(),
+        batch: c.batch.clone(),
+        customer: c.customer.clone(),
+        asset: c.asset.clone(),
+        payload: serde_json::json!({"safety_trip": true, "line": "Line-B"}),
+    })
+    .expect("safety event ingested");
+    let blocked = e.case(&m0).unwrap();
+    assert_eq!(blocked.stage, "BLOCKED", "safety trip blocks the member");
+    assert_eq!(blocked.world["safety_trip"], true);
+    assert!(
+        e.close(&m0).is_err(),
+        "a safety-blocked case cannot be closed directly"
+    );
+
+    e.advance(done + 5).unwrap();
+    let seq = e.sequence();
+    e.close(&inc).expect("verified incident can be closed");
+    let after = e.case(&m0).unwrap();
+    assert_eq!(
+        after.stage, "BLOCKED",
+        "closing the incident must not close a safety-blocked member"
+    );
+    assert_eq!(
+        after.world["safety_trip"], true,
+        "the interlock stays recorded"
+    );
+    for m in &members[1..] {
+        assert_eq!(
+            e.case(m).unwrap().stage,
+            "CLOSED",
+            "member {m} closes with the incident"
+        );
+    }
+    let skipped: Vec<_> = e
+        .events(&inc, seq, 1000)
+        .unwrap()
+        .into_iter()
+        .filter(|ev| ev.kind == "CaseCloseSkipped")
+        .collect();
+    assert_eq!(
+        skipped.len(),
+        1,
+        "one skipped member is recorded on the incident"
+    );
+    assert_eq!(skipped[0].payload["member"], m0.as_str());
+    assert!(
+        skipped[0].payload["reason"]
+            .as_str()
+            .is_some_and(|r| r.contains("safety")),
+        "the reason names the safety interlock: {:?}",
+        skipped[0].payload
+    );
+}
+
+#[tokio::test]
+async fn rt_des_32_human_review_is_bound_to_an_ai_review_version() {
+    let (engine, id) = executed_case();
+    // AI 审核未运行：不能"同意"。
+    assert!(
+        engine
+            .lock()
+            .unwrap()
+            .des_human_review(&id, "agree", "", "supervisor")
+            .is_err(),
+        "agree needs a completed AI review"
+    );
+    // AI 审核降级（不可用）：也不能"同意"。
+    let offline = reviewer(Err("model offline".into()), 0);
+    run_ai_review(&engine, &id, &offline, std::time::Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert!(
+        engine
+            .lock()
+            .unwrap()
+            .des_human_review(&id, "agree", "", "supervisor")
+            .is_err(),
+        "agree needs a completed AI review, not a degraded one"
+    );
+
+    let input = engine.lock().unwrap().des_ai_review_input(&id).unwrap();
+    let first = input["evidence_ids"][0].as_str().unwrap().to_string();
+    let says = |summary: &str| {
+        reviewer(
+            Ok(
+                serde_json::json!({"conclusions":[{"judgement":"reasonable","statement":summary,"evidence_refs":[first]}],"summary":summary}),
+            ),
+            0,
+        )
+    };
+    let a = run_ai_review(
+        &engine,
+        &id,
+        &says("conclusion A"),
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .unwrap();
+    let version_a = a["ai"]["version"].as_u64().expect("AI review version");
+    engine
+        .lock()
+        .unwrap()
+        .des_human_review(&id, "agree", "", "supervisor")
+        .expect("agree with conclusion A");
+    let report = engine.lock().unwrap().des_review_report(&id).unwrap();
+    assert_eq!(report["human"]["decision"], "agree");
+    assert_eq!(report["human"]["ai_version"], version_a);
+
+    // 再次运行 AI 得到结论 B：之前的"同意"不能显示为对 B 的确认。
+    let b = run_ai_review(
+        &engine,
+        &id,
+        &says("conclusion B"),
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .unwrap();
+    assert_eq!(b["ai"]["summary"], "conclusion B");
+    assert!(
+        b["ai"]["version"].as_u64().unwrap() > version_a,
+        "each AI review gets a new version"
+    );
+    assert!(
+        b["human"].is_null(),
+        "no human conclusion on the new AI review yet: {}",
+        b["human"]
+    );
+    let history = b["human_history"].as_array().expect("history");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0]["ai_version"], version_a);
+    assert_eq!(history[0]["applies_to_current_ai"], false);
+}
