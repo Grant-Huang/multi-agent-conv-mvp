@@ -493,3 +493,9 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 - RT-DESC-04：模拟工厂不在线（命令不存在、进程退出）时，连接器返回明确错误 `E_DES_UNAVAILABLE`，不回退到进程内仿真，也不写入假观测。
 - RT-DESC-05：MCP 模式下，审核层的标准答案来自模拟工厂管理入口，规则结果与进程内模式一致。
 
+## R-20261118-M3 常见凭证与同形字
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-M3 | 中文密码/口令、token=、DB_PASS=、OpenAI项目key、Google key、同形字AWS/GitHub，共8种合成输入 | evaluate到external_untrusted | 全部BLOCK、不可发送且无原值；其余原文（含℃）不变；正常Unicode和术语不被改写 |
+

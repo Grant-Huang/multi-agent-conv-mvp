@@ -16,7 +16,7 @@ from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
 from presidio_analyzer.nlp_engine import NlpArtifacts, NlpEngine
 
 from .models import DetectedEntity
-from .normalize import map_span, normalize_with_map
+from .normalize import credential_skeleton, map_span, normalize_with_map
 from .recognizers import LANG, MasterDataRecognizer, builtin_recognizers
 from .secrets import DetectSecretsRecognizer
 
@@ -95,6 +95,12 @@ class Detector:
             return []
         norm, index_map = normalize_with_map(text)
         raw = self.engine.analyze(text=norm, language=LANG, score_threshold=0.0)
+        skeleton = credential_skeleton(norm)
+        if skeleton != norm:
+            # Only SECRET matches may use the visual skeleton. Entity names,
+            # output text and original-offset mapping remain unchanged.
+            raw.extend(r for r in self.engine.analyze(text=skeleton, language=LANG, score_threshold=0.0)
+                       if r.entity_type == "SECRET")
         candidates = []
         for r in raw:
             meta = r.recognition_metadata or {}

@@ -83,6 +83,10 @@ audit 阶段的注意事项、enforce 下的行为见 [部署与使用说明](..
 已实测（2026-11-18）：AgentNexus 的 Rust 集成测试 `real_dlp_service_roundtrip_when_configured` 连接真实的本服务，
 结果：结构化返回符合 schema；工具参数被脱敏；带凭证样式串的调用被拦下；LLM 消息被脱敏，并取得 Token 映射。
 
+### R-20261118-M3 修复约定
+
+补充中文密码/口令、token和环境变量_PASS赋值、OpenAI项目key及Google key检测；希腊/西里尔常见同形字仅在额外的SECRET识别通道折叠，原文字段及主数据规范值不变。匹配后仍映射原文偏移遮盖，非凭证内容不改写。
+
 ## 测试
 
 ```bash

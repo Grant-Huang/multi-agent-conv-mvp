@@ -175,3 +175,7 @@ Python端到端与全量78通过，覆盖率87.56%，flake8通过；700条/留�
 环境记录：首次 verify 失败是因为 Playwright 默认的 headless shell 路径不存在，改用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 后通过；之前 `npm ci` 因磁盘写满未完整安装 `@types/node`，重新安装后解决。
 
 范围限制：M4.3 的并行执行与 Composer 汇合回复未接入编排器，RT 用例不覆盖它们；M4.4（真实模型 F 组覆盖率）未运行。
+
+## 2026-11-18 R-20261118-M3
+
+Python端到端与全量82通过，覆盖率87.10%，flake8通过；700条/留出集两模式安全门槛保持。完整Rust440通过0失败2原有忽略，fmt/clippy通过；web 21通过、构建与地图检查通过。未运行浏览器/真实模型。Red→Green及实际输出见 [r-20261118-m3.md](evidence/r-20261118-m3.md)。
