@@ -751,7 +751,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
   - **用户属性预留**：前端设置项"使用水平"，默认"专业"，保存在浏览器本地；卡片组件接收这个属性，"普通"模式的展示本次不实现（等用户权限 / 分类时再做）。
   - **不做**：对话里的意图识别（AG.4）；卡片写进会话历史（需要新的消息类型，涉及 `store.rs`，放到 AG.4 一起设计）。
   - **用例（实现前先写，浏览器 E2E）**：E2E-AGLIST 页签列出预设和自定义 agent 的状态与来源；E2E-AGCONNECT 已安装的预设点"接入"→ 确认卡 → 确认 → 结果卡显示已接入和检测结果，任务可以分给它；E2E-AGUNDO 结果卡上点"撤销"后恢复；E2E-AGDISABLE 停用最后一个写代码的 agent，确认卡有警告，之后在对话里让它改代码，得到大白话回复；E2E-AGGUIDE 未安装的显示安装步骤和复制按钮，"重新检测"给出"未安装"的结果；E2E-AGFIRST 首次打开出现发现卡，关掉后刷新不再出现；E2E-AGTOML config.toml 来源的 agent 没有停用按钮
-- [ ] **AG.4 对话里管理助手：意图、向导、卡片进历史**（2026-11-17 用户批准；实现完成，RT-AGCHAT-01～09、E2E-AGCHAT、E2E-AGCHOICE 通过，证据见 `docs/testing/evidence/ag-4.md`；**待用户本机评测**：`evals/agents.jsonl` ≥ 96%，且 `evals/routing.jsonl` 不下降，达标后决定是否默认打开开关）
+- [ ] **AG.4 对话里管理助手：意图、向导、卡片进历史**（2026-11-17 用户批准；实现完成，RT-AGCHAT-01～09、E2E-AGCHAT、E2E-AGCHOICE 通过，证据见 `docs/testing/evidence/ag-4.md`；**待用户本机评测**：`evals/agents.jsonl` ≥ 96%，且 `evals/routing.jsonl` 不下降，达标后决定是否默认打开开关；2026-11-18 第三轮 R1：agents.jsonl 74/90（82.2%），仍未达标，开关保持关闭；R2～R9 未跑）
   - **总开关**：`[conversation] agent_management`，**默认关**。前台判断的 schema 变了会影响所有对话的判断准确率，所以先关着；用户本机评测达标（见"验收"）后再决定是否默认打开。关着时请求和行为与现在完全相同。
   - **意图（模型只做选择题）**：前台判断新增动作 `manage_agents`，附三个字段，全部是枚举：
     - `agent_op`：connect（接入）/ set_default（设为默认）/ disable（停用）/ enable（恢复）/ list（看看有哪些）/ undo（撤销刚才的修改）/ ""；
