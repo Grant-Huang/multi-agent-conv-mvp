@@ -8,6 +8,8 @@
 //!
 //! 特殊指令（便于测试）：含"稍慢"时执行约 1.5 秒；含"慢"时先睡 30 秒；含"拒绝"时以 refusal 结束。
 //! 环境变量 `AN_MOCK_ACP_AUTH=required`：新建会话时返回 ACP 的 auth_required 错误（-32000），模拟"需要先登录"。
+//! 环境变量 `AN_MOCK_ACP_RECORD=<文件>`：收到任务时把提示词全文、工作目录和进程号写进这个文件（JSON），用于核对"发出去的内容"。
+//! 环境变量 `AN_MOCK_ACP_REPLY=<文字>`：在回复末尾另起一行追加这段文字。
 //!
 //! 体验方式（config.toml）：
 //! ```toml
@@ -58,6 +60,15 @@ async fn run_prompt(
     cwd: PathBuf,
     text: String,
 ) -> acp::Result<StopReason> {
+    if let Ok(path) = std::env::var("AN_MOCK_ACP_RECORD") {
+        let record = serde_json::json!({
+            "cwd": cwd.display().to_string(),
+            "prompt": text,
+            "pid": std::process::id(),
+        });
+        std::fs::write(&path, record.to_string())
+            .map_err(|e| acp::Error::internal_error().data(e.to_string()))?;
+    }
     if text.contains("稍慢") {
         // 用于测试并发：执行约 1.5 秒
         tokio::time::sleep(Duration::from_millis(1500)).await;
@@ -122,11 +133,15 @@ async fn run_prompt(
     }
 
     // 4. 回复文字
-    let reply = if allowed {
-        "已创建 hello.txt（来自模拟 ACP agent）"
+    let mut reply = if allowed {
+        "已创建 hello.txt（来自模拟 ACP agent）".to_string()
     } else {
-        "没有获得写文件权限，未做任何修改"
+        "没有获得写文件权限，未做任何修改".to_string()
     };
+    if let Ok(extra) = std::env::var("AN_MOCK_ACP_REPLY") {
+        reply.push('\n');
+        reply.push_str(&extra);
+    }
     notify(SessionUpdate::AgentMessageChunk(ContentChunk::new(
         ContentBlock::Text(TextContent::new(reply)),
     )))?;

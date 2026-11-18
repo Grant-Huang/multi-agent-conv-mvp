@@ -319,6 +319,26 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGDIAG-06 | agent-diagnose | 自定义 agent 以未知报错退出 | 没有命中任何规则，结果标记为"未识别"；自定义命令不做登录 shell 检查 |
 | E2E-AGDIAG | agent-ui | 「助手」页签里未安装的 ZCode 点"排查" | 显示排查结果：大白话结论"还没有安装"、安装步骤（带复制按钮）和体检项 |
 
+## 助手排查：诊断包与请其他助手帮忙（AG.5 第 3、4 层，实现前定义）
+
+用模拟的 DLP 服务（`crates/server/tests/fixtures/dlp_server.py`，按 `docs/dlp/CONTRACT.md` 返回结构化结果）和模拟的 ACP 助手 `an-mock-acp`（可记录收到的提示词和工作目录、可指定回复文字）。不依赖真实的 dlp-egress 和真实助手。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGDIAG-05 | agent-diagnose | 出问题的助手错误输出里含家目录完整路径和本机用户名，配置里有带值的环境变量；分别在没有配置 DLP、配置了 DLP 时排查 | 结果里有诊断包：家目录换成 `~`，用户名、主机名、环境变量的值都不出现，环境变量只留名字；没配置 DLP 时注明"未经外发脱敏检查"；配置了 DLP 时诊断包是 DLP 返回的脱敏文本（渠道 `clipboard`、目的地 `user:clipboard`），用完即撤销 |
+| RT-AGDIAG-07 | agent-diagnose | 选一个已连通的助手当帮手，生成预览，再用同意凭证发送 | 预览返回完整待发内容、目的地说明和一次性凭证；帮手实际收到的内容与预览一字不差；不带凭证、凭证错误、凭证用过、凭证过期都被拒绝，且帮手没有被启动 |
+| RT-AGDIAG-08 | agent-diagnose | 发送后帮手请求写文件权限 | 权限被拒绝（帮手报告"没有获得写文件权限"），帮手的工作目录是临时空目录，结束后已删除 |
+| RT-AGDIAG-10 | agent-diagnose | 帮手超过时限不回复 | 返回大白话的超时说明；帮手进程已结束 |
+| RT-AGDIAG-11 | agent-diagnose | 一次发送还在进行时，再发第二次 | 第二次被拒绝，提示稍后再试；第一次正常完成 |
+| RT-AGDIAG-12 | agent-diagnose | 选出问题的那个助手、未连通的助手、未知助手当帮手 | 都被拒绝（409 / 404），不生成预览 |
+| RT-DLP-01 | dlp-egress | 配置了 `[dlp]` | DLP 的三个工具不出现在能力目录（`GET /api/capabilities`）里，也不在 General 的工具清单里 |
+| RT-DLP-02 | dlp-egress | DLP 把内容里的客户名替换成 `[CUSTOMER_001]`（ANONYMIZE）；帮手的回复里带着这个占位符 | 预览和发给帮手的内容里只有占位符、没有原文；显示给用户的帮手回复已还原成原文（context 为 `local_ui`） |
+| RT-DLP-03 | dlp-egress | 内容里有疑似密钥（BLOCK，`secret_blocked`） | 不生成预览、不发送；大白话说明"有密钥或凭证，已拦下"并建议更换 |
+| RT-DLP-04 | dlp-egress | DLP 返回 REVIEW | 不生成预览、不发送；说明需要人工判断 |
+| RT-DLP-05 | dlp-egress | 没有配置 `[dlp]`；DLP 超时；返回结构不合规；`api_version` 不是 "1" | 都不发送，说明原因；不出本机的排查（第 1～3 层）照常可用 |
+| RT-DLP-06 | dlp-egress | 一次发送结束（成功或帮手超时） | 用同一个 `task_id` 调用了 `egress_revoke`；日志里没有待发内容的原文 |
+| E2E-AGDIAG2 | agent-ui | 检测失败的助手点"排查" → 看到诊断包（可复制）→ 选已连通的助手当帮手 → 看到完整预览和目的地 → 点"同意发送这一次" | 显示帮手的回复（占位符已还原） |
+
 ## Host 拒绝事件可观测性（实现前定义，R-20261113-L1）
 
 | Case | Feature | Given / When | Then |

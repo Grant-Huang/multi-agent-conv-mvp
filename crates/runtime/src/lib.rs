@@ -14,6 +14,7 @@ pub mod admission;
 pub mod agent_catalog;
 pub mod agent_chat;
 pub mod agent_config;
+pub mod agent_diagnose;
 pub mod backends;
 pub mod bus;
 pub mod composer;

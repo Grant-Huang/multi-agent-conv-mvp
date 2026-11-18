@@ -489,7 +489,8 @@
       "E2E-AGDISABLE",
       "E2E-AGCHAT",
       "E2E-AGCHOICE",
-      "E2E-AGDIAG"
+      "E2E-AGDIAG",
+      "E2E-AGDIAG2"
     ]
   },
   {
@@ -532,7 +533,32 @@
       "RT-AGDIAG-02",
       "RT-AGDIAG-03",
       "RT-AGDIAG-04",
-      "RT-AGDIAG-06"
+      "RT-AGDIAG-05",
+      "RT-AGDIAG-06",
+      "RT-AGDIAG-07",
+      "RT-AGDIAG-08",
+      "RT-AGDIAG-10",
+      "RT-AGDIAG-11",
+      "RT-AGDIAG-12"
+    ]
+  },
+  {
+    "id": "dlp-egress",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/dlp.rs",
+      "crates/runtime/src/config.rs",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-DLP-01",
+      "RT-DLP-02",
+      "RT-DLP-03",
+      "RT-DLP-04",
+      "RT-DLP-05",
+      "RT-DLP-06"
     ]
   }
 ]
