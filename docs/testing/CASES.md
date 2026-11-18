@@ -442,3 +442,42 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-27 | mom-des | 资源竞争模式中，某个协同事项的报警设备集合至少两台、有推荐方案 | 选定推荐方案、批准、执行，推进到全部维修完成，关闭事项 | 集合中每台设备都有维修干预，只有 1 个维修班组时维修时段互不重叠；维修完成后各设备恢复运行、振动低于 2.8 mm/s；关闭事项后成员案例一并关闭 |
 | RT-DES-28 | mom-des | P0 固定剧本（基线） | 推进 30 分钟 | 只有一个 DES 案例，使用原 S1 模板，不建立协同事项，也没有成员关系 |
 | RT-DES-29 | mom-des | P0 案例已执行方案 C 并关闭（基线，来自 2026-11-17 审查） | 同键再到一条质量观测，再推进 | 观测进入新案例而不是已关闭的案例；已关闭案例的 `world.des` 不再刷新 |
+
+## 模拟工厂与 MCP 挂载（阶段⑤a-1）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a。对外约定：
+- 模拟工厂服务 `an_des::FactoryService`：调用入口是 `call(工具名, JSON 参数)`。
+- MCP 服务 `an-des-mcp`：经 stdio 提供同一套工具。成功时返回 `structuredContent`，业务错误作为工具错误返回（`isError`）；管理口令取自环境变量 `AN_DES_ADMIN_TOKEN`。
+- 工具名只用小写字母、数字和下划线，长度 ≤ 64，原因见 §11a 修订。
+- 13 个工具分四类：
+  - 观测：`equipment_status`、`equipment_trend`、`quality_capability`、`inventory_tooling`、`events_poll`、`order_status`；
+  - 执行：`maintenance_order_create`、`tooling_transfer_create`、`production_schedule_apply`；
+  - 控制：`simulation_create`、`simulation_advance`、`simulation_fault_inject`；
+  - 管理：`simulation_ground_truth`。
+
+测试位置：`crates/des/tests/factory.rs`（RT-DESF）、`crates/des-mcp/tests/stdio.rs`（RT-DESM）、`crates/runtime/tests/mom_des.rs`（RT-DES-30）。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DESF-01 | des-factory | 工具目录 | 读取 `tool_catalog()` | 恰好是上述 13 个工具，类别与设计表一致。工具名唯一、匹配 `^[a-z][a-z0-9_]{0,63}$`，不含 AgentNexus 专有概念（agentnexus、case、mom）。每个工具有说明，输入 schema 是 object 且拒绝未知字段。执行类工具的必填字段包含 `idempotency_key` 与 `approval_ref` |
+| RT-DESF-02 | des-factory | 两个服务实例，并发簇 seed 7 | 用相同输入创建仿真并推进到结束 | 事件逐字节相同，可观测状态相同。按游标分页拉取：遵守 limit；拼接结果等于一次拉取；同一游标重复拉取结果相同；不返回未来事件，没有重复；事件编号带仿真编号前缀；继续推进后，已投递的前缀不变 |
+| RT-DESF-03 | des-factory | 两个服务实例，P0 | 一个在推进过程中反复调用全部观测工具，另一个不调用 | 观测可重复，且两个服务的最终世界相同（读取不改变世界）。状态标注 `provenance: simulation`，含振动、分区、Cpk、运行状态、刀具在位等可观测字段 |
+| RT-DESF-04 | des-factory | P0 推进到报警后（CNC-XX 处于 C/D 区） | 下维修单：先缺审批引用、缺幂等键或审批引用为空白，再正常提交，然后同键重试，再同键改参数 | 缺字段的请求被拒绝且不改变世界。正常提交返回回执（单号、完成时刻）。同键同参数返回原回执、只生效一次（与只下一次单的世界相同）；同键不同参数被拒绝。`order_status` 从 accepted 变为 completed，维修后振动低于 2.8 mm/s。`production_schedule_apply` 返回 accepted 回执 |
+| RT-DESF-05 | des-factory | P0 推进到报警后 | 先调拨刀具，再注入"备用刀具丢失"，再调拨一次 | 第一次回执 accepted，完成时刻等于当前时刻加调拨时间（取自 `inventory_tooling`）。注入后的调拨回执为 failed，原因来自仿真（提到 spares） |
+| RT-DESF-06 | des-factory | 已配置管理口令的服务；未配置口令的服务 | 分别不带口令、带错误口令、带正确口令读取标准答案；读取全部观测工具 | 只有正确口令能读到标准答案；未配置口令时管理工具一律拒绝。观测输出不含 root_causes、mechanisms、spindle_wear、relations、contentions |
+| RT-DESF-07 | des-factory | P0 推进 30 分钟 | 调用未知工具、未知仿真、带未知字段、时钟倒退或超上限、limit 为 0 或超过 1000、未知设备、维修开始时刻早于当前、未知单号、未知故障、时长为 0 的仿真 | 每个请求都在 2 秒内报错，世界不变 |
+| RT-DESF-08 | des-factory | 一个服务 | 连续创建仿真 | 仿真编号形如 `DES-n` 且互不相同；达到上限时报错并说明 capacity |
+| RT-DESM-01 | des-factory | 经 stdio 启动 `an-des-mcp` | 列出工具 | 与 `tool_catalog()` 一致（数量、名称、说明、schema）。注解如下：观测类 `readOnlyHint = true`；执行类 `readOnlyHint = false`、`idempotentHint = true`；控制类不是只读；管理类是只读 |
+| RT-DESM-02 | des-factory | 一个 MCP 服务与一个进程内服务 | 依次执行同一组调用：创建、推进、拉取事件、四个观测工具、下维修单、同键重试、调拨、推进、再拉取、读取标准答案 | 每一步 MCP 的 `structuredContent` 与进程内结果逐字节相同 |
+| RT-DESM-03 | des-factory | MCP 服务已创建一个仿真 | 调用未知仿真、错误口令、缺审批引用的写操作；然后关闭 stdin | 业务错误作为工具错误返回，不带数据，服务继续可用。未知工具可以是协议错误。关闭 stdin 后进程在 5 秒内正常退出 |
+| RT-DES-30 | des-factory | P0 seed 1 与并发簇 seed 7 | 同一配置分别在 MOM 引擎（进程内）与模拟工厂服务中创建，在相同时刻推进 | 仿真编号相同，各时刻的可观测设备状态相同。服务事件等于内核事件加仿真编号前缀（种类、来源、设备、客户、时刻、载荷都相同）。服务的标准答案与审核层读到的相同 |
+
+### 阶段⑤a-2（AgentNexus 侧连接器）用例草案
+
+以下用例在⑤a-1 转绿后编写测试（依赖真实的服务接口），届时再按测试规范登记到 features.json：
+- RT-DESC-01：同 seed P0 与并发簇，MCP 模式（调度器推进模拟工厂 → 连接器拉取事件 → MOM 推进）与进程内模式一致。比较的内容包括案例、事件种类序列、`world.des` 快照、排产方案与执行结果。
+- RT-DESC-02：写操作只在审批并 `execute` 之后由连接器发出，幂等键为"案例:方案修订号:动作"，并带审批引用；回执写回动作。传输中断后重发，同键只生效一次。
+- RT-DESC-03：AgentNexus 暴露给 agent 与桌面的模拟工厂工具只有观测类，不含执行、控制与管理类。
+- RT-DESC-04：模拟工厂不在线（命令不存在、进程退出）时，连接器返回明确错误 `E_DES_UNAVAILABLE`，不回退到进程内仿真，也不写入假观测。
+- RT-DESC-05：MCP 模式下，审核层的标准答案来自模拟工厂管理入口，规则结果与进程内模式一致。
+

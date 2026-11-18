@@ -59,6 +59,8 @@ DES 审查修复（R-20261117-M1/L1，移植自 PR #84/#85 并适配阶段③）
 
 车间 DES 阶段③b（`mom-des`）：RT-DES-25～29 定义按报警触发的模板（单设备层）与产线协同事项（协调层：同线 60 分钟内多个案例时统一决策、成员只做诊断、执行覆盖报警设备集合、关闭时级联），以及 P0 不变与关闭后事件的两条基线；已实现并转绿（已请人决策的案例撤回请求后加入事项，见设计文档 §6.8 实现修订）。
 
+模拟工厂与 MCP 挂载阶段⑤a-1（`des-factory`）：RT-DESF-01～08、RT-DESM-01～03 与 RT-DES-30 定义独立的模拟工厂服务（13 个通用风格工具，分观测、执行、控制、管理四类；写操作需幂等键与审批引用；标准答案需管理口令）、经 stdio 挂载的 MCP 服务与进程内结果逐字节一致、以及与 MOM 进程内仿真一致；已实现并转绿（仿真内核迁入 `crates/des`）。⑤a-2 连接器用例为草案。
+
 专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
 
 每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。

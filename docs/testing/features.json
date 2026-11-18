@@ -235,8 +235,6 @@
     "document": "docs/mom/DES_CLOSED_LOOP.md",
     "sources": [
       "crates/runtime/src/mom/des/mod.rs",
-      "crates/runtime/src/mom/des/scenario.rs",
-      "crates/runtime/src/mom/des/physics.rs",
       "crates/runtime/src/mom/des/engine_link.rs",
       "crates/runtime/src/mom/des/observe.rs",
       "crates/runtime/src/mom/des/coordination.rs",
@@ -278,7 +276,39 @@
       "RT-DES-28",
       "RT-DES-29"
     ],
-    "note": "阶段①～③已实现，阶段④实现前 Red；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。RT-DES-22/23 为 engine_link.rs 中的单元测试（重放计数与缓存共享），不计入 runtime 集成测试映射。"
+    "note": "阶段①～④与③b 已实现；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。RT-DES-22/23 为 engine_link.rs 中的单元测试（重放计数与缓存共享），不计入 runtime 集成测试映射。RT-DES-30 属于 des-factory。"
+  },
+  {
+    "id": "des-factory",
+    "document": "docs/mom/DES_CLOSED_LOOP.md",
+    "sources": [
+      "crates/des/src/lib.rs",
+      "crates/des/src/service.rs",
+      "crates/des/src/scenario.rs",
+      "crates/des/src/physics.rs",
+      "crates/des/src/rng.rs",
+      "crates/des/src/observe.rs",
+      "crates/des/tests/factory.rs",
+      "crates/des-mcp/src/main.rs",
+      "crates/des-mcp/tests/stdio.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-DESF-01",
+      "RT-DESF-02",
+      "RT-DESF-03",
+      "RT-DESF-04",
+      "RT-DESF-05",
+      "RT-DESF-06",
+      "RT-DESF-07",
+      "RT-DESF-08",
+      "RT-DESM-01",
+      "RT-DESM-02",
+      "RT-DESM-03",
+      "RT-DES-30"
+    ],
+    "note": "阶段⑤a-1：模拟工厂服务（an-des，含从 an-runtime 迁入的仿真内核）与 MCP stdio 服务（an-des-mcp），已实现并转绿；⑤a-2 连接器用例见 CASES.md 草案。参数为建模假设（台账 M27、M28）。"
   },
   {
     "id": "agent-links",
