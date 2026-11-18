@@ -82,6 +82,10 @@ pub struct Runtime {
     pub agent_config: Arc<agent_config::AgentConfigManager>,
     /// 管理助手（AG.4）：HTTP 接口和对话里的向导共用
     pub agents: Arc<agent_chat::AgentAdmin>,
+    /// 外发脱敏客户端（`[dlp]` 配置了才有）
+    pub dlp: Option<Arc<an_agents::dlp::DlpClient>>,
+    /// 排查第 4 层的同意凭证、并发闸门和时限（AG.5）
+    pub diagnose_send: Arc<agent_diagnose::SendState>,
 }
 
 /// 连通性探测的目标：只做握手或命令检查，不调用模型（探测结果写入 `registry.links`）
@@ -380,6 +384,7 @@ impl Runtime {
             stream_replies = config.conversation.stream_replies
         );
 
+        let config_dlp = config.dlp.clone();
         Ok(Self {
             capabilities,
             config,
@@ -398,6 +403,8 @@ impl Runtime {
             probe_gate: Arc::default(),
             agent_config,
             agents,
+            dlp: config_dlp.map(|c| Arc::new(an_agents::dlp::DlpClient::new(c))),
+            diagnose_send: Arc::default(),
         })
     }
 

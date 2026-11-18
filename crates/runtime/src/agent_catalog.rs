@@ -68,10 +68,23 @@ impl Runtime {
         catalog_items(&self.config, &self.registry, &self.agent_config)
     }
 
-    /// 排查（AG.5 第 1、2 层）：握手检测 + 本机体检 + 已知问题规则。全部在本机完成，不外发。
+    /// 排查（AG.5）：握手检测 + 本机体检 + 已知问题规则（第 1、2 层），再附上诊断包（第 3 层）。
+    /// 系统不往外发；配置了 DLP 时诊断包经它检查（渠道 clipboard），用完即撤销。
     /// 只能排查目录内或已注册的 ACP agent；其他 id 返回 None（HTTP 404）。
     pub async fn diagnose_agent(&self, id: &str) -> Option<an_core::DiagnoseReport> {
-        use an_agents::diagnose::{check_items, checkup, rules, CheckupInput, RuleContext};
+        let (mut report, local_text) = self.diagnose_core(id).await?;
+        report.package = self.diagnose_package(local_text).await;
+        Some(report)
+    }
+
+    /// 第 1、2 层，外加本机处理过的诊断包原文（第 3、4 层共用）。不调用 DLP
+    pub(crate) async fn diagnose_core(
+        &self,
+        id: &str,
+    ) -> Option<(an_core::DiagnoseReport, String)> {
+        use an_agents::diagnose::{
+            check_items, checkup, package_text, rules, CheckupInput, PackageInput, RuleContext,
+        };
         let probe = self.probe_agent(id).await?;
         let entry = catalog().into_iter().find(|e| e.id() == id);
         // 实际使用的命令：已注册的用注册时的配置，否则用目录预设
@@ -90,6 +103,11 @@ impl Runtime {
             (None, Some(e)) => (e.preset.command.clone(), e.preset.args.clone(), e.name()),
             (None, None) => return None,
         };
+        // 诊断包里环境变量只列名字，不带值
+        let env_names: Vec<String> = registered_cfg
+            .as_ref()
+            .map(|c| c.env.keys().cloned().collect())
+            .unwrap_or_default();
         // 只有命令与目录预设完全相同时才算预设（才做登录 shell 检查、node 和凭证检查）
         let preset = entry.as_ref().filter(|e| e.preset.command == command);
         let input = CheckupInput {
@@ -109,8 +127,8 @@ impl Runtime {
         let c = checkup(&input).await;
         let ctx = RuleContext {
             name: name.clone(),
-            command,
-            args,
+            command: command.clone(),
+            args: args.clone(),
             install: entry
                 .as_ref()
                 .map(|e| e.meta.install.clone())
@@ -130,14 +148,29 @@ impl Runtime {
             );
         }
         tracing::info!(event = "agent.diagnose", agent_id = %id, kind = ?probe.kind, findings = findings.len());
-        Some(an_core::DiagnoseReport {
-            id: id.to_string(),
-            name,
-            checks: check_items(&c),
-            probe,
-            findings,
-            unmatched,
-        })
+        let checks = check_items(&c);
+        let local_text = package_text(&PackageInput {
+            id,
+            name: &name,
+            command: &command,
+            args: &args,
+            env_names,
+            probe: &probe,
+            checks: &checks,
+            findings: &findings,
+        });
+        Some((
+            an_core::DiagnoseReport {
+                id: id.to_string(),
+                name,
+                checks,
+                probe,
+                findings,
+                unmatched,
+                package: an_core::DiagnosePackage::default(),
+            },
+            local_text,
+        ))
     }
 
     /// 握手检测。只能检测已注册的 ACP agent 或目录内的预设；其他 id（未知、内置、CLI、节点）返回 None。

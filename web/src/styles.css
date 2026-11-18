@@ -341,3 +341,17 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
 .checks { list-style: none; padding: 0; margin: 4px 0 0; font-size: 12px; }
 .check.problem, .check.error { color: #b26a00; }
 .check.ok { color: #1f8a4c; }
+
+/* AG.5 第 3、4 层：诊断包、外发预览、帮手回复 */
+.diag-package pre,
+.diag-preview pre,
+.diag-reply pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 16rem;
+  overflow: auto;
+}
+.diag-preview {
+  border-left: 3px solid var(--warn, #c77700);
+  padding-left: 0.5rem;
+}

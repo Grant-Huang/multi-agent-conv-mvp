@@ -44,6 +44,10 @@ pub struct AppConfig {
     /// agent 准入与持续信任（E3）；默认关闭，关闭时行为与以前完全相同
     #[serde(default)]
     pub admission: AdmissionSection,
+    /// 外发脱敏（DLP，见 docs/dlp/CONTRACT.md）。单独一节、不放进 `[mcp]`：
+    /// 它的工具只由 AgentNexus 内部调用，不会出现在任何模型可见的工具清单里。不写时需要外发的路径一律不发
+    #[serde(default)]
+    pub dlp: Option<an_agents::dlp::DlpConfig>,
 }
 
 /// `[admission]`：外部 agent 的准入规则。默认值取自论文 §5.2。

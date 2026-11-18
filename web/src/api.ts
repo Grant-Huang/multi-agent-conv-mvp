@@ -13,6 +13,8 @@ import type { CatalogItem } from "./bindings/CatalogItem";
 import type { ProbeOutcome } from "./bindings/ProbeOutcome";
 import type { MessageView } from "./bindings/MessageView";
 import type { DiagnoseReport } from "./bindings/DiagnoseReport";
+import type { DiagnosePreview } from "./bindings/DiagnosePreview";
+import type { DiagnoseSendResult } from "./bindings/DiagnoseSendResult";
 
 // ───── Agent 配置（AG.2 / AG.3）。这些结构来自 an-runtime（不在 an-core 的 bindings 里），在这里手写 ─────
 
@@ -188,6 +190,15 @@ export const api = {
   /** 排查（AG.5 第 1、2 层）：握手检测 + 本机体检 + 规则结论，不外发 */
   diagnoseAgent: (id: string) =>
     request<DiagnoseReport>("/api/agents/diagnose", { method: "POST", body: JSON.stringify({ id }) }),
+  /** 排查第 4 层：生成预览（将发送的完整内容 + 一次性同意凭证），不发送 */
+  diagnosePreview: (id: string, helper: string) =>
+    request<DiagnosePreview>("/api/agents/diagnose/preview", { method: "POST", body: JSON.stringify({ id, helper }) }),
+  /** 排查第 4 层：凭同意凭证发送这一次 */
+  diagnoseSend: (p: DiagnosePreview) =>
+    request<DiagnoseSendResult>("/api/agents/diagnose/send", {
+      method: "POST",
+      body: JSON.stringify({ consent_id: p.consent_id, consent_token: p.consent_token }),
+    }),
   probeAgent: (id: string) =>
     request<ProbeOutcome>("/api/agents/probe", { method: "POST", body: JSON.stringify({ id }) }),
   proposeAgentChange: (change: ChangeRequest) =>

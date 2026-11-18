@@ -227,6 +227,19 @@ export function AgentsPanel() {
       {pending?.kind === "diagnose" && (
         <DiagnoseCard
           report={pending.report}
+          helpers={rows
+            .filter(
+              (r) =>
+                r.registered &&
+                !r.disabled &&
+                r.link === "connected" &&
+                r.id !== pending.report.id &&
+                r.source !== "builtin" &&
+                r.source !== "node",
+            )
+            .map((r) => ({ id: r.id, name: r.name }))}
+          onPreview={(helper) => api.diagnosePreview(pending.report.id, helper)}
+          onSend={(p) => api.diagnoseSend(p)}
           onRecheck={() => diagnose(pending.report.id)}
           onClose={() => setPending(null)}
         />

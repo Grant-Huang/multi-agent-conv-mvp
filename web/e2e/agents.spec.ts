@@ -151,7 +151,7 @@ test('E2E-AGDIAG: 未安装的助手点"排查"，看到大白话结论和安装
   await expect(report).toContainText('体检');
 });
 
-test('E2E-AGDIAG2: 诊断包可复制；选帮手后看到完整预览，同意后看到还原过的回复', async ({ page, request }) => {
+test('E2E-AGHELP: 诊断包可复制；选帮手后看到完整预览，同意后看到还原过的回复', async ({ page, request }) => {
   // 帮手 hand 先握手一次，成为"已连通"
   const probe = await request.post('/api/agents/probe', { data: { id: 'hand' } });
   expect(probe.ok()).toBeTruthy();

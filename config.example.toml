@@ -230,18 +230,12 @@ approval_risk = "high"             # 风险达到该等级需人工审批：low 
 # 不填写 command/args；可用 bearer_env = "MCP_RESEARCH_TOKEN" 引用环境变量。
 # 能力目录：GET /api/capabilities。协议、限制和计划见 docs/mcp/。
 #
-# 外发脱敏（tools/dlp-egress，安装见其 README）：外发前调用 dlp.egress_evaluate，
-# 只有 ready_to_send=true 时才发送返回的脱敏载荷。evaluate 会写本地 Token Vault，故声明为 workspace_write。
-# [[mcp.servers]]
-# id = "dlp"
-# transport = "stdio"
+# 外发脱敏（tools/dlp-egress，安装见其 README）：**不要**写进 [[mcp.servers]]。
+# 放在 [[mcp.servers]] 里，它的工具会成为模型可调用的能力；egress_restore 能把占位符还原成原文，
+# 交给模型就可能被注入的内容借来取回敏感信息（docs/DECISIONS.md 第 17 条）。
+# 改用下面单独的 [dlp] 一节：工具只由 AgentNexus 内部调用（目前用于排查第 3、4 层），任何失败都不发送。
+# 接口约定见 docs/dlp/CONTRACT.md。
+# [dlp]
 # command = "tools/dlp-egress/.venv/bin/dlp-egress-mcp"
 # args = ["--config", "tools/dlp-egress/config/dlp.example.yaml"]
-# timeout_ms = 30000
-# [[mcp.servers.tools]]
-# name = "egress_evaluate"
-# capability_id = "dlp.egress_evaluate"
-# description = "外发前检查载荷：返回 ALLOW/ANONYMIZE/REVIEW/BLOCK 与脱敏载荷"
-# effect = "workspace_write"
-# input_types = ["application/json"]
-# output_types = ["application/json"]
+# timeout_secs = 5
