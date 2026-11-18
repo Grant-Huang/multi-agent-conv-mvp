@@ -11,6 +11,9 @@
 //! ```
 
 pub mod admission;
+pub mod agent_catalog;
+pub mod agent_chat;
+pub mod agent_config;
 pub mod backends;
 pub mod bus;
 pub mod composer;
@@ -69,9 +72,15 @@ pub struct Runtime {
     /// 后端与路由（角色 → 后端 → 地址 / 模型 / 限流方式）
     pub backends: Arc<Backends>,
     /// 需要后台探测连通性的 agent（ACP 与 CLI）
-    pub probers: Arc<Vec<Prober>>,
+    pub probers: Arc<ProberSet>,
     /// agent 准入账本（`[admission] enabled = true` 时才有）
     pub admission: Option<Arc<admission::AdmissionLedger>>,
+    /// 握手检测接口的并发闸门（AG.1）
+    pub probe_gate: Arc<agent_catalog::ProbeGate>,
+    /// 托管配置（AG.2）
+    pub agent_config: Arc<agent_config::AgentConfigManager>,
+    /// 管理助手（AG.4）：HTTP 接口和对话里的向导共用
+    pub agents: Arc<agent_chat::AgentAdmin>,
 }
 
 /// 连通性探测的目标：只做握手或命令检查，不调用模型（探测结果写入 `registry.links`）
@@ -83,6 +92,45 @@ pub enum Prober {
         agent: Arc<CodingAgent>,
         backend: Option<String>,
     },
+}
+
+impl Prober {
+    fn id(&self) -> String {
+        match self {
+            Prober::Acp(a) => an_core::AgentAdapter::card(a.as_ref()).id.clone(),
+            Prober::Cli { agent, .. } => an_core::AgentAdapter::card(agent.as_ref()).id.clone(),
+        }
+    }
+}
+
+/// 需要后台探测的 agent 列表。AG.2 起可以在运行中增删（接入 / 停用托管 agent），
+/// 后台探测循环每轮取一次快照。
+#[derive(Default)]
+pub struct ProberSet {
+    list: std::sync::RwLock<Vec<Prober>>,
+}
+
+impl ProberSet {
+    pub fn new(list: Vec<Prober>) -> Self {
+        Self {
+            list: std::sync::RwLock::new(list),
+        }
+    }
+    pub fn snapshot(&self) -> Vec<Prober> {
+        self.list.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+    pub fn add(&self, p: Prober) {
+        let id = p.id();
+        let mut l = self.list.write().unwrap_or_else(|e| e.into_inner());
+        l.retain(|x| x.id() != id);
+        l.push(p);
+    }
+    pub fn remove(&self, id: &str) {
+        self.list
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|x| x.id() != id);
+    }
 }
 
 /// 对所有探测目标各探测一次，结果写入 `registry.links`
@@ -171,7 +219,13 @@ impl Runtime {
         let llm_for = |role: LlmRole| backends.client(role);
 
         // 注册 Agent（顺序即未配置执行组时的默认选择顺序：内置 → Codex → 本机 ACP → 节点）
-        let registry = AgentRegistry::new(config.agents.assign_map()?);
+        // 托管配置（AG.2）：读不出来时不影响启动，只记录原因
+        let agent_config = Arc::new(agent_config::AgentConfigManager::load(&config));
+        let managed = agent_config.managed();
+        let registry = AgentRegistry::new(agent_config::merged_assign(
+            &config.agents.assign_map()?,
+            &managed,
+        ));
         // 准入（E3）：开启时打开账本（参数非法则启动失败），registry 按准入等级分配
         let admission = if config.admission.enabled {
             let ledger = Arc::new(admission::AdmissionLedger::open(
@@ -249,7 +303,9 @@ impl Runtime {
             });
             registry.register(coding);
         }
-        probers.extend(register_acp_agents(&registry, &config));
+        let (acp_probers, dynamic) = register_acp_agents(&registry, &config, &managed);
+        probers.extend(acp_probers);
+        agent_config.set_dynamic(dynamic);
         // 执行组配置立即校验一次（节点上的 agent 可能稍后才连上，所以只对已知成员校验）
         for role in Role::ALL {
             if let Err(e) = registry.group_ids(role) {
@@ -270,14 +326,17 @@ impl Runtime {
         nodes.load_saved()?;
 
         let o = &config.orchestrator;
-        let router = Arc::new(Router::new(
-            llm_for(LlmRole::Router),
-            registry.clone(),
-            tool_names,
-            Policy {
-                approval_risk: o.approval_risk,
-            },
-        ));
+        let router = Arc::new(
+            Router::new(
+                llm_for(LlmRole::Router),
+                registry.clone(),
+                tool_names,
+                Policy {
+                    approval_risk: o.approval_risk,
+                },
+            )
+            .with_risk_rules(config.conversation.risk_rules),
+        );
         let orchestrator = Arc::new(Orchestrator::new(
             store.clone(),
             bus.clone(),
@@ -290,7 +349,18 @@ impl Runtime {
         if let Some(l) = &admission {
             orchestrator.set_admission(l.clone());
         }
+        let probers = Arc::new(ProberSet::new(probers));
+        let agents = Arc::new(agent_chat::AgentAdmin {
+            config: config.clone(),
+            registry: registry.clone(),
+            probers: probers.clone(),
+            manager: agent_config.clone(),
+            store: store.clone(),
+            bus: bus.clone(),
+        });
         let conversation = Arc::new(ConversationRuntime::new(conversation::ConversationDeps {
+            // 对话里管理助手（AG.4）：开关打开时才把向导交给前台
+            agents: config.conversation.agent_management.then(|| agents.clone()),
             llm: llm_for(LlmRole::Conversation),
             // 回复模型：没单独配置时与前台判断用同一个模型（含服务地址）
             reply_llm: llm_for(LlmRole::Reply),
@@ -322,8 +392,11 @@ impl Runtime {
             diagnostics,
             llm: backends.client(LlmRole::Conversation),
             backends: backends.clone(),
-            probers: Arc::new(probers),
+            probers,
             admission,
+            probe_gate: Arc::default(),
+            agent_config,
+            agents,
         })
     }
 
@@ -346,7 +419,7 @@ impl Runtime {
     /// 启动后台任务：节点心跳、局域网发现。由 main 在 tokio 运行时中调用
     /// 立即对所有 ACP / CLI agent 做一次连通性探测（测试与手动刷新用）
     pub async fn refresh_links(&self) {
-        probe_agents(&self.registry, &self.backends, &self.probers).await;
+        probe_agents(&self.registry, &self.backends, &self.probers.snapshot()).await;
     }
 
     pub fn start_background(&self) {
@@ -359,7 +432,7 @@ impl Runtime {
         );
         tokio::spawn(async move {
             loop {
-                probe_agents(&registry, &backends, &probers).await;
+                probe_agents(&registry, &backends, &probers.snapshot()).await;
                 tokio::time::sleep(link::PROBE_INTERVAL).await;
             }
         });
@@ -371,18 +444,23 @@ impl Runtime {
     }
 }
 
-/// 注册 ACP agent：先注册自定义配置，再注册本机已安装的预设（id 相同时自定义优先）。
+/// 注册 ACP agent，顺序：config.toml 的 [[acp.agents]] → 托管的 → 本机已安装的预设（同 id 先到先得）。
 /// 未安装的预设不注册，避免界面里出现一堆不可用的 agent；自定义的即使未安装也注册，方便看到原因。
-/// 返回注册成功的 ACP agent 的探测目标（供后台探测连通性）
-fn register_acp_agents(registry: &AgentRegistry, config: &AppConfig) -> Vec<Prober> {
-    // 未指定工作目录时：coding 角色用代码目录，其他角色用文件工作目录
-    let default_workdir = |role: Role| match role {
-        Role::Coding => config.agents.coding.cfg.workdir.clone(),
-        _ => config.agents.general.workspace_dir.clone(),
-    };
+/// 返回注册成功的 ACP agent 的探测目标，以及由"托管 / 自动发现"注册的部分（AG.2 热更新时对比用）。
+fn register_acp_agents(
+    registry: &AgentRegistry,
+    config: &AppConfig,
+    managed: &agent_config::ManagedConfig,
+) -> (
+    Vec<Prober>,
+    std::collections::BTreeMap<String, acp::AcpConfig>,
+) {
     let mut probers = Vec::new();
     for cfg in &config.acp.agents {
-        let agent = Arc::new(AcpAgent::new(cfg.clone(), default_workdir(cfg.role)));
+        let agent = Arc::new(AcpAgent::new(
+            cfg.clone(),
+            agent_config::default_workdir(config, cfg.role),
+        ));
         if !agent.is_installed() {
             tracing::warn!(event = "agent.not_installed", code = an_core::codes::AGENT_NOT_INSTALLED, agent_id = %cfg.id, "ACP agent 不可用：{}", agent_reason(&agent));
         }
@@ -390,16 +468,24 @@ fn register_acp_agents(registry: &AgentRegistry, config: &AppConfig) -> Vec<Prob
             probers.push(Prober::Acp(agent));
         }
     }
-    if config.acp.auto_detect {
-        for cfg in acp::presets() {
-            let agent = Arc::new(AcpAgent::new(cfg.clone(), default_workdir(cfg.role)));
-            if agent.is_installed() && registry.register(agent.clone()) {
+    let mut dynamic = std::collections::BTreeMap::new();
+    let managed_ids: Vec<&str> = managed.acp.agents.iter().map(|a| a.id.as_str()).collect();
+    for cfg in agent_config::dynamic_desired(config, managed) {
+        let agent = Arc::new(AcpAgent::new(
+            agent_config::resolve_env(&cfg),
+            agent_config::default_workdir(config, cfg.role),
+        ));
+        if registry.register(agent.clone()) {
+            if managed_ids.contains(&cfg.id.as_str()) {
+                tracing::info!(event = "agent.registered", agent_id = %cfg.id, source = "managed", "注册托管 ACP agent");
+            } else {
                 tracing::info!(event = "agent.detected", agent_id = %cfg.id, role = cfg.role.as_str(), "自动发现 ACP agent");
-                probers.push(Prober::Acp(agent));
             }
+            probers.push(Prober::Acp(agent));
+            dynamic.insert(cfg.id.clone(), cfg);
         }
     }
-    probers
+    (probers, dynamic)
 }
 
 fn agent_reason(agent: &AcpAgent) -> String {

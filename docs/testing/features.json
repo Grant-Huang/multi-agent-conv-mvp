@@ -369,5 +369,169 @@
       "RT-HOST-10",
       "RT-HOST-11"
     ]
+  },
+  {
+    "id": "acp-discovery",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/acp.rs",
+      "crates/runtime/src/lib.rs",
+      "crates/agents/src/util.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-ACPD-01",
+      "RT-ACPD-02",
+      "RT-ACPD-03",
+      "RT-ACPD-04",
+      "RT-ACPD-05"
+    ]
+  },
+  {
+    "id": "agent-catalog",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/catalog.rs",
+      "crates/agents/src/acp.rs",
+      "crates/runtime/src/agent_catalog.rs",
+      "crates/server/src/lib.rs",
+      "crates/server/src/bin/mock_acp_agent.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGCAT-01",
+      "RT-AGCAT-02",
+      "RT-AGCAT-03",
+      "RT-AGCAT-04",
+      "RT-AGCAT-05",
+      "RT-AGCAT-06",
+      "RT-AGCAT-07",
+      "RT-AGCAT-08",
+      "RT-AGCAT-09"
+    ]
+  },
+  {
+    "id": "front-thinking",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/conversation.rs",
+      "crates/runtime/src/router.rs",
+      "crates/llm/src/lib.rs",
+      "crates/runtime/src/backends.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-FT-01",
+      "RT-FT-02",
+      "RT-FT-03",
+      "RT-FT-04",
+      "RT-FT-05",
+      "RT-FT-06",
+      "RT-FT-07",
+      "RT-FT-08",
+      "RT-FT-09",
+      "RT-FT-10",
+      "RT-FT-11"
+    ]
+  },
+  {
+    "id": "agent-config",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/agent_config.rs",
+      "crates/runtime/src/registry.rs",
+      "crates/runtime/src/lib.rs",
+      "crates/runtime/src/conversation.rs",
+      "crates/runtime/src/composer.rs",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGCFG-01",
+      "RT-AGCFG-02",
+      "RT-AGCFG-03",
+      "RT-AGCFG-04",
+      "RT-AGCFG-05",
+      "RT-AGCFG-06",
+      "RT-AGCFG-07",
+      "RT-AGCFG-08",
+      "RT-AGCFG-09",
+      "RT-AGCFG-10",
+      "RT-AGCFG-11",
+      "RT-AGCFG-12",
+      "RT-AGCFG-13",
+      "RT-AGCFG-14"
+    ]
+  },
+  {
+    "id": "agent-ui",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "web/src/components/AgentsPanel.tsx",
+      "web/src/components/AgentCards.tsx",
+      "web/src/api.ts",
+      "web/src/App.tsx",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-AGFIRST",
+      "E2E-AGLIST",
+      "E2E-AGTOML",
+      "E2E-AGGUIDE",
+      "E2E-AGCONNECT",
+      "E2E-AGUNDO",
+      "E2E-AGDISABLE",
+      "E2E-AGCHAT",
+      "E2E-AGCHOICE",
+      "E2E-AGDIAG"
+    ]
+  },
+  {
+    "id": "agent-chat",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/runtime/src/conversation.rs",
+      "crates/runtime/src/store.rs",
+      "crates/runtime/src/agent_config.rs",
+      "crates/core/src/lib.rs",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGCHAT-01",
+      "RT-AGCHAT-02",
+      "RT-AGCHAT-03",
+      "RT-AGCHAT-04",
+      "RT-AGCHAT-05",
+      "RT-AGCHAT-06",
+      "RT-AGCHAT-07",
+      "RT-AGCHAT-08",
+      "RT-AGCHAT-09"
+    ]
+  },
+  {
+    "id": "agent-diagnose",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/diagnose.rs",
+      "crates/agents/src/catalog.rs",
+      "crates/runtime/src/agent_chat.rs",
+      "crates/server/src/lib.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-AGDIAG-01",
+      "RT-AGDIAG-02",
+      "RT-AGDIAG-03",
+      "RT-AGDIAG-04",
+      "RT-AGDIAG-06"
+    ]
   }
 ]
