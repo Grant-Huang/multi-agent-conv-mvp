@@ -51,6 +51,22 @@
 | RT-REP-07 | reports | 三章中第2章两次写作都失败，另两章成功 | 执行任务 | Succeeded（过半成功）；summary 写明缺失第2章；文件有第1、3章，无第2章正文标题 |
 | RT-REP-08 | reports | 同 RT-REP-03，章节写作阶段人为挂起 | 执行中 abort 该次 run | abort 后不再发出新的模型请求；报告文件不再增长 |
 | RT-REP-09 | reports | 规划与检索只有 [S1]；受控模型在第1章写了不存在的 [S9] | 执行任务 | Succeeded；正文无 `[S9]`；参考资料只有检索到的真实链接 |
+| RT-EGR-01 | egress | `[egress] mode = off` | General 调用 web_search（参数含客户名与凭证样式串） | 不启动 DLP；工具收到原参数；DLP 无调用记录 |
+| RT-EGR-02 | egress | enforce，web_search 已绑定 public-search，任务 task-42 | 调用 web_search（含客户名） | 工具只收到脱敏参数；DLP 收到的 task_id、channel、destination_id、purpose 来自任务上下文和配置 |
+| RT-EGR-03 | egress | enforce | 参数分别含凭证、机密信息 | 分别返回 E_EGRESS_BLOCKED、E_EGRESS_REVIEW；错误信息不含原文；工具未被调用 |
+| RT-EGR-04 | egress | enforce，current_time 未绑定 | 调用 current_time | 不经 DLP，工具正常调用 |
+| RT-EGR-05 | egress | audit | 调用含凭证的 web_search | DLP 有调用记录；工具仍收到原参数（只记录不拦截） |
+| RT-EGR-06 | egress | enforce；DLP 返回不符合 schema 的结构化结果 / 判定超时 | 调用 web_search | 启动失败或返回 E_EGRESS_UNAVAILABLE；工具未被调用；enforce 下守卫不得缺失 |
+| RT-EGR-07 | egress | enforce；DLP 进程在第一次判定后退出 | 连续调用 4 次 | 至少 2 次成功（重新拉起 DLP）；工具从未收到未脱敏参数 |
+| RT-EGR-08 | egress | enforce，cloud 后端已绑定 cloud-llm | 外发两条消息（含客户名）；再外发含凭证的消息 | 发出的消息已脱敏、角色不变；返回 Token→原值映射，restore 使用 local_ui；含凭证时返回 EgressBlocked |
+| RT-EGR-09 | egress | enforce；DLP 未开启恢复 | 外发含客户名的消息 | 仍发送脱敏内容；映射为空（输出中保留 Token，不影响安全） |
+| RT-EGR-10 | egress | enforce 配置 | 启动校验：绑定的工具不存在；web_fetch 未绑定；云端后端未绑定；audit 下云端后端未绑定 | 前三种拒绝启动并指明对象；本机后端无需绑定；audit 只给出警告 |
+| RT-EGR-11 | egress | Runtime 启动，enforce，只绑定 web_search，web_fetch 已注册 | with_mcp_diagnostics 启动 | 启动失败，错误含 web_fetch |
+| RT-EGR-12 | egress | Runtime 启动，enforce，web_search / web_fetch 均已绑定 | 启动后读取能力清单 | 启动成功；能力清单中没有任何 egress_* 工具 |
+| RT-EGR-13 | egress | LLM 地址为云端地址 | 分别以 enforce 未绑定、audit 未绑定、enforce 已绑定启动 | enforce 未绑定启动失败（错误含后端名 default）；另两种启动成功 |
+| RT-EGR-14 | egress | 未写 `[egress]`；另一配置 mode = audit | 解析配置；用同步构造创建 Runtime | 默认 mode = off；同步构造拒绝启用外发检查 |
+| RT-EGR-15 | egress | 模型服务替身流式返回，Token 被切在两个数据块之间 | 带外发检查的客户端 chat_stream / chat | 模型服务收到的请求只含 Token；用户看到的增量与结果都是恢复后的原值 |
+| RT-EGR-16 | egress | 外发检查判定 BLOCK | 调用 chat | 返回 EgressBlocked；模型服务没有收到任何请求 |
 | RT-TPL-10 | templates | 后端 llama_cpp 配置 background_slots=[2,3,4,5]；openai 配置 max_inflight=8、reserved_interactive=1；openai 不限并发 | 读取 background_capacity | 分别为 4、7、不限（None） |
 
 ## MOM 可配置持续仿真（实现前定义）

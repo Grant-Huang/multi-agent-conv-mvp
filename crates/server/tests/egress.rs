@@ -58,7 +58,7 @@ async fn start(text: &str) -> anyhow::Result<Runtime> {
 }
 
 #[tokio::test]
-async fn enforce_requires_every_network_tool_to_be_bound() {
+async fn rt_egr_11_enforce_requires_every_network_tool_to_be_bound() {
     let err = start(&config(
         "enforce",
         "http://127.0.0.1:1/v1",
@@ -73,7 +73,7 @@ async fn enforce_requires_every_network_tool_to_be_bound() {
 }
 
 #[tokio::test]
-async fn enforce_starts_when_bound_and_never_exposes_dlp_tools() {
+async fn rt_egr_12_enforce_starts_when_bound_and_never_exposes_dlp_tools() {
     let rt = start(&config(
         "enforce",
         "http://127.0.0.1:1/v1",
@@ -89,7 +89,7 @@ async fn enforce_starts_when_bound_and_never_exposes_dlp_tools() {
 }
 
 #[tokio::test]
-async fn cloud_llm_must_be_bound_in_enforce_but_only_warns_in_audit() {
+async fn rt_egr_13_cloud_llm_must_be_bound_in_enforce_but_only_warns_in_audit() {
     let cloud = "https://api.example.invalid/v1";
     let tools = ["web_search", "web_fetch"];
     let err = start(&config("enforce", cloud, &tools, false))
@@ -103,7 +103,7 @@ async fn cloud_llm_must_be_bound_in_enforce_but_only_warns_in_audit() {
 }
 
 #[test]
-fn egress_is_off_by_default_and_sync_constructor_refuses_it() {
+fn rt_egr_14_egress_is_off_by_default_and_sync_constructor_refuses_it() {
     let base = "[llm]\nbase_url = \"http://127.0.0.1:1/v1\"\nmodel = \"m\"\n[nodes]\ndiscovery = false\n[agents.coding]\nenabled = false\n";
     let (cfg, _) = AppConfig::parse(base).unwrap();
     assert_eq!(cfg.egress.mode, an_agents::egress::EgressMode::Off);

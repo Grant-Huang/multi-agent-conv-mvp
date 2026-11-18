@@ -102,7 +102,7 @@ async fn registry(
 }
 
 #[tokio::test]
-async fn off_mode_starts_nothing_and_changes_nothing() {
+async fn rt_egr_01_off_mode_starts_nothing_and_changes_nothing() {
     let log = log_path("off");
     let (tools, seen, guard) = registry("off", &log, "normal", 2000).await;
     assert!(guard.is_none());
@@ -115,7 +115,7 @@ async fn off_mode_starts_nothing_and_changes_nothing() {
 }
 
 #[tokio::test]
-async fn enforce_sends_only_sanitized_args_with_host_context() {
+async fn rt_egr_02_enforce_sends_only_sanitized_args_with_host_context() {
     let log = log_path("enforce");
     let (tools, seen, _g) = registry("enforce", &log, "normal", 5000).await;
     scope_task("task-42".into(), async {
@@ -139,7 +139,7 @@ async fn enforce_sends_only_sanitized_args_with_host_context() {
 }
 
 #[tokio::test]
-async fn enforce_blocks_and_reviews_without_calling_the_tool() {
+async fn rt_egr_03_enforce_blocks_and_reviews_without_calling_the_tool() {
     let log = log_path("block");
     let (tools, seen, _g) = registry("enforce", &log, "normal", 5000).await;
     for (q, code) in [
@@ -161,7 +161,7 @@ async fn enforce_blocks_and_reviews_without_calling_the_tool() {
 }
 
 #[tokio::test]
-async fn unbound_tools_are_not_checked() {
+async fn rt_egr_04_unbound_tools_are_not_checked() {
     let log = log_path("unbound");
     let (tools, seen, _g) = registry("enforce", &log, "normal", 5000).await;
     tools.call("current_time", &json!({})).await.unwrap();
@@ -170,7 +170,7 @@ async fn unbound_tools_are_not_checked() {
 }
 
 #[tokio::test]
-async fn audit_records_but_never_blocks() {
+async fn rt_egr_05_audit_records_but_never_blocks() {
     let log = log_path("audit");
     let (tools, seen, _g) = registry("audit", &log, "normal", 5000).await;
     tools
@@ -182,7 +182,7 @@ async fn audit_records_but_never_blocks() {
 }
 
 #[tokio::test]
-async fn enforce_fails_closed_on_invalid_output_and_timeout() {
+async fn rt_egr_06_enforce_fails_closed_on_invalid_output_and_timeout() {
     for (fixture_mode, timeout_ms) in [("bad_output", 5000), ("slow", 500)] {
         let log = log_path(fixture_mode);
         let started = EgressGuard::start(&config("enforce", &log, fixture_mode, timeout_ms)).await;
@@ -213,7 +213,7 @@ async fn enforce_fails_closed_on_invalid_output_and_timeout() {
 }
 
 #[tokio::test]
-async fn dlp_process_exit_never_leaks_and_reconnects() {
+async fn rt_egr_07_dlp_process_exit_never_leaks_and_reconnects() {
     let log = log_path("crash");
     let (tools, seen, _g) = registry("enforce", &log, "crash_after_first", 5000).await;
     let mut ok = 0;
@@ -234,7 +234,7 @@ async fn dlp_process_exit_never_leaks_and_reconnects() {
 }
 
 #[tokio::test]
-async fn llm_outbound_sanitizes_messages_and_returns_restore_map() {
+async fn rt_egr_08_llm_outbound_sanitizes_messages_and_returns_restore_map() {
     let log = log_path("llm");
     let (_tools, _seen, g) = registry("enforce", &log, "normal", 5000).await;
     let hook = g.unwrap().llm_hook("cloud").expect("cloud 后端有绑定");
@@ -269,7 +269,7 @@ async fn llm_outbound_sanitizes_messages_and_returns_restore_map() {
 }
 
 #[tokio::test]
-async fn llm_without_restore_still_sends_sanitized_text() {
+async fn rt_egr_09_llm_without_restore_still_sends_sanitized_text() {
     let log = log_path("norestore");
     let (_t, _s, g) = registry("enforce", &log, "no_restore", 5000).await;
     let hook = g.unwrap().llm_hook("cloud").unwrap();
@@ -279,7 +279,7 @@ async fn llm_without_restore_still_sends_sanitized_text() {
 }
 
 #[test]
-fn bindings_are_validated_at_startup() {
+fn rt_egr_10_bindings_are_validated_at_startup() {
     let log = log_path("validate");
     let cfg = config("enforce", &log, "normal", 2000);
     // 绑定的工具不存在：任何模式下都报错（防止拼写错误导致漏检）

@@ -1139,7 +1139,7 @@ impl an_llm::egress::LlmEgress for FakeEgress {
 }
 
 #[tokio::test]
-async fn egress_sanitizes_request_and_restores_streamed_tokens() {
+async fn rt_egr_15_egress_sanitizes_request_and_restores_streamed_tokens() {
     // Token 被切在两个数据块之间，恢复后用户看到的仍是原值
     let m = start(|_, _| ok_reply(&["答复：", "[CUSTO", "MER_001]", " 已确认"])).await;
     let c = plain(&m.url, 0, timeouts(2000, 2000, 5000))
@@ -1165,7 +1165,7 @@ async fn egress_sanitizes_request_and_restores_streamed_tokens() {
 }
 
 #[tokio::test]
-async fn egress_block_never_contacts_the_backend() {
+async fn rt_egr_16_egress_block_never_contacts_the_backend() {
     let m = start(|_, _| ok_reply(&["x"])).await;
     let c = plain(&m.url, 0, timeouts(2000, 2000, 5000))
         .with_egress(Arc::new(FakeEgress { block: true }));

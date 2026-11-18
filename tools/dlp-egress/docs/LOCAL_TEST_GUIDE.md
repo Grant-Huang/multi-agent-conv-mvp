@@ -9,7 +9,7 @@
 | T1 | 安装、单元测试、代码检查能在本地机器复现 | 已测，需在你们的机器上复现 |
 | T2 | 700 条评测集与 36 条留出集的基线结果可复现 | 已测，需复现 |
 | T3 | **开启 GLiNER 后的识别效果与延迟** | **未测**（云端无法下载模型） |
-| T4 | AgentNexus 启动后能发现并调用 DLP 工具 | 已测“发现”；**未测**真实 LLM 调用 |
+| T4 | AgentNexus 外发检查（`[egress]` audit / enforce）在真实环境中生效 | 已用替身与真实 DLP 做集成测试；**未测**真实模型与真实部署 |
 | T5 | 新标注测试集上的效果（测试集交付后） | 未测 |
 
 ## 1. 环境要求
@@ -47,7 +47,7 @@ uv run flake8 .
 
 期望结果：
 
-- pytest 最后一行为 `N passed`，没有 failed（本文编写时 N = 60），覆盖率 ≥ 80%。
+- pytest 最后一行为 `N passed`，没有 failed（本文编写时 N = 81），覆盖率 ≥ 80%。
 - flake8 没有任何输出。
 - `test_mcp_server.py` 会真实启动 MCP 子进程，单条用例约 2–5 秒，属于正常现象。
 
@@ -158,9 +158,11 @@ uv run python -m bench.run_benchmark --data /tmp/dlp-new.jsonl --out /tmp/dlp-ne
 
 开启 GLiNER 时，加上第 5.4 节中效果最好的那组 `--gliner-model` 和 `--gliner-threshold` 参数。
 
-## 7. T4：AgentNexus 接入验证
+## 7. T4：AgentNexus 外发检查验证
 
-### 7.1 编译与配置
+部署方式与注意事项以 `docs/mcp/DLP_EGRESS_DEPLOYMENT.md` 为准。DLP 工具由宿主直接调用，**不会**出现在模型的工具清单里。
+
+### 7.1 编译、密钥与配置
 
 在仓库根目录：
 
@@ -172,36 +174,44 @@ CARGO_TARGET_DIR=target cargo build --locked --bin agentnexus
 mkdir -p tools/dlp-egress/.data && python3 -c "import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())" > tools/dlp-egress/.data/dlp-vault.key && chmod 600 tools/dlp-egress/.data/dlp-vault.key
 ```
 
-复制 `config.example.toml` 为 `config.toml`，填好 LLM 配置，并取消 `# 外发脱敏` 段落的注释。
+复制 `tools/dlp-egress/config/dlp.example.yaml` 为 `dlp.host.yaml`，把 `allow_restore` 改为 `true`。
+在 `destinations.example.yaml` 中登记 `public-search` 和（如使用云端模型）`cloud-llm`。
+复制 `config.example.toml` 为 `config.toml`，按部署说明 2.4 节填写 `[egress]`，先用 `mode = "audit"`。
 
-### 7.2 发现
+### 7.2 与真实 DLP 的联调测试
+
+```bash
+AN_TEST_DLP_COMMAND=$PWD/tools/dlp-egress/.venv/bin/dlp-egress-mcp AN_TEST_DLP_CONFIG=$PWD/tools/dlp-egress/config/dlp.host.yaml CARGO_TARGET_DIR=target cargo test -p an-agents --test egress real_dlp -- --nocapture
+```
+
+期望结果：`test real_dlp_service_roundtrip_when_configured ... ok`。没有设置环境变量时，该测试会打印“跳过”并通过。
+
+### 7.3 audit 模式
 
 ```bash
 target/debug/agentnexus config.toml
 ```
 
-另开一个终端：
-
-```bash
-curl -s http://127.0.0.1:8787/api/capabilities | grep -o '"tool_id":"dlp[^"]*"'
-```
-
-期望结果：输出 `"tool_id":"dlp.egress_evaluate"`。如果服务没有启动，看第一个终端的报错：通常是缺少密钥文件，或者 `config.toml` 中路径写错。
-
-### 7.3 真实 LLM 调用（云端未测）
-
-在 AgentNexus 网页中对 General 说：
-
-> 我要把这段话发给外部供应商，请先用外发检查工具检查：“将西岸三厂的CNC-07维护记录上传，关联WO-559120，客户青川重工，良率97.5%”。目的地 vendor-api，用途 vendor_diagnostics。
-
 期望结果：
 
-- 任务证据中出现一次 `dlp.egress_evaluate` 调用。
-- 返回 `decision` 为 `ANONYMIZE`，脱敏文本中出现 `[PLANT_001]`、`[ORDER_ID_001]`、`[CUSTOMER_001]`，`CNC-07` 和 `良率97.5%` 保持不变。
-  示例主数据中有“西岸三厂”“青川重工”。
-- 再试一句含 `Authorization: Bearer` 加任意长串的文本，期望结果为 `BLOCK`。
+- 启动日志有 `egress.started`（mode = audit）。如果有 `config.egress` 警告（`W_EGRESS_UNBOUND`），记录下来。
+- `curl -s http://127.0.0.1:8787/api/capabilities | grep -c egress_` 输出 `0`。
+- 在网页中让 General 搜索一句含客户名的话，例如：“搜索一下青川重工最近的新闻”。
+  日志中出现 `egress.evaluate`，`decision` 为 `ANONYMIZE`。audit 下搜索仍使用原文。
 
-记录：模型名称、是否调用了工具、调用参数是否正确（尤其是 `destination_id`、`purpose`）、返回结果。
+### 7.4 enforce 模式
+
+把 `mode` 改为 `"enforce"` 并重启，重复 7.3 的搜索。期望结果：
+
+- 搜索仍能完成，日志 `egress.evaluate` 的 `decision` 为 `ANONYMIZE`，实际发出的查询词中客户名已替换为 `[CUSTOMER_001]`。
+  注意：任务证据里记录的是模型给出的**原始参数**（只存在本机，不外发），不能据此判断发出了什么；
+  如需直接确认，可临时把 `websearch_command` 换成一个只打印参数的脚本。
+- 再让 General 搜索“Authorization: Bearer DEMO-NOT-A-REAL-TOKEN-0001 是什么”：
+  任务证据中出现 `E_EGRESS_BLOCKED`，日志出现 `egress.blocked`，搜索命令没有执行。
+- 如果配置了云端模型（`[[egress.llm]]`）：正常对话可用，回答中出现的客户名是原值（已在本机恢复）；
+  发送含凭证样式串的消息时，回答失败并带 `E_EGRESS_BLOCKED`。
+
+记录：模型名称、各步是否符合期望、日志中 `egress.evaluate` 的 `elapsed_ms` 范围。
 
 ## 8. 结果回传格式
 
@@ -215,7 +225,7 @@ T1 pytest：<N passed / 失败用例名>        flake8：<无输出 / 输出内�
 T2 基线：<一致 / 不一致（附 SUMMARY.md）>
 T3 GLiNER：附 6 个目录中的 SUMMARY.md（W/J × 0.3/0.5/0.7）
    组 J 是否成功加载：<是 / 否（附报错）>
-T4 发现：<是 / 否>   真实调用：<模型名，是否调用，返回 decision>
+T4 联调测试：<ok / 失败>   audit：<符合 / 不符合（说明）>   enforce：<符合 / 不符合（说明）>   模型：<名称>   判定耗时：<范围>
 问题与观察：<自由填写>
 ```
 
