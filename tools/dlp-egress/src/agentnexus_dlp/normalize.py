@@ -48,3 +48,21 @@ def canonical(value: str) -> str:
 def detect_language(text: str) -> str:
     """粗略语言判断：出现中日韩统一表意文字即视为 zh，否则 en。仅用于报告分桶。"""
     return "zh" if any("一" <= c <= "鿿" for c in text) else "en"
+
+
+# One-codepoint visual skeleton for credential detection only. Ordinary text and
+# canonical entity identities retain their original script.
+_CREDENTIAL_CONFUSABLES = str.maketrans({
+    "Α": "A", "А": "A", "Β": "B", "В": "B", "Ϲ": "C", "С": "C",
+    "Ε": "E", "Е": "E", "Η": "H", "Н": "H", "Ι": "I", "І": "I",
+    "Ј": "J", "Κ": "K", "К": "K", "Μ": "M", "М": "M", "Ν": "N",
+    "Ο": "O", "О": "O", "Ρ": "P", "Р": "P", "Ѕ": "S", "Τ": "T",
+    "Т": "T", "Χ": "X", "Х": "X", "Υ": "Y", "α": "a", "а": "a",
+    "с": "c", "е": "e", "і": "i", "ј": "j", "ο": "o", "о": "o",
+    "ρ": "p", "р": "p", "ѕ": "s", "χ": "x", "х": "x", "у": "y",
+})
+
+
+def credential_skeleton(normalized_text: str) -> str:
+    """Preserve span lengths while exposing common Greek/Cyrillic credential disguises."""
+    return normalized_text.translate(_CREDENTIAL_CONFUSABLES)

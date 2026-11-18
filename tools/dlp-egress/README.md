@@ -94,6 +94,10 @@ output_types = ["application/json"]
 调用参数：`task_id`、`channel`（email / slack / external_api / file_upload / mcp）、`destination_id`、`purpose`，
 以及 `text` 与 `json_body` 二选一，可选 `constraints`。
 
+### R-20261118-M3 修复约定
+
+补充中文密码/口令、token和环境变量_PASS赋值、OpenAI项目key及Google key检测；希腊/西里尔常见同形字仅在额外的SECRET识别通道折叠，原文字段及主数据规范值不变。匹配后仍映射原文偏移遮盖，非凭证内容不改写。
+
 ## 测试
 
 ```bash
