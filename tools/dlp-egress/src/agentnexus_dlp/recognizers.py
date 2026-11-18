@@ -68,16 +68,32 @@ class RegexRecognizer(EntityRecognizer):
 # ---------------------------------------------------------------------------
 # 凭证（结构化规则；detect-secrets 在 secrets.py 中另行封装）
 # ---------------------------------------------------------------------------
+# 凭证键名：前缀 / 后缀可为 [_-] 连接的标识符片段
+_KEY_PREFIX = r"(?:[A-Za-z0-9]+[_-])*"
+_KEY_SUFFIX = r"(?:[_-][A-Za-z0-9]+)*"
+_STRONG_KEYS = (r"api[_-]?key|access[_-]?key|private[_-]?key|secret|token|passw(?:or)?d|pwd|"
+                r"credentials?|passphrase")
+_SECRET_VALUE = r"[^\s\"',;，。；、]"
+
 SECRET_RULES = [
     # HTTP Authorization 头：Bearer / Basic / Token 后面的值
     Rule("SECRET", re.compile(
         r"(?i)authorization\s*[:=]\s*[\"']?(?:bearer|basic|token)\s+(?P<v>[A-Za-z0-9._~+/=\-]{8,})"),
         0.95, "v"),
-    # key=value / key: value 形式的常见凭证字段
+    # key=value / key: value：键名中含“强”凭证词（password、secret、token、credential、api_key、
+    # private_key、access_key 等，可带前后缀，如 db_password、service_credential_ref），值不少于 6 个字符
     Rule("SECRET", re.compile(
-        r"(?i)(?<![A-Za-z0-9])(?:api[_-]?key|secret[_-]?key|client[_-]?secret|access[_-]?token|"
-        r"refresh[_-]?token|password|passwd|pwd|private[_-]?token|auth[_-]?token)"
-        r"\s*[\"']?\s*[:=]\s*[\"']?(?P<v>[^\s\"',;，。；]{6,})"),
+        rf"(?i)(?<![A-Za-z0-9]){_KEY_PREFIX}(?:{_STRONG_KEYS}){_KEY_SUFFIX}"
+        rf"\s*[\"']?\s*[:=]\s*[\"']?(?P<v>{_SECRET_VALUE}{{6,}})"),
+        0.9, "v"),
+    # 键名只含“弱”词 key / auth（如 signing_key_material）：值还必须同时含字母和数字，避免 sort_key=priority 之类误报
+    Rule("SECRET", re.compile(
+        rf"(?i)(?<![A-Za-z0-9]){_KEY_PREFIX}(?:key|auth){_KEY_SUFFIX}"
+        rf"\s*[\"']?\s*[:=]\s*[\"']?(?P<v>(?=[^\s\"',;，。；、]*\d)(?=[^\s\"',;，。；、]*[A-Za-z]){_SECRET_VALUE}{{6,}})"),
+        0.85, "v"),
+    # 中文键名：密码 / 口令 / 密钥 / 秘钥 / 令牌 / 凭证 / 凭据，后接 为 / 是 / ： / =
+    Rule("SECRET", re.compile(
+        rf"(?:密码|口令|密钥|秘钥|令牌|凭证|凭据)\s*(?:为|是|：|:|=)\s*(?P<v>{_SECRET_VALUE}{{6,}})"),
         0.9, "v"),
     # Explicit credential labels in Chinese and environment/token assignments.
     Rule("SECRET", re.compile(
@@ -104,8 +120,9 @@ CONTACT_RULES = [
     Rule("CONTACT", re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"), 0.85),
     # 国际格式电话，如 +1-202-555-0143 / +86 21 5555 1234
     Rule("CONTACT", re.compile(r"(?<![\w+])\+\d{1,3}[\- ]\d{2,4}[\- ]\d{3,4}(?:[\- ]\d{3,4})?(?!\d)"), 0.85),
-    # 中国固话 021-12345678
+    # 中国固话 021-12345678，以及分段写法 021-6688-1234
     Rule("CONTACT", re.compile(r"(?<!\d)0\d{2,3}-\d{7,8}(?!\d)"), 0.75),
+    Rule("CONTACT", re.compile(r"(?<!\d)0\d{2,3}-\d{3,4}-\d{4}(?!\d)"), 0.75),
 ]
 
 # ---------------------------------------------------------------------------
@@ -165,9 +182,10 @@ AMOUNT_RULES = [
     Rule("AMOUNT", re.compile(rf"(?<![\d.,])(?:{_NUM})\s?(?:万元|亿元|万美元|美元|欧元|元)"), 0.85),
 ]
 
-_ZH_METRIC = "良率|合格率|不良率|直通率|稼动率|温度|扭矩|压力|转速|节拍|能耗|电流|电压|振动|湿度|功率|产能|速度|OEE|CPK|Cpk"
-_EN_METRIC = ("yield|temperature|torque|pressure|cycle time|OEE|Cpk|speed|throughput|scrap rate|defect rate|"
-              "uptime|downtime|vibration|current|voltage|humidity|power|takt time|first pass yield")
+_ZH_METRIC = ("一次合格率|首检合格率|良品率|报废率|可用率|良率|合格率|不良率|直通率|稼动率|温度|扭矩|压力|转速|节拍|"
+              "能耗|电流|电压|振动|湿度|功率|产能|速度|OEE|CPK|Cpk")
+_EN_METRIC = ("first[- ]pass yield|availability|yield|temperature|torque|pressure|cycle time|OEE|Cpk|speed|"
+              "throughput|scrap rate|defect rate|uptime|downtime|vibration|current|voltage|humidity|power|takt time")
 _UNIT = (r"%|℃|°C|°F|C|F|N·m|N m|Nm|kN|s|秒|ms|min|分钟|h|小时|MPa|kPa|Pa|bar|rpm|r/min|V|A|kW|W|Hz|"
          r"mm/s|mm|μm|um|kg|t|件/小时|pcs/h|ppm")
 METRIC_RULES = [
@@ -193,7 +211,24 @@ _EN_SECRET_CONCEPT = (
     "price floor|floor price|rebate terms|rebate agreement|discount agreement|process window|process recipe|"
     "recipe parameters|changeover strategy|cost structure|cost breakdown|margin targets?|pricing strategy|"
     "bid strategy|product roadmap|source code|design drawings")
+# 修饰语驱动：“机密修饰语 + 至多 8 个字（或 3 个词）+ 商业文件类名词 + 可选版本号”
+_ZH_CONF_MOD = (r"(?:仅限内部的?|限制传播的?|严禁外传的?|不得外传的?|内部|未公开的?|尚未公开的?|未发布的?|不公开的?|"
+                r"保密的?|机密的?|限内部的?|客户定制的?)")
+_ZH_CONF_HEAD = (r"(?:协议|方案|阈值|策略|矩阵|清单|底线|底价|配方|参数|结构|明细|价格|报价|成本|模型|计划|"
+                 r"路线图|条款|返利|折扣|毛利|利润|预算|规则|窗口|图纸|源代码|源码)")
+_ZH_VERSION = r"(?:第\d+版|[vV]\d+(?:\.\d+)*)?"
+_EN_CONF_MOD = (r"(?:internal|confidential|restricted|private|non-?public|undisclosed|unpublished|proprietary|"
+                r"customer-specific)")
+_EN_CONF_HEAD = (r"(?:arrangements?|agreements?|matrix|assumptions|playbook|strategy|plan|terms|recipe|"
+                 r"thresholds?|floor|pricing|scorecard|roadmap|model|formula|window|structure|breakdown|"
+                 r"targets?|list|parameters)")
+_EN_VERSION = r"(?:\s+(?:rev(?:ision)?\.?|version|v)\s*#?\d+|\s+#\d+)?"
+
 INTERNAL_INFO_RULES = [
+    Rule("INTERNAL_INFO", re.compile(rf"{_ZH_CONF_MOD}[\u4e00-\u9fff]{{0,8}}{_ZH_CONF_HEAD}{_ZH_VERSION}"), 0.75),
+    Rule("INTERNAL_INFO", re.compile(
+        rf"(?i)(?<![A-Za-z]){_EN_CONF_MOD}(?:\s+[a-z][a-z-]*){{0,3}}\s+{_EN_CONF_HEAD}(?![A-Za-z]){_EN_VERSION}"),
+        0.75),
     Rule("INTERNAL_INFO", re.compile(rf"{_ZH_SECRET_MOD}(?:{_ZH_SECRET_CONCEPT})"), 0.75),
     Rule("INTERNAL_INFO", re.compile(rf"(?i)(?<![A-Za-z]){_EN_SECRET_MOD}(?:{_EN_SECRET_CONCEPT})(?![A-Za-z])"),
          0.75),
@@ -211,7 +246,7 @@ _SURNAMES = ("王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁
              "姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔汤")
 _TITLES = "工程师|经理|主管|总监|主任|厂长|组长|班长|博士|老师|师傅|总|工"
 _EN_NAME = r"[A-Z][a-z]+ [A-Z][a-z]+"
-_PLANT_STOP = "厂交付含包不无有该此各本个其"
+_PLANT_STOP = "厂交付含包不无有该此各本个其完成做次巡进前往去回"
 _GONG_WORDS = "单厂艺程作具序位件资人业装期时种"
 
 ORG_RULES = [
@@ -219,11 +254,11 @@ ORG_RULES = [
     Rule("CUSTOMER", re.compile(
         rf"(?<![A-Za-z])(?:[A-Z][a-z]+ ){{1,2}}(?:{_EN_COMPANY_SUFFIX}|[A-Z][a-z]*works)(?![A-Za-z])"), 0.6),
     # "项目+两字代号"；排除 "项目进展/项目经理" 等普通词
-    Rule("PROJECT", re.compile(r"项目(?!进展|延期|计划|预算|经理|管理|组|部|名称|编号)[一-鿿]{2}"), 0.6),
-    Rule("PROJECT", re.compile(r"(?<![A-Za-z])Project [A-Z][a-z]+(?![A-Za-z])"), 0.65),
+    Rule("PROJECT", re.compile(r"项目(?!进展|延期|计划|预算|经理|管理|组|部|名称|编号)[一-鿿]{2}[0-9A-Za-z]{0,4}"), 0.6),
+    Rule("PROJECT", re.compile(r"(?<![A-Za-z])Project [A-Z][a-z]+(?:-\d+)?(?![A-Za-z0-9])"), 0.65),
     # 厂区：前缀中不允许出现 "厂" 与常见虚词/动词/否定词，避免 "工厂临港一厂"、"不包含工厂" 这类误命中
     Rule("PLANT", re.compile(
-        rf"(?:(?![{_ZH_STOP}{_PLANT_STOP}])[一-鿿]){{2,4}}(?:一厂|二厂|三厂|四厂|五厂|分厂|工厂|基地|车间|产业园)"), 0.6),
+        rf"(?:(?![{_ZH_STOP}{_PLANT_STOP}])[一-鿿]){{2,4}}(?:\d+号?厂|一厂|二厂|三厂|四厂|五厂|分厂|工厂|基地|车间|产业园)"), 0.6),
     Rule("PLANT", re.compile(
         r"(?<![A-Za-z])(?:Plant [A-Z][a-z]+|(?:[A-Z][a-z]+ ){1,2}(?:Hall|Factory|Cell|Plant|Workshop|Site|Campus)"
         r" [A-Z0-9]{1,3})(?![A-Za-z0-9])"), 0.6),

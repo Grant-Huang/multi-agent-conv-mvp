@@ -123,6 +123,7 @@
         "support": 5
       }
     },
+    "unscored_rows": 0,
     "per_language": {
       "en": {
         "precision": 0.9615,
@@ -209,10 +210,10 @@
     "unknown_destination_blocked": 2
   },
   "latency_ms": {
-    "p50": 2.51,
-    "p95": 3.92,
-    "p99": 3.931,
-    "max": 3.931
+    "p50": 1.938,
+    "p95": 3.781,
+    "p99": 3.803,
+    "max": 3.803
   },
   "failures": [
     {
@@ -236,5 +237,9 @@
       "expected": "项目管理培训资料：如何拆分工单与排产，适用于任何工厂。",
       "got": "项目管理培训资料：如何拆分工单与排产，适用于[PLANT_001]。"
     }
-  ]
+  ],
+  "config": {
+    "gliner_model": null,
+    "gliner_threshold": null
+  }
 }

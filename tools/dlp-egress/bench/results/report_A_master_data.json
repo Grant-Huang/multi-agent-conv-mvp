@@ -123,6 +123,7 @@
         "support": 10
       }
     },
+    "unscored_rows": 0,
     "per_language": {
       "en": {
         "precision": 1.0,
@@ -215,11 +216,15 @@
     "unknown_destination_blocked": 20
   },
   "latency_ms": {
-    "p50": 3.456,
-    "p95": 6.041,
-    "p99": 8.475,
-    "max": 23.465
+    "p50": 2.763,
+    "p95": 4.732,
+    "p99": 6.964,
+    "max": 11.309
   },
   "failures": [],
-  "wall_seconds": 2.74
+  "config": {
+    "gliner_model": null,
+    "gliner_threshold": null
+  },
+  "wall_seconds": 2.16
 }
