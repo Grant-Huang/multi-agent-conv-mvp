@@ -920,8 +920,9 @@ impl Engine {
             .collect();
         self.update(|s, events| {
             let now = s.now;
-            // 不能随事项关闭的成员：与 `Engine::close` 的安全前提一致（R-20261118-H2，决策 DES-26）。
-            // 跳过它们并在事项上逐个记录，其他成员照常关闭；被跳过的成员留在看板上由人单独处理。
+            // 不能随事项关闭的成员：与 `Engine::close` 的安全前提一致（R-20261118-H2，#96 已修复）。
+            // 跳过它们，在成员上记 `CaseCloseSkipped`（#96），并在事项上逐个汇总（决策 DES-26）；
+            // 其他成员照常关闭；被跳过的成员留在看板上由人单独处理。
             let mut skipped: Vec<(String, &'static str)> = vec![];
             for m in &members {
                 let Some(c) = s.cases.get_mut(m) else {
@@ -930,16 +931,24 @@ impl Engine {
                 if matches!(c.stage.as_str(), "CLOSED" | "CANCELLED") {
                     continue;
                 }
-                let reason = if c.world["safety_trip"] == true {
-                    Some("safety interlock active (safety_trip)")
+                let skip_reason = if c.world["safety_trip"] == true {
+                    Some("safety_trip")
                 } else if c.stage == "BLOCKED" {
-                    Some("case is BLOCKED")
-                } else if c.actions.values().any(|a| a.state != "VERIFIED") {
-                    Some("actions not yet verified")
+                    Some("blocked")
+                } else if c.actions.values().any(|action| action.state != "VERIFIED") {
+                    Some("verification_incomplete")
                 } else {
                     None
                 };
-                if let Some(reason) = reason {
+                if let Some(reason) = skip_reason {
+                    emit(
+                        c,
+                        now,
+                        "CaseCloseSkipped",
+                        json!({"incident": case_id, "reason": reason}),
+                        events,
+                    );
+                    // 事项上也逐个记录被跳过的成员（DES-26：便于在事项上看到哪些成员还开着、为什么）。
                     skipped.push((m.clone(), reason));
                     continue;
                 }

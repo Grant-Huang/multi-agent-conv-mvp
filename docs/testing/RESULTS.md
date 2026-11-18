@@ -1,5 +1,9 @@
 # 本次验证结果
 
+## 2026-11-18 R-20261118-H2
+
+RT-DES-31 Runtime端到端 Red 0通过1失败（安全成员被关闭），最小修复后1通过；完整Rust 441通过0失败2原有忽略，fmt/clippy通过；前端21通过、构建及地图检查通过。未运行浏览器或真实模型。证据见 [r-20261118-h2.md](evidence/r-20261118-h2.md)。
+
 ## 代码与方案
 
 开发前已执行 git fetch origin --prune 并快进同步到 `929301adf2de5403a832fdb17d9428d07ec06f58`。该远端比发布快照领先 12 个提交。
@@ -154,6 +158,10 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 `web/verification/check-map.test.mjs` 新增 4 个 runtime 映射测试：扩展前 3 条失败（未知用例、缺测试、未映射测试），扩展后 `node --test` 为 10 通过、0 失败。
 
+## 2026-11-18 R-20261118-H1
+
+Python端到端与全量78通过，覆盖率87.56%，flake8通过；700条/留出集两模式安全门槛保持。完整Rust440通过0失败2原有忽略，fmt/clippy通过；web 21通过、构建与地图检查通过。未运行浏览器/真实模型。Red→Green及实际输出见 [r-20261118-h1.md](evidence/r-20261118-h1.md)。
+
 ## 本次验证命令与结果
 
 - `npm run test:map`：`Feature map valid: 9 features, 6 browser cases`
@@ -167,3 +175,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 环境记录：首次 verify 失败是因为 Playwright 默认的 headless shell 路径不存在，改用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 后通过；之前 `npm ci` 因磁盘写满未完整安装 `@types/node`，重新安装后解决。
 
 范围限制：M4.3 的并行执行与 Composer 汇合回复未接入编排器，RT 用例不覆盖它们；M4.4（真实模型 F 组覆盖率）未运行。
+
+## 2026-11-18 R-20261118-M3
+
+Python端到端与全量82通过，覆盖率87.10%，flake8通过；700条/留出集两模式安全门槛保持。完整Rust440通过0失败2原有忽略，fmt/clippy通过；web 21通过、构建与地图检查通过。未运行浏览器/真实模型。Red→Green及实际输出见 [r-20261118-m3.md](evidence/r-20261118-m3.md)。

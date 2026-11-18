@@ -53,13 +53,15 @@ RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS �
 
 车间 DES 阶段③（`mom-des`，闭环）：RT-DES-08～11、18 与 HTTP-DES-03 定义方案选定、执行回写仿真世界（维修停机与复位、刀具调拨到达）、执行后同源观测作为核验证据、仿真故障导致补偿、共用资源的案例关联；实现位于 `des/engine_link.rs`、`des/scenario.rs` 与 `engine.rs` 两处 DES 钩子，Red→Green 证据见 [mom-des-phase3.md](evidence/mom-des-phase3.md)。
 
+R-20261118-H2：RT-DES-31以真实Runtime验证关闭协同事项时跳过安全联锁成员并保留预留，其他成员照常关闭。CaseCloseSkipped为案例事件，不是新增运行日志。 证据见 [r-20261118-h2.md](evidence/r-20261118-h2.md)。
+
 车间 DES 阶段④（`mom-des`）：RT-DES-12～15、19 与 HTTP-DES-04 定义审核层（规则检查、AI 审核与降级、人工确认与分歧记录、审核模型选择与独立性标注）和批量实验（两种策略、同一组 seed、CSV）；已实现并转绿（真实审核模型未接入，测试用脚本替身）。
 
 DES 审查修复（R-20261117-M1/L1，移植自 PR #84/#85 并适配阶段③）：RT-DES-22/23（`engine_link.rs` 单元测试）验证遥测缓存——推进 2880 分钟至多重新推演一次、恢复快照后各读取入口共用一次、缓存不持久化，干预后与场景结束后的推进也不逐分钟重放；RT-DES-24（`server/tests/mom_des_budget.rs`，真实 HTTP）验证无法满足的大场景在 2 秒内返回 400 constraint，并发读取在 2 秒内返回。证据见 [r-20261117-m1-l1-des.md](evidence/r-20261117-m1-l1-des.md)。
 
 车间 DES 阶段③b（`mom-des`）：RT-DES-25～29 定义按报警触发的模板（单设备层）与产线协同事项（协调层：同线 60 分钟内多个案例时统一决策、成员只做诊断、执行覆盖报警设备集合、关闭时级联），以及 P0 不变与关闭后事件的两条基线；已实现并转绿（已请人决策的案例撤回请求后加入事项，见设计文档 §6.8 实现修订）。
 
-车间 DES 审查修复 2026-11-18（`mom-des`）：RT-DES-31（关闭协同事项不得关闭被安全联锁阻断的成员）、RT-DES-32 与 HTTP-DES-05（人工审核结论绑定 AI 审核版本；AI 审核接口不阻塞异步工作线程）；已实现并转绿。
+车间 DES 审查修复 2026-11-18（`mom-des`）：RT-DES-33（关闭协同事项时在事项上逐个汇总被跳过的成员；H2 主修复见上方 #96 的 RT-DES-31）、RT-DES-32 与 HTTP-DES-05（人工审核结论绑定 AI 审核版本；AI 审核接口不阻塞异步工作线程）；已实现并转绿。
 
 模拟工厂与 MCP 挂载阶段⑤a-1（`des-factory`）：RT-DESF-01～08、RT-DESM-01～03 与 RT-DES-30 定义独立的模拟工厂服务（13 个通用风格工具，分观测、执行、控制、管理四类；写操作需幂等键与审批引用；标准答案需管理口令）、经 stdio 挂载的 MCP 服务与进程内结果逐字节一致、以及与 MOM 进程内仿真一致；已实现并转绿（仿真内核迁入 `crates/des`）。⑤a-2 连接器用例为草案。
 
@@ -72,6 +74,8 @@ R-20261107-M1：终态案例拒绝手动故障注入；RT-MOM-10（runtime 集�
 R-FIRST-05：补充要求先完成 Router/Policy 校验，再取消旧任务并创建替代任务。RT-CONV-01/02 位于 `crates/server/tests/supplement_routing.rs`，使用受控模型与真实 Runtime/SQLite；覆盖传输失败、格式失败、Policy 拒绝时旧任务状态/事件不变，以及成功时合并目标后替换。证据见 [R-FIRST-05](evidence/r-first-05.md)。本组不是浏览器验证；取消与新任务持久化之间尚非原子事务。
 
 R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不允许就地改写接入地址、角色、类型或并发。RT-ADM-18 为 Runtime 集成；`server/tests/admission.rs::active_agent_reactivation_returns_conflict_without_binding_or_event_changes` 为 HTTP 回归，验证重复 activate 返回 409 且记录、审计事件、注册卡片不变。证据见 [R-20261110-H1](evidence/r-20261110-h1.md)；不代表准入接口已经有身份认证或 endpoint 网络白名单。
+R-20261118-H1：PY-DLP-H1以真实evaluate管线验证路由字段下嵌套dict/list凭证BLOCK、客户Token化，以及漏分析字符串的fail closed。 证据见 [r-20261118-h1.md](evidence/r-20261118-h1.md)。
+
 ## MOM 独立设计原型
 
 | Feature | 用户路径 | 验证及边界 |
@@ -94,3 +98,5 @@ R-20261113-L1 11-15预审补充：RT-HOST-08验证文件日志降级时不再误
 
 R-20261113-L1 11-16预审：RT-HOST-10确定性验证其他监听者不能满足自己的子进程就绪。host_log_limits/host_diagnostics共用support/service_readiness.rs，等待独立捕获的自身监听日志、存活状态与端口连接；只串行化启动交接。原业务断言不变，host_log_limits连续50次默认并行验证。证据见[evidence/r-20261113-l1-pre-review-20261116.md](evidence/r-20261113-l1-pre-review-20261116.md)。
 R-20261116-L1：RT-HOST-11确定性验证外国监听者不能满足自身子进程就绪。host_guard共用support/service_readiness.rs，确认独立捕获的自身监听日志、Child存活及端口；只串行化启动交接，原RT-HOST-01/02断言不变，连续100次默认并行验证。证据见[evidence/r-20261116-l1.md](evidence/r-20261116-l1.md)。
+
+R-20261118-M3：PY-DLP-M3以真实evaluate管线验证8种凭证全部BLOCK、非凭证Unicode保留，700条与留出集安全门槛照常执行。 证据见 [r-20261118-m3.md](evidence/r-20261118-m3.md)。

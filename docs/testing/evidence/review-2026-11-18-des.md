@@ -44,6 +44,12 @@ cd web && npm run test:map                                                → Fe
 cd web && npm run build                                                   → ✓ built
 ```
 
+## 与 #96 合并（2026-11-18）
+
+本 PR 推送后，另一条线的 #96（`fix/r-20261118-h2`）同期修复了 H2 并已合并到 master，也新增了一个 RT-DES-31。合并 master 时按以下方式处理：
+- **实现：** 保留 #96 的实现。它跳过同样三类成员，在成员上记 `CaseCloseSkipped`，原因码为 `safety_trip` / `blocked` / `verification_incomplete`。在此之上加回决策 DES-26 的事项侧汇总：事项上为每个被跳过的成员记一条 `CaseCloseSkipped`（`member`、`reason`）。
+- **用例：** 本 PR 原来的 H2 用例与 #96 重号，改编号为 RT-DES-33，断言不变；#96 的 RT-DES-31 原样保留。下文 Red 记录中的 `rt_des_31_closing_an_incident_never_closes_a_safety_blocked_member`，即现在的 `rt_des_33_incident_records_each_member_skipped_on_close`。
+
 ## Green
 
 用户确认用例与修法（DES-26）后实现，没有修改测试断言。

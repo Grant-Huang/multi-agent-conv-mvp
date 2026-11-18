@@ -347,7 +347,7 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 - **适用模式**：阶段③b 之后，其他场景模式的报警案例与协同事项也会进入决策，批量实验不再限于 P0。
 
 **审查修复（2026-11-18，R-20261118-H2、M1、L1、L2，决策 DES-25、DES-26）：**
-- 关闭协同事项时，安全联锁中、BLOCKED 或有未核验动作的成员不随事项关闭，事项上逐个记 `CaseCloseSkipped`（RT-DES-31）。
+- 关闭协同事项时，安全联锁中、BLOCKED 或有未核验动作的成员不随事项关闭：成员上记 `CaseCloseSkipped`（#96，RT-DES-31），事项上逐个汇总（RT-DES-33）。
 - 每次 AI 审核有递增版本号；人工结论记录它针对的版本；AI 审核未运行时不能同意或推翻，降级时不能同意；报告 `human` 只显示针对当前版本的结论，历史中标明 `applies_to_current_ai`（RT-DES-32、HTTP-DES-05）。
 - AI 审核分三段：准备输入（加锁）→ 调用模型（锁外）→ 写回结果（加锁）。HTTP 入口把两段加锁计算放进阻塞线程，异步工作线程不再同步等锁（HTTP-DES-05）。
 - 文档与示例配置注明真实审核模型尚未接入。
@@ -513,3 +513,7 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 12. J. Pearl, *Causality: Models, Reasoning, and Inference*, 2nd ed., Cambridge University Press, 2009. ISBN 978-0-521-89560-6.
 13. L. Zheng et al., "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena," NeurIPS 2023 Datasets and Benchmarks. https://arxiv.org/abs/2306.05685
 14. A. Panickssery, S. R. Bowman, S. Feng, "LLM Evaluators Recognize and Favor Their Own Generations," NeurIPS 2024. https://arxiv.org/abs/2404.13076
+
+### R-20261118-H2 修复约定
+
+协同事项关闭会跳过world.safety_trip为true、stage=BLOCKED或存在未VERIFIED动作的成员，并在成员上记录CaseCloseSkipped（incident与reason）；不改变该成员状态、子任务或预留。其余非终态成员保持原级联关闭行为。

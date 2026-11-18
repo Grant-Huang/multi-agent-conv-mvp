@@ -18,6 +18,12 @@
 
 每次输出日志、测试结果和截图；失败保留 trace。正向通过只证明这些路径，未覆盖功能在地图中明确标注。另用校验器测试注入重复 ID、未知用例、缺文档和缺测试，确认地图失配确实失败。
 
+## R-20261118-H1 嵌套路由载荷
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-H1 | external_untrusted；to/attendees/cc下多层dict/list含合成凭证或客户名 | 调用evaluate；另注入字符串分析缺失 | 凭证及漏分析均BLOCK且不回传原值；客户名Token化，非字符串与结构保持 |
+
 ## MOM 独立服务验收
 
 以下浏览器用例为现有 MOM 实现的补充基线，不追称为实现前 Red。运行时测试先行与业务失败修复证据另见 MOM 实施说明。
@@ -431,6 +437,12 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-24 | mom-des | an-mom 服务；32 台设备、2880 分钟、并发簇（窗口 1 分钟、至少 1000 个扰动） | 创建该仿真，同时并发读取案例列表 | 创建在 2 秒内返回含 "constraint" 的 400，读取在 2 秒内返回 200；被拒绝的创建没有留下任何记录 |
 
 
+## R-20261118-H2 协同事项关闭与安全联锁
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| RT-DES-31 | 资源竞争事项已执行推荐方案，一成员收到同源safety_trip并BLOCKED | 维修完成后关闭事项 | 安全成员保持BLOCKED和联锁事实及预留；发出含原因的CaseCloseSkipped；其他成员正常关闭 |
+
 ## MOM 车间 DES 阶段③b：按报警触发的模板与产线协同事项（实现前定义）
 
 设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §6.8。对外约定：模板名 `DAG-TPL-DES-EQUIPMENT@1`、`DAG-TPL-DES-QUALITY@1`、`DAG-TPL-DES-COMBINED@1`、`DAG-TPL-DES-DIAGNOSIS@1`、`DAG-TPL-DES-LINE-INCIDENT@1`；协同事项是批次为 `DES-n:INCIDENT:…` 的案例，`world.des_incident` 记录产线、成员与报警设备集合，成员案例的 `world.des_member_of` 指向事项。测试在 `crates/runtime/tests/mom_des.rs`。
@@ -445,11 +457,11 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 
 ## 审查修复 2026-11-18：R-20261118-H2、M1、L1
 
-问题与验收来自 [docs/review/2026-11-18.md](../review/2026-11-18.md)，决策见 [DECISIONS.md](../DECISIONS.md) DES-25、DES-26。测试位置：`crates/runtime/tests/mom_des.rs`（RT-DES-31、32）、`crates/server/tests/mom_des.rs`（HTTP-DES-05）。R-20261118-L2 只改文档与示例配置注释，不涉及行为，没有用例。
+问题与验收来自 [docs/review/2026-11-18.md](../review/2026-11-18.md)，决策见 [DECISIONS.md](../DECISIONS.md) DES-25、DES-26。H2 已由 #96 修复（上方 RT-DES-31），这里补充事项侧汇总。测试位置：`crates/runtime/tests/mom_des.rs`（RT-DES-32、33）、`crates/server/tests/mom_des.rs`（HTTP-DES-05）。R-20261118-L2 只改文档与示例配置注释，不涉及行为，没有用例。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
-| RT-DES-31 | mom-des | 资源竞争模式中一个已执行推荐方案的协同事项（同 RT-DES-27）；一个成员收到同源的 `safety_trip=true` 振动事件，进入 BLOCKED | 直接关闭该成员；推进到全部维修完成后关闭事项 | 直接关闭被拒绝。事项可以关闭，但该成员仍为 BLOCKED，`safety_trip` 仍为 true；其他成员照常关闭。事项上记一条 `CaseCloseSkipped`，写明成员与原因（含 safety） |
+| RT-DES-33 | mom-des | 资源竞争模式中一个已执行推荐方案的协同事项（同 RT-DES-27）；一个成员收到同源的 `safety_trip=true` 振动事件，进入 BLOCKED | 直接关闭该成员；推进到全部维修完成后关闭事项 | 直接关闭被拒绝；事项可以关闭，该成员仍为 BLOCKED、`safety_trip` 仍为 true，其他成员照常关闭；**事项上**逐个汇总被跳过的成员：一条 `CaseCloseSkipped`，写明成员与原因（含 safety）。H2 的主修复与成员侧记录由 #96 的 RT-DES-31 覆盖，本用例覆盖决策 DES-26 的事项侧汇总（原编号 RT-DES-31，合并 #96 后为避免重号改为 33） |
 | RT-DES-32 | mom-des | P0 案例已执行方案 C | 先在没有 AI 审核时"同意"；再在 AI 审核降级（模型报错）后"同意"；然后 AI 审核得结论 A 并"同意"；再运行 AI 审核得结论 B | 前两次"同意"被拒绝。对 A 的"同意"记录 AI 审核版本。得到 B 后，AI 审核版本号增加，报告的 `human` 为空（还没有人对 B 下结论），历史记录中原来的"同意"标明针对的版本、`applies_to_current_ai = false` |
 | HTTP-DES-05 | mom-des | 只有一个异步工作线程的服务，配置了脚本审核替身，P0 DES 案例 | 先在没有 AI 审核时 POST 同意；再让另一线程持引擎锁 2 秒，同时 POST AI 审核，并在请求期间每 50 ms 打一次心跳 | 同意返回 400。心跳的最大间隔小于 1 秒（处理函数不在异步工作线程上同步等锁）；AI 审核最终返回 200，状态 completed |
 
@@ -490,4 +502,10 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 - RT-DESC-03：AgentNexus 暴露给 agent 与桌面的模拟工厂工具只有观测类，不含执行、控制与管理类。
 - RT-DESC-04：模拟工厂不在线（命令不存在、进程退出）时，连接器返回明确错误 `E_DES_UNAVAILABLE`，不回退到进程内仿真，也不写入假观测。
 - RT-DESC-05：MCP 模式下，审核层的标准答案来自模拟工厂管理入口，规则结果与进程内模式一致。
+
+## R-20261118-M3 常见凭证与同形字
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-M3 | 中文密码/口令、token=、DB_PASS=、OpenAI项目key、Google key、同形字AWS/GitHub，共8种合成输入 | evaluate到external_untrusted | 全部BLOCK、不可发送且无原值；其余原文（含℃）不变；正常Unicode和术语不被改写 |
 
