@@ -320,6 +320,7 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 3. **人工确认**：报告在界面展示；人选择"同意"或"推翻"并填写理由。AI 与人的分歧单独记录，用于评估 AI 审核本身的可靠性。
 
 ### 8.2 审核模型配置（M1、M2）
+- **当前状态（2026-11-18，R-20261118-L2）：真实审核模型尚未接入**（`LlmReviewer` 未实现），`mom_reviewer` 配置目前不生效；AI 审核接口在未配置审核替身时只返回规则检查结果，并标注 `no reviewer configured; rules only`。下面是接入后的设计。
 - `config.toml` 新增可选角色 `mom_reviewer`：在 `[models]` 中写模型名，在 `[routing]` 中选择后端，写法与现有的 `reviewer`、`general` 等角色一致。密钥仍只能通过 `api_key_env` 从环境变量读取。
 - 降级顺序：`mom_reviewer` → MOM 主 agent 使用的模型 → `[llm]` 默认模型 → 只做规则检查。报告中记录实际使用的模型和降级原因。
 - 审核模型与被审核的主 agent 是同一个模型时：照常审核，但报告标注"非独立审核：与被审对象同模型"，批量统计中单独分组。理由：已有研究表明 LLM 评审者会偏爱自己生成的内容 [13][14]。
@@ -334,7 +335,7 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 - **根因假设的来源**：新增 `Engine::record_cause_claim` 与 HTTP 命令 `claim_cause`，由 agent 或人记录对本案例报警的根因假设（例如 `spindle_wear:CNC-XX`）；规则 `root_cause_attribution` 用它与标准答案比对。
 - **规则**：`hitl_before_write`、`root_cause_attribution`、`plan_safe`、`effectiveness`、`timeliness`，结果为 pass / fail / warn / pending / not_applicable / info，每条带证据编号。规则检查是纯函数 `check_rules(记录, 标准答案)`，可对人为构造的记录单独测试（例如"先执行后批准"在引擎中不可能发生，但规则仍须能检出）。
 - **AI 审核**：`Reviewer` 接口（与 `Master` 同一写法），`run_ai_review` 在引擎锁外调用审核模型、有超时；输出必须是结论列表，每条结论引用输入中给出的证据编号，否则判为 `invalid_output`。审核记录单独存放（快照新字段），不改变案例与仿真状态，也不进入 agent 视图。
-- **审核模型配置**：本阶段只新增 `[models].mom_reviewer`（模型名）；未配置时使用 `[llm].model`，即 MOM 主 agent 接入真实模型时使用的默认模型，此时标注"非独立审核"。按角色单独路由到其他后端（`[routing].mom_reviewer`）以后再加。
+- **审核模型配置**：本阶段只新增 `[models].mom_reviewer`（模型名）；未配置时使用 `[llm].model`，即 MOM 主 agent 接入真实模型时使用的默认模型，此时标注"非独立审核"。按角色单独路由到其他后端（`[routing].mom_reviewer`）以后再加。（R-20261118-L2：真实审核模型尚未接入，此配置目前不生效，见 §8.2 开头的说明。）
 - **HTTP**：`GET /api/mom/reviews/{case_id}`（规则检查与已有审核记录）、`POST /api/mom/reviews/{case_id}/ai`（触发 AI 审核）、`POST /api/mom/reviews/{case_id}/decision`（人工同意或推翻，推翻必须写理由）。
 - **批量实验**：`des::batch::run_batch` 与 `to_csv`。两种策略都按推荐方案决策，差别只在决策延迟：AI-Native 为一次人工审批延迟；传统 MOM 为若干次部门间交接延迟之和（次数与均值为建模假设，可配置）。目前只有 P0 固定剧本能让单个案例同时收到插单、振动、质量三类事件并进入决策，其他模式的事件分散在不同案例中、不会触发 S1 模板，所以批量实验先以 P0 为主；让其他模式也能进入决策需要扩展模板机制，留待后续。
 
@@ -344,6 +345,12 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 - **AI 审核降级**：超时、模型报错（重试一次后仍失败）、输出不合规（无结论、缺字段、引用不存在的证据编号）都标为 `unavailable` 并写明原因；未配置审核模型时 HTTP 接口只返回规则结果。真实审核模型（`LlmReviewer`）尚未接入，留待真实模型接入里程碑。
 - **批量实验的证据过期**：传统策略的决策延迟常超过证据有效期，引擎拒绝批准。批量实验按引擎规则刷新计划后立即按新推荐方案决策（等待时间从最初请求算起）；刷新后没有可行方案时计为 `late`，并单独统计 `expired_decisions`。模拟审批人沿用夹具审批人 `supervisor`。
 - **适用模式**：阶段③b 之后，其他场景模式的报警案例与协同事项也会进入决策，批量实验不再限于 P0。
+
+**审查修复（2026-11-18，R-20261118-H2、M1、L1、L2，决策 DES-25、DES-26）：**
+- 关闭协同事项时，安全联锁中、BLOCKED 或有未核验动作的成员不随事项关闭，事项上逐个记 `CaseCloseSkipped`（RT-DES-31）。
+- 每次 AI 审核有递增版本号；人工结论记录它针对的版本；AI 审核未运行时不能同意或推翻，降级时不能同意；报告 `human` 只显示针对当前版本的结论，历史中标明 `applies_to_current_ai`（RT-DES-32、HTTP-DES-05）。
+- AI 审核分三段：准备输入（加锁）→ 调用模型（锁外）→ 写回结果（加锁）。HTTP 入口把两段加锁计算放进阻塞线程，异步工作线程不再同步等锁（HTTP-DES-05）。
+- 文档与示例配置注明真实审核模型尚未接入。
 
 ## 9. 会话和桌面可调用的仿真接口
 
@@ -355,7 +362,8 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 | `POST /api/mom/factory/whatif` | 在副本上比较给定方案，返回交付、延期、不良、约束违反 |
 | `GET /api/mom/factory/forecast` | 趋势预测，例如"按当前趋势，某设备约 X 分钟后 Cpk 跌破 1.33" |
 | `GET /api/mom/reviews/{case_id}` | 规则检查、AI 审核和人工结论 |
-| `POST /api/mom/reviews/{case_id}/decision` | 人工确认或推翻（这是唯一的写接口，只写审核记录，不改变仿真世界） |
+| `POST /api/mom/reviews/{case_id}/ai` | 触发 AI 审核，写入审核记录（版本号加一）；未配置审核模型时只返回规则结果，不写记录 |
+| `POST /api/mom/reviews/{case_id}/decision` | 人工确认或推翻，绑定当前 AI 审核版本；AI 审核未运行时拒绝，降级时不能"同意"（R-20261118-M1） |
 
 - 所有返回带 `provenance=simulation`、`observed_at`、`limitations`。桌面上必须显示为"仿真估计"。
 - 会话 agent 不能通过这些接口改变仿真世界。

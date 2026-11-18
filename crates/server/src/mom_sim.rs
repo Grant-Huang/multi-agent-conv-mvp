@@ -76,15 +76,17 @@ async fn ai_review(State(s): State<AppState>, Path(case_id): Path<String>) -> Ap
         })
         .await;
     };
-    an_runtime::mom::des::review::run_ai_review(
-        &s.engine,
-        &case_id,
-        reviewer.as_ref(),
-        AI_REVIEW_TIMEOUT,
-    )
-    .await
-    .map(Json)
-    .map_err(bad_request)
+    // 两段需要引擎锁的计算放进阻塞线程（`with_engine`），调用审核模型在锁外 await（R-20261118-L1）。
+    let input = {
+        let case_id = case_id.clone();
+        with_engine(s.clone(), move |e| e.des_ai_review_input(&case_id))
+            .await?
+            .0
+    };
+    let result =
+        an_runtime::mom::des::review::call_reviewer(&input, reviewer.as_ref(), AI_REVIEW_TIMEOUT)
+            .await;
+    with_engine(s, move |e| e.des_record_ai_review(&case_id, result)).await
 }
 
 #[derive(Deserialize)]

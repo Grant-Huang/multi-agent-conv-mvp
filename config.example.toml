@@ -31,6 +31,8 @@ max_retries = 2                    # 输出不合格时把错误反馈给模型�
 # general = "qwen3-8b"
 # reviewer = "qwen3-8b"
 # mom_reviewer = "qwen3-32b"     # MOM 车间仿真的 AI 审核；不填则用 [llm].model（与 MOM 主 agent 同模型，报告标注"非独立审核"）
+#                                 注意：真实审核模型尚未接入（LlmReviewer 未实现），此项目前不生效；
+#                                 AI 审核接口会返回 "no reviewer configured; rules only"，只给规则检查结果。
 # 不同角色的模型跑在不同的 llama.cpp 实例（端口）上时，用 base_urls 分别指定；不写则用 [llm].base_url。
 # reply 没单独配置模型时，模型和地址都跟 conversation 一致。
 # [models.base_urls]

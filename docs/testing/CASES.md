@@ -443,7 +443,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-28 | mom-des | P0 固定剧本（基线） | 推进 30 分钟 | 只有一个 DES 案例，使用原 S1 模板，不建立协同事项，也没有成员关系 |
 | RT-DES-29 | mom-des | P0 案例已执行方案 C 并关闭（基线，来自 2026-11-17 审查） | 同键再到一条质量观测，再推进 | 观测进入新案例而不是已关闭的案例；已关闭案例的 `world.des` 不再刷新 |
 
-## 审查修复 2026-11-18：R-20261118-H2、M1、L1（实现前定义）
+## 审查修复 2026-11-18：R-20261118-H2、M1、L1
 
 问题与验收来自 [docs/review/2026-11-18.md](../review/2026-11-18.md)，决策见 [DECISIONS.md](../DECISIONS.md) DES-25、DES-26。测试位置：`crates/runtime/tests/mom_des.rs`（RT-DES-31、32）、`crates/server/tests/mom_des.rs`（HTTP-DES-05）。R-20261118-L2 只改文档与示例配置注释，不涉及行为，没有用例。
 

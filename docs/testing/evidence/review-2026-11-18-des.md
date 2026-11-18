@@ -46,4 +46,37 @@ cd web && npm run build                                                   → �
 
 ## Green
 
-待用户确认用例后实现并补充。
+用户确认用例与修法（DES-26）后实现，没有修改测试断言。
+
+- H2（`des/engine_link.rs` 的 `des_after_close`）：关闭事项时，跳过以下三类成员：安全联锁中（`safety_trip`）、BLOCKED、或有未核验的动作。每跳过一个，在事项上记一条 `CaseCloseSkipped`（成员、原因）；其他成员照常关闭。没有改 `engine.rs` 的 `close`。
+- M1（`des/review.rs`）：
+  - AI 审核记录新增递增的 `version`；
+  - `HumanReview` 新增 `ai_version` 字段，带 serde 默认值，旧快照仍可读取；
+  - 没有 AI 审核时，"同意"和"推翻"都被拒绝；AI 审核降级时，"同意"被拒绝；
+  - 报告中的 `human` 只显示针对当前版本的结论，`human_history` 每条标出 `applies_to_current_ai`；分歧记录带 `ai_version`。
+- L1：AI 审核拆成三步：
+  - `des_ai_review_input`：准备输入，需要加锁；
+  - `call_reviewer`：调用模型，锁外 await；
+  - `des_record_ai_review`：写回结果，需要加锁。
+
+  HTTP 入口把两段加锁的步骤放进阻塞线程（`with_engine`）。`run_ai_review` 的签名不变，测试与其他调用方不受影响。
+- L2：在 `config.example.toml` 注释和设计 §8.2、§8.4 中注明真实审核模型尚未接入；§9 补上 `POST /api/mom/reviews/{case_id}/ai`，并改正"唯一写接口"的措辞。
+
+```text
+CARGO_TARGET_DIR=target cargo test --locked --workspace --no-fail-fast   → 553 passed，0 failed，exit=0
+  rt_des_31_closing_an_incident_never_closes_a_safety_blocked_member ... ok
+  rt_des_32_human_review_is_bound_to_an_ai_review_version ... ok
+  http_des_05_review_decision_needs_ai_and_does_not_block_workers ... ok
+  原有 RT-DES-12～14、19、25～30 与 HTTP-DES-01～04 全部 ok
+CARGO_TARGET_DIR=target cargo clippy --locked --all-targets              → 无警告
+cargo fmt --all -- --check                                                → 通过
+cd web && npm run test:map                                                → Feature map valid: 27 features, 24 browser cases
+cd web && npm run build                                                   → ✓ built
+```
+
+本机磁盘额度有限，以上命令在 `CARGO_PROFILE_DEV_DEBUG=0` 的环境中运行。这个变量只去掉调试信息，不影响测试行为。
+
+**超时、取消与清理**
+- AI 审核调用模型时有超时（HTTP 入口为 60 秒），模型报错时最多重试一次，调用期间不持有引擎锁。超时后 future 被丢弃，不留后台任务。
+- 两段加锁计算在 `spawn_blocking` 中执行，计算量与原来相同。阻塞线程开始执行后不能被 HTTP 取消，但会在有界时间内完成并释放锁。
+- 没有新增子进程。
