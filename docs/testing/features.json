@@ -125,7 +125,8 @@
     "sources": [
       "tools/websearch/README.md",
       "tools/dlp-egress/README.md",
-      "crates/server/src/bin/eval.rs"
+      "crates/server/src/bin/eval.rs",
+      "tools/dlp-egress/tests/test_review_h1.py"
     ],
     "coverage": "backend",
     "cases": []
