@@ -253,6 +253,18 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-FT-10 | front-thinking | 不思考 + 升级，max_retries = 1；前台判断始终输出非 JSON | 返回错误；不思考的请求只有 1 次，之后都是思考请求（1 + max_retries 次），不会退回不思考 |
 | RT-FT-11 | front-thinking | 不思考但不开升级，或开升级但没关思考；第一次输出非 JSON、第二次合格 | 两次请求的思考设置相同（与现在的重试行为一致） |
 
+### FT.5 类别拆成两个是/否问题（实现前定义，2026-11-18）
+
+开关 `[conversation] route_class_questions`，默认 false。打开后，路由模型不再直接选 L1–L4，而是回答 `needs_data_tools`（需要取数工具吗：精确计算、查当前时间、列出或读取工作目录文件、联网搜索都算；只为保存结果的 write_file 不算）和 `needs_document`（需要生成或修改文档、报告吗），由代码确定性算出类别。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-FT-12 | front-thinking | 不写 route_class_questions（基线） | route_decision 的 schema 有 task_class（枚举 L1～L4），没有 needs_data_tools / needs_document；系统提示词没有这两个问题的说明 |
+| RT-FT-13 | front-thinking | route_class_questions = true | schema 没有 task_class；有布尔型的 needs_data_tools、needs_document，且都是必填，排在 execution_role 之前；系统提示词写明两个问题的口径（含"保存结果的 write_file 不算"） |
+| RT-FT-14 | front-thinking | route_class_questions = true；模型依次回答 (否,否)、(是,否)、(否,是)、(是,是) | 路由结果的类别依次为 L1、L2、L3、L4 |
+| RT-FT-15 | front-thinking | route_class_questions = true，同时不思考 + front_reason_first | schema 第一个字段仍是 reason，其后紧跟 needs_data_tools、needs_document |
+| RT-FT-16 | front-thinking | route_class_questions = true，不改思考设置（开思考） | 请求不带 enable_thinking，schema 同样是两个是/否问题（开关与思考无关） |
+
 ## 托管配置、热注册与撤销（AG.2，实现前定义）
 
 接口：`POST /api/agents/proposals`（只校验、不写入，返回提议与一次性确认凭证）、`POST /api/agents/proposals/{id}/apply {"token"}`。提议类型：add_preset、add_custom、set_default、disable、enable、remove、revert。托管文件放在数据库同目录的 `agents.managed.toml`。

@@ -937,6 +937,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | | `stream_replies` | true | 直接回答时边生成边显示 |
 | | `agent_management` | false | AG.4 对话里管理助手（"把 Cursor 接进来"等）。会给前台判断加上 manage_agents 和三个枚举字段，评测达标前保持关闭 |
 | | `risk_rules` | false | 前台提速实验 B：路由后按关键词把风险只升不降（见 PLAN 的 FT 一节） |
+| | `route_class_questions` | false | 前台提速实验 FT.5（Q）：路由回答 `needs_data_tools`（计算、查时间、列出或读取工作目录文件、联网搜索算；保存结果的 write_file 不算）和 `needs_document` 两个是/否问题，由代码算出 L1–L4（否否 L1、是否 L2、否是 L3、是是 L4）。`RouteDecision` 和 Policy 不变；与是否思考无关 |
 | `[backends.<名>]` | `front_structured_thinking` / `front_reason_first` / `front_thinking_escalation` | 不写 | 前台判断不思考；不思考时先写依据（A）；可疑时开思考重判一次（D）。A、D 只在关思考时生效 |
 | `[agents.general]` | `max_steps` / `max_concurrent` / `workspace_dir` | 6 / 4 / `workspace/files` | |
 | `[agents.general]` | `report_max_searches` / `report_parallel` | 6 / 3 | 研究报告（见 9.5）：检索去重后上限；同时写作的章节数 |
