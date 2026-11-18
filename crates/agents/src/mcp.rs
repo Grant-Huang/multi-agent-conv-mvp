@@ -22,7 +22,7 @@ use std::{
 };
 use tokio::{process::Command, sync::Mutex, time::timeout};
 
-struct Session {
+pub(crate) struct Session {
     service: RunningService<RoleClient, ()>,
     _child: Option<ChildGuard>,
 }
@@ -132,7 +132,7 @@ fn identifier(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c))
 }
 
-fn compile_schema(schema: &Value) -> Result<jsonschema::Validator> {
+pub(crate) fn compile_schema(schema: &Value) -> Result<jsonschema::Validator> {
     fn check(value: &Value) -> bool {
         match value {
             Value::Object(map) => map.iter().all(|(key, value)| {
@@ -153,7 +153,7 @@ fn compile_schema(schema: &Value) -> Result<jsonschema::Validator> {
     jsonschema::validator_for(schema).map_err(|_| anyhow::anyhow!("E_MCP_SCHEMA: invalid schema"))
 }
 
-async fn open(cfg: &McpServerConfig) -> Result<Session> {
+pub(crate) async fn open(cfg: &McpServerConfig) -> Result<Session> {
     match &cfg.transport {
         McpTransport::Stdio { command, args, cwd } => {
             if command.is_empty() {

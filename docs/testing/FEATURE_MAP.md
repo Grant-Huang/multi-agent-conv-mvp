@@ -25,6 +25,7 @@
 | templates | 当前无界面入口（M4.3 尚未接入编排器） | 模板校验、Router 拆分决定、分支信封与汇合输入在 Runtime 集成层验证 | RT-TPL-01 至 RT-TPL-10；Rust 集成测试与单元测试；并行执行与 Composer 汇合回复未实现 |
 | admission | 无界面入口；HTTP `/api/admission/*`（开启 `[admission]` 时才有） | S1→S7 顺序、澄清问题、加权打分与等级、人工审批闸门、确定性抽检、警告与降级、撤权与凭证代际、重启恢复、旧库自动建表；按等级分配、凭证过期结果丢弃、撤权中止进行中任务并由备份接手、外部 agent 试用期记录；HTTP 接口走完准入流程、激活后注册外部 agent（kind=a2a）并完成任务、重启后自动重新注册、未开启时 404；外部 agent HTTP 适配器 | RT-ADM-01 至 RT-ADM-17；实验工具：`cargo run -p an-runtime --example admission_replay`（用正式账本回放 A1/A2/A3）、`cargo run -p an-server --example admission_revoke_bench`（撤权实测）；Rust 集成测试；未接入网页界面，S2/S3 的大模型澄清与评分由实验脚本完成 |
 | tools-evals | 聊天委派工具；终端 websearch、an-eval、dream；外发脱敏 MCP（tools/dlp-egress） | 计算/文件/CLI证据、JSON错误、逐条评分和失败草稿；不自动改主评测集 | 现有 Rust/Python 测试；dlp-egress 有 MCP 协议测试与 700 条+留出集评测（GLiNER 未评测）；真实搜索时效与模型质量另验 |
+| egress | `[egress]` 外发检查（off / audit / enforce）：工具调用守卫与云端 LLM 检查，调用 dlp-egress | enforce 下只发送脱敏内容；REVIEW/BLOCK/DLP 异常不发送；DLP 工具不暴露给模型；启动校验外发路径登记；LLM 输出 Token 本机恢复 | RT-EGR-01 至 RT-EGR-16（Rust 集成测试，DLP 与模型服务均为替身）；另有与真实 dlp-egress 的联调测试（设置 AN_TEST_DLP_COMMAND 时运行）；真实模型与真实部署需按部署说明验收 |
 
 应用为单页布局，网页没有 /tasks、/settings 或 /templates/run 路径。API 以 crates/server/src/lib.rs 为准；状态和中文文案见 web/src/labels.ts。
 

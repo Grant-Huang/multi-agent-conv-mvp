@@ -863,8 +863,9 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 8. ~~pre-M3.9 关闭思考对比实验~~（已确认 2026-11-05：前台结构化调用 `enable_thinking=false`，**必须用评测集确认准确率不降**才采用。同日结果：95 条从 85.3% 降到 76.8%，不采用，开关默认关闭）
 9. ~~pre-M3.1 配置设计~~（已确认 2026-11-05：`[backends.<名>]` + `[routing]`、`kind = llama_cpp | openai`、密钥只读环境变量、无 `[backends]` 沿用 `[llm]`；`router` 归前台）
 10. ~~部署 B 的云端边界~~（已确认 2026-11-05，并补充了能力扩展要求，见 pre-M3"能力扩展约束"）
-11. DLP D1 接口定稿：`tools/dlp-egress/docs/INTERFACE.md` 第 9 节的 9 个事项（尤其是统一返回外壳、`task_id` 由宿主注入）
-12. DLP 外发检查必经化方案：`docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md` 第 10 节（首期范围、默认模式、外发工具清单、云端 LLM）
+11. ~~DLP D1 接口定稿~~（已确认 2026-11-18：9.5 commit D1 不做，其余同意；见 `tools/dlp-egress/docs/INTERFACE.md` 第 9 节）
+12. ~~DLP 外发检查必经化方案~~（已确认 2026-11-18：第一、二阶段一起做；代码默认 off、部署先 audit；云端 LLM 要支持）
+13. 1000 条模拟测试集能否作为开发集（允许查看失败样本并据此改进规则）？若可以，正式验收需另备一份未公开的人工测试集
 
 ## 已知问题
 
@@ -894,23 +895,27 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 | DLP-1 | 调用接口说明（供 D1 接口定稿） | `tools/dlp-egress/docs/INTERFACE.md` |
 | DLP-2 | 本地测试指南（含 GLiNER 评测步骤）；评测脚本支持 `--gliner-model` | `tools/dlp-egress/docs/LOCAL_TEST_GUIDE.md` |
 | DLP-3 | 测试集样本要求、标注规范、模板、校验与转换脚本 | `tools/dlp-egress/docs/ANNOTATION_GUIDE.md`、`bench/templates/annotation_template.csv`、`bench/convert_annotations.py` |
-| DLP-4 | 外发检查必经化方案（待审批） | `docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md` |
+| DLP-4 | 外发检查必经化方案（已批准） | `docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md` |
+| DLP-5 | D1 接口定稿实现：统一外壳 + output schema、request_id、通道枚举（含 agent）、256 KB 上限、恢复只允许 local_ui | `tools/dlp-egress/docs/INTERFACE.md`；`tests/test_d1_interface.py` |
+| DLP-6 | 必经化第一阶段（工具调用守卫）与第二阶段（云端 LLM 检查），默认 off | `crates/agents/src/egress.rs`、`crates/llm/src/egress.rs`；RT-EGR-01～16；`docs/mcp/DLP_EGRESS_DEPLOYMENT.md` |
+| DLP-7 | 1000 条模拟测试集（AI 生成，不入库）基线评测 | 带主数据：实体 F1 0.743、决策准确率 0.848、危险放行 141、凭证漏放 152/200；无词典：F1 0.477、准确率 0.768。未据此调参 |
 
 ### 进行中（等外部输入）
 
-- [ ] D1 接口定稿（用户 / AgentNexus 侧），定稿后按结论修改实现与测试
-- [ ] 本地测试：T1–T4 按 `LOCAL_TEST_GUIDE.md` 执行并回传结果，重点是 GLiNER（T3）
-- [ ] 正式测试集：≥ 300 条，按 `ANNOTATION_GUIDE.md` 准备，测试集不入库
-- [ ] 必经化方案审批；批准后按第一阶段先写测试再实现
+- [ ] 本地测试：T1–T4 按 `LOCAL_TEST_GUIDE.md` 执行并回传结果，重点是 GLiNER（T3）与外发检查真实部署（T4）
+- [ ] 部署：先 `audit` 运行，按部署说明第 3 节复核后再决定是否切换 `enforce`
+- [ ] 待确认第 13 项（1000 条模拟测试集的用途）；之后改进识别规则（凭证、机密信息、人员 / 厂区 / 项目）
 
 ### 待补项（后续再做，按建议顺序）
 
-1. 根据 GLiNER 本地评测结果决定是否默认启用、选哪个模型和阈值，并补充中文分词配置
+1. **识别能力**（1000 条模拟测试集暴露的问题，优先）：凭证上下文多样性、机密信息边界、无词典的人员 / 厂区 / 项目；
+   以及根据 GLiNER 本地评测结果决定是否默认启用、选哪个模型和阈值、中文分词配置
 2. `egress_commit` 接口：绑定载荷哈希、目的地、有效期、幂等键，防止 TOCTOU（设计文档第 7 节）
-3. 人工审批流：REVIEW → `NEEDS_HUMAN` → 审批后执行（随必经化方案第三阶段）
+3. 人工审批流：REVIEW → `NEEDS_HUMAN` → 审批后执行；放开 MCP `external_write`；编码 agent 派发前检查（必经化方案第三阶段）
 4. 附件与文件解析：DOCX 隐藏批注、XLSX 隐藏表与公式、PDF 文本层、图片 EXIF、压缩包、Base64（设计文档 3.1、9.3 节）
 5. 外部响应扫描：外部返回内容进入 Agent 上下文前的检查与安全恢复
 6. Vault 接 KMS（envelope encryption）与多实例共享存储；密钥轮换与备份恢复测试
-7. 载荷大小上限与超限策略（接口文档 9.7）
+7. ~~载荷大小上限与超限策略~~（D1 已实现：256 KB，超出 BLOCK）
 8. 网络层兜底：出站代理白名单与部署检查脚本（必经化方案第四阶段）
+10. DLP 审计日志落盘：由 AgentNexus 拉起时 DLP 的 stderr 不保存，DLP 侧 `dlp.evaluate` 日志目前看不到
 9. 重识别风险：稀有指标组合、跨请求关联的评估与缓解（设计文档第 11 节第 8 项）

@@ -131,6 +131,20 @@
     "cases": []
   },
   {
+    "id": "egress",
+    "document": "docs/testing/FEATURE_MAP.md",
+    "sources": [
+      "crates/agents/src/egress.rs",
+      "crates/llm/src/egress.rs",
+      "crates/agents/src/tools.rs",
+      "crates/runtime/src/lib.rs",
+      "docs/mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": ["RT-EGR-01", "RT-EGR-02", "RT-EGR-03", "RT-EGR-04", "RT-EGR-05", "RT-EGR-06", "RT-EGR-07", "RT-EGR-08", "RT-EGR-09", "RT-EGR-10", "RT-EGR-11", "RT-EGR-12", "RT-EGR-13", "RT-EGR-14", "RT-EGR-15", "RT-EGR-16"]
+  },
+  {
     "id": "reports",
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [

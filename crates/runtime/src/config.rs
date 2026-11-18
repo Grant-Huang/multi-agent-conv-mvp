@@ -44,6 +44,9 @@ pub struct AppConfig {
     /// agent 准入与持续信任（E3）；默认关闭，关闭时行为与以前完全相同
     #[serde(default)]
     pub admission: AdmissionSection,
+    /// 外发检查（dlp-egress）；默认 off，关闭时行为与以前完全相同
+    #[serde(default)]
+    pub egress: an_agents::egress::EgressConfig,
 }
 
 /// `[admission]`：外部 agent 的准入规则。默认值取自论文 §5.2。

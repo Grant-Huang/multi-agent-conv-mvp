@@ -230,18 +230,22 @@ approval_risk = "high"             # 风险达到该等级需人工审批：low 
 # 不填写 command/args；可用 bearer_env = "MCP_RESEARCH_TOKEN" 引用环境变量。
 # 能力目录：GET /api/capabilities。协议、限制和计划见 docs/mcp/。
 #
-# 外发脱敏（tools/dlp-egress，安装见其 README）：外发前调用 dlp.egress_evaluate，
-# 只有 ready_to_send=true 时才发送返回的脱敏载荷。evaluate 会写本地 Token Vault，故声明为 workspace_write。
-# [[mcp.servers]]
-# id = "dlp"
-# transport = "stdio"
-# command = "tools/dlp-egress/.venv/bin/dlp-egress-mcp"
-# args = ["--config", "tools/dlp-egress/config/dlp.example.yaml"]
-# timeout_ms = 30000
-# [[mcp.servers.tools]]
-# name = "egress_evaluate"
-# capability_id = "dlp.egress_evaluate"
-# description = "外发前检查载荷：返回 ALLOW/ANONYMIZE/REVIEW/BLOCK 与脱敏载荷"
-# effect = "workspace_write"
-# input_types = ["application/json"]
-# output_types = ["application/json"]
+# 外发脱敏（tools/dlp-egress）不要配置成 [[mcp.servers]]：它由宿主通过下面的 [egress] 直接调用，不交给模型。
+
+# ───── 外发检查（可选，默认 off）─────
+# 宿主在登记的工具调用、云端 LLM 请求发出前，先交给 dlp-egress 判定。部署与注意事项见 docs/mcp/DLP_EGRESS_DEPLOYMENT.md。
+# off：不检查（默认）；audit：检查并记录，从不拦截（建议先用）；enforce：拦截，只发送脱敏内容。
+# [egress]
+# mode = "audit"
+# timeout_ms = 2000
+# dlp_command = "tools/dlp-egress/.venv/bin/dlp-egress-mcp"
+# dlp_args = ["--config", "tools/dlp-egress/config/dlp.example.yaml"]   # 宿主用的 DLP 配置需 allow_restore: true
+# [[egress.tools]]                 # 内置工具名；MCP 工具写 服务id.工具名
+# tool = "web_search"
+# destination_id = "public-search"
+# channel = "external_api"         # email / slack / external_api / file_upload / mcp / agent
+# purpose = "web_research"
+# [[egress.llm]]                   # 非本机地址的 LLM 后端必须登记（enforce 下不登记则拒绝启动）
+# backend = "cloud"
+# destination_id = "cloud-llm"
+# purpose = "llm_inference"

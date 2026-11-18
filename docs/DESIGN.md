@@ -786,6 +786,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | ACP | `acp.permission`、`acp.finished`、`acp.handshake_failed`、`acp.runtime_error`、`acp.timeout` | |
 | Agent 目录 | `agent.probe` | 通过 `/api/agents/probe` 做的一次握手检测：`agent_id`、分类 `kind`、是否已注册 |
 | 质检 | `review.verdict`、`review.failed` | |
+| 外发检查 | `egress.started`、`egress.evaluate`、`egress.blocked`、`egress.guard_unavailable`、`egress.restore_unavailable`、`config.egress` | 每次判定一条 `egress.evaluate`（决策、原因码、request_id、耗时，不含正文）；enforce 拦截时 `egress.blocked`（WARN）；DLP 不可用 ERROR；启动时外发路径未登记 `config.egress`（WARN）。见 `docs/mcp/DLP_EGRESS_DEPLOYMENT.md` |
 | 节点（AgentNexus 侧） | `discovery.found`、`discovery.removed`、`discovery.unavailable`、`node.paired`、`node.pair_failed`、`node.unpaired`、`node.online`、`node.offline`、`node.auth_failed`、`node.run_start`、`node.run_end` | 上线 / 离线只在状态变化时记录，避免刷屏 |
 | 节点（节点侧） | `node.advertised`、`node.advertise_failed`、`node.code_rotated`、`node.paired`、`node.pair_failed`、`node.auth_failed`、`node.busy`、`node.run_start`、`node.run_end`、`node.run_failed`、`node.run_cancelled`、`node.state_save_failed` | |
 
@@ -847,6 +848,15 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | `W_STORE_READ_SLOW` | 一次数据库读取超过 50ms | 看 `store.read_slow` 的 `op` 和 `ms`；事件写入已改成批量，若仍频繁出现再看磁盘 |
 
 MCP 错误码见 [MCP 错误码表](mcp/DESIGN.md#错误码)，覆盖配置、连接、权限、协议、参数、工具执行与输出校验。
+
+外发检查错误码（`[egress]`，见 [部署与使用说明](mcp/DLP_EGRESS_DEPLOYMENT.md)）：
+
+| 错误码 | 含义 | 常见原因 / 怎么办 |
+|---|---|---|
+| `E_EGRESS_BLOCKED` | 外发检查判定 BLOCK，工具没有调用 / 模型请求没有发出 | 内容含凭证、目的地未登记等；按 `request_id` 与原因码复核，凭证需轮换 |
+| `E_EGRESS_REVIEW` | 含机密信息，需要人工审批，没有发出 | 目前没有审批流（第三阶段），请改写内容后重试 |
+| `E_EGRESS_UNAVAILABLE` | 外发检查服务超时、崩溃或返回不合规；enforce 下按 fail closed 处理 | 看 `egress.guard_unavailable` 的原因；DLP 会在下次调用时自动重新拉起 |
+| `W_EGRESS_UNBOUND` | 外发路径（联网工具、HTTP MCP 工具、云端 LLM 后端）没有登记绑定 | audit 下只警告；切换到 enforce 前必须补齐，否则拒绝启动 |
 
 ### 10.5 排查示例
 

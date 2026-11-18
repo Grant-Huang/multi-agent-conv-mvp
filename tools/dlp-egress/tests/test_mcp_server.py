@@ -45,8 +45,11 @@ async def session_run(params, fn):
 
 
 def payload(result):
+    """解开 D1 定稿的统一外壳：成功时返回 data，失败时返回整个外壳（含 status/error）。"""
     assert not result.is_error
-    return json.loads(result.content[0].text)
+    env = json.loads(result.content[0].text)
+    assert env["api_version"] == "1.0"
+    return env["data"] if env["status"] == "success" else env
 
 
 def test_lists_tools_and_evaluates(tmp_path):

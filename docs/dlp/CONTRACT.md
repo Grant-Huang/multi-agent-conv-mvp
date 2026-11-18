@@ -1,5 +1,24 @@
 # 外发脱敏（DLP）接口约定 D1（草案）
 
+> **2026-11-18 更新：本草案已被 D1 定稿取代。** 定稿接口见 `tools/dlp-egress/docs/INTERFACE.md`（api_version 1.0），
+> 宿主侧实现与配置见 `docs/mcp/DLP_EGRESS_DEPLOYMENT.md`（`[egress]`，不再用 `[[mcp.servers]]` + `[dlp] server`）。
+> 与本草案的主要差异：
+>
+> | 本草案 | D1 定稿 |
+> |---|---|
+> | `decision`：allow / redact / confirm / block | `ALLOW / ANONYMIZE / REVIEW / BLOCK`，以 `ready_to_send` 为准 |
+> | `session_id` 映射会话 | `task_id`（由编排器提供）作为 Token 作用域 |
+> | `destination` 对象、`purpose` 枚举 | `destination_id`（目的地注册表）+ `channel` 固定取值（含 `agent`）+ 自由 `purpose` |
+> | 占位符 `⟦USER_1⟧` | `[CUSTOMER_001]` 等 |
+> | `findings` 计数 | `entities`（类型与位置，不含原文）+ `reason_codes` |
+> | 用完即撤销 | 宿主目前不主动撤销，映射按 TTL 过期（默认 24 小时） |
+>
+> **尚待用户决定的两处原则冲突**（本草案第 1、5 节中“已确认的原则”）：
+> 1. “还原只用于给用户看的内容，不用于写进文件”：当前第二阶段会把云端模型输出整体恢复，若随后写文件，文件中是原值。
+> 2. “写代码类只拦密钥、不做替换”：dlp-egress 目前没有按用途区分的策略，代码类内容同样会被 Token 化。
+>
+> 以下为原草案，保留备查。
+
 日期：2026-11-17。状态：**草案，待用户确认**。工具由用户实现（计划放在 `tools/dlp-egress/`，参照 `tools/websearch`：Python + stdio MCP），本文件写的是 **AgentNexus（Rust 侧）对它的期望**。用户实现时如有不同，以用户告知的调用方式为准，再回头更新本文件。
 
 ## 1. 边界
