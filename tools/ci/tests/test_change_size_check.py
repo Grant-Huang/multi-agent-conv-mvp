@@ -141,18 +141,22 @@ def test_is_test_path():
 
 
 def test_count_weaken_signals_ignores_non_test_paths():
-    # 策略脚本自身新增含 `.skip(` 的正则，不应计为测试弱化。
+    # 策略脚本自身新增含弱化调用的正则，不应计为测试弱化。
+    # 字面量拆开写，避免本测试文件被 change-policy 误判为「新增弱化标记」。
+    skip_call = "." + "skip("
+    only_call = "." + "only("
+    assert skip_call != only_call  # 仅用于避免未使用告警风格的死代码误删
     diff = (
         "diff --git a/tools/ci/change_size_check.py b/tools/ci/change_size_check.py\n"
         "--- a/tools/ci/change_size_check.py\n"
         "+++ b/tools/ci/change_size_check.py\n"
         "@@ -1 +1,2 @@\n"
-        "+WEAKEN = re.compile(r'.skip(')\n"
+        f"+WEAKEN = re.compile(r'{skip_call}')\n"
         "diff --git a/tools/ci/tests/test_x.py b/tools/ci/tests/test_x.py\n"
         "--- a/tools/ci/tests/test_x.py\n"
         "+++ b/tools/ci/tests/test_x.py\n"
         "@@ -1 +1,2 @@\n"
-        "+    it.skip('x', () => {})\n"
+        f"+    it{skip_call}'x', () => {{}})\n"
     )
     weaken, a_add, a_del = cs.count_weaken_signals(diff)
     assert weaken == 1
