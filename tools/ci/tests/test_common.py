@@ -7,12 +7,13 @@ from common import (
     changed_files,
     component_of,
     diff_text,
+    expand_diff_paths,
     is_generated,
     path_matches,
     pr_section,
     resolve_base,
 )
-from tests.conftest import commit_all
+from tests.conftest import commit_all, git
 
 
 @pytest.mark.parametrize(
@@ -93,3 +94,35 @@ def test_changed_files_and_diff_on_real_repo(repo):
 def test_changed_files_bad_ref_raises(repo):
     with pytest.raises(RuntimeError):
         changed_files("no-such-ref", "feature", cwd=str(repo))
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("docs/a.md", ["docs/a.md"]),
+        ("docs/tmp/notes.md => .github/workflows/notes.yml",
+         ["docs/tmp/notes.md", ".github/workflows/notes.yml"]),
+        ("tools/{ci => lib}/common.py",
+         ["tools/ci/common.py", "tools/lib/common.py"]),
+    ],
+)
+def test_expand_diff_paths(raw, expected):
+    assert expand_diff_paths(raw) == expected
+
+
+def test_rename_into_l3_path_is_two_entries_not_one(repo):
+    # 重命名在 --no-renames 下应显示为删旧 + 增新，两边路径都进入清单。
+    (repo / "docs").mkdir()
+    (repo / "docs" / "notes.md").write_text("name: ci\non: push\n", encoding="utf-8")
+    commit_all(repo, "add doc")
+    git(repo, "checkout", "-q", "-b", "rename")
+    (repo / ".github").mkdir()
+    (repo / ".github" / "workflows").mkdir(parents=True)
+    git(repo, "mv", "docs/notes.md", ".github/workflows/notes.yml")
+    commit_all(repo, "rename into workflows")
+
+    paths = {c.path for c in changed_files("feature", "rename", cwd=str(repo))}
+    assert "docs/notes.md" in paths
+    assert ".github/workflows/notes.yml" in paths
+    # 不应再出现带 => 的合成路径。
+    assert not any(" => " in p for p in paths)

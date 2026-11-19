@@ -1,0 +1,69 @@
+# 夜间浏览器 E2E（阶段 3）。失败开 issue，暂不作为 PR 必需检查。
+# 见 docs/fencing/EVAL_LOOP.md。
+
+name: nightly-e2e
+
+on:
+  schedule:
+    # 温哥华约 03:30 → UTC 10:30（冬令时近似）
+    - cron: "30 10 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-e2e
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  CARGO_TARGET_DIR: target
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: 安装浏览器与依赖
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+      - name: npm run verify
+        id: verify
+        working-directory: web
+        run: npm run verify
+      - name: 失败时开 issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="nightly-e2e 失败：${{ github.run_id }}"
+          # 避免重复刷屏：同标题未关闭 issue 则只评论
+          existing=$(gh issue list --label nightly-e2e --state open --search "$title" --json number --jq '.[0].number')
+          body="夜间 \`npm run verify\` 失败。
+
+          - 运行：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - 提交：\`${{ github.sha }}\`
+          - 流程：\`docs/fencing/EVAL_LOOP.md\`
+
+          请按 FIX.md 开修复 PR；修好后关闭本 issue。"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --label "nightly-e2e" --body "$body" || \
+              gh issue create --title "$title" --body "$body"
+          fi

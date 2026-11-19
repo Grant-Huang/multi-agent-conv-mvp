@@ -1,6 +1,8 @@
 # 代码负责人（CODEOWNERS）。L3 路径需要负责人批准，见 config/risk-policy.toml。
 # 暂时全部由仓库所有者负责；如有其他审查人，请在这里按路径补充。
 # 注意：负责人必须对仓库有写权限，GitHub 才会把其作为有效审查人。
+# 阶段 2：开发 Agent 用 bot 提 PR 后，开启 Require Code Owners + 批准数≥1
+# （见 docs/fencing/BOT_IDENTITY.md、scripts/enable_branch_protection.sh）。
 
 *                               @Grant-Huang
 

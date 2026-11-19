@@ -1,0 +1,6 @@
+# 固定工具链，避免 @stable 浮动导致 clippy 无改动变红。
+# 升级时开 L3 PR，由维护者核对后再改本文件。
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
