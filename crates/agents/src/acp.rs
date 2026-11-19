@@ -297,13 +297,47 @@ impl AcpAgent {
         };
         let cwd = self.workdir.clone();
         let _ = tokio::fs::create_dir_all(&cwd).await;
-        let process = acp::AcpAgent::new(
-            AcpAgentConfig::new(command)
-                .args(self.cfg.args.clone())
-                .envs(self.cfg.env.clone()),
-        );
+        // 检测用的子进程由我们自己启动（不交给 SDK 的 AcpAgent），这样能完整读到它的错误输出。
+        // 原因（RT-AGCAT-10）：进程一启动就退出时（例如缺 node），写握手请求会遇到 Broken pipe，
+        // 这个错误有时先于"进程退出 + 错误输出"返回，SDK 报出的错误里就没有错误输出，
+        // 会把"缺依赖"误判成"握手失败"。自己读错误输出后，分类不再依赖 SDK 内部的先后顺序。
+        // 启动方式与 SDK 一致：同样的命令、参数、环境变量，不设工作目录，进程自成一个进程组。
+        let mut cmd = tokio::process::Command::new(&command);
+        cmd.args(&self.cfg.args)
+            .envs(&self.cfg.env)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        crate::proc_group::configure(&mut cmd);
+        let mut child = match crate::proc_group::GroupChild::spawn(&mut cmd, "") {
+            Ok(c) => c,
+            Err(e) => {
+                let detail = format!("无法启动：{e}");
+                let kind = classify_probe_error(false, &detail);
+                return probe_outcome(id, kind, Some(detail), None);
+            }
+        };
+        let (Some(stdin), Some(stdout), Some(stderr)) = (
+            child.child_mut().stdin.take(),
+            child.child_mut().stdout.take(),
+            child.child_mut().stderr.take(),
+        ) else {
+            child.terminate("probe_pipe_missing").await;
+            return probe_outcome(
+                id,
+                ProbeKind::HandshakeFailed,
+                Some("无法连接子进程的输入输出".into()),
+                None,
+            );
+        };
+        // 后台读错误输出，只保留末尾，内存有上限
+        let stderr_task = tokio::spawn(read_stderr_tail(stderr));
+        let transport = {
+            use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+            acp::ByteStreams::new(stdin.compat_write(), stdout.compat())
+        };
         let handshake = acp::Client.v1().name("agentnexus-probe").connect_with(
-            process,
+            transport,
             async move |cx: ConnectionTo<Agent>| {
                 cx.send_request(InitializeRequest::new(ProtocolVersion::V1))
                     .block_task()
@@ -314,19 +348,51 @@ impl AcpAgent {
                 Ok(())
             },
         );
-        match tokio::time::timeout(timeout, handshake).await {
-            Ok(Ok(())) => probe_outcome(id, ProbeKind::Ok, None, None),
-            Ok(Err(e)) => {
-                let detail = error_detail(&e);
-                let kind = classify_probe_error(e.code == acp::ErrorCode::AUTH_REQUIRED, &detail);
+        // 超时：丢弃握手（连接随之关闭），结束整个进程组
+        let result = match tokio::time::timeout(timeout, handshake).await {
+            Ok(r) => r,
+            Err(_) => {
+                child.terminate("probe_timeout").await;
+                stderr_task.abort();
+                return probe_outcome(
+                    id,
+                    ProbeKind::Timeout,
+                    Some(format!("{} 秒内没有完成握手", timeout.as_secs())),
+                    None,
+                );
+            }
+        };
+        // 握手结束（成功或失败）后，连接已关闭、输入已断开：最多等一小会儿让进程自己退出，
+        // 退出了就清理组内残留进程，否则先 SIGTERM 再 SIGKILL 整个组
+        let status =
+            match tokio::time::timeout(crate::proc_group::DRAIN_AFTER_EXIT, child.wait()).await {
+                Ok(Ok(s)) => {
+                    child.kill_leftovers();
+                    Some(s)
+                }
+                _ => {
+                    child.terminate("probe_done").await;
+                    None
+                }
+            };
+        match result {
+            Ok(()) => {
+                stderr_task.abort();
+                probe_outcome(id, ProbeKind::Ok, None, None)
+            }
+            Err(e) => {
+                // 进程已结束，错误输出的管道随之关闭；最多再等一小会儿把它读完
+                let stderr_tail =
+                    tokio::time::timeout(crate::proc_group::DRAIN_AFTER_EXIT, stderr_task)
+                        .await
+                        .ok()
+                        .and_then(|r| r.ok())
+                        .unwrap_or_default();
+                let auth_required = e.code == acp::ErrorCode::AUTH_REQUIRED;
+                let detail = probe_error_detail(&e, status, &stderr_tail);
+                let kind = classify_probe_error(auth_required, &detail);
                 probe_outcome(id, kind, Some(detail), None)
             }
-            Err(_) => probe_outcome(
-                id,
-                ProbeKind::Timeout,
-                Some(format!("{} 秒内没有完成握手", timeout.as_secs())),
-                None,
-            ),
         }
     }
 }
@@ -378,6 +444,45 @@ pub fn classify_probe_error(auth_required: bool, detail: &str) -> ProbeKind {
     } else {
         ProbeKind::HandshakeFailed
     }
+}
+
+/// 读子进程的错误输出直到结束，只保留末尾 [`PROBE_DETAIL_MAX_CHARS`] 个字符（内存有上限）
+async fn read_stderr_tail(mut stderr: tokio::process::ChildStderr) -> String {
+    use tokio::io::AsyncReadExt;
+    let mut kept: Vec<u8> = Vec::new();
+    let mut buf = [0u8; 4096];
+    // 按字节保留：一个字符最多 4 个字节，留足余量后再按字符截取
+    let max_bytes = PROBE_DETAIL_MAX_CHARS * 4;
+    while let Ok(n) = stderr.read(&mut buf).await {
+        if n == 0 {
+            break;
+        }
+        kept.extend_from_slice(&buf[..n]);
+        if kept.len() > max_bytes {
+            kept.drain(..kept.len() - max_bytes);
+        }
+    }
+    tail_chars(
+        String::from_utf8_lossy(&kept).trim(),
+        PROBE_DETAIL_MAX_CHARS,
+    )
+}
+
+/// 握手失败的详情：SDK 的错误 + 进程退出状态 + 我们自己读到的错误输出末尾
+fn probe_error_detail(
+    e: &acp::Error,
+    status: Option<std::process::ExitStatus>,
+    stderr_tail: &str,
+) -> String {
+    let mut text = error_detail(e);
+    if let Some(s) = status.filter(|s| !s.success()) {
+        text.push_str(&format!("；进程退出（{s}）"));
+    }
+    if !stderr_tail.is_empty() && !text.contains(stderr_tail) {
+        text.push_str("；错误输出：");
+        text.push_str(stderr_tail);
+    }
+    tail_chars(&text, PROBE_DETAIL_MAX_CHARS)
 }
 
 /// 把 SDK 错误转成详情文字：消息 + 附加数据（进程非零退出时附加数据里有错误输出末尾）
