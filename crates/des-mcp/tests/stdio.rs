@@ -275,3 +275,42 @@ async fn rt_desm_03_errors_are_tool_errors_and_stdin_close_exits() {
         .expect("wait");
     assert!(status.success(), "clean exit: {status:?}");
 }
+
+/// 审查修复 R-20261119-M2：溢出参数经 MCP 返回工具错误（不是 -32603 内部错误），之后同一进程中的仿真照常可用。
+#[tokio::test]
+async fn rt_desm_04_overflow_is_a_tool_error_and_the_service_survives() {
+    let server = start().await;
+    call(&server, "simulation_create", script()[0].1.clone()).await;
+    let before = call(
+        &server,
+        "equipment_status",
+        json!({"simulation_id": "DES-1"}),
+    )
+    .await;
+    let r = tokio::time::timeout(
+        WAIT,
+        server.client.peer().call_tool(
+            CallToolRequestParams::new("simulation_create".to_string()).with_arguments(
+                json!({
+                    "name": "overflow",
+                    "factory": null,
+                    "scenario": {"seed": 1, "pattern": {"kind": "script"}, "start_minute": u64::MAX - 10, "horizon_minutes": 60, "mechanisms": null}
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        ),
+    )
+    .await
+    .expect("overflow call timed out")
+    .expect("an overflow is a tool error, not a protocol error");
+    assert_eq!(r.is_error, Some(true), "{r:?}");
+    let after = call(
+        &server,
+        "equipment_status",
+        json!({"simulation_id": "DES-1"}),
+    )
+    .await;
+    assert_eq!(after, before, "the existing simulation is still available");
+}

@@ -461,3 +461,97 @@ async fn http_des_05_review_decision_needs_ai_and_does_not_block_workers() {
     holder.join().unwrap();
     task.abort();
 }
+
+/// 审查修复 R-20261119-M14：人工结论请求体必须带 `ai_version`（人看到的 AI 审核版本）；
+/// 与当前版本不一致时返回 409，缺少时请求被拒绝。
+#[tokio::test]
+async fn rt_des_35_review_decision_over_http_carries_the_ai_version() {
+    use an_runtime::mom::des::review::{ReviewerChoice, ScriptedReviewer};
+    let reviewer = ScriptedReviewer {
+        choice: ReviewerChoice {
+            model: Some("scripted".into()),
+            source: "mom_reviewer".into(),
+            independent: true,
+            label: None,
+        },
+        response: Ok(
+            json!({"conclusions":[{"judgement":"reasonable","statement":"cause matches","evidence_refs":["rule:root_cause_attribution"]}],"summary":"ok"}),
+        ),
+        delay: Duration::from_millis(0),
+    };
+    let state = mom::AppState::scripted(Arc::new(Mutex::new(Engine::memory().unwrap())))
+        .with_reviewer(Arc::new(reviewer));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move {
+        axum::serve(listener, mom::router(state)).await.unwrap();
+    });
+    let client = reqwest::Client::new();
+    setup(&client, &url).await;
+    let list: Value = client
+        .get(format!("{url}/api/mom/cases"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = list["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["batch"].as_str().is_some_and(|b| b.starts_with("DES-")))
+        .expect("DES case listed")["case_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    command(
+        &client,
+        &url,
+        &id,
+        json!({"command":"claim_cause","causes":["spindle_wear:CNC-XX"],"actor":"master"}),
+    )
+    .await;
+    // 运行两次 AI 审核：版本 a（人看到的）与版本 b（之后别人重跑的）。
+    let mut versions = vec![];
+    for _ in 0..2 {
+        let report: Value = client
+            .post(format!("{url}/api/mom/reviews/{id}/ai"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        versions.push(report["ai"]["version"].as_u64().expect("AI version"));
+    }
+    let (a, b) = (versions[0], versions[1]);
+    assert_ne!(a, b);
+    let decide = |body: Value| {
+        let client = client.clone();
+        let url = format!("{url}/api/mom/reviews/{id}/decision");
+        async move { client.post(url).json(&body).send().await.unwrap() }
+    };
+    // 缺少 ai_version：拒绝。
+    let r = decide(json!({"decision":"agree","reason":"","actor":"supervisor"})).await;
+    assert!(
+        r.status().is_client_error(),
+        "ai_version is required: {}",
+        r.status()
+    );
+    // 针对过期版本：409。
+    let r =
+        decide(json!({"decision":"agree","reason":"","actor":"supervisor","ai_version":a})).await;
+    assert_eq!(
+        r.status(),
+        409,
+        "a superseded AI review version is a conflict"
+    );
+    // 针对当前版本：记录成功。
+    let r =
+        decide(json!({"decision":"agree","reason":"","actor":"supervisor","ai_version":b})).await;
+    assert_eq!(r.status(), 200);
+    let report: Value = r.json().await.unwrap();
+    assert_eq!(report["human"]["ai_version"], b);
+    task.abort();
+}

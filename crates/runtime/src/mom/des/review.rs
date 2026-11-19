@@ -860,6 +860,21 @@ impl Engine {
         }))
     }
 
+    /// 人工结论，并写明人看到的 AI 审核版本（审查修复 R-20261119-M14）。
+    ///
+    /// 骨架（Red）：暂时忽略 `ai_version`，等同 `des_human_review`；RT-DES-34 预期失败。
+    pub fn des_human_review_for(
+        &mut self,
+        case_id: &str,
+        ai_version: u64,
+        decision: &str,
+        reason: &str,
+        actor: &str,
+    ) -> Result<()> {
+        let _ = ai_version;
+        self.des_human_review(case_id, decision, reason, actor)
+    }
+
     /// 人工确认（`agree`）或推翻（`override`，必须写理由）AI 审核结论。
     ///
     pub fn des_human_review(
