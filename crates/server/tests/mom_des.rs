@@ -364,3 +364,100 @@ async fn http_des_04_review_flow_over_http() {
     }
     task.abort();
 }
+
+/// 审查修复 2026-11-18：R-20261118-M1（AI 未完成不能"同意"）与 L1（AI 审核接口不阻塞异步工作线程）。
+///
+/// 只有一个工作线程；另一个线程持引擎锁 2 秒。修复前处理函数在工作线程上同步等锁，
+/// 50 ms 的心跳要等约 2 秒；修复后锁在阻塞线程中等待，心跳按时完成。
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn http_des_05_review_decision_needs_ai_and_does_not_block_workers() {
+    use an_runtime::mom::des::review::{ReviewerChoice, ScriptedReviewer};
+    let reviewer = ScriptedReviewer {
+        choice: ReviewerChoice {
+            model: Some("scripted".into()),
+            source: "mom_reviewer".into(),
+            independent: true,
+            label: None,
+        },
+        response: Ok(
+            json!({"conclusions":[{"judgement":"reasonable","statement":"cause matches","evidence_refs":["rule:root_cause_attribution"]}],"summary":"ok"}),
+        ),
+        delay: Duration::from_millis(0),
+    };
+    let engine = Arc::new(Mutex::new(Engine::memory().unwrap()));
+    let state = mom::AppState::scripted(engine.clone()).with_reviewer(Arc::new(reviewer));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move {
+        axum::serve(listener, mom::router(state)).await.unwrap();
+    });
+    let client = reqwest::Client::new();
+    setup(&client, &url).await;
+    let list: Value = client
+        .get(format!("{url}/api/mom/cases"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = list["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["batch"].as_str().is_some_and(|b| b.starts_with("DES-")))
+        .expect("DES case listed")["case_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // M1：AI 审核未运行时"同意"被拒绝。
+    let r = client
+        .post(format!("{url}/api/mom/reviews/{id}/decision"))
+        .json(&json!({"decision":"agree","reason":"","actor":"supervisor"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r.status(),
+        400,
+        "agree before any AI review must be rejected"
+    );
+
+    // L1：另一线程持锁 2 秒期间发起 AI 审核，心跳不能被拖住。
+    let held = engine.clone();
+    let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+    let holder = std::thread::spawn(move || {
+        let _guard = held.lock().unwrap();
+        locked_tx.send(()).unwrap();
+        std::thread::sleep(Duration::from_secs(2));
+    });
+    locked_rx.recv().unwrap();
+    let post = {
+        let client = client.clone();
+        let url = format!("{url}/api/mom/reviews/{id}/ai");
+        tokio::spawn(async move { client.post(url).send().await })
+    };
+    // 在整个请求期间每 50 ms 打一次心跳，记录最大间隔：工作线程被同步等锁占住时，间隔会接近 2 秒。
+    let mut worst = Duration::ZERO;
+    let window = Instant::now();
+    while !post.is_finished() && window.elapsed() < Duration::from_secs(10) {
+        let beat = Instant::now();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        worst = worst.max(beat.elapsed());
+    }
+    assert!(
+        worst < Duration::from_millis(1000),
+        "a 50 ms heartbeat took {worst:?}: the AI review handler blocked the only async worker"
+    );
+    let r = tokio::time::timeout(Duration::from_secs(20), post)
+        .await
+        .expect("AI review finishes")
+        .unwrap()
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let report: Value = r.json().await.unwrap();
+    assert_eq!(report["ai"]["status"], "completed", "{report}");
+    holder.join().unwrap();
+    task.abort();
+}

@@ -455,6 +455,16 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-28 | mom-des | P0 固定剧本（基线） | 推进 30 分钟 | 只有一个 DES 案例，使用原 S1 模板，不建立协同事项，也没有成员关系 |
 | RT-DES-29 | mom-des | P0 案例已执行方案 C 并关闭（基线，来自 2026-11-17 审查） | 同键再到一条质量观测，再推进 | 观测进入新案例而不是已关闭的案例；已关闭案例的 `world.des` 不再刷新 |
 
+## 审查修复 2026-11-18：R-20261118-H2、M1、L1
+
+问题与验收来自 [docs/review/2026-11-18.md](../review/2026-11-18.md)，决策见 [DECISIONS.md](../DECISIONS.md) DES-25、DES-26。H2 已由 #96 修复（上方 RT-DES-31），这里补充事项侧汇总。测试位置：`crates/runtime/tests/mom_des.rs`（RT-DES-32、33）、`crates/server/tests/mom_des.rs`（HTTP-DES-05）。R-20261118-L2 只改文档与示例配置注释，不涉及行为，没有用例。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DES-33 | mom-des | 资源竞争模式中一个已执行推荐方案的协同事项（同 RT-DES-27）；一个成员收到同源的 `safety_trip=true` 振动事件，进入 BLOCKED | 直接关闭该成员；推进到全部维修完成后关闭事项 | 直接关闭被拒绝；事项可以关闭，该成员仍为 BLOCKED、`safety_trip` 仍为 true，其他成员照常关闭；**事项上**逐个汇总被跳过的成员：一条 `CaseCloseSkipped`，写明成员与原因（含 safety）。H2 的主修复与成员侧记录由 #96 的 RT-DES-31 覆盖，本用例覆盖决策 DES-26 的事项侧汇总（原编号 RT-DES-31，合并 #96 后为避免重号改为 33） |
+| RT-DES-32 | mom-des | P0 案例已执行方案 C | 先在没有 AI 审核时"同意"；再在 AI 审核降级（模型报错）后"同意"；然后 AI 审核得结论 A 并"同意"；再运行 AI 审核得结论 B | 前两次"同意"被拒绝。对 A 的"同意"记录 AI 审核版本。得到 B 后，AI 审核版本号增加，报告的 `human` 为空（还没有人对 B 下结论），历史记录中原来的"同意"标明针对的版本、`applies_to_current_ai = false` |
+| HTTP-DES-05 | mom-des | 只有一个异步工作线程的服务，配置了脚本审核替身，P0 DES 案例 | 先在没有 AI 审核时 POST 同意；再让另一线程持引擎锁 2 秒，同时 POST AI 审核，并在请求期间每 50 ms 打一次心跳 | 同意返回 400。心跳的最大间隔小于 1 秒（处理函数不在异步工作线程上同步等锁）；AI 审核最终返回 200，状态 completed |
+
 ## 模拟工厂与 MCP 挂载（阶段⑤a-1）
 
 设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a。对外约定：

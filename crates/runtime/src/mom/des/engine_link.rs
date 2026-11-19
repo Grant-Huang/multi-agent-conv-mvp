@@ -905,7 +905,8 @@ impl Engine {
         })
     }
 
-    /// `close` 成功后由引擎调用：关闭协同事项时一并关闭成员案例（阶段③b）。其他案例不做任何事。
+    /// `close` 成功后由引擎调用：关闭协同事项时一并关闭成员案例（阶段③b）；安全联锁中、BLOCKED
+    /// 或有未核验动作的成员不关闭，在事项上记 `CaseCloseSkipped`（R-20261118-H2）。其他案例不做任何事。
     pub(in crate::mom) fn des_after_close(&mut self, case_id: &str) -> Result<()> {
         let c = self.case(case_id)?;
         if !super::coordination::is_incident(c) {
@@ -919,6 +920,10 @@ impl Engine {
             .collect();
         self.update(|s, events| {
             let now = s.now;
+            // 不能随事项关闭的成员：与 `Engine::close` 的安全前提一致（R-20261118-H2，#96 已修复）。
+            // 跳过它们，在成员上记 `CaseCloseSkipped`（#96），并在事项上逐个汇总（决策 DES-26）；
+            // 其他成员照常关闭；被跳过的成员留在看板上由人单独处理。
+            let mut skipped: Vec<(String, &'static str)> = vec![];
             for m in &members {
                 let Some(c) = s.cases.get_mut(m) else {
                     continue;
@@ -943,6 +948,8 @@ impl Engine {
                         json!({"incident": case_id, "reason": reason}),
                         events,
                     );
+                    // 事项上也逐个记录被跳过的成员（DES-26：便于在事项上看到哪些成员还开着、为什么）。
+                    skipped.push((m.clone(), reason));
                     continue;
                 }
                 c.stage = "CLOSED".into();
@@ -959,6 +966,17 @@ impl Engine {
                     json!({"scope": "closed with line incident", "incident": case_id}),
                     events,
                 );
+            }
+            if let Some(incident) = s.cases.get_mut(case_id) {
+                for (member, reason) in skipped {
+                    emit(
+                        incident,
+                        now,
+                        "CaseCloseSkipped",
+                        json!({"member": member, "reason": reason}),
+                        events,
+                    );
+                }
             }
             Ok(())
         })
