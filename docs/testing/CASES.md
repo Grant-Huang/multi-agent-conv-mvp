@@ -542,3 +542,9 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|
 | PY-DLP-M3 | 中文密码/口令、token=、DB_PASS=、OpenAI项目key、Google key、同形字AWS/GitHub，共8种合成输入 | evaluate到external_untrusted | 全部BLOCK、不可发送且无原值；其余原文（含℃）不变；正常Unicode和术语不被改写 |
 
+
+## R-20261118-M5 JSON 路径不碰撞
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-M5 | 字面点号/方括号/空键与嵌套路径共存，含客户名及普通值；另注入重复分析路径 | evaluate | 每个字段分别正确脱敏且结构/原输入保持；重复路径在写Vault前BLOCK；普通field_path仍为字符串 |

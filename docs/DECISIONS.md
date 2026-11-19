@@ -923,3 +923,12 @@
   - 700 条评测集、v1 两部分和留出集的结果不能变差。
   - 前后对比见 `tools/dlp-egress/docs/DEV_SET_REVIEW.md` 第 3 节。
 - 相关：D-005、D-014；`docs/PLAN.md` DLP-9
+
+### 43. R-20261118-M5：内部字段路径与展示路径分离（2026-11-19，助手建议，待PR评审）
+
+- 问题：点号拼接会让字面键与嵌套字段共用索引、串换内容。
+- 本轮方案：内部使用含字符串键/整数数组索引的元组路径，阻止字面点号、方括号和空键产生串字段；重复分析路径在写Vault前BLOCK。field_path仍为原格式字符串，仅用于展示，特殊键的展示歧义不再参与寻址。
+- 为什么：寻址必须无歧义，同时不借修复改变公开响应类型。
+- 没选什么：仅转义一部分标点仍会碰撞；直接输出元组会改公开接口。
+- 出问题先看：tools/dlp-egress/tests/test_review_m5.py；docs/testing/evidence/r-20261118-m5.md。
+- 编号说明：42已在本轮M2修复 [PR #110](https://github.com/Grant-Huang/multi-agent-conv-mvp/pull/110) 中记录，建议先评审/落地42再43；代码分支各自基于origin/master，不自行合并PR。

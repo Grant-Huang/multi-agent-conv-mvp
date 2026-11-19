@@ -79,10 +79,14 @@ def _load_master_data(raw) -> dict[str, list[str]] | None:
     return {k: [str(x) for x in v] for k, v in data.items()}
 
 
+# Typed segments distinguish object keys from array indexes and punctuation in keys.
+_JsonPath = tuple[str | int, ...]
+
+
 @dataclass
 class _Field:
     """载荷中的一个待处理字符串（文本载荷只有一个，JSON 载荷每个字符串值一个）。"""
-    path: str
+    path: _JsonPath
     text: str
     entities: list[DetectedEntity]
     actions: list[str]
@@ -139,10 +143,10 @@ class EgressService:
         # 2. 识别 + 逐实体动作
         fields: list[_Field] = []
         if req.text is not None:
-            fields.append(self._analyze_field("", req.text, dest, req, routing_ranges=_text_routing_ranges(
+            fields.append(self._analyze_field((), req.text, dest, req, routing_ranges=_text_routing_ranges(
                 req.text, self.policy.routing_keys)))
         else:
-            self._collect_json(req.json_body, "", fields, dest, req)
+            self._collect_json(req.json_body, (), fields, dest, req)
 
         reasons: list[str] = []
         decisions = []
@@ -157,15 +161,18 @@ class EgressService:
         if any(TOKEN_RE.search(f.text) for f in fields):
             reasons.append("token_like_input")
 
+        if len({f.path for f in fields}) != len(fields):
+            return self._blocked("duplicate_json_path")
+
         # 3. 转换。BLOCK 时不写 Vault，非凭证实体只用类型占位，避免为不会发送的内容建立映射。
         tokens: list[str] = []
         write_vault = decision != BLOCK
         rendered = {f.path: self._render(f, req, write_vault, tokens) for f in fields}
 
         if req.text is not None:
-            sanitized_text, sanitized_json = rendered[""], None
+            sanitized_text, sanitized_json = rendered[()], None
         else:
-            sanitized_text, sanitized_json = None, _rebuild_json(req.json_body, "", rendered)
+            sanitized_text, sanitized_json = None, _rebuild_json(req.json_body, (), rendered)
 
         # 4. 保真校验：不通过则不发送
         validation = _validate(req, fields, rendered, sanitized_json, self.policy.routing_keys)
@@ -173,7 +180,7 @@ class EgressService:
             decision = BLOCK
             reasons.append("validation_failed")
 
-        all_entities = [DetectedEntity(e.type, e.start, e.end, e.score, e.source, f.path)
+        all_entities = [DetectedEntity(e.type, e.start, e.end, e.score, e.source, _display_json_path(f.path))
                         for f in fields for e in f.entities]
         return EvaluateResult(
             decision=decision, policy_version=self.policy.version, sanitized_text=sanitized_text,
@@ -182,7 +189,7 @@ class EgressService:
             ready_to_send=decision in (ALLOW, ANONYMIZE),
         )
 
-    def _analyze_field(self, path: str, text: str, dest, req: EvaluateRequest, routing_ranges) -> _Field:
+    def _analyze_field(self, path: _JsonPath, text: str, dest, req: EvaluateRequest, routing_ranges) -> _Field:
         ents = self.detector.detect(text, req.language or detect_language(text))
         actions, routing = [], []
         for e in ents:
@@ -201,7 +208,7 @@ class EgressService:
         """遍历 JSON：键名与非字符串值保持不变；路由键的值整体视为路由字段。"""
         if isinstance(node, dict):
             for k, v in node.items():
-                child = f"{path}.{k}" if path else str(k)
+                child = path + (str(k),)
                 if str(k).lower() in self.policy.routing_keys:
                     for i, s in _iter_strings(v, child):
                         fields.append(self._analyze_field(i, s, dest, req, routing_ranges=[(0, len(s))]))
@@ -209,7 +216,7 @@ class EgressService:
                     self._collect_json(v, child, fields, dest, req)
         elif isinstance(node, list):
             for i, v in enumerate(node):
-                self._collect_json(v, f"{path}[{i}]", fields, dest, req)
+                self._collect_json(v, path + (i,), fields, dest, req)
         elif isinstance(node, str):
             fields.append(self._analyze_field(path, node, dest, req, routing_ranges=[]))
 
@@ -315,18 +322,29 @@ def _iter_strings(node, path):
         yield path, node
     elif isinstance(node, list):
         for i, v in enumerate(node):
-            yield from _iter_strings(v, f"{path}[{i}]")
+            yield from _iter_strings(v, path + (i,))
     elif isinstance(node, dict):
         for key, value in node.items():
-            child = f"{path}.{key}" if path else str(key)
+            child = path + (str(key),)
             yield from _iter_strings(value, child)
 
 
-def _rebuild_json(node, path, rendered: dict[str, str]):
+def _display_json_path(path: _JsonPath) -> str:
+    """Keep the existing diagnostic string format; never use it for addressing."""
+    out = ""
+    for part in path:
+        if isinstance(part, int):
+            out += f"[{part}]"
+        else:
+            out += ("." if out else "") + part
+    return out
+
+
+def _rebuild_json(node, path, rendered: dict[_JsonPath, str]):
     if isinstance(node, dict):
-        return {k: _rebuild_json(v, f"{path}.{k}" if path else str(k), rendered) for k, v in node.items()}
+        return {k: _rebuild_json(v, path + (str(k),), rendered) for k, v in node.items()}
     if isinstance(node, list):
-        return [_rebuild_json(v, f"{path}[{i}]", rendered) for i, v in enumerate(node)]
+        return [_rebuild_json(v, path + (i,), rendered) for i, v in enumerate(node)]
     if isinstance(node, str):
         return rendered[path]  # Missing analysis must fail closed, never return the original leaf.
     return copy.deepcopy(node)

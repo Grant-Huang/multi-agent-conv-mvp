@@ -101,3 +101,5 @@ R-20261113-L1 11-16预审：RT-HOST-10确定性验证其他监听者不能满足
 R-20261116-L1：RT-HOST-11确定性验证外国监听者不能满足自身子进程就绪。host_guard共用support/service_readiness.rs，确认独立捕获的自身监听日志、Child存活及端口；只串行化启动交接，原RT-HOST-01/02断言不变，连续100次默认并行验证。证据见[evidence/r-20261116-l1.md](evidence/r-20261116-l1.md)。
 
 R-20261118-M3：PY-DLP-M3以真实evaluate管线验证8种凭证全部BLOCK、非凭证Unicode保留，700条与留出集安全门槛照常执行。 证据见 [r-20261118-m3.md](evidence/r-20261118-m3.md)。
+
+R-20261118-M5：内部使用含字符串键/整数数组索引的元组路径，阻止字面点号、方括号和空键产生串字段；重复分析路径在写Vault前BLOCK。field_path仍为原格式字符串，仅用于展示，特殊键的展示歧义不再参与寻址。 PY-DLP-M5与原有Python全量/评测门槛验证；[证据](evidence/r-20261118-m5.md)。

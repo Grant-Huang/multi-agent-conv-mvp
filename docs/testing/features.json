@@ -123,6 +123,7 @@
     "id": "tools-evals",
     "document": "docs/testing/FEATURE_MAP.md",
     "sources": [
+      "tools/dlp-egress/tests/test_review_m5.py",
       "tools/dlp-egress/tests/test_review_m3.py",
       "tools/websearch/README.md",
       "tools/dlp-egress/README.md",
