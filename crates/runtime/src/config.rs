@@ -134,6 +134,10 @@ pub struct ConversationSection {
     /// 有 write_file 或模型给 L3/L4 = 要文档）。只改结果，不改发给模型的请求。默认不开。
     #[serde(default)]
     pub route_class_from_tools: bool,
+    /// FT.6：前台写 task_goal 时只写用户明确提出的要求，补全指代、不添加新要求
+    /// （贴出的内容仍原样放入）。只改前台提示词，不改 schema。默认不开。
+    #[serde(default)]
+    pub concise_task_goal: bool,
     /// AG.4：在对话里管理助手（"把 Cursor 接进来"等）。会改变前台判断的 schema，默认关；
     /// 用户本机评测达标后再决定是否打开
     #[serde(default)]
@@ -148,6 +152,7 @@ impl Default for ConversationSection {
             risk_rules: false,
             route_class_questions: false,
             route_class_from_tools: false,
+            concise_task_goal: false,
             agent_management: false,
         }
     }

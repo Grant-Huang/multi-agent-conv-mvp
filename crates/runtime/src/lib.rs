@@ -417,6 +417,7 @@ impl Runtime {
             history_messages: o.history_messages,
             tools: tool_listing,
             review_mode: config.conversation.review_requests,
+            concise_goal: config.conversation.concise_task_goal,
             stream_replies: config.conversation.stream_replies,
         }));
         tracing::info!(

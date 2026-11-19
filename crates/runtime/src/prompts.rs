@@ -87,7 +87,16 @@ pub struct TurnPromptInfo {
     /// General 可用工具清单（每行一个："- 名称：说明"）
     pub tools: String,
     pub review_mode: ReviewMode,
+    /// FT.6：task_goal 只写用户明确提出的要求，不扩写（默认 false，提示词与改动前相同）
+    pub concise_goal: bool,
 }
+
+/// 默认的 task_goal 规则（与 FT.6 之前逐字相同）
+const GOAL_RULE_DEFAULT: &str = "- delegate：task_goal 写成完整、可独立执行的任务描述，包含对话中的必要细节（执行者看不到对话）；用户贴出的待处理内容要原样放进 task_goal。\n";
+
+/// FT.6 的 task_goal 规则：只写用户明确提出的要求，补全指代，不添加新要求；贴出的内容仍原样放入
+const GOAL_RULE_CONCISE: &str = "- delegate：task_goal 只写用户明确提出的要求，不要添加用户没有提出的要求（格式、技术选型、额外字段、日期、验收标准等都不要自行补充）；\
+\u{20} 执行者看不到对话，所以要把\"那份文件\"\"上面的方案\"这类指代补全成具体内容；用户贴出的待处理内容要原样放进 task_goal。\n";
 
 /// Turn Controller 的系统提示词。
 ///
@@ -168,7 +177,7 @@ pub fn turn_system_prompt(
          {respond_review}\
          \n\
          ## 字段要求\n\
-         - delegate：task_goal 写成完整、可独立执行的任务描述，包含对话中的必要细节（执行者看不到对话）；用户贴出的待处理内容要原样放进 task_goal。\n\
+         {goal_rule}\
          \u{20} 用户没说保存位置时，不要自行指定保存位置（保存到工作目录还是代码仓库由执行者决定）。\n\
          - clarify：question 只问最关键的一个问题。\n\
          - follow_up：填写 task_id、follow_up_kind（supplement 或 cancel），补充要求写在 change。\n\
@@ -177,6 +186,11 @@ pub fn turn_system_prompt(
          ## 进行中的任务\n{tasks}{corrections}",
         tools = info.tools,
         corrections = correction_section(examples),
+        goal_rule = if info.concise_goal {
+            GOAL_RULE_CONCISE
+        } else {
+            GOAL_RULE_DEFAULT
+        },
     )
 }
 
@@ -218,6 +232,7 @@ mod tests {
         TurnPromptInfo {
             tools: "- calculator：计算\n- current_time：时间".into(),
             review_mode: mode,
+            concise_goal: false,
         }
     }
 
