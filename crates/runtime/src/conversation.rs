@@ -218,17 +218,23 @@ fn to_decision(
                     raw.agent_op
                 ));
             };
+            // 撤销、列出与具体助手无关：模型多填的助手名直接清空，不当作格式错误（RT-AGCHAT-10）
+            let agent_id = if matches!(op, an_core::AgentOp::Undo | an_core::AgentOp::List) {
+                String::new()
+            } else {
+                raw.agent_id.clone()
+            };
             let candidates = agents.unwrap_or_default();
-            if !raw.agent_id.is_empty() && !candidates.iter().any(|c| c == &raw.agent_id) {
+            if !agent_id.is_empty() && !candidates.iter().any(|c| c == &agent_id) {
                 return Err(format!(
                     "agent_id `{}` 不在候选里；可选：{}（没说是哪个就填空字符串）",
-                    raw.agent_id,
+                    agent_id,
                     candidates.join(", ")
                 ));
             }
             Ok(TurnDecision::ManageAgents {
                 op,
-                agent_id: raw.agent_id.clone(),
+                agent_id,
                 role: an_core::Role::parse(&raw.agent_role),
             })
         }
