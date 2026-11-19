@@ -1,7 +1,7 @@
 [
   {
     "id": "conversation",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/conversation.md",
     "sources": [
       "web/src/App.tsx",
       "web/src/components/ChatView.tsx",
@@ -20,7 +20,7 @@
   },
   {
     "id": "tasks",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/tasks.md",
     "sources": [
       "web/src/components/TaskPanel.tsx",
       "web/src/components/TaskTicker.tsx",
@@ -38,7 +38,7 @@
   },
   {
     "id": "approval",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/approval.md",
     "sources": [
       "crates/runtime/src/policy.rs",
       "web/src/components/ChatView.tsx",
@@ -55,7 +55,7 @@
   },
   {
     "id": "assignment",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/tasks.md",
     "sources": [
       "crates/runtime/src/registry.rs",
       "crates/runtime/src/orchestrator.rs",
@@ -76,7 +76,7 @@
   },
   {
     "id": "cancellation",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/tasks.md",
     "sources": [
       "web/src/components/ConfirmButton.tsx",
       "crates/runtime/src/orchestrator.rs"
@@ -88,7 +88,7 @@
   },
   {
     "id": "observability",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/observability.md",
     "sources": [
       "web/src/components/DiagnosticsPanel.tsx",
       "web/src/diag.test.tsx",
@@ -101,7 +101,7 @@
   },
   {
     "id": "nodes",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/nodes.md",
     "sources": [
       "web/src/components/NodesPanel.tsx",
       "crates/server/tests/e2e.rs"
@@ -111,7 +111,7 @@
   },
   {
     "id": "feedback",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/observability.md",
     "sources": [
       "web/src/misroute.test.tsx",
       "crates/runtime/src/store.rs"
@@ -121,7 +121,7 @@
   },
   {
     "id": "tools-evals",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/research-and-tools.md",
     "sources": [
       "tools/dlp-egress/tests/test_review_m5.py",
       "tools/dlp-egress/tests/test_review_m3.py",
@@ -137,7 +137,7 @@
   },
   {
     "id": "egress",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/egress-dlp.md",
     "sources": [
       "crates/agents/src/egress.rs",
       "crates/llm/src/egress.rs",
@@ -168,7 +168,7 @@
   },
   {
     "id": "reports",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/research-and-tools.md",
     "sources": [
       "crates/agents/src/general.rs",
       "crates/agents/src/report.rs",
@@ -191,7 +191,7 @@
   },
   {
     "id": "templates",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/research-and-tools.md",
     "sources": [
       "crates/runtime/src/template.rs",
       "crates/llm/src/backend.rs"
@@ -357,7 +357,7 @@
   },
   {
     "id": "agent-links",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/runtime/src/link.rs",
       "crates/server/src/lib.rs",
@@ -369,7 +369,7 @@
   },
   {
     "id": "admission",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/routing-and-admission.md",
     "sources": [
       "crates/runtime/src/admission.rs",
       "crates/runtime/src/store.rs",
@@ -415,7 +415,7 @@
   },
   {
     "id": "git-evidence",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/git-evidence.md",
     "sources": [
       "crates/agents/src/util.rs",
       "crates/agents/tests/git_evidence.rs"
@@ -432,7 +432,7 @@
   },
   {
     "id": "http-host",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/observability.md",
     "sources": [
       "crates/server/src/host_guard.rs",
       "crates/server/src/main.rs",
@@ -461,7 +461,7 @@
   },
   {
     "id": "acp-discovery",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/agents/src/acp.rs",
       "crates/runtime/src/lib.rs",
@@ -479,7 +479,7 @@
   },
   {
     "id": "agent-catalog",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/agents/src/catalog.rs",
       "crates/agents/src/acp.rs",
@@ -504,7 +504,7 @@
   },
   {
     "id": "front-thinking",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/routing-and-admission.md",
     "sources": [
       "crates/runtime/src/conversation.rs",
       "crates/runtime/src/router.rs",
@@ -538,7 +538,7 @@
   },
   {
     "id": "agent-config",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/runtime/src/agent_config.rs",
       "crates/runtime/src/registry.rs",
@@ -568,7 +568,7 @@
   },
   {
     "id": "agent-ui",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "web/src/components/AgentsPanel.tsx",
       "web/src/components/AgentCards.tsx",
@@ -593,7 +593,7 @@
   },
   {
     "id": "agent-chat",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/runtime/src/conversation.rs",
       "crates/runtime/src/store.rs",
@@ -619,7 +619,7 @@
   },
   {
     "id": "agent-diagnose",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/agents/src/diagnose.rs",
       "crates/agents/src/catalog.rs",
@@ -644,7 +644,7 @@
   },
   {
     "id": "dlp-egress",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/egress-dlp.md",
     "sources": [
       "crates/agents/src/egress.rs",
       "crates/runtime/src/config.rs",
@@ -660,5 +660,23 @@
       "RT-DLP-05",
       "RT-DLP-06"
     ]
+  },
+  {
+    "id": "ops-desk",
+    "document": "docs/mom/OPS_DESK.md",
+    "sources": [
+      "crates/server/src/mom.rs",
+      "web/src/App.tsx",
+      "web/e2e/ops.spec.ts"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-OPSDESK",
+      "E2E-OPSDRAWER",
+      "E2E-OPSCHANNEL",
+      "E2E-OPSNOISE",
+      "E2E-OPSOFF"
+    ],
+    "runtime_cases": []
   }
 ]

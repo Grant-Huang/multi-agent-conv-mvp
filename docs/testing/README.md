@@ -1,6 +1,6 @@
 # 测试指南
 
-先读 [功能地图](FEATURE_MAP.md)、[方案审查与设计](DESIGN.md)、[端到端用例](CASES.md)，进度见 [计划](PLAN.md)。当前远端代码已与原快照不同，地图不把旧的未提交实现当作当前版本。
+先读 [功能地图](../feature-map/README.md)、[覆盖与证据](../feature-map/COVERAGE.md)、[方案审查与设计](DESIGN.md)、[端到端用例](CASES.md)，进度见 [计划](PLAN.md)。当前远端代码已与原快照不同，地图不把旧的未提交实现当作当前版本。
 
 ## 一次可重复的验证
 
