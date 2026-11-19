@@ -288,6 +288,18 @@ impl Engine {
 
     /// 比较候选方案（A 继续用、B 批后停机维修、C 立即停机维修）。只读，只用可观测状态。
     pub fn des_whatif(&self, simulation_id: &str, request: &WhatIfRequest) -> Result<Value> {
+        // 远程仿真（阶段⑤a-3）：用连接器最近交来的快照计算，与写入案例 `world.des` 的是同一份。
+        if let Some(remote) = self
+            .state
+            .des_simulations
+            .get(simulation_id)
+            .and_then(|s| s.remote.as_ref())
+        {
+            let o = remote.observation.as_ref().context(
+                "no observation from the simulated factory yet; advance the clock first",
+            )?;
+            return observe::whatif(o, request);
+        }
         let o = self
             .des_replay(simulation_id)?
             .observe(simulation_id, self.now());
