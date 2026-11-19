@@ -369,6 +369,8 @@ async fn rt_desc_09_the_shared_clock_advances_through_the_factory() {
     let c = client();
     let (state, connector) = mcp_state().await;
     let (url, task) = serve(state.clone()).await;
+    // 先取得 S1 案例，让共享时钟越过仿真起点（起点之前模拟工厂没有时钟，DES-27）。
+    s1_case(&c, &url).await;
     let (sim, source) = create_p0(&c, &url).await;
     assert_eq!(source, "mcp");
     let now0 = state.engine.lock().unwrap().now();

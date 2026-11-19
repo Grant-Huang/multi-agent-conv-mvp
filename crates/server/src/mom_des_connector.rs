@@ -12,6 +12,12 @@
 //! - 握手 10 秒、每次工具调用 30 秒超时；
 //! - 子进程设置 `kill_on_drop`，连接器被丢弃时一并结束；
 //! - 引擎锁只在同步调用引擎时短暂持有，等待模拟工厂时不持锁。
+//!
+//! 阶段⑤a-3（an-mom 接入，DES-28）：
+//! - 创建、推进、发写操作共用一把异步锁（`ops`），后台时钟与 HTTP 请求不会交错调用模拟工厂、弄乱事件游标；
+//!   观测工具调用不占这把锁；
+//! - 创建时把引擎的下一个编号传给模拟工厂，两边编号一致，重启后也不与旧仿真撞号；
+//! - 只推进、只发送本连接器创建的仿真；重启前留下的旧仿真及其待发写操作原样保留，不会卡住新仿真。
 
 use an_des::{tool_catalog, ToolCategory};
 use an_runtime::mom::des::remote::RemoteWrite;
@@ -64,6 +70,8 @@ pub struct DesConnector {
     agent_tools: BTreeSet<String>,
     sims: Mutex<BTreeMap<String, SimState>>,
     sent: Mutex<Vec<Value>>,
+    /// 创建、推进、发写操作的串行锁（阶段⑤a-3）。
+    ops: tokio::sync::Mutex<()>,
 }
 
 impl DesConnector {
@@ -119,6 +127,7 @@ impl DesConnector {
             agent_tools,
             sims: Mutex::new(BTreeMap::new()),
             sent: Mutex::new(vec![]),
+            ops: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -161,10 +170,15 @@ impl DesConnector {
         engine: &Mutex<Engine>,
         mut config: DesSimulationConfig,
     ) -> Result<String> {
-        config.scenario.start_minute = config.scenario.start_minute.max(lock(engine)?.now());
-        let created = self
-            .call("simulation_create", serde_json::to_value(&config)?)
-            .await?;
+        let _ops = self.ops.lock().await;
+        let requested = {
+            let e = lock(engine)?;
+            config.scenario.start_minute = config.scenario.start_minute.max(e.now());
+            e.des_next_simulation_id()
+        };
+        let mut args = serde_json::to_value(&config)?;
+        args["simulation_id"] = json!(requested);
+        let created = self.call("simulation_create", args).await?;
         let id = created["simulation_id"]
             .as_str()
             .context("factory returned no simulation id")?
@@ -199,6 +213,7 @@ impl DesConnector {
     /// 逐分钟推进到 `to_minute`：模拟工厂推进 → 拉取事件与快照 → 交给引擎 → 引擎推进。
     /// 任何一步失败都在交给引擎之前返回，引擎状态不变。
     pub async fn tick(&self, engine: &Mutex<Engine>, to_minute: u64) -> Result<()> {
+        let _ops = self.ops.lock().await;
         let sims: Vec<(String, SimState)> = self
             .sims
             .lock()
@@ -280,7 +295,24 @@ impl DesConnector {
 
     /// 发出引擎中待发的写操作，回执写回动作，并刷新受影响仿真的标准答案。返回本次收到的回执。
     pub async fn dispatch_writes(&self, engine: &Mutex<Engine>) -> Result<Vec<Value>> {
-        let pending = lock(engine)?.des_pending_writes();
+        let _ops = self.ops.lock().await;
+        // 只发本连接器创建的仿真的写操作：重启前的旧仿真在新的模拟工厂进程里不存在（RT-DESC-12）。
+        let own: BTreeSet<String> = self
+            .sims
+            .lock()
+            .map_err(|_| anyhow!("connector state"))?
+            .keys()
+            .cloned()
+            .collect();
+        let pending: Vec<RemoteWrite> = lock(engine)?
+            .des_pending_writes()
+            .into_iter()
+            .filter(|w| {
+                w.args["simulation_id"]
+                    .as_str()
+                    .is_some_and(|sim| own.contains(sim))
+            })
+            .collect();
         if pending.is_empty() {
             return Ok(vec![]);
         }

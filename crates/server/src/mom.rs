@@ -69,6 +69,19 @@ fn err(e: impl std::fmt::Display) -> (StatusCode, Json<Value>) {
         Json(json!({"error":e.to_string()})),
     )
 }
+/// 接了模拟工厂时的错误（阶段⑤a-3）：模拟工厂不在线（`E_DES_UNAVAILABLE`）返回 503 并带 `code`，
+/// 其他（参数错误、模拟工厂拒绝等）返回 400。
+pub(crate) fn des_error(e: anyhow::Error) -> (StatusCode, Json<Value>) {
+    let message = format!("{e:#}");
+    if message.contains(crate::mom_des_connector::E_DES_UNAVAILABLE) {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": message, "code": crate::mom_des_connector::E_DES_UNAVAILABLE})),
+        )
+    } else {
+        err(message)
+    }
+}
 fn run<T>(state: &AppState, f: impl FnOnce(&mut Engine) -> anyhow::Result<T>) -> ApiResult<T> {
     let mut e = state
         .engine
@@ -118,16 +131,45 @@ pub fn spawn_clock(state: AppState) -> tokio::task::JoinHandle<()> {
     })
 }
 
-/// 共享时钟走一步（后台时钟每秒调用一次；测试直接调用）。出错时暂停播放并返回错误。
-///
-/// 阶段⑤a-3 骨架：暂时只有进程内行为，接了模拟工厂时尚未经连接器推进（RT-DESC-09 预期失败）。
-pub async fn clock_step(state: &AppState) -> anyhow::Result<()> {
-    let mut engine = state
+fn lock_engine(state: &AppState) -> anyhow::Result<std::sync::MutexGuard<'_, Engine>> {
+    state
         .engine
         .lock()
-        .map_err(|_| anyhow::anyhow!("runtime unavailable"))?;
-    if let Err(error) = engine.playback_tick() {
-        let _ = engine.set_playback(false, 0);
+        .map_err(|_| anyhow::anyhow!("runtime unavailable"))
+}
+
+/// 共享时钟走一步（后台时钟每秒调用一次；测试直接调用）。出错时暂停播放并返回错误。
+///
+/// 接了模拟工厂时（阶段⑤a-3）：先补发待发写操作；播放中时经连接器推进一分钟（模拟工厂与引擎同步），
+/// 再运行子任务、扣减播放剩余分钟。等待模拟工厂时不持有引擎锁；每次调用有连接器的 30 秒超时兜底。
+pub async fn clock_step(state: &AppState) -> anyhow::Result<()> {
+    let Some(des) = state.des.clone() else {
+        let mut engine = lock_engine(state)?;
+        if let Err(error) = engine.playback_tick() {
+            let _ = engine.set_playback(false, 0);
+            return Err(error);
+        }
+        return Ok(());
+    };
+    let result: anyhow::Result<()> = async {
+        des.dispatch_writes(&state.engine).await?;
+        let next = {
+            let engine = lock_engine(state)?;
+            if !engine.playback_playing() {
+                return Ok(());
+            }
+            engine.now() + 1
+        };
+        des.tick(&state.engine, next).await?;
+        lock_engine(state)?.playback_finish_step()?;
+        des.dispatch_writes(&state.engine).await?;
+        Ok(())
+    }
+    .await;
+    if let Err(error) = result {
+        if let Ok(mut engine) = lock_engine(state) {
+            let _ = engine.set_playback(false, 0);
+        }
         return Err(error);
     }
     Ok(())
@@ -295,7 +337,39 @@ async fn command(
     Path(id): Path<String>,
     Json(cmd): Json<Command>,
 ) -> ApiResult<Value> {
-    run(&s, |e| {
+    let Some(des) = s.des.clone() else {
+        return run(&s, |e| apply_command(e, &id, cmd));
+    };
+    // 接了模拟工厂（阶段⑤a-3）：推进经连接器逐分钟进行，每分钟之后照旧运行子任务并发出写操作。
+    if let Command::Advance { minutes } = cmd {
+        let (start, end) = run(&s, |e| {
+            e.case(&id)?;
+            anyhow::ensure!(minutes <= 2880, "advance limit 48h");
+            Ok((e.now(), e.now() + minutes))
+        })?
+        .0;
+        for time in start..=end {
+            des.tick(&s.engine, time).await.map_err(des_error)?;
+            let _ = run(&s, |e| e.run_children())?;
+            des.dispatch_writes(&s.engine).await.map_err(des_error)?;
+        }
+        return run(&s, |e| e.human_view(&id));
+    }
+    // 其他命令照常在引擎中生效；之后立即发出审批执行产生的写操作，返回的案例已含回执。
+    let _ = run(&s, |e| apply_command(e, &id, cmd))?;
+    if let Err(e) = des.dispatch_writes(&s.engine).await {
+        // 命令已生效，写操作留在待发清单中，下一次命令或时钟步会重发（幂等键保证只生效一次）。
+        let (status, Json(mut body)) = des_error(e);
+        body["applied"] = json!(true);
+        return Err((status, Json(body)));
+    }
+    run(&s, |e| e.human_view(&id))
+}
+
+/// 在引擎中执行一条案例命令并返回案例的人类视图（进程内模式下 `advance` 也在这里）。
+fn apply_command(e: &mut Engine, id: &str, cmd: Command) -> anyhow::Result<Value> {
+    let id = id.to_string();
+    {
         e.case(&id)?;
         match cmd {
             Command::Advance { minutes } => {
@@ -327,7 +401,7 @@ async fn command(
             }
         }
         e.human_view(&id)
-    })
+    }
 }
 struct ModelFlight {
     active: Arc<Mutex<BTreeSet<String>>>,
