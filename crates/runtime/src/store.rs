@@ -17,6 +17,8 @@ use an_core::{
     TaskRecord, TaskResult, TaskStatus,
 };
 use anyhow::{anyhow, Context, Result};
+
+use crate::introspect::model::{IntrospectionFinding, IntrospectionJob, IntrospectionLabel};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
 /// 写线程一次最多提交多少条
@@ -137,6 +139,51 @@ CREATE TABLE IF NOT EXISTS admission_events (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_admission_events_agent ON admission_events(agent_id, created_at);
+-- 业务内省（INT）：只新建表，不改已有表；见 docs/memory/INTROSPECTION_PLAN.md 第 4 节
+CREATE TABLE IF NOT EXISTS introspection_jobs (
+    id TEXT PRIMARY KEY,
+    trigger TEXT NOT NULL,
+    state TEXT NOT NULL,
+    watermark_json TEXT NOT NULL,
+    input_hash TEXT NOT NULL,
+    lease_until TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    error TEXT
+);
+CREATE TABLE IF NOT EXISTS introspection_findings (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    json TEXT NOT NULL,
+    verification TEXT NOT NULL,
+    gate_score REAL,
+    gate_reason TEXT NOT NULL,
+    pushed INTEGER NOT NULL DEFAULT 0,
+    verdict TEXT,
+    verdict_note TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_findings_topic ON introspection_findings(topic, created_at);
+CREATE TABLE IF NOT EXISTS introspection_pushes (
+    id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    pushed_at TEXT NOT NULL,
+    read_at TEXT
+);
+CREATE TABLE IF NOT EXISTS introspection_labels (
+    id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS app_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 "#;
 
 fn tune(conn: &Connection) -> Result<()> {
@@ -884,6 +931,359 @@ impl Store {
             > 0)
     }
 
+    // ───────────── 业务内省（INT） ─────────────
+    // 只新建表、不改已有表；业务规则在 `crate::introspect`，这里只负责原子落库。
+
+    /// 抢一个运行租约：已有未过期的 running 任务则返回 None；否则新建 running 任务。
+    /// 整个“检查 + 新建”在同一个事务里，手动触发和定时触发撞车时只有一个能拿到。
+    pub fn introspection_acquire_job(
+        &self,
+        trigger: &str,
+        watermark_json: &str,
+        input_hash: &str,
+        lease_until: &str,
+    ) -> Result<Option<IntrospectionJob>> {
+        let mut conn = self.write();
+        let tx = conn.transaction()?;
+        let at = now();
+        let busy: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM introspection_jobs WHERE state = 'running' AND lease_until > ?1",
+            [&at],
+            |r| r.get(0),
+        )?;
+        if busy > 0 {
+            return Ok(None);
+        }
+        let job = IntrospectionJob {
+            id: an_core::new_id("intjob"),
+            trigger: trigger.into(),
+            state: "running".into(),
+            watermark_json: watermark_json.into(),
+            input_hash: input_hash.into(),
+            lease_until: Some(lease_until.into()),
+            started_at: at,
+            finished_at: None,
+            error: None,
+        };
+        tx.execute(
+            "INSERT INTO introspection_jobs
+             (id, trigger, state, watermark_json, input_hash, lease_until, started_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                job.id,
+                job.trigger,
+                job.state,
+                job.watermark_json,
+                job.input_hash,
+                job.lease_until,
+                job.started_at
+            ],
+        )?;
+        tx.commit()?;
+        Ok(Some(job))
+    }
+
+    /// 结束任务并释放租约；任务不存在返回 false。
+    pub fn introspection_finish_job(
+        &self,
+        id: &str,
+        state: &str,
+        error: Option<&str>,
+    ) -> Result<bool> {
+        Ok(self.write().execute(
+            "UPDATE introspection_jobs
+             SET state = ?2, error = ?3, finished_at = ?4, lease_until = NULL WHERE id = ?1",
+            params![id, state, error, now()],
+        )? > 0)
+    }
+
+    pub fn introspection_get_job(&self, id: &str) -> Result<Option<IntrospectionJob>> {
+        let _timer = ReadTimer::new("introspection_get_job");
+        let conn = self.read();
+        Ok(conn
+            .query_row(
+                "SELECT id, trigger, state, watermark_json, input_hash, lease_until,
+                        started_at, finished_at, error
+                 FROM introspection_jobs WHERE id = ?1",
+                [id],
+                |r| {
+                    Ok(IntrospectionJob {
+                        id: r.get(0)?,
+                        trigger: r.get(1)?,
+                        state: r.get(2)?,
+                        watermark_json: r.get(3)?,
+                        input_hash: r.get(4)?,
+                        lease_until: r.get(5)?,
+                        started_at: r.get(6)?,
+                        finished_at: r.get(7)?,
+                        error: r.get(8)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// 最近一次成功（done）任务的水位；失败、取消的任务不推进水位。
+    pub fn introspection_latest_watermark(&self) -> Result<Option<String>> {
+        let _timer = ReadTimer::new("introspection_latest_watermark");
+        let conn = self.read();
+        Ok(conn
+            .query_row(
+                "SELECT watermark_json FROM introspection_jobs WHERE state = 'done'
+                 ORDER BY started_at DESC, rowid DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// 把租约已过期仍为 running 的任务（上次崩溃遗留）标为 failed，返回条数。
+    pub fn introspection_fail_stale_jobs(&self) -> Result<usize> {
+        let at = now();
+        Ok(self.write().execute(
+            "UPDATE introspection_jobs
+             SET state = 'failed', error = 'interrupted: 进程中断，租约已过期',
+                 finished_at = ?1, lease_until = NULL
+             WHERE state = 'running' AND lease_until IS NOT NULL AND lease_until <= ?1",
+            [&at],
+        )?)
+    }
+
+    /// 写入结论；稳定 ID 已存在则不覆盖，返回是否新写入。
+    pub fn introspection_insert_finding(&self, f: &IntrospectionFinding) -> Result<bool> {
+        Ok(self.write().execute(
+            "INSERT INTO introspection_findings
+             (id, job_id, topic, json, verification, gate_score, gate_reason, pushed,
+              verdict, verdict_note, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(id) DO NOTHING",
+            params![
+                f.id,
+                f.job_id,
+                f.topic,
+                f.json,
+                f.verification,
+                f.gate_score,
+                f.gate_reason,
+                f.pushed as i64,
+                f.verdict,
+                f.verdict_note,
+                f.created_at,
+                f.updated_at
+            ],
+        )? > 0)
+    }
+
+    pub fn introspection_get_finding(&self, id: &str) -> Result<Option<IntrospectionFinding>> {
+        let _timer = ReadTimer::new("introspection_get_finding");
+        let conn = self.read();
+        Ok(conn
+            .query_row(
+                &format!("{FINDING_COLUMNS} WHERE id = ?1"),
+                [id],
+                finding_from_row,
+            )
+            .optional()?)
+    }
+
+    /// 按创建时间倒序；`topic` 为 None 时不过滤。
+    pub fn introspection_list_findings(
+        &self,
+        topic: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<IntrospectionFinding>> {
+        let _timer = ReadTimer::new("introspection_list_findings");
+        let conn = self.read();
+        let mut st = conn.prepare(&format!(
+            "{FINDING_COLUMNS} WHERE (?1 IS NULL OR topic = ?1)
+             ORDER BY created_at DESC, rowid DESC LIMIT ?2"
+        ))?;
+        let rows = st.query_map(params![topic, limit as i64], finding_from_row)?;
+        rows.map(|r| Ok(r?)).collect()
+    }
+
+    /// 记录发送闸门的打分和原因（推送或不推送都要记）。
+    pub fn introspection_set_gate(
+        &self,
+        id: &str,
+        score: f64,
+        reason: &str,
+        pushed: bool,
+    ) -> Result<bool> {
+        Ok(self.write().execute(
+            "UPDATE introspection_findings
+             SET gate_score = ?2, gate_reason = ?3, pushed = ?4, updated_at = ?5 WHERE id = ?1",
+            params![id, score, reason, pushed as i64, now()],
+        )? > 0)
+    }
+
+    /// 运营负责人的判断（confirmed / rejected）和原因。
+    pub fn introspection_set_verdict(&self, id: &str, verdict: &str, note: &str) -> Result<bool> {
+        Ok(self.write().execute(
+            "UPDATE introspection_findings
+             SET verdict = ?2, verdict_note = ?3, updated_at = ?4 WHERE id = ?1",
+            params![id, verdict, note, now()],
+        )? > 0)
+    }
+
+    /// 记录一次推送；同一条结论只推一次，已推过返回 None。
+    pub fn introspection_add_push(
+        &self,
+        finding_id: &str,
+        message_id: &str,
+    ) -> Result<Option<String>> {
+        let mut conn = self.write();
+        let tx = conn.transaction()?;
+        let exists: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM introspection_pushes WHERE finding_id = ?1",
+            [finding_id],
+            |r| r.get(0),
+        )?;
+        if exists > 0 {
+            return Ok(None);
+        }
+        let id = an_core::new_id("intpush");
+        tx.execute(
+            "INSERT INTO introspection_pushes (id, finding_id, message_id, pushed_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![id, finding_id, message_id, now()],
+        )?;
+        tx.commit()?;
+        Ok(Some(id))
+    }
+
+    pub fn introspection_unread_count(&self) -> Result<usize> {
+        let _timer = ReadTimer::new("introspection_unread_count");
+        let conn = self.read();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM introspection_pushes WHERE read_at IS NULL",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(n as usize)
+    }
+
+    /// 全部标为已读，返回本次标记的条数。
+    pub fn introspection_mark_all_read(&self) -> Result<usize> {
+        Ok(self.write().execute(
+            "UPDATE introspection_pushes SET read_at = ?1 WHERE read_at IS NULL",
+            [now()],
+        )?)
+    }
+
+    pub fn introspection_add_label(
+        &self,
+        finding_id: &str,
+        kind: &str,
+        note: &str,
+    ) -> Result<IntrospectionLabel> {
+        let l = IntrospectionLabel {
+            id: an_core::new_id("intlabel"),
+            finding_id: finding_id.into(),
+            kind: kind.into(),
+            note: note.into(),
+            created_at: now(),
+        };
+        self.write().execute(
+            "INSERT INTO introspection_labels (id, finding_id, kind, note, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![l.id, l.finding_id, l.kind, l.note, l.created_at],
+        )?;
+        Ok(l)
+    }
+
+    /// 某条结论的标注，按写入顺序。
+    pub fn introspection_labels(&self, finding_id: &str) -> Result<Vec<IntrospectionLabel>> {
+        let _timer = ReadTimer::new("introspection_labels");
+        let conn = self.read();
+        let mut st = conn.prepare(
+            "SELECT id, finding_id, kind, note, created_at FROM introspection_labels
+             WHERE finding_id = ?1 ORDER BY rowid",
+        )?;
+        let rows = st.query_map([finding_id], |r| {
+            Ok(IntrospectionLabel {
+                id: r.get(0)?,
+                finding_id: r.get(1)?,
+                kind: r.get(2)?,
+                note: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })?;
+        rows.map(|r| Ok(r?)).collect()
+    }
+
+    pub fn app_state_get(&self, key: &str) -> Result<Option<String>> {
+        let _timer = ReadTimer::new("app_state_get");
+        let conn = self.read();
+        Ok(conn
+            .query_row("SELECT value FROM app_state WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .optional()?)
+    }
+
+    pub fn app_state_set(&self, key: &str, value: &str) -> Result<()> {
+        self.write().execute(
+            "INSERT INTO app_state (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// 个人主窗口会话 ID（尚未创建返回 None）。
+    pub fn main_conversation_id(&self) -> Result<Option<String>> {
+        self.app_state_get(MAIN_CONVERSATION_KEY)
+    }
+
+    /// 取得唯一的个人主窗口会话；不存在时创建。无论调用多少次都只有一个：
+    /// “查状态 + 建会话 + 写状态”在同一个写事务里完成。
+    pub fn ensure_main_conversation(&self, title: &str) -> Result<Conversation> {
+        let mut conn = self.write();
+        let tx = conn.transaction()?;
+        let known: Option<String> = tx
+            .query_row(
+                "SELECT value FROM app_state WHERE key = ?1",
+                [MAIN_CONVERSATION_KEY],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(id) = known {
+            let found = tx
+                .query_row(
+                    "SELECT id, title, created_at FROM conversations WHERE id = ?1",
+                    [&id],
+                    |r| {
+                        Ok(Conversation {
+                            id: r.get(0)?,
+                            title: r.get(1)?,
+                            created_at: r.get(2)?,
+                        })
+                    },
+                )
+                .optional()?;
+            if let Some(c) = found {
+                return Ok(c);
+            }
+        }
+        let c = Conversation {
+            id: an_core::new_id("conv"),
+            title: title.into(),
+            created_at: now(),
+        };
+        tx.execute(
+            "INSERT INTO conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+            params![c.id, c.title, c.created_at],
+        )?;
+        tx.execute(
+            "INSERT INTO app_state (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![MAIN_CONVERSATION_KEY, c.id],
+        )?;
+        tx.commit()?;
+        Ok(c)
+    }
+
     // ───────────── agent 准入（E3） ─────────────
     // 记录与审计事件以 JSON 保存，结构由 `crate::admission` 定义；这里只负责原子落库。
 
@@ -1193,6 +1593,30 @@ fn check_feedback(feedback: &RoutingFeedback) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// 个人主窗口会话 ID 在 `app_state` 里的键
+const MAIN_CONVERSATION_KEY: &str = "main_conversation_id";
+
+const FINDING_COLUMNS: &str =
+    "SELECT id, job_id, topic, json, verification, gate_score, gate_reason,
+        pushed, verdict, verdict_note, created_at, updated_at FROM introspection_findings";
+
+fn finding_from_row(r: &Row) -> rusqlite::Result<IntrospectionFinding> {
+    Ok(IntrospectionFinding {
+        id: r.get(0)?,
+        job_id: r.get(1)?,
+        topic: r.get(2)?,
+        json: r.get(3)?,
+        verification: r.get(4)?,
+        gate_score: r.get(5)?,
+        gate_reason: r.get(6)?,
+        pushed: r.get::<_, i64>(7)? != 0,
+        verdict: r.get(8)?,
+        verdict_note: r.get(9)?,
+        created_at: r.get(10)?,
+        updated_at: r.get(11)?,
+    })
 }
 
 /// 数据库中保存的节点
@@ -1678,5 +2102,296 @@ mod tests {
         }
         assert_eq!(store.queued_ahead("a").unwrap(), 0);
         assert_eq!(store.queued_ahead("b").unwrap(), 1);
+    }
+
+    // ───────────── 业务内省（INT）存储层，S1 ─────────────
+    // 对应 docs/memory/ACCEPTANCE.md 的 RT-INT-09（幂等）、RT-INT-26/27 的存储部分。
+
+    const FUTURE: &str = "9999-12-31T00:00:00.000Z";
+    const PAST: &str = "2000-01-01T00:00:00.000Z";
+
+    fn finding(id: &str, json: &str) -> IntrospectionFinding {
+        IntrospectionFinding {
+            id: id.into(),
+            job_id: "job-1".into(),
+            topic: "adoption_pattern".into(),
+            json: json.into(),
+            verification: "supported".into(),
+            gate_score: None,
+            gate_reason: String::new(),
+            pushed: false,
+            verdict: None,
+            verdict_note: None,
+            created_at: "2026-01-01T00:00:00.000Z".into(),
+            updated_at: "2026-01-01T00:00:00.000Z".into(),
+        }
+    }
+
+    fn file_store(tag: &str) -> (std::path::PathBuf, Store) {
+        let dir = std::env::temp_dir().join(an_core::new_id(tag));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        (dir, store)
+    }
+
+    /// 同一时刻只能有一个运行租约；结束后可以再抢；租约过期的 running 任务不再挡路
+    #[test]
+    fn int_store_lease_is_exclusive_until_finished_or_expired() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let a = store
+            .introspection_acquire_job("schedule", "{}", "h1", FUTURE)
+            .unwrap()
+            .expect("第一次应拿到租约");
+        assert_eq!(a.state, "running");
+        assert_eq!(a.lease_until.as_deref(), Some(FUTURE));
+        assert!(
+            store
+                .introspection_acquire_job("manual", "{}", "h2", FUTURE)
+                .unwrap()
+                .is_none(),
+            "租约未过期时不能再抢"
+        );
+        assert!(store.introspection_finish_job(&a.id, "done", None).unwrap());
+        let done = store.introspection_get_job(&a.id).unwrap().unwrap();
+        assert_eq!(done.state, "done");
+        assert!(done.lease_until.is_none(), "结束后释放租约");
+        assert!(done.finished_at.is_some());
+        let b = store
+            .introspection_acquire_job("manual", "{}", "h2", PAST)
+            .unwrap();
+        assert!(b.is_some(), "上一个任务结束后可以再抢");
+        assert!(
+            store
+                .introspection_acquire_job("schedule", "{}", "h3", FUTURE)
+                .unwrap()
+                .is_some(),
+            "已过期租约的 running 任务不挡新任务"
+        );
+    }
+
+    /// 崩溃遗留的 running 且租约已过期的任务被标为 failed；租约有效的不动
+    #[test]
+    fn int_store_stale_running_jobs_become_failed() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let stale = store
+            .introspection_acquire_job("schedule", "{}", "h1", PAST)
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.introspection_fail_stale_jobs().unwrap(), 1);
+        let j = store.introspection_get_job(&stale.id).unwrap().unwrap();
+        assert_eq!(j.state, "failed");
+        assert!(j.error.unwrap_or_default().contains("interrupted"));
+        assert!(j.finished_at.is_some());
+        let live = store
+            .introspection_acquire_job("schedule", "{}", "h2", FUTURE)
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.introspection_fail_stale_jobs().unwrap(), 0);
+        assert_eq!(
+            store
+                .introspection_get_job(&live.id)
+                .unwrap()
+                .unwrap()
+                .state,
+            "running"
+        );
+    }
+
+    /// 水位只跟着成功的任务走：失败、取消的任务不推进，也不回退
+    #[test]
+    fn int_store_watermark_advances_only_on_done_jobs() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        assert_eq!(store.introspection_latest_watermark().unwrap(), None);
+        let j1 = store
+            .introspection_acquire_job("schedule", r#"{"mom":5}"#, "h1", FUTURE)
+            .unwrap()
+            .unwrap();
+        store
+            .introspection_finish_job(&j1.id, "done", None)
+            .unwrap();
+        let j2 = store
+            .introspection_acquire_job("schedule", r#"{"mom":9}"#, "h2", FUTURE)
+            .unwrap()
+            .unwrap();
+        store
+            .introspection_finish_job(&j2.id, "failed", Some("超时"))
+            .unwrap();
+        assert_eq!(
+            store.introspection_latest_watermark().unwrap().as_deref(),
+            Some(r#"{"mom":5}"#)
+        );
+        let failed = store.introspection_get_job(&j2.id).unwrap().unwrap();
+        assert_eq!(failed.error.as_deref(), Some("超时"));
+    }
+
+    /// RT-INT-09 存储部分：同一稳定 ID 重复写入不产生第二行，也不覆盖已有内容
+    #[test]
+    fn int_store_finding_insert_is_idempotent() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        assert!(store
+            .introspection_insert_finding(&finding("f1", r#"{"rate":0.6}"#))
+            .unwrap());
+        assert!(!store
+            .introspection_insert_finding(&finding("f1", r#"{"rate":0.1}"#))
+            .unwrap());
+        let all = store.introspection_list_findings(None, 10).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].json, r#"{"rate":0.6}"#);
+        assert_eq!(store.introspection_get_finding("nope").unwrap(), None);
+    }
+
+    /// 列表按创建时间倒序，可按主题过滤，受 limit 限制
+    #[test]
+    fn int_store_list_findings_orders_filters_and_limits() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        for (id, topic, at) in [
+            ("f1", "adoption_pattern", "2026-01-01T00:00:01.000Z"),
+            ("f2", "other_topic", "2026-01-01T00:00:02.000Z"),
+            ("f3", "adoption_pattern", "2026-01-01T00:00:03.000Z"),
+        ] {
+            let mut f = finding(id, "{}");
+            f.topic = topic.into();
+            f.created_at = at.into();
+            store.introspection_insert_finding(&f).unwrap();
+        }
+        let ids = |v: Vec<IntrospectionFinding>| v.into_iter().map(|f| f.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(store.introspection_list_findings(None, 10).unwrap()),
+            ["f3", "f2", "f1"]
+        );
+        assert_eq!(
+            ids(store
+                .introspection_list_findings(Some("adoption_pattern"), 10)
+                .unwrap()),
+            ["f3", "f1"]
+        );
+        assert_eq!(
+            ids(store.introspection_list_findings(None, 1).unwrap()),
+            ["f3"]
+        );
+    }
+
+    /// 闸门原因（推或不推都记）和运营负责人的判断都能写入并读回；不存在的 ID 返回 false
+    #[test]
+    fn int_store_gate_and_verdict_are_recorded() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        store
+            .introspection_insert_finding(&finding("f1", "{}"))
+            .unwrap();
+        assert!(store
+            .introspection_set_gate("f1", 3.5, "分数 3.5 低于阈值 4，不推送", false)
+            .unwrap());
+        let f = store.introspection_get_finding("f1").unwrap().unwrap();
+        assert_eq!(f.gate_score, Some(3.5));
+        assert_eq!(f.gate_reason, "分数 3.5 低于阈值 4，不推送");
+        assert!(!f.pushed);
+        assert!(store
+            .introspection_set_verdict("f1", "rejected", "样本太少")
+            .unwrap());
+        let f = store.introspection_get_finding("f1").unwrap().unwrap();
+        assert_eq!(f.verdict.as_deref(), Some("rejected"));
+        assert_eq!(f.verdict_note.as_deref(), Some("样本太少"));
+        assert!(!store
+            .introspection_set_gate("nope", 1.0, "x", false)
+            .unwrap());
+        assert!(!store
+            .introspection_set_verdict("nope", "confirmed", "")
+            .unwrap());
+    }
+
+    /// 运行时标注按写入顺序读回，互不覆盖
+    #[test]
+    fn int_store_labels_keep_order() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        store
+            .introspection_add_label("f1", "should_push", "很有用")
+            .unwrap();
+        store
+            .introspection_add_label("f1", "should_not_push", "")
+            .unwrap();
+        let kinds: Vec<_> = store
+            .introspection_labels("f1")
+            .unwrap()
+            .into_iter()
+            .map(|l| l.kind)
+            .collect();
+        assert_eq!(kinds, ["should_push", "should_not_push"]);
+        assert!(store.introspection_labels("other").unwrap().is_empty());
+    }
+
+    /// RT-INT-27 存储部分：未读数 2 → 标记后 0；重启后仍为 0；同一结论只推一次
+    #[test]
+    fn int_store_unread_counts_persist_across_restart() {
+        let (dir, store) = file_store("an-int-unread");
+        assert!(store.introspection_add_push("f1", "m1").unwrap().is_some());
+        assert!(store.introspection_add_push("f2", "m2").unwrap().is_some());
+        assert!(
+            store.introspection_add_push("f1", "m3").unwrap().is_none(),
+            "同一条结论不重复推送"
+        );
+        assert_eq!(store.introspection_unread_count().unwrap(), 2);
+        assert_eq!(store.introspection_mark_all_read().unwrap(), 2);
+        assert_eq!(store.introspection_unread_count().unwrap(), 0);
+        assert_eq!(
+            store.introspection_mark_all_read().unwrap(),
+            0,
+            "没有未读时标记不报错、条数为 0"
+        );
+        drop(store);
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        assert_eq!(store.introspection_unread_count().unwrap(), 0);
+        assert!(store.introspection_add_push("f3", "m4").unwrap().is_some());
+        assert_eq!(store.introspection_unread_count().unwrap(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// 普通聊天消息不计入内省未读数
+    #[test]
+    fn int_store_chat_messages_do_not_count_as_unread() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let c = store.create_conversation("普通").unwrap();
+        store.add_message(&c.id, "assistant", "你好", None).unwrap();
+        assert_eq!(store.introspection_unread_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn int_store_app_state_roundtrip_and_overwrite() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        assert_eq!(store.app_state_get("k").unwrap(), None);
+        store.app_state_set("k", "v1").unwrap();
+        store.app_state_set("k", "v2").unwrap();
+        assert_eq!(store.app_state_get("k").unwrap().as_deref(), Some("v2"));
+    }
+
+    /// RT-INT-26 存储部分：主窗口会话唯一；重复确保不新建；其他会话的增改不影响；重启后仍是它
+    #[test]
+    fn int_store_main_conversation_is_unique_and_stable() {
+        let (dir, store) = file_store("an-int-main");
+        store.create_conversation("普通 A").unwrap();
+        assert_eq!(store.main_conversation_id().unwrap(), None);
+        let before = store.list_conversations().unwrap().len();
+        let m1 = store.ensure_main_conversation("主窗口").unwrap();
+        let m2 = store.ensure_main_conversation("主窗口").unwrap();
+        assert_eq!(m1.id, m2.id, "只能有一个主窗口会话");
+        assert_eq!(store.list_conversations().unwrap().len(), before + 1);
+        assert_eq!(
+            store.main_conversation_id().unwrap().as_deref(),
+            Some(m1.id.as_str())
+        );
+        let other = store.create_conversation("普通 B").unwrap();
+        store.rename_conversation(&other.id, "改名").unwrap();
+        assert_eq!(
+            store.ensure_main_conversation("主窗口").unwrap().id,
+            m1.id,
+            "其他会话的增改不影响主窗口会话"
+        );
+        drop(store);
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        assert_eq!(
+            store.ensure_main_conversation("主窗口").unwrap().id,
+            m1.id,
+            "重启后仍是同一个会话"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
