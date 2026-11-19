@@ -298,6 +298,15 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-FT-19 | front-thinking | route_class_from_tools = true；模型给 coding、工具 []、类别 L4 | 类别保持 L4（只改 general） |
 | RT-FT-20 | front-thinking | route_class_from_tools 开与关各路由一次同一任务 | 两次发给模型的请求（schema 与提示词）完全相同 |
 
+### FT.6 前台不扩写任务描述（实现前定义，2026-11-19）
+
+开关 `[conversation] concise_task_goal`，默认 false。打开后，前台判断的系统提示词里关于 task_goal 的规则改为：只写用户明确提出的要求，可以把"那份文件"等指代补全成具体内容，不添加用户没提的要求（格式、技术选型、额外字段、日期等）；用户贴出的待处理内容仍原样放进 task_goal。只改提示词，不改 schema。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-FT-21 | front-thinking | 不写 concise_task_goal（基线） | turn_decision 的系统提示词仍是原来的 task_goal 规则（含"写成完整、可独立执行的任务描述"），没有"不要添加用户没有提出的要求" |
+| RT-FT-22 | front-thinking | concise_task_goal = true | 系统提示词含"不要添加用户没有提出的要求"、仍要求补全指代、仍要求贴出的内容原样放进 task_goal；turn_decision 的 schema 与关闭时相同 |
+
 ## 托管配置、热注册与撤销（AG.2，实现前定义）
 
 接口：`POST /api/agents/proposals`（只校验、不写入，返回提议与一次性确认凭证）、`POST /api/agents/proposals/{id}/apply {"token"}`。提议类型：add_preset、add_custom、set_default、disable、enable、remove、revert。托管文件放在数据库同目录的 `agents.managed.toml`。

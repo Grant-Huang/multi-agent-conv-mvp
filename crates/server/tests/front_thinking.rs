@@ -674,3 +674,46 @@ async fn rt_ft_20_class_from_tools_does_not_change_request() {
     }
     assert_eq!(reqs[0], reqs[1]);
 }
+
+// ───────────── FT.6：前台不扩写任务描述（RT-FT-21 ~ RT-FT-22） ─────────────
+
+const CONCISE: &str = "concise_task_goal = true";
+const CONCISE_RULE: &str = "不要添加用户没有提出的要求";
+
+/// 跑一次前台判断，返回发给模型的 turn_decision 请求
+async fn turn_request(conv_extra: &str) -> Value {
+    let llm = MockLlm::start(Arc::new(|_, _, _| turn_ok("写一份周报"))).await;
+    let rt = runtime(&llm.base, 0, "", conv_extra);
+    rt.conversation
+        .decide_turn(&user("写一份周报"), &[])
+        .await
+        .map_err(|e| e.to_string())
+        .unwrap();
+    llm.calls("turn_decision")[0].clone()
+}
+
+/// RT-FT-21：不写 concise_task_goal 时，task_goal 规则保持原样（基线守护）
+#[tokio::test]
+async fn rt_ft_21_concise_goal_off_keeps_prompt() {
+    let sys = system_prompt(&turn_request("").await);
+    assert!(sys.contains("写成完整、可独立执行的任务描述"), "{sys}");
+    assert!(!sys.contains(CONCISE_RULE), "{sys}");
+}
+
+/// RT-FT-22：打开后，提示词要求不扩写，但仍补全指代、仍原样放入贴出的内容；schema 不变
+#[tokio::test]
+async fn rt_ft_22_concise_goal_on_changes_prompt_only() {
+    let off = turn_request("").await;
+    let on = turn_request(CONCISE).await;
+    let sys = system_prompt(&on);
+    assert!(sys.contains(CONCISE_RULE), "{sys}");
+    assert!(sys.contains("指代"), "应要求补全指代：{sys}");
+    assert!(
+        sys.contains("原样放进 task_goal"),
+        "贴出的内容仍须原样放入：{sys}"
+    );
+    assert_eq!(
+        on["response_format"], off["response_format"],
+        "schema 不应改变"
+    );
+}
