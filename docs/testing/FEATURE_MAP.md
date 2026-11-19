@@ -79,6 +79,8 @@ R-FIRST-05：补充要求先完成 Router/Policy 校验，再取消旧任务并�
 R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不允许就地改写接入地址、角色、类型或并发。RT-ADM-18 为 Runtime 集成；`server/tests/admission.rs::active_agent_reactivation_returns_conflict_without_binding_or_event_changes` 为 HTTP 回归，验证重复 activate 返回 409 且记录、审计事件、注册卡片不变。证据见 [R-20261110-H1](evidence/r-20261110-h1.md)；不代表准入接口已经有身份认证或 endpoint 网络白名单。
 R-20261118-H1：PY-DLP-H1以真实evaluate管线验证路由字段下嵌套dict/list凭证BLOCK、客户Token化，以及漏分析字符串的fail closed。 证据见 [r-20261118-h1.md](evidence/r-20261118-h1.md)。
 
+R-20261118-M2：预检所有层级JSON键名（含路由对象），凭证或租户主数据命中时直接BLOCK，不回显原键、不写Vault。普通键与值处理保持。 PY-DLP-M2与原有Python全量/评测门槛验证；[证据](evidence/r-20261118-m2.md)。
+
 ## MOM 独立设计原型
 
 | Feature | 用户路径 | 验证及边界 |

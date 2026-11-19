@@ -137,6 +137,8 @@ class EgressService:
             return self._blocked("ambiguous_payload")
 
         # 2. 识别 + 逐实体动作
+        if req.json_body is not None and self._has_sensitive_json_keys(req.json_body, req.language):
+            return self._blocked("sensitive_json_key")
         fields: list[_Field] = []
         if req.text is not None:
             fields.append(self._analyze_field("", req.text, dest, req, routing_ranges=_text_routing_ranges(
@@ -196,6 +198,20 @@ class EgressService:
                 actions.append(self.policy.entity_action(dest.trust, e.type, req.constraints))
                 routing.append(False)
         return _Field(path, text, ents, actions, routing)
+
+    def _has_sensitive_json_keys(self, node, language) -> bool:
+        """Reject sensitive schema keys before values are rendered or stored in the Vault."""
+        if isinstance(node, dict):
+            for key, value in node.items():
+                text = str(key)
+                entities = self.detector.detect(text, language or detect_language(text))
+                if any(e.type == "SECRET" or e.source == "master_data" for e in entities):
+                    return True
+                if self._has_sensitive_json_keys(value, language):
+                    return True
+        elif isinstance(node, list):
+            return any(self._has_sensitive_json_keys(value, language) for value in node)
+        return False
 
     def _collect_json(self, node, path, fields, dest, req) -> None:
         """遍历 JSON：键名与非字符串值保持不变；路由键的值整体视为路由字段。"""

@@ -127,11 +127,12 @@
       "tools/websearch/README.md",
       "tools/dlp-egress/README.md",
       "crates/server/src/bin/eval.rs",
-      "tools/dlp-egress/tests/test_review_h1.py"
+      "tools/dlp-egress/tests/test_review_h1.py",
+      "tools/dlp-egress/tests/test_review_m2.py"
     ],
     "coverage": "backend",
     "cases": [],
-    "note": "R-20261118-M3：PY-DLP-M3为Python evaluate端到端测试；证据见docs/testing/evidence/r-20261118-m3.md，不计入Rust或浏览器用例。"
+    "note": "R-20261118-M3：PY-DLP-M3为Python evaluate端到端测试；证据见docs/testing/evidence/r-20261118-m3.md，不计入Rust或浏览器用例。 PY-DLP-M2为Python evaluate端到端；证据见docs/testing/evidence/r-20261118-m2.md。"
   },
   {
     "id": "egress",
