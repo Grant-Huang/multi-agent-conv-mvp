@@ -1,6 +1,6 @@
 # 系统打通计划：从“三块各自完整”到“完整系统 + 整体场景 E2E”
 
-状态：**草案（助手建议）**。方案取舍尚未经你确认；确认后的决定再记入 [DECISIONS.md](DECISIONS.md)。缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)，场景清单见 [SCENARIOS.md](feature-map/SCENARIOS.md)。
+状态：**WP1 方案已确认并在实施中**（决定见 [DECISIONS.md](DECISIONS.md) 第 56–58 条）；其余工作包仍是助手建议，开工前需用户确认。**执行级任务卡**：运营桌面 [mom/OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md)，WP1 其余部分 [mom/WP1_TASKS.md](mom/WP1_TASKS.md)，其余工作包见本文第五节。缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)，场景清单见 [SCENARIOS.md](feature-map/SCENARIOS.md)。
 按 AGENTS.md：涉及 `orchestrator.rs` / `store.rs` / `registry.rs` / `acp.rs` / `util.rs` 的工作包，动手前先单独出方案并等你批准；每个工作包新增行为先在 `docs/testing/CASES.md` 定稿用例并见到业务断言 Red。
 
 ## 一、目标与“完成”的定义
@@ -115,7 +115,9 @@ sequenceDiagram
 | `docs/testing/CASES.md`、`features.json`、`docs/feature-map/*` | 新用例 `E2E-MOMLOOP*`、`RT-MOMCHAT-*` 等 | 低 |
 | `orchestrator.rs` / `store.rs` / `registry.rs` | **预计不改**（`add_message_with_card` 已存在） | 若评审发现必须改，先停下单独出方案 |
 
-### 3.6 需要你先定的 4 件事（见下方对话提问）
+### 3.6 需要你先定的 4 件事（**已确认**，保留作记录）
+
+确认结果：方案 A；案例卡不固定在某个会话，只在需要时推送，另设专属运营频道（`ops-channel`）和最小只读运营桌面；批准身份用本机 fixture 身份、卡片上显示批准人；DES 先进程内，连接器 L4 随后。
 
 1. 集成方式：A / B / C。
 2. 案例卡落点：固定“运营会话”？当前会话？每案例一个会话？
@@ -126,6 +128,16 @@ sequenceDiagram
 
 真实 MES/EAM 连接；让会话模型直接审批/执行；把 MOM 重写进 Task 模型（除非选 B）；多用户权限体系；DES 参数标定。
 
+### 3.8 进度（与 PLAN.md 同步）
+
+| 阶段 | 状态 | 说明 |
+|---|---|---|
+| 运营桌面/频道 D0a、D0b | 已完成（#118、#121） | 发布器、频道卡、未读 |
+| D1 桌面看板 | 未开始 | 任务卡见 OPS_DESK_TASKS §3–§5 |
+| L0、L1 | 未开始 | 任务卡见 WP1_TASKS |
+| L2 | 并入 D2 | 批准在运营卡上，需先确认 4 个问题 |
+| L3、L4 | 未开始 | L4 先出方案 |
+
 ## 四、风险与回滚
 
 | 风险 | 缓解 | 回滚 |
@@ -134,3 +146,43 @@ sequenceDiagram
 | 通知刷屏（DES 高频报警） | 协同事项归并已有（同线 60 分钟）；卡片只对 `WAITING_HUMAN` 生成，同案例只更新不新增 | 同上 |
 | 模型把仿真当真实 | 工具输出强制 `provenance`/`limitations`，回答模板要求标注；E2E 断言 | 工具集可按配置关闭 |
 | 引入死胡同状态 | 卡片对每种终态/失败都有文案与出口；纳入 E2E | — |
+
+## 五、其余工作包的任务卡概要（接手前必读）
+
+通用规则：每张卡做之前，先把本节概要补写成与 [OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md) 同粒度的卡片（文件路径、接口、先写的用例、命令），**发给用户确认后再动手**；一张卡一个 PR；通用流程、完成的定义、环境坑见 OPS_DESK_TASKS 第 2 节。下表“先读”的文件必须实际打开读过，不要凭本文描述写代码。
+
+### WP0 E2E 底座（不碰高风险文件，可优先）
+| 卡 | 做什么 | 先读 | 验收 |
+|---|---|---|---|
+| WP0-1 | harness 支持“同一数据库重启”：杀掉服务进程，用同一个 `db_path` 再起，返回新实例 | `web/e2e/harness.mjs`（当前配置写在 `configText`，端口 18787，数据目录是临时目录） | 新用例：建会话 → 重启 → 会话与消息仍在 |
+| WP0-2 | coding 助手用的临时 git 仓库夹具（`[agents.coding] enabled=true`，工作目录指向临时仓库） | `harness.mjs` 里 `[agents.coding] enabled=false` 的位置；`crates/agents/src/coding.rs` | 夹具能让 coding 助手改文件并产出 diff 证据 |
+| WP0-3 | 审查助手“先不过、后通过”的模拟（ACP mock 的回复可配置） | `harness.mjs` 的 `mockAcp`、环境变量 `AN_MOCK_ACP_REPLY` | 审查 fail → 返工 → pass 可在 E2E 里重现 |
+| WP0-4 | 节点模拟（`[nodes]` 下一个假节点） | `crates/node`、`web/src/components` 的 NodesPanel | 节点面板出现假节点并可删除 |
+| WP0-5 | 修正 `docs/DESIGN.md` §15 过时描述 | §15 全文 | 描述与代码一致，评审通过 |
+
+### WP2 审查“需人工”的出口（**高风险：orchestrator.rs/store.rs，必须先出方案并经用户批准；弱 agent 不得直接实施**）
+方案要写：状态拆分（待批准 / 待验收）、迁移写法（参考 `store.rs` 补列）、验收通过/退回返工的接口、回滚。用例：GS3。
+
+### WP3 现有功能整链 E2E（不碰高风险文件）
+按 `docs/feature-map/SCENARIOS.md` 的 S05/S06/S08/S10 逐个补：每个场景一个 `web/e2e/*.spec.ts` 用例，断言跨两个模块以上；依赖 WP0-2/0-3。先读 `web/e2e/features.spec.ts` 的写法，复用其辅助函数。
+
+### WP4 任务拆分与模板执行（**高风险：orchestrator.rs，先出方案；依赖 WP2**）
+### WP5 反馈闭环与会话摘要/知识接入
+先读 `docs/DESIGN.md` 反馈章节，并用 `rg -ln eval` 找评测相关代码（仓库里没有 `crates/eval`，根目录有 `evals/`）；反馈 → 评测集必须**人工确认**后才入库；配置变更要留痕到 DECISIONS。方案是否触碰 `store.rs` 在出方案时确认。
+### WP6 准入界面与认证；外发保证范围；观测统一
+准入已有后端（`crates/server/tests/admission.rs`）；先做“界面 + 认证”的方案；外发“保证范围”写文档并加出口审计用例（`crates/server/tests/egress.rs` 为基线）。
+### WP7 重启语义（**高风险：store.rs/orchestrator.rs，先出方案；依赖 WP0-1**）
+要写清：待批准保持、运行中任务续跑或明确失败原因；当前行为是 `fail_interrupted_tasks`（启动时把中断任务标 FAILED，见 `runtime/src/lib.rs::assemble`）。
+### WP8 整体验收
+6 个黄金场景合并回归，真实模型/真实 ACP 的人工清单，CI 接入。只在前面全部完成后做。
+
+## 六、容易踩的坑（累积，发现新的请追加）
+
+1. **决策编号撞号**：多会话并行时 `DECISIONS.md` 编号被占用；推送前 `fetch` 确认，改号要连带改引用。
+2. **浏览器用例环境**：`PLAYWRIGHT_BROWSERS_PATH=$HOME/Library/Caches/ms-playwright`；各 spec 端口不同（harness 18787、ops 18791、新增的用 18792 起往后），不要复用。
+3. **推送**：直连优先，失败再用 git 配置的代理 `127.0.0.1:7897`；先从远端同步再继续。
+4. **钩子**：提交走正常钩子，不绕过；`cargo fmt --all` 要在推送前跑（CI 的 rust 检查会 `--check`）。
+5. **check-map**：E2E 用例 id 仅大写字母；表格行必须有同名测试，草稿写 bullet。
+6. **引擎时间是仿真分钟**，发布器时间是墙钟秒；测试夹具里不要写死绝对时间，批准要赶在证据过期之前。
+7. **本机特有失败**：`an-server --test admission::rt_adm_14_admission_http_end_to_end` 本机失败、CI 通过。
+8. **用户的未跟踪文件**（`AgentNexus_统一外发脱敏服务_技术方案.md`、`evals/reports/`、`test_data_set/`）不要提交或删除。
