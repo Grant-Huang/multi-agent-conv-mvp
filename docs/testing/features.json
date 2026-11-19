@@ -339,7 +339,7 @@
       "RT-DESC-04",
       "RT-DESC-05"
     ],
-    "note": "阶段⑤a-1：模拟工厂服务（an-des）与 MCP stdio 服务（an-des-mcp）已实现；阶段⑤a-2：AgentNexus 侧连接器与引擎远程仿真模式（RT-DESC-01～05）实现前 Red。参数为建模假设（台账 M27、M28）。"
+    "note": "阶段⑤a-1：模拟工厂服务（an-des）与 MCP stdio 服务（an-des-mcp）；阶段⑤a-2：AgentNexus 侧连接器与引擎远程仿真模式（RT-DESC-01～05），均已实现；an-mom 接入为下一步。参数为建模假设（台账 M27、M28）。"
   },
   {
     "id": "agent-links",
