@@ -936,6 +936,10 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 10. DLP 审计日志落盘：由 AgentNexus 拉起时 DLP 的 stderr 不保存，DLP 侧 `dlp.evaluate` 日志目前看不到
 9. 重识别风险：稀有指标组合、跨请求关联的评估与缓解（设计文档第 11 节第 8 项）
 
+## 系统打通与整体场景 E2E（草案，待用户确认）
+
+目标、工作包顺序与首个工作包“DES-MOM-会话闭环”的方案选项见 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)；缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)。方案经用户确认前不改代码。
+
 ---
 
 ## 业务内省（INT）
