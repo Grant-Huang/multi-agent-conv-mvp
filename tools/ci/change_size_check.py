@@ -227,18 +227,42 @@ def count_test_markers(diff: str) -> tuple[int, int]:
     return added, removed
 
 
+def is_test_path(path: str) -> bool:
+    """是否像测试文件：弱化 / assert 净减少只在这些路径上计。
+
+    避免策略脚本、文档里出现 `.skip(` / `#[ignore]` 字样时自触发阻断。
+    """
+    p = path.replace("\\", "/")
+    base = p.rsplit("/", 1)[-1]
+    if "/tests/" in f"/{p}/" or p.startswith("tests/"):
+        return True
+    if base.startswith("test_") and base.endswith(".py"):
+        return True
+    if base.endswith(("_test.rs", "_test.py", ".spec.ts", ".spec.tsx", ".test.ts", ".test.tsx")):
+        return True
+    if base.endswith("_test.go"):
+        return True
+    return False
+
+
 def count_weaken_signals(diff: str) -> tuple[int, int, int]:
-    """返回 (弱化标记新增数, assert 新增数, assert 删除数)。"""
+    """返回 (弱化标记新增数, assert 新增数, assert 删除数)；只统计测试路径。"""
     weaken_added = assert_added = assert_removed = 0
     in_hunk = False
+    current: str | None = None
     for line in diff.splitlines():
         if line.startswith("diff --git "):
             in_hunk = False
+            current = None
+            # diff --git a/path b/path
+            parts = line.split(" ")
+            if len(parts) >= 4 and parts[3].startswith("b/"):
+                current = parts[3][2:]
             continue
         if line.startswith("@@"):
             in_hunk = True
             continue
-        if not in_hunk:
+        if not in_hunk or not current or not is_test_path(current):
             continue
         if line.startswith("+"):
             body = line[1:]

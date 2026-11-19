@@ -132,6 +132,33 @@ def test_missing_scope_or_case_id_warns_for_code_changes():
     assert cs.evaluate([fc("docs/a.md", 5)], None)["status"] == "pass"
 
 
+def test_is_test_path():
+    assert cs.is_test_path("tools/ci/tests/test_change_size_check.py")
+    assert cs.is_test_path("crates/runtime/tests/mom_des.rs")
+    assert cs.is_test_path("web/src/ui.test.tsx")
+    assert not cs.is_test_path("tools/ci/change_size_check.py")
+    assert not cs.is_test_path("docs/fencing/EVAL_LOOP.md")
+
+
+def test_count_weaken_signals_ignores_non_test_paths():
+    # 策略脚本自身新增含 `.skip(` 的正则，不应计为测试弱化。
+    diff = (
+        "diff --git a/tools/ci/change_size_check.py b/tools/ci/change_size_check.py\n"
+        "--- a/tools/ci/change_size_check.py\n"
+        "+++ b/tools/ci/change_size_check.py\n"
+        "@@ -1 +1,2 @@\n"
+        "+WEAKEN = re.compile(r'.skip(')\n"
+        "diff --git a/tools/ci/tests/test_x.py b/tools/ci/tests/test_x.py\n"
+        "--- a/tools/ci/tests/test_x.py\n"
+        "+++ b/tools/ci/tests/test_x.py\n"
+        "@@ -1 +1,2 @@\n"
+        "+    it.skip('x', () => {})\n"
+    )
+    weaken, a_add, a_del = cs.count_weaken_signals(diff)
+    assert weaken == 1
+    assert a_add == 0 and a_del == 0
+
+
 def test_count_test_markers_ignores_diff_headers():
     diff = (
         "diff --git a/crates/x.rs b/crates/x.rs\n"

@@ -35,10 +35,12 @@ jobs:
     steps:
       # actions/checkout@v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      # 版本由仓库根 rust-toolchain.toml 固定；action 仅负责安装。
+      # 钉死版本（与 rust-toolchain.toml 一致）。钉到 commit SHA 时必须显式传 toolchain，
+      # 否则 action 报 'toolchain' is a required input。
       # dtolnay/rust-toolchain@master（2026-11 pin）
       - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
         with:
+          toolchain: "1.100.0"
           components: rustfmt, clippy
       # Swatinem/rust-cache@v2
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
