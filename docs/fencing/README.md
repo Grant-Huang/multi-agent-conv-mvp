@@ -5,6 +5,7 @@
 
 | 文件 | 内容 |
 |---|---|
+| [PREFLIGHT.md](PREFLIGHT.md) | 提交 / 开 PR 前自检（命令与 PR 正文）；`AGENTS.md` 入口 |
 | [BRANCH_PROTECTION.md](BRANCH_PROTECTION.md) | 阶段 0：master 分支保护（脚本与核对） |
 | [BOT_IDENTITY.md](BOT_IDENTITY.md) | 阶段 2：开发 Agent 独立身份与人批准 |
 | [SHADOW_REVIEW.md](SHADOW_REVIEW.md) | 阶段 2：合并前 AI 审查影子模式 |
@@ -13,3 +14,4 @@
 | [REVIEW_VERDICT_DESIGN.md](REVIEW_VERDICT_DESIGN.md) | 阶段 4：审查进待人工的通过/退回设计（未改 orchestrator） |
 
 原则：**指导不是安全边界**。`AGENTS.md` 里的禁止事项必须靠 CI、分支保护、权限和运行时强制。
+提交前先按 [PREFLIGHT.md](PREFLIGHT.md) 自检，再 push。
