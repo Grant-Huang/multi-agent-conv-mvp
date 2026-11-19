@@ -613,7 +613,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 
 说明：原草案里 E2E-OPSNOISE 的“大量 P2 读数不进频道”改写为“同一案例重复观测只更新原卡”。原因：进程内 MOM 目前没有纯过程读数（每次观测都会让案例的计划失效），纯 P2 要等 DES 事件接入后才有；P2 的分级由 RT-OPSDESK-01 覆盖。这是实现前的改写，不是为迎合实现改断言。
 
-Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_opsdesk_NN_`）。D0a（后端）的 01–05、08 已写成可执行测试并取得 Red，见 `docs/testing/evidence/ops-desk-d0a-red.md`；06、07 属于 D1，实现前仍是草案。
+Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_opsdesk_NN_`）。D0a（后端）的 01–05、08 已写成可执行测试；D0b 的 09 已绿；D1-1 的 06、07 已写成可执行测试并转绿，见 `docs/testing/evidence/ops-desk-d1-1-red.md`。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -623,10 +623,11 @@ Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_ops
 | RT-OPSDESK-04 | ops-desk | 不同的 `[mom]` 配置文本 | 解析配置 | 未配置时开关关闭；打开开关时合并窗口默认 60 秒、每小时上限默认 10；显式配置值被采用；无未知字段 |
 | RT-OPSDESK-05 | ops-desk | 合并窗口 60 秒；另一组每小时上限 2 张、5 个待批准案例 | 窗口内更新案例；一次 tick 处理 5 个案例 | 窗口内不更新，并记录原因 `merge_window`，窗口后才更新原卡；上限内发 2 张卡，其余 3 个并入唯一一张汇总卡，记录原因 `hourly_cap`，没有案例被静默丢弃 |
 | RT-OPSDESK-08 | ops-desk | 主库 | 用固定 id 创建会话两次，中间写入消息 | id 为固定值；第二次不改标题和创建时间，不清空消息，会话只有一条 |
+| RT-OPSDESK-06 | ops-desk | 一个待批准案例，发布器未 tick | 对同一案例调用 `open_case` 两次，再 tick；对不存在的案例调用 | 两次返回同一非空消息 id；频道里该案例只有一张卡；tick 后消息条数不变；不存在的案例错误以 `E_CASE_NOT_FOUND` 开头 |
+| RT-OPSDESK-07 | ops-desk | 零案例引擎；另造待批准、受阻、已关闭各一 | 调用 `desk_view` | 零案例 `state=no_data`；有案例时 `state=ok`，`rows[0]` 待批准、`rows[1]` 受阻、已完成最后；`strip` 计数一致；每行 `provenance=simulation` 且 case_id 都在引擎里；结果确定 |
 | RT-OPSDESK-09 | ops-desk | 发布器（文件库），先后发出几张卡 | 查看未读、批准已发卡的案例、再发新卡、标记已读、重启 | 无消息时未读为 0；每张新卡、汇总卡各加 1；就地更新原卡不增加；标记已读后为 0；已读位置重启后仍在 |
 
-- RT-OPSDESK-06（D1）：`open-in-channel` 幂等：重复调用返回同一条消息 id；案例不存在时返回明确错误。
-- RT-OPSDESK-07（D1）：桌面读模型与引擎一致：排序按风险和时限，已完成不置顶；数据标注来源为模拟；未知、过期、无数据分别表示，不写成“正常”。
+说明：RT-OPSDESK-06/07 属 D1-1，测试函数 `rt_opsdesk_06_open_in_channel_is_idempotent`、`rt_opsdesk_07_desk_view_matches_engine`；证据见 `docs/testing/evidence/ops-desk-d1-1-red.md`。
 
 说明：原草案 RT-OPSDESK-03 的“不进入记忆抽取”本期无法验证——仓库里还没有个人记忆抽取模块（见 `docs/memory/` 的缺口 G-9）。这里改为断言消息带结构化案例卡，日后的抽取器按卡片类型跳过即可；等记忆模块出现时再补断言。原 RT-OPSDESK-04 的“无桌面接口和发布器”属于服务层，放到 D0b 的服务端测试。
 

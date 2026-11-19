@@ -357,7 +357,7 @@ impl OpsPublisher {
     }
 }
 
-fn stage_label(stage: &str) -> &'static str {
+pub(crate) fn stage_label(stage: &str) -> &'static str {
     match stage {
         "WAITING_HUMAN" => "待批准",
         "BLOCKED" => "受阻",
@@ -370,6 +370,16 @@ fn stage_label(stage: &str) -> &'static str {
     }
 }
 
+/// 与运营卡同一标题；桌面读模型复用，避免两处各写一份。
+pub(crate) fn case_title(case: &Case) -> String {
+    let what = if case.scenario == "s2" {
+        "客户投诉"
+    } else {
+        "产线多扰动"
+    };
+    format!("{what}：{}", case.asset)
+}
+
 fn card_for(case: &Case, level: OpsLevel) -> an_core::ChatCard {
     let level = if needs_human(&case.stage) {
         OpsLevel::P0
@@ -377,14 +387,9 @@ fn card_for(case: &Case, level: OpsLevel) -> an_core::ChatCard {
         level
     };
     let approver = case.approvals.values().next().map(|a| a.approver.clone());
-    let what = if case.scenario == "s2" {
-        "客户投诉"
-    } else {
-        "产线多扰动"
-    };
     an_core::ChatCard::OpsCase {
         case_id: case.id.clone(),
-        title: format!("{what}：{}", case.asset),
+        title: case_title(case),
         level: level.as_str().into(),
         stage: case.stage.clone(),
         summary: format!(
@@ -396,5 +401,47 @@ fn card_for(case: &Case, level: OpsLevel) -> an_core::ChatCard {
         approver,
         provenance: "simulation".into(),
         updated_at: case.updated_at,
+    }
+}
+
+impl OpsPublisher {
+    /// 把案例卡发到运营频道（用户在桌面点“在频道中处理”）。已有卡就返回已有消息 id，不重复发。
+    /// 绕过小时上限与合并窗口（是用户主动动作），但仍写入 ops_cases 记录，之后的 tick 照常就地更新这张卡。
+    /// 案例不存在返回 Err，错误信息以 "E_CASE_NOT_FOUND" 开头。
+    pub fn open_case(&self, engine: &Engine, case_id: &str, now_secs: u64) -> Result<String> {
+        let case = engine
+            .case(case_id)
+            .map_err(|_| anyhow::anyhow!("E_CASE_NOT_FOUND: case {case_id} does not exist"))?;
+        self.store
+            .ensure_conversation(OPS_CHANNEL_ID, OPS_CHANNEL_TITLE)?;
+        let existing: Option<String> = self
+            .db
+            .query_row(
+                "SELECT message_id FROM ops_cases WHERE case_id=?1",
+                [case_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        if let Some(mid) = existing {
+            return Ok(mid);
+        }
+        let card = card_for(case, OpsLevel::P0);
+        let content = format!("[模拟] 运营案例 {case_id}（详情见卡片）");
+        let msg = self
+            .store
+            .add_message_with_card(OPS_CHANNEL_ID, "assistant", &content, &card)?;
+        self.db.execute(
+            "INSERT INTO ops_cases(case_id,message_id,last_posted_at,dirty,level,summarized,last_seq)
+             VALUES(?1,?2,?3,0,'P0',0,0)
+             ON CONFLICT(case_id) DO UPDATE SET
+               message_id=excluded.message_id,
+               last_posted_at=excluded.last_posted_at,
+               dirty=0,
+               level='P0',
+               summarized=0",
+            params![case_id, msg.id, now_secs],
+        )?;
+        Ok(msg.id)
     }
 }

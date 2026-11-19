@@ -965,5 +965,6 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 
 - [x] **D0a 后端**（2026-11-19）：事件分级、运营频道发布器、`[mom]` 配置、`Store::ensure_conversation`、`ChatCard::OpsCase/OpsSummary`；RT-OPSDESK-01～05、08 转绿。尚未接入服务进程，开关默认关闭。
 - [x] **D0b 服务与前端**（2026-11-19）：服务端按开关启动发布器并挂未读接口 `/api/mom/desk/unread`、`/read`；会话列表出现运营频道，渲染案例卡与汇总卡，未读角标；RT-OPSDESK-09、E2E-OPSCHANNEL、OPSOFF 转绿；E2E-OPSNOISE 的频道部分通过，桌面部分等 D1。证据见 `testing/evidence/ops-desk-d0b.md`。
-- [ ] **D1 桌面看板**：E2E-OPSDESK、OPSDRAWER，RT-OPSDESK-06、07。执行级任务卡（D1-1 运行时读模型、D1-2 服务端接口、D1-3 前端）见 `mom/OPS_DESK_TASKS.md`；其余工作包任务卡见 `INTEGRATION_PLAN.md` 第五节、`mom/WP1_TASKS.md`。
+- [x] **D1-1 运行时读模型**（2026-11-19）：`desk_view` + `OpsPublisher::open_case`；RT-OPSDESK-06、07 转绿。证据见 `testing/evidence/ops-desk-d1-1-red.md`。
+- [ ] **D1-2 服务端接口**、**D1-3 前端桌面**：E2E-OPSDESK、OPSDRAWER、OPSNOISE。执行级任务卡见 `mom/OPS_DESK_TASKS.md`；其余工作包见 `INTEGRATION_PLAN.md` 第五节、`mom/WP1_TASKS.md`。
 - [ ] **D2 卡片批准联动**、**D3 任务/资源入口与 MCP 连接器回归**。
