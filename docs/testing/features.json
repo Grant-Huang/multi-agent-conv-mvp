@@ -145,7 +145,24 @@
     ],
     "coverage": "backend",
     "cases": [],
-    "runtime_cases": ["RT-EGR-01", "RT-EGR-02", "RT-EGR-03", "RT-EGR-04", "RT-EGR-05", "RT-EGR-06", "RT-EGR-07", "RT-EGR-08", "RT-EGR-09", "RT-EGR-10", "RT-EGR-11", "RT-EGR-12", "RT-EGR-13", "RT-EGR-14", "RT-EGR-15", "RT-EGR-16"]
+    "runtime_cases": [
+      "RT-EGR-01",
+      "RT-EGR-02",
+      "RT-EGR-03",
+      "RT-EGR-04",
+      "RT-EGR-05",
+      "RT-EGR-06",
+      "RT-EGR-07",
+      "RT-EGR-08",
+      "RT-EGR-09",
+      "RT-EGR-10",
+      "RT-EGR-11",
+      "RT-EGR-12",
+      "RT-EGR-13",
+      "RT-EGR-14",
+      "RT-EGR-15",
+      "RT-EGR-16"
+    ]
   },
   {
     "id": "reports",
@@ -278,7 +295,9 @@
       "RT-DES-27",
       "RT-DES-28",
       "RT-DES-29",
-      "RT-DES-31"
+      "RT-DES-31",
+      "RT-DES-32",
+      "RT-DES-33"
     ],
     "note": "阶段①～④与③b 已实现；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。RT-DES-22/23 为 engine_link.rs 中的单元测试（重放计数与缓存共享），不计入 runtime 集成测试映射。RT-DES-30 属于 des-factory。"
   },

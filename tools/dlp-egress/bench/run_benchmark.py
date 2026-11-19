@@ -31,6 +31,9 @@ from agentnexus_dlp.models import ALLOW, ANONYMIZE, BLOCK, REVIEW, EvaluateReque
 from agentnexus_dlp.service import EgressService, ServiceConfig
 
 DECISIONS = [ALLOW, ANONYMIZE, REVIEW, BLOCK]
+# 这些原因说明服务在识别之前就 BLOCK 了（不返回实体），这样的行不计入实体指标，只计入决策指标
+PRE_DETECTION_REASONS = {"destination_unknown", "invalid_channel", "payload_too_large", "purpose_not_allowed",
+                         "empty_payload", "ambiguous_payload", "internal_error_fail_closed"}
 MASTER_TYPES = ("CUSTOMER", "PROJECT", "PLANT", "PERSON")
 TENANT, ACTOR = "bench-tenant", "bench-actor"
 
@@ -126,6 +129,7 @@ def _run(svc: EgressService, rows: list[dict], mode: str) -> dict:
     latencies: list[float] = []
     failures: list[dict] = []
     errors = 0
+    unscored = 0
 
     for row in rows:
         src = row["source_text"]
@@ -137,8 +141,10 @@ def _run(svc: EgressService, rows: list[dict], mode: str) -> dict:
         if "internal_error_fail_closed" in res.reason_codes:
             errors += 1
 
-        # ---- 实体（严格匹配 type,start,end）
-        gold = {(e["type"], e["start"], e["end"]) for e in row["entities"]}
+        # ---- 实体（严格匹配 type,start,end）；识别前就 BLOCK 的行不计入
+        skip_entities = bool(PRE_DETECTION_REASONS.intersection(res.reason_codes))
+        unscored += int(skip_entities)
+        gold = set() if skip_entities else {(e["type"], e["start"], e["end"]) for e in row["entities"]}
         pred = {(e.type, e.start, e.end) for e in res.entities}
         for t in {g[0] for g in gold} | {p[0] for p in pred}:
             g_t, p_t = {x for x in gold if x[0] == t}, {x for x in pred if x[0] == t}
@@ -236,6 +242,7 @@ def _run(svc: EgressService, rows: list[dict], mode: str) -> dict:
         "rows": len(rows),
         "errors": errors,
         "entities": {"micro": prf(tp, fp, fn), "macro_f1": round(macro_f1, 4), "per_type": per_type,
+                     "unscored_rows": unscored,
                      "per_language": {k: prf(*v) for k, v in sorted(lang_counts.items())},
                      "boundary_near_miss": boundary_near_miss},
         "decisions": {"accuracy": round(correct / len(rows), 4), "confusion": confusion,
@@ -267,6 +274,7 @@ def to_markdown(reports: list[dict], meta: dict) -> str:
         lines += [f"## 口径 {r['mode']}", "",
                   "| 指标 | 结果 |", "|---|---|",
                   f"| 样本 / 异常 | {r['rows']} / {r['errors']} |",
+                  f"| 识别前即 BLOCK、不计入实体指标的行 | {e.get('unscored_rows', 0)} |",
                   f"| 实体 micro P / R / F1 | {e['micro']['precision']} / {e['micro']['recall']} / {e['micro']['f1']} |",
                   f"| 实体 macro F1 | {e['macro_f1']} |",
                   f"| 决策准确率 | {d['accuracy']} |",

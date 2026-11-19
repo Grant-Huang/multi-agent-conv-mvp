@@ -106,12 +106,28 @@ class Detector:
             meta = r.recognition_metadata or {}
             source = meta.get("source", "rule")
             candidates.append((r.entity_type, r.start, r.end, r.score, source))
+        candidates += propagate_secrets(norm, candidates)
         merged = merge_spans(candidates)
         out = []
         for etype, start, end, score, source in merged:
             o_start, o_end = map_span(index_map, start, end)
             out.append(DetectedEntity(type=etype, start=o_start, end=o_end, score=round(score, 3), source=source))
         return out
+
+
+def propagate_secrets(text: str, candidates) -> list[tuple]:
+    """凭证值传播：某个值一旦被识别为凭证（通常在 key=value 处），文中其他位置的同一个值也按凭证处理。
+
+    典型情况：“api_key=XXXX；……备注里又写了 XXXX”。只传播不少于 8 个字符的值，避免短串误伤。
+    """
+    values = {text[s:e] for t, s, e, _, _ in candidates if t == "SECRET" and e - s >= 8}
+    extra = []
+    for v in values:
+        start = text.find(v)
+        while start >= 0:
+            extra.append(("SECRET", start, start + len(v), 0.9, "rule"))
+            start = text.find(v, start + 1)
+    return extra
 
 
 def merge_spans(candidates):

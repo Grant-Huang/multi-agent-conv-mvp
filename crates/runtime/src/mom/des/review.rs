@@ -443,6 +443,9 @@ pub struct HumanReview {
     pub reason: String,
     pub actor: String,
     pub at: u64,
+    /// 这条结论针对的 AI 审核版本（R-20261118-M1）。旧快照中没有此字段时为 None。
+    #[serde(default)]
+    pub ai_version: Option<u64>,
 }
 
 /// 一个 DES 案例的审核记录。存放在快照的 `des_reviews` 中，与案例分开，不进入 agent 视图，
@@ -520,18 +523,12 @@ fn lock(engine: &Mutex<Engine>) -> Result<std::sync::MutexGuard<'_, Engine>> {
         .map_err(|_| anyhow::anyhow!("runtime unavailable"))
 }
 
-/// 在引擎锁外调用审核模型（有超时），把结果或降级原因记入审核记录，返回审核报告。
+/// 调用审核模型并校验输出，返回要写入审核记录的 AI 审核结果。不接触引擎，可以在锁外 await。
 ///
 /// - 每次调用受 `timeout` 限制；模型报错时重试一次，超时或输出不合规不重试（设计文档 §8.3）。
-/// - 调用期间不持有引擎锁；超时后 future 被丢弃（取消），不会留下后台任务。
-/// - 降级时 `ai.status = "unavailable"`，`reason` 写明 `timeout` / `model error` / `invalid_output`，规则检查照常。
-pub async fn run_ai_review(
-    engine: &Mutex<Engine>,
-    case_id: &str,
-    reviewer: &dyn Reviewer,
-    timeout: Duration,
-) -> Result<Value> {
-    let input = lock(engine)?.des_ai_review_input(case_id)?;
+/// - 超时后 future 被丢弃（取消），不会留下后台任务。
+/// - 降级时 `status = "unavailable"`，`reason` 写明 `timeout` / `model error` / `invalid_output`。
+pub async fn call_reviewer(input: &Value, reviewer: &dyn Reviewer, timeout: Duration) -> Value {
     let evidence_ids: BTreeSet<String> = input["evidence_ids"]
         .as_array()
         .into_iter()
@@ -573,8 +570,7 @@ pub async fn run_ai_review(
             ),
         },
     };
-    let mut e = lock(engine)?;
-    let record = serde_json::json!({
+    serde_json::json!({
         "status": status,
         "reason": reason,
         "conclusions": conclusions,
@@ -583,10 +579,22 @@ pub async fn run_ai_review(
         "source": choice.source,
         "independent": choice.independent,
         "label": choice.label,
-        "at": e.now(),
-    });
-    e.store_review(case_id, |r| r.ai = Some(record))?;
-    e.des_review_report(case_id)
+    })
+}
+
+/// 准备输入 → 锁外调用审核模型 → 写回结果，返回审核报告。
+///
+/// 两段需要引擎的计算各自短暂加锁；调用模型期间不持有引擎锁。HTTP 入口不直接用它，
+/// 而是把两段加锁计算放进阻塞线程（`mom_sim::ai_review`，R-20261118-L1）。
+pub async fn run_ai_review(
+    engine: &Mutex<Engine>,
+    case_id: &str,
+    reviewer: &dyn Reviewer,
+    timeout: Duration,
+) -> Result<Value> {
+    let input = lock(engine)?.des_ai_review_input(case_id)?;
+    let result = call_reviewer(&input, reviewer, timeout).await;
+    lock(engine)?.des_record_ai_review(case_id, result)
 }
 
 impl Engine {
@@ -749,6 +757,22 @@ impl Engine {
         })
     }
 
+    /// 写入一次 AI 审核结果（`call_reviewer` 的返回值），版本号加一，返回审核报告。
+    pub fn des_record_ai_review(&mut self, case_id: &str, mut result: Value) -> Result<Value> {
+        let at = self.now();
+        self.store_review(case_id, |r| {
+            let version =
+                r.ai.as_ref()
+                    .and_then(|a| a["version"].as_u64())
+                    .unwrap_or(0)
+                    + 1;
+            result["version"] = serde_json::json!(version);
+            result["at"] = serde_json::json!(at);
+            r.ai = Some(result);
+        })?;
+        self.des_review_report(case_id)
+    }
+
     /// 审核报告：规则检查结果、AI 审核记录、人工结论与分歧记录。
     ///
     pub fn des_review_report(&self, case_id: &str) -> Result<Value> {
@@ -765,6 +789,20 @@ impl Engine {
             .get(case_id)
             .cloned()
             .unwrap_or_default();
+        // 人工结论只对它针对的 AI 审核版本有效（R-20261118-M1）：`human` 只显示针对当前版本的最新结论，
+        // 历史中每条标明是否适用于当前版本。
+        let current = review.ai.as_ref().and_then(|a| a["version"].as_u64());
+        let applies = |h: &HumanReview| current.is_some() && h.ai_version == current;
+        let human = review.human.iter().rev().find(|h| applies(h)).cloned();
+        let history: Vec<Value> = review
+            .human
+            .iter()
+            .map(|h| {
+                let mut v = serde_json::to_value(h).unwrap_or_default();
+                v["applies_to_current_ai"] = serde_json::json!(applies(h));
+                v
+            })
+            .collect();
         Ok(serde_json::json!({
             "case_id": case_id,
             "simulation_id": record.simulation_id,
@@ -772,8 +810,8 @@ impl Engine {
             "rules": rules,
             "claims": review.claims,
             "ai": review.ai.unwrap_or_else(|| serde_json::json!({"status": "not_run"})),
-            "human": review.human.last(),
-            "human_history": review.human,
+            "human": human,
+            "human_history": history,
             "disagreements": review.disagreements,
         }))
     }
@@ -843,22 +881,36 @@ impl Engine {
             decision == "agree" || !reason.is_empty(),
             "overriding the AI review requires a reason"
         );
+        // 人工结论针对某一次 AI 审核（R-20261118-M1）：没有 AI 审核时既不能同意也不能推翻；
+        // AI 审核降级（不可用）时不能同意。
+        self.des_case_simulation(case_id)?;
+        let ai = self
+            .state
+            .des_reviews
+            .get(case_id)
+            .and_then(|r| r.ai.clone())
+            .context("no AI review to agree with or override; run the AI review first")?;
+        ensure!(
+            decision == "override" || ai["status"] == "completed",
+            "cannot agree: the AI review is {}",
+            ai["status"].as_str().unwrap_or("not completed")
+        );
+        let version = ai["version"].as_u64();
         let at = self.now();
         let entry = HumanReview {
             decision: decision.into(),
             reason: reason.into(),
             actor: actor.into(),
             at,
+            ai_version: version,
         };
         self.store_review(case_id, |r| {
             if decision == "override" {
-                let ai =
-                    r.ai.clone()
-                        .unwrap_or_else(|| serde_json::json!({"status": "not_run"}));
                 r.disagreements.push(serde_json::json!({
                     "at": at,
                     "actor": actor,
                     "reason": reason,
+                    "ai_version": version,
                     "ai_status": ai["status"],
                     "ai_summary": ai["summary"],
                 }));
