@@ -73,6 +73,8 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/agents/catalog", get(agent_catalog))
         .route("/api/agents/probe", post(probe_agent))
         .route("/api/agents/diagnose", post(diagnose_agent))
+        .route("/api/agents/diagnose/preview", post(diagnose_preview))
+        .route("/api/agents/diagnose/send", post(diagnose_send))
         .route("/api/agents/config", get(agent_config_view))
         .route("/api/agents/proposals", post(propose_agent_change))
         .route(
@@ -249,6 +251,57 @@ async fn diagnose_agent(
         .await
         .map(Json)
         .ok_or_else(|| not_found(&format!("可排查的 ACP agent `{}`", req.id)))
+}
+
+/// 排查第 4 层的请求体：出问题的助手和帮手。多余字段直接拒绝
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DiagnosePreviewRequest {
+    id: String,
+    helper: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DiagnoseSendRequest {
+    consent_id: String,
+    consent_token: String,
+}
+
+/// 排查第 4 层的错误 → HTTP 状态码
+fn diagnose_send_error(e: an_runtime::agent_diagnose::DiagnoseSendError) -> AppError {
+    use an_runtime::agent_diagnose::DiagnoseSendError as E;
+    let status = match &e {
+        E::NotFound(_) => StatusCode::NOT_FOUND,
+        E::Conflict(_) => StatusCode::CONFLICT,
+        E::BadToken(_) => StatusCode::FORBIDDEN,
+        E::Expired(_) => StatusCode::GONE,
+        E::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
+        E::Failed(_) => StatusCode::BAD_GATEWAY,
+    };
+    AppError(status, e.to_string())
+}
+
+/// 排查第 4 层：生成预览（将发送的完整内容、目的地和一次性同意凭证）。不发送任何东西
+async fn diagnose_preview(
+    State(rt): State<AppState>,
+    Json(req): Json<DiagnosePreviewRequest>,
+) -> ApiResult<an_core::DiagnosePreview> {
+    rt.diagnose_preview(&req.id, &req.helper)
+        .await
+        .map(Json)
+        .map_err(diagnose_send_error)
+}
+
+/// 排查第 4 层：凭同意凭证发送一次（发送服务端保存的那份内容），返回还原后的帮手回复
+async fn diagnose_send(
+    State(rt): State<AppState>,
+    Json(req): Json<DiagnoseSendRequest>,
+) -> ApiResult<an_core::DiagnoseSendResult> {
+    rt.diagnose_send(&req.consent_id, &req.consent_token)
+        .await
+        .map(Json)
+        .map_err(diagnose_send_error)
 }
 
 /// 握手检测的请求体：只接受 agent id。多余字段（例如 command）直接拒绝，不会被执行。

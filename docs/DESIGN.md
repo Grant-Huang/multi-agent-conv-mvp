@@ -773,7 +773,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 启动 | `server.started`、`log.file`、`log.file_unavailable`、`agent.registered`、`agent.detected`、`agent.not_installed`、`pool.resolved`、`pool.invalid`、`config.unknown_key`、`task.interrupted`、`llm.connected`、`llm.unreachable` | 启动时的状态和配置问题 |
 | 对话 | `conversation.turn`、`conversation.reply`、`conversation.reply_stream_failed`、`conversation.reply_failed`、`conversation.config` | 每轮对话一条（决策、角色、任务、尝试次数、耗时）；直接回答的生成（是否流式、字数、耗时）；启动时的审查模式 |
 | 模型 | `llm.request_failed`、`llm.format_retry`、`llm.structured_failed`、`llm.structured_ok`（debug 级别） | 请求失败、格式不合格重试、最终失败 |
-| Agent 排查 | `agent.diagnose`、`agent.diagnose_unmatched` | 一次排查（分类、命中的结论数）；没有命中任何规则时只记分类和错误输出的长度，不记内容 |
+| Agent 排查 | `agent.diagnose`、`agent.diagnose_unmatched`、`agent.diagnose_sent` | 一次排查（分类、命中的结论数）；没有命中任何规则时只记分类和错误输出的长度，不记内容；第 4 层发给帮手时记帮手、内容摘要和长度（`task_id` 为 DLP 映射的作用域），不记内容 |
 | Agent 配置 | `agent.config_proposed`、`agent.config_applied`、`agent.config_reverted`、`agent.config_rejected`、`agent.managed_invalid`、`agent.env_missing` | 托管配置的提议、确认、撤销、被拒（凭证错误 / 过期）；托管文件读取失败；托管 agent 引用的环境变量没有设置 |
 | 前台提速 | `llm.escalated`、`route.risk_raised` | 不思考的判断可疑、开思考重判一次（`schema`、`reason`：format / high_risk / no_agent、`fast_ms`、`total_ms`）；规则把路由风险调高 |
 | HTTP入口 | `http.host_rejected` | Host 校验拒绝时记录 WARN，带 `code=E_HTTP_HOST`、`method`、不含查询串且最多200字符的 `path` 摘要、最多100字符的首个 `host` 摘要；请求尚无任务，`task_id` 为空。不记录请求体或其他请求头；独立 MOM 使用 `logs/an-mom.jsonl.*` |
@@ -786,7 +786,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | ACP | `acp.permission`、`acp.finished`、`acp.handshake_failed`、`acp.runtime_error`、`acp.timeout` | |
 | Agent 目录 | `agent.probe` | 通过 `/api/agents/probe` 做的一次握手检测：`agent_id`、分类 `kind`、是否已注册 |
 | 质检 | `review.verdict`、`review.failed` | |
-| 外发检查 | `egress.started`、`egress.evaluate`、`egress.blocked`、`egress.guard_unavailable`、`egress.restore_unavailable`、`config.egress` | 每次判定一条 `egress.evaluate`（决策、原因码、request_id、耗时，不含正文）；enforce 拦截时 `egress.blocked`（WARN）；DLP 不可用 ERROR；启动时外发路径未登记 `config.egress`（WARN）。见 `docs/mcp/DLP_EGRESS_DEPLOYMENT.md` |
+| 外发检查 | `egress.started`、`egress.evaluate`、`egress.blocked`、`egress.guard_unavailable`、`egress.restore_unavailable`、`egress.revoked`、`egress.revoke_failed`、`config.egress` | 每次判定一条 `egress.evaluate`（决策、原因码、request_id、耗时，不含正文）；enforce 拦截时 `egress.blocked`（WARN）；DLP 不可用 ERROR；启动时外发路径未登记 `config.egress`（WARN）。见 `docs/mcp/DLP_EGRESS_DEPLOYMENT.md`。`egress.revoked` / `egress.revoke_failed`：AG.5 排查用完后撤销 Token 映射的结果 |
 | 节点（AgentNexus 侧） | `discovery.found`、`discovery.removed`、`discovery.unavailable`、`node.paired`、`node.pair_failed`、`node.unpaired`、`node.online`、`node.offline`、`node.auth_failed`、`node.run_start`、`node.run_end` | 上线 / 离线只在状态变化时记录，避免刷屏 |
 | 节点（节点侧） | `node.advertised`、`node.advertise_failed`、`node.code_rotated`、`node.paired`、`node.pair_failed`、`node.auth_failed`、`node.busy`、`node.run_start`、`node.run_end`、`node.run_failed`、`node.run_cancelled`、`node.state_save_failed` | |
 
@@ -904,7 +904,9 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | POST | `/api/nodes/pair` | 配对 `{"address", "code"}`；地址可以只写 IP，会自动补成 `http://IP:7788` |
 | GET | `/api/agents/catalog` | 预设 agent 目录：用途、安装步骤、登录方式、依赖说明，以及本机状态（未安装 / 已安装未注册 / 已注册）和连接状态（AG.1，只读） |
 | POST | `/api/agents/probe` | 握手检测 `{"id"}`（只接受 id，多余字段返回 422）：目录内或已注册的 ACP agent；结果分类 ok / not_installed / needs_login / missing_dependency / handshake_failed / timeout；其他 id 返回 404。超时 10 秒，同一 agent 不并发，全局最多 2 个（AG.1，只读） |
-| POST | `/api/agents/diagnose` | 排查（AG.5 第 1、2 层）`{"id"}`：先握手检测，再做只读的本机体检（服务 / 登录 shell 能否找到命令、需要时 `node --version`、凭证文件是否存在），按已知问题规则给出大白话结论和修复步骤。只运行写死的命令（每条 5 秒超时、按进程组清理），登录 shell 检查只对目录预设命令做；不读凭证内容；不外发 |
+| POST | `/api/agents/diagnose` | 排查（AG.5 第 1～3 层）`{"id"}`：先握手检测，再做只读的本机体检（服务 / 登录 shell 能否找到命令、需要时 `node --version`、凭证文件是否存在），按已知问题规则给出大白话结论和修复步骤。只运行写死的命令（每条 5 秒超时、按进程组清理），登录 shell 检查只对目录预设命令做；不读凭证内容；不外发。结果里附诊断包 `package`（第 3 层）：本机确定性处理（家目录换成 `~`、用户名和主机名替换、环境变量只留名字）；开启了 `[egress]`（audit 或 enforce）时再经 DLP 检查（渠道 clipboard，真实工具尚未支持该渠道时按"未经检查"给出本机处理版本），用完即撤销；没配置时照样给出并注明"未经外发脱敏检查" |
+| POST | `/api/agents/diagnose/preview` | 排查第 4 层 `{"id","helper"}`：帮手必须是已注册、已启用、已连通、不是出问题的那个 ACP 助手（否则 409 / 404）；必须开启了 `[egress]`（audit 或 enforce，复用同一个外发检查守卫；不论哪种模式，这里都只在 `ready_to_send` 时发送）。把诊断包交给 DLP 评估（渠道 agent、目的地 `agent:<帮手>`），只有 `ready_to_send` 才返回预览：将发送的完整内容（固定说明 + 脱敏文本，一字不差）、目的地说明和一次性同意凭证（5 分钟有效）。DLP 拦下、要求人工、不可用都返回 409 和大白话原因。这一步不发送 |
+| POST | `/api/agents/diagnose/send` | 排查第 4 层 `{"consent_id","consent_token"}`：凭证错误 403、已用过或不存在 404、过期 410、正在发送另一次 409。发送服务端保存的那份内容：用帮手配置另起临时实例，权限一律拒绝、空的临时工作目录、不进任务队列，单次 120 秒（超时 504），全局同时 1 个。回复用 DLP 还原（context local_ui）后只用于显示；结束后撤销映射 |
 | GET | `/api/agents/config` | 托管配置概况（AG.3，只读）：托管内容、能否撤销、config.toml 里写了的 agent 和角色、当前执行组、托管文件读取错误 |
 | POST | `/api/agents/proposals` | 提议修改 agent 配置（AG.2）：`{"kind": "add_preset" / "add_custom" / "set_default" / "disable" / "enable" / "remove" / "revert", ...}`。只校验不写入，返回说明、警告、修改前后的托管文件内容和一次性确认凭证（10 分钟有效）。与 config.toml 冲突、没有可撤销版本、托管文件损坏时返回 409；请求不合格（例如环境变量写了明文值、执行组类型不一致）返回 422 |
 | POST | `/api/agents/proposals/{id}/apply` | 确认提议 `{"token"}`：凭证错误 403、过期 410；成功后写入托管文件 `agents.managed.toml`（数据库同目录，保留 10 个历史版本）并立即生效，返回新接入 agent 的握手检测结果 |
@@ -943,6 +945,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | | `stream_replies` | true | 直接回答时边生成边显示 |
 | | `agent_management` | false | AG.4 对话里管理助手（"把 Cursor 接进来"等）。会给前台判断加上 manage_agents 和三个枚举字段，评测达标前保持关闭 |
 | | `risk_rules` | false | 前台提速实验 B：路由后按关键词把风险只升不降（见 PLAN 的 FT 一节） |
+| | `route_class_questions` | false | 前台提速实验 FT.5（Q）：路由回答 `needs_data_tools`（计算、查时间、列出或读取工作目录文件、联网搜索算；保存结果的 write_file 不算）和 `needs_document` 两个是/否问题，由代码算出 L1–L4（否否 L1、是否 L2、否是 L3、是是 L4）。`RouteDecision` 和 Policy 不变；与是否思考无关 |
 | `[backends.<名>]` | `front_structured_thinking` / `front_reason_first` / `front_thinking_escalation` | 不写 | 前台判断不思考；不思考时先写依据（A）；可疑时开思考重判一次（D）。A、D 只在关思考时生效 |
 | `[agents.general]` | `max_steps` / `max_concurrent` / `workspace_dir` | 6 / 4 / `workspace/files` | |
 | `[agents.general]` | `report_max_searches` / `report_parallel` | 6 / 3 | 研究报告（见 9.5）：检索去重后上限；同时写作的章节数 |

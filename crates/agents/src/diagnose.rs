@@ -478,8 +478,163 @@ pub fn rules(probe: &ProbeOutcome, c: &Checkup, ctx: &RuleContext) -> Vec<Findin
     out
 }
 
+// ───────────────────────── 第 3 层：诊断包 ─────────────────────────
+
+/// 组装诊断包需要的信息
+pub struct PackageInput<'a> {
+    pub id: &'a str,
+    pub name: &'a str,
+    pub command: &'a str,
+    pub args: &'a [String],
+    /// 环境变量的名字（不带值）
+    pub env_names: Vec<String>,
+    pub probe: &'a ProbeOutcome,
+    pub checks: &'a [CheckItem],
+    pub findings: &'a [Finding],
+}
+
+/// 诊断包全文（已做本机确定性处理，见 [`scrub_local`]）。
+/// 只包含排查需要的信息：助手、启动命令、检测结果、体检、已知原因、系统和版本；环境变量只列名字
+pub fn package_text(input: &PackageInput) -> String {
+    let mut out = String::new();
+    out.push_str("AgentNexus 诊断包（助手接入失败）\n");
+    out.push_str(&format!("助手：{}（{}）\n", input.name, input.id));
+    let mut cmd = input.command.to_string();
+    for a in input.args {
+        cmd.push(' ');
+        cmd.push_str(a);
+    }
+    out.push_str(&format!("启动命令：{cmd}\n"));
+    out.push_str(&format!(
+        "环境变量（只列名字）：{}\n",
+        if input.env_names.is_empty() {
+            "无".to_string()
+        } else {
+            input.env_names.join("、")
+        }
+    ));
+    out.push_str(&format!(
+        "检测结果：{}\n",
+        serde_json::to_value(input.probe.kind)
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default()
+    ));
+    out.push_str(&format!("说明：{}\n", input.probe.summary));
+    if let Some(d) = &input.probe.detail {
+        out.push_str(&format!("错误详情：{d}\n"));
+    }
+    out.push_str("本机体检：\n");
+    for c in input.checks {
+        out.push_str(&format!("- {}：{}（{}）\n", c.name, c.detail, c.status));
+    }
+    if input.findings.is_empty() {
+        out.push_str("已知原因：没有命中已知规则\n");
+    } else {
+        let titles: Vec<&str> = input.findings.iter().map(|f| f.title.as_str()).collect();
+        out.push_str(&format!("已知原因：{}\n", titles.join("；")));
+    }
+    out.push_str(&format!(
+        "系统：{} {}\n",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    ));
+    out.push_str(&format!("AgentNexus 版本：{}\n", env!("CARGO_PKG_VERSION")));
+    scrub_local(&out)
+}
+
+/// 本机确定性处理（不依赖 DLP 的识别能力）：家目录换成 `~`，本机用户名换成 `<user>`，主机名换成 `<host>`。
+/// 3 个字符及以上的名字直接替换；更短的（例如主机名 `vm`）只按整词替换（前后都不是字母、数字、`_`、`-`），
+/// 避免把正常文字改坏；1 个字符的不替换
+pub fn scrub_local(text: &str) -> String {
+    let mut out = text.to_string();
+    if let Some(home) = std::env::var_os("HOME").map(|h| h.to_string_lossy().into_owned()) {
+        let home = home.trim_end_matches('/');
+        if home.len() > 1 {
+            out = out.replace(home, "~");
+        }
+    }
+    let user = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .unwrap_or_default();
+    out = replace_name(&out, &user, "<user>");
+    for host in hostnames() {
+        out = replace_name(&out, &host, "<host>");
+    }
+    out
+}
+
+/// 按 [`scrub_local`] 的规则替换一个名字
+fn replace_name(text: &str, name: &str, with: &str) -> String {
+    match name.chars().count() {
+        0 | 1 => text.to_string(),
+        2 => replace_word(text, name, with),
+        _ => text.replace(name, with),
+    }
+}
+
+/// 只替换整词出现的 `word`（前后都不是字母、数字、`_`、`-`）
+fn replace_word(text: &str, word: &str, with: &str) -> String {
+    let is_word_char = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(pos) = rest.find(word) {
+        let before = rest[..pos].chars().next_back();
+        let after = rest[pos + word.len()..].chars().next();
+        let boundary = !before.is_some_and(is_word_char) && !after.is_some_and(is_word_char);
+        out.push_str(&rest[..pos]);
+        out.push_str(if boundary { with } else { word });
+        rest = &rest[pos + word.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// 本机主机名：完整名在前，再加上第一个点之前的短名
+fn hostnames() -> Vec<String> {
+    let mut names = vec![];
+    #[cfg(unix)]
+    {
+        let mut buf = [0u8; 256];
+        // SAFETY: gethostname 只往给定长度的缓冲区里写，结尾不一定有 0，下面按 0 或长度截取
+        let rc = unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) };
+        if rc == 0 {
+            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+            let full = String::from_utf8_lossy(&buf[..end]).trim().to_string();
+            if !full.is_empty() {
+                if let Some(short) = full.split('.').next().filter(|s| *s != full) {
+                    let short = short.to_string();
+                    names.push(full);
+                    names.push(short);
+                } else {
+                    names.push(full);
+                }
+            }
+        }
+    }
+    names
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn short_names_are_replaced_only_as_whole_words() {
+        assert_eq!(
+            replace_word("zhang@vm 出错", "vm", "<host>"),
+            "zhang@<host> 出错"
+        );
+        assert_eq!(
+            replace_word("evm vmx vm-1 vm", "vm", "<host>"),
+            "evm vmx vm-1 <host>"
+        );
+        assert_eq!(replace_name("a b", "a", "<user>"), "a b");
+        assert_eq!(
+            replace_name("home/zhangsan/x", "zhangsan", "<user>"),
+            "home/<user>/x"
+        );
+    }
+
     use super::*;
 
     #[test]

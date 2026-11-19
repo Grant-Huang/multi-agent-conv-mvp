@@ -158,3 +158,12 @@ purpose = "llm_inference"
 - DLP 审计日志落盘（或转发到 AgentNexus 日志）。
 - 第三阶段：REVIEW → 人工审批 → 执行；放开 MCP `external_write`；编码 agent 派发前检查。
 - 第四阶段：出站代理白名单与部署检查脚本。
+
+## 附：助手排查（AG.5 第 3、4 层）也使用这个守卫
+
+- 「助手」页签的"排查"里，诊断包（第 3 层）和"请其他助手帮忙"（第 4 层）复用同一个 `[egress]` 守卫，不另起 DLP 进程（docs/DECISIONS.md 第 41 条）。
+- `mode = "off"` 时第 4 层不可用；`audit` 或 `enforce` 时可用。**不论哪种模式，排查都只在 DLP 返回 `ready_to_send = true` 时发送**，并且只发脱敏后的文本。
+- 需要在 `destinations.yaml` 登记：
+  - 第 4 层每个可能当帮手的助手 `agent:<助手 id>`（例如 `agent:claude`），purposes 含 `diagnose`；
+  - 第 3 层 `user:clipboard`。渠道 `clipboard` 在 D1 第 9.3 项里已确认，但工具目前还不支持；工具返回 `invalid_channel` 时，诊断包按"未经检查"给出本机处理过的版本。
+- 帮手回复用 `egress_restore`（context `local_ui`）还原后只用于显示，因此 DLP 配置需要 `allow_restore: true`。每次排查结束后宿主调用 `egress_revoke` 撤销映射。

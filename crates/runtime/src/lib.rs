@@ -14,6 +14,7 @@ pub mod admission;
 pub mod agent_catalog;
 pub mod agent_chat;
 pub mod agent_config;
+pub mod agent_diagnose;
 pub mod backends;
 pub mod bus;
 pub mod composer;
@@ -81,6 +82,10 @@ pub struct Runtime {
     pub agent_config: Arc<agent_config::AgentConfigManager>,
     /// 管理助手（AG.4）：HTTP 接口和对话里的向导共用
     pub agents: Arc<agent_chat::AgentAdmin>,
+    /// 外发检查守卫（`[egress]` 的 mode 不是 off 时才有）；AG.5 排查第 3、4 层也用它评估、还原、撤销
+    pub egress: Option<Arc<an_agents::egress::EgressGuard>>,
+    /// 排查第 4 层的同意凭证、并发闸门和时限（AG.5）
+    pub diagnose_send: Arc<agent_diagnose::SendState>,
 }
 
 /// 连通性探测的目标：只做握手或命令检查，不调用模型（探测结果写入 `registry.links`）
@@ -374,7 +379,8 @@ impl Runtime {
                     approval_risk: o.approval_risk,
                 },
             )
-            .with_risk_rules(config.conversation.risk_rules),
+            .with_risk_rules(config.conversation.risk_rules)
+            .with_class_questions(config.conversation.route_class_questions),
         );
         let orchestrator = Arc::new(Orchestrator::new(
             store.clone(),
@@ -436,6 +442,8 @@ impl Runtime {
             probe_gate: Arc::default(),
             agent_config,
             agents,
+            egress,
+            diagnose_send: Arc::default(),
         })
     }
 

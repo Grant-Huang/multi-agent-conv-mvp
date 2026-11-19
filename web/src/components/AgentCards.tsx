@@ -10,6 +10,8 @@ import type { InstallStep } from "../bindings/InstallStep";
 import type { ProbeOutcome } from "../bindings/ProbeOutcome";
 import type { Applied, Proposal } from "../api";
 import type { DiagnoseReport } from "../bindings/DiagnoseReport";
+import type { DiagnosePreview } from "../bindings/DiagnosePreview";
+import type { DiagnoseSendResult } from "../bindings/DiagnoseSendResult";
 
 /** 使用水平：预留给以后的用户分类。现在只实现"专业" */
 export type UiLevel = "professional" | "basic";
@@ -284,9 +286,54 @@ export function ResultCard(props: {
 
 const CHECK_MARK: Record<string, string> = { ok: "✓", problem: "✗", skipped: "–", error: "!" };
 
-/** 排查结果卡（AG.5 第 1、2 层）：先给结论和修复步骤，再列本机体检的每一项。全部在本机完成 */
-export function DiagnoseCard(props: { report: DiagnoseReport; onRecheck: () => void; onClose: () => void }) {
+/** 可以当帮手的助手（已接入、已连通、不是出问题的那个） */
+export type HelperOption = { id: string; name: string };
+
+/** 排查结果卡（AG.5）：
+ * - 第 1、2 层：结论和修复步骤、本机体检的每一项（全部在本机完成）；
+ * - 第 3 层：诊断包，用户自己决定复制给谁；
+ * - 第 4 层：请其他助手帮忙查。先给用户看将发送的完整内容和目的地，用户同意这一次才发。 */
+export function DiagnoseCard(props: {
+  report: DiagnoseReport;
+  helpers: HelperOption[];
+  onPreview: (helper: string) => Promise<DiagnosePreview>;
+  onSend: (p: DiagnosePreview) => Promise<DiagnoseSendResult>;
+  onRecheck: () => void;
+  onClose: () => void;
+}) {
   const r = props.report;
+  const pkg = r.package;
+  const [helper, setHelper] = useState(props.helpers[0]?.id ?? "");
+  const [preview, setPreview] = useState<DiagnosePreview | null>(null);
+  const [reply, setReply] = useState<DiagnoseSendResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const makePreview = async () => {
+    setBusy(true);
+    setError(null);
+    setReply(null);
+    try {
+      setPreview(await props.onPreview(helper));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sendOnce = async () => {
+    if (!preview) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setReply(await props.onSend(preview));
+      setPreview(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setPreview(null);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <section className="agent-card" role="region" aria-label="排查结果">
       <h3>排查「{r.name}」</h3>
@@ -324,6 +371,66 @@ export function DiagnoseCard(props: { report: DiagnoseReport; onRecheck: () => v
           ))}
         </ul>
       </details>
+      {r.probe.kind !== "ok" && (
+        <section role="region" aria-label="诊断包" className="diag-package">
+          <h4>诊断包</h4>
+          <p className="hint">{pkg.note}</p>
+          {pkg.text && (
+            <>
+              <pre>{pkg.text}</pre>
+              <CopyButton text={pkg.text} />
+            </>
+          )}
+        </section>
+      )}
+      {r.probe.kind !== "ok" && (
+        <div className="diag-helper">
+          <h4>请其他助手帮忙查</h4>
+          <p className="hint">会先给你看将发送的完整内容和发给谁；你同意这一次才发送，不会自动再发。</p>
+          {props.helpers.length === 0 ? (
+            <p className="hint">现在没有已连通的其他助手可以当帮手。</p>
+          ) : (
+            <div className="card-actions">
+              <label>
+                帮手{" "}
+                <select aria-label="帮手" value={helper} onChange={(e) => setHelper(e.target.value)} disabled={busy}>
+                  {props.helpers.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" className="btn small" disabled={busy || !helper} onClick={makePreview}>
+                生成预览
+              </button>
+            </div>
+          )}
+          {preview && (
+            <section role="region" aria-label="外发预览" className="diag-preview">
+              <p className="summary">{preview.destination}</p>
+              <p className="hint">下面就是将发送的全部内容，一字不差。这次同意 {Math.round(preview.expires_in_secs / 60)} 分钟内有效。</p>
+              <pre>{preview.content}</pre>
+              <div className="card-actions">
+                <button type="button" className="btn small primary" disabled={busy} onClick={sendOnce}>
+                  {busy ? "发送中…" : "同意发送这一次"}
+                </button>
+                <button type="button" className="btn small" disabled={busy} onClick={() => setPreview(null)}>
+                  取消
+                </button>
+              </div>
+            </section>
+          )}
+          {reply && (
+            <section role="region" aria-label="帮手的回复" className="diag-reply">
+              <h4>「{reply.helper}」的回复</h4>
+              <pre>{reply.reply}</pre>
+              {!reply.restored && <p className="hint">回复里的占位符没能还原，按原样显示。</p>}
+            </section>
+          )}
+          {error && <p className="error-text">{error}</p>}
+        </div>
+      )}
       <div className="card-actions">
         <button type="button" className="btn small primary" onClick={props.onRecheck}>
           重新排查

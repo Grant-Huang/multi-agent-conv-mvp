@@ -7,7 +7,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use an_core::{Message, Risk, Role, TurnDecision};
+use an_core::{Message, Risk, Role, TaskClass, TurnDecision};
 use an_runtime::config::AppConfig;
 use an_runtime::store::Store;
 use an_runtime::Runtime;
@@ -433,4 +433,151 @@ async fn rt_ft_11_no_escalation_without_both_switches() {
             .collect();
         assert_eq!(off, vec![want_off, want_off], "配置：{extra}");
     }
+}
+
+// ───────────── FT.5：类别拆成两个是/否问题（RT-FT-12 ~ RT-FT-16） ─────────────
+
+const CLASS_Q: &str = "route_class_questions = true";
+
+/// 路由请求的系统提示词
+fn system_prompt(req: &Value) -> String {
+    req["messages"][0]["content"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// 两个是/否问题形式的 route_decision
+fn route_q(needs_data_tools: bool, needs_document: bool) -> String {
+    json!({"reason":"测试","needs_data_tools":needs_data_tools,"needs_document":needs_document,
+           "execution_role":"general","required_tools":[],"risk_level":"low"})
+    .to_string()
+}
+
+/// RT-FT-12：不写 route_class_questions 时，路由 schema 与提示词保持现状（基线守护）
+#[tokio::test]
+async fn rt_ft_12_class_questions_off_by_default() {
+    let llm = MockLlm::start(Arc::new(|_, _, _| route("general", "low"))).await;
+    let rt = runtime(&llm.base, 0, "", "");
+    rt.router
+        .route("写一份周报", "", &[])
+        .await
+        .map_err(|e| e.message)
+        .unwrap();
+
+    let req = &llm.calls("route_decision")[0];
+    let keys = schema_keys(req);
+    assert!(keys.contains(&"task_class".to_string()), "{keys:?}");
+    assert_eq!(
+        schema_prop(req, "task_class")["enum"],
+        json!(["L1", "L2", "L3", "L4"])
+    );
+    assert!(!keys.contains(&"needs_data_tools".to_string()), "{keys:?}");
+    assert!(!keys.contains(&"needs_document".to_string()), "{keys:?}");
+    let sys = system_prompt(req);
+    assert!(!sys.contains("needs_data_tools"), "{sys}");
+    assert!(!sys.contains("needs_document"), "{sys}");
+}
+
+/// RT-FT-13：打开后，schema 改为两个必填的布尔问题，排在 execution_role 之前；提示词写明口径
+#[tokio::test]
+async fn rt_ft_13_class_questions_schema_and_prompt() {
+    let llm = MockLlm::start(Arc::new(|_, _, _| route_q(true, false))).await;
+    let rt = runtime(&llm.base, 0, "", CLASS_Q);
+    rt.router
+        .route("帮我算一下 3600 * 0.975", "", &[])
+        .await
+        .map_err(|e| e.message)
+        .unwrap();
+
+    let req = &llm.calls("route_decision")[0];
+    let keys = schema_keys(req);
+    assert!(!keys.contains(&"task_class".to_string()), "{keys:?}");
+    for k in ["needs_data_tools", "needs_document"] {
+        assert_eq!(schema_prop(req, k)["type"], json!("boolean"), "{k}");
+        assert!(
+            schema_required(req).contains(&k.to_string()),
+            "{k} 应为必填"
+        );
+    }
+    let pos = |k: &str| keys.iter().position(|x| x == k).unwrap();
+    assert!(pos("needs_data_tools") < pos("execution_role"), "{keys:?}");
+    assert!(pos("needs_document") < pos("execution_role"), "{keys:?}");
+
+    let sys = system_prompt(req);
+    assert!(sys.contains("needs_data_tools"), "{sys}");
+    assert!(sys.contains("needs_document"), "{sys}");
+    assert!(
+        sys.contains("write_file"),
+        "提示词应说明保存结果的 write_file 不算：{sys}"
+    );
+    assert!(
+        !sys.contains("task_class"),
+        "不应再要求模型选 task_class：{sys}"
+    );
+}
+
+/// RT-FT-14：四种是/否组合分别算出 L1～L4
+#[tokio::test]
+async fn rt_ft_14_class_derived_from_answers() {
+    let answers = [(false, false), (true, false), (false, true), (true, true)];
+    let llm = MockLlm::start(Arc::new(move |_, idx, _| {
+        let (t, d) = answers[idx];
+        route_q(t, d)
+    }))
+    .await;
+    let rt = runtime(&llm.base, 0, "", CLASS_Q);
+    let mut got = Vec::new();
+    for _ in 0..4 {
+        let out = rt
+            .router
+            .route("任务", "", &[])
+            .await
+            .map_err(|e| e.message)
+            .unwrap();
+        got.push(out.decision.task_class);
+    }
+    assert_eq!(
+        got,
+        vec![TaskClass::L1, TaskClass::L2, TaskClass::L3, TaskClass::L4]
+    );
+}
+
+/// RT-FT-15：同时打开 A（先写理由）时，reason 仍是第一个字段，其后是两个问题
+#[tokio::test]
+async fn rt_ft_15_class_questions_with_reason_first() {
+    let llm = MockLlm::start(Arc::new(|_, _, _| route_q(false, true))).await;
+    let rt = runtime(&llm.base, 0, THINK_OFF_REASON, CLASS_Q);
+    rt.router
+        .route("写一份周报", "", &[])
+        .await
+        .map_err(|e| e.message)
+        .unwrap();
+
+    let req = &llm.calls("route_decision")[0];
+    let keys = schema_keys(req);
+    assert_eq!(
+        keys[..3],
+        ["reason", "needs_data_tools", "needs_document"],
+        "{keys:?}"
+    );
+    assert!(thinking_off(req));
+}
+
+/// RT-FT-16：开关与思考无关：不关思考时同样生效，且请求不带 enable_thinking
+#[tokio::test]
+async fn rt_ft_16_class_questions_independent_of_thinking() {
+    let llm = MockLlm::start(Arc::new(|_, _, _| route_q(true, true))).await;
+    let rt = runtime(&llm.base, 0, "", CLASS_Q);
+    let out = rt
+        .router
+        .route("读取 data.csv 写成报告", "", &[])
+        .await
+        .map_err(|e| e.message)
+        .unwrap();
+
+    let req = &llm.calls("route_decision")[0];
+    assert!(req.get("chat_template_kwargs").is_none(), "{req}");
+    assert!(schema_keys(req).contains(&"needs_data_tools".to_string()));
+    assert_eq!(out.decision.task_class, TaskClass::L4);
 }

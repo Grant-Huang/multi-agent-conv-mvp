@@ -150,3 +150,28 @@ test('E2E-AGDIAG: 未安装的助手点"排查"，看到大白话结论和安装
   await expect(report.getByRole('button', { name: '复制' }).first()).toBeVisible();
   await expect(report).toContainText('体检');
 });
+
+test('E2E-AGHELP: 诊断包可复制；选帮手后看到完整预览，同意后看到还原过的回复', async ({ page, request }) => {
+  // 帮手 hand 先握手一次，成为"已连通"
+  const probe = await request.post('/api/agents/probe', { data: { id: 'hand' } });
+  expect(probe.ok()).toBeTruthy();
+  await page.goto('/');
+  const list = await openAgents(page);
+  await row(list, 'broken').getByRole('button', { name: '排查' }).click();
+  const report = page.getByRole('region', { name: '排查结果' });
+  // 第 3 层：诊断包经过 DLP（模拟服务把客户名换成占位符），可以复制
+  const pkg = report.getByRole('region', { name: '诊断包' });
+  await expect(pkg).toContainText('[CUSTOMER_001]');
+  await expect(pkg).not.toContainText('ACME');
+  await expect(pkg.getByRole('button', { name: '复制' })).toBeVisible();
+  // 第 4 层：选帮手 → 看到将发送的完整内容和目的地 → 同意这一次
+  await report.getByLabel('帮手').selectOption('hand');
+  await report.getByRole('button', { name: '生成预览' }).click();
+  const preview = page.getByRole('region', { name: '外发预览' });
+  await expect(preview).toContainText('将发给「hand」');
+  await expect(preview).toContainText('[CUSTOMER_001]');
+  await expect(preview).not.toContainText('ACME');
+  await preview.getByRole('button', { name: '同意发送这一次' }).click();
+  const reply = page.getByRole('region', { name: '帮手的回复' });
+  await expect(reply).toContainText('ACME 的配置文件');
+});

@@ -256,6 +256,11 @@ struct Evaluation {
     #[serde(default)]
     tokens: Vec<String>,
     ready_to_send: bool,
+    /// 识别出的实体（只取类型用于计数，不含原文）
+    #[serde(default)]
+    entities: Vec<Value>,
+    #[serde(default)]
+    policy_version: String,
 }
 
 fn unavailable(reason: &str) -> anyhow::Error {
@@ -402,6 +407,42 @@ impl DlpClient {
 
 // ─────────────────────────────── 守卫 ───────────────────────────────
 
+/// [`EgressGuard::evaluate_text`] 的结果（不含原文）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextEvaluation {
+    /// ALLOW / ANONYMIZE / REVIEW / BLOCK
+    pub decision: String,
+    /// 只有为 true 才能发送，且只能发 `sanitized_text`
+    pub ready_to_send: bool,
+    pub sanitized_text: Option<String>,
+    pub reason_codes: Vec<String>,
+    /// 各类实体的个数（只有类型和个数）
+    pub entity_counts: BTreeMap<String, usize>,
+    pub token_count: usize,
+    pub policy_version: String,
+    pub request_id: String,
+}
+
+impl TextEvaluation {
+    /// 不能发送时给用户的大白话说明
+    pub fn refusal(&self) -> String {
+        if self.reason_codes.iter().any(|c| c == "secret_blocked") {
+            "内容里有密钥或凭证，已拦下，这次不发出去。若这是真实的密钥，建议尽快更换。".into()
+        } else if self.decision == "REVIEW" {
+            "内容里有需要人工判断的机密信息，这次不发送。".into()
+        } else if self.reason_codes.iter().any(|c| c == "destination_unknown") {
+            "这个目的地还没有在外发检查工具里登记，不能发送。".into()
+        } else {
+            let why = if self.reason_codes.is_empty() {
+                self.decision.clone()
+            } else {
+                self.reason_codes.join("、")
+            };
+            format!("外发检查没有放行（原因：{why}），这次不发送。")
+        }
+    }
+}
+
 pub struct EgressGuard {
     mode: EgressMode,
     client: DlpClient,
@@ -474,6 +515,75 @@ impl EgressGuard {
 
     pub fn mode(&self) -> EgressMode {
         self.mode
+    }
+
+    /// 宿主内部直接评估一段准备外发的文本（AG.5 排查第 3、4 层用；不经过模型、不经过工具绑定）。
+    /// 与 audit / enforce 模式无关：调用方必须自己遵守结果——只有 [`TextEvaluation::ready_to_send`]
+    /// 为 true 才能发送，且只能发送 `sanitized_text`。DLP 不可用、超时、返回不合规时返回错误（不得发送）。
+    pub async fn evaluate_text(
+        &self,
+        task_id: &str,
+        channel: &str,
+        destination_id: &str,
+        purpose: &str,
+        text: &str,
+    ) -> Result<TextEvaluation> {
+        let started = Instant::now();
+        let ev = self
+            .client
+            .evaluate(
+                task_id,
+                channel,
+                destination_id,
+                purpose,
+                ("text", json!(text)),
+            )
+            .await;
+        let ev = match ev {
+            Ok(ev) => ev,
+            Err(e) => {
+                self.log_unavailable(channel, task_id, &e);
+                return Err(e);
+            }
+        };
+        self.log(channel, task_id, destination_id, &ev, started);
+        let mut entity_counts = BTreeMap::new();
+        for e in &ev.entities {
+            if let Some(t) = e["type"].as_str() {
+                *entity_counts.entry(t.to_string()).or_insert(0usize) += 1;
+            }
+        }
+        // 只有 ALLOW / ANONYMIZE、明确 ready_to_send、并且给了脱敏文本时才算能发
+        let ready = matches!(verdict(ev.clone()), Verdict::Pass(_)) && ev.sanitized_text.is_some();
+        Ok(TextEvaluation {
+            decision: ev.decision,
+            ready_to_send: ready,
+            sanitized_text: ev.sanitized_text,
+            reason_codes: ev.reason_codes,
+            entity_counts,
+            token_count: ev.tokens.len(),
+            policy_version: ev.policy_version,
+            request_id: ev.request_id,
+        })
+    }
+
+    /// 把文本里的 Token 还原成原值。**只用于给用户看的内容**（context 固定为 `local_ui`）
+    pub async fn restore_text(&self, task_id: &str, text: &str) -> Result<String> {
+        self.client.restore(task_id, text).await
+    }
+
+    /// 撤销这个任务的全部 Token 映射。失败只记日志
+    pub async fn revoke(&self, task_id: &str) {
+        let mut args = Map::new();
+        args.insert("task_id".into(), json!(task_id));
+        match self.client.call("egress_revoke", args).await {
+            Ok(data) => {
+                tracing::info!(event = "egress.revoked", task_id, revoked = %data["revoked"], "已撤销 Token 映射")
+            }
+            Err(e) => {
+                tracing::warn!(event = "egress.revoke_failed", task_id, reason = %short(&e), "撤销 Token 映射失败")
+            }
+        }
     }
 
     fn task_id() -> String {

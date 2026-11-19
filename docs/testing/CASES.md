@@ -255,6 +255,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGCAT-07 | agent-catalog | 目录内预设未安装 | kind = not_installed，立即返回 |
 | RT-AGCAT-08 | agent-catalog | 未知 id、非 ACP agent（general）；请求体附带 command 字段 | 未知和非 ACP 返回 404；带 command 的请求被拒绝，命令未被执行 |
 | RT-AGCAT-09 | agent-catalog | 检测已注册 agent 成功 | 健康接口中该 agent 的连接状态变为 connected |
+| RT-AGCAT-10 | agent-catalog | 回归（2026-11-18 CI 偶发失败）：脚本向错误输出写 "env: node: No such file or directory" 后立刻以 127 退出，连续检测 50 次；另一个脚本不写任何错误输出就立刻退出 | 50 次全部 kind = missing_dependency（不能因为握手请求写失败报 Broken pipe 而归成 handshake_failed）；不写错误输出的脚本为 handshake_failed，且单次检测 2 秒内结束（补等错误输出有上限） |
 
 ## 前台提速：先写理由 / 规则判风险 / 可疑时再思考（FT.1，实现前定义）
 
@@ -273,6 +274,18 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-FT-09 | front-thinking | 不思考 + 升级；前台判断第一次给 delegate 但 task_goal 为空，思考后合格 | 共 2 次请求，第 2 次思考；结果为 delegate 且目标非空 |
 | RT-FT-10 | front-thinking | 不思考 + 升级，max_retries = 1；前台判断始终输出非 JSON | 返回错误；不思考的请求只有 1 次，之后都是思考请求（1 + max_retries 次），不会退回不思考 |
 | RT-FT-11 | front-thinking | 不思考但不开升级，或开升级但没关思考；第一次输出非 JSON、第二次合格 | 两次请求的思考设置相同（与现在的重试行为一致） |
+
+### FT.5 类别拆成两个是/否问题（实现前定义，2026-11-18）
+
+开关 `[conversation] route_class_questions`，默认 false。打开后，路由模型不再直接选 L1–L4，而是回答 `needs_data_tools`（需要取数工具吗：精确计算、查当前时间、列出或读取工作目录文件、联网搜索都算；只为保存结果的 write_file 不算）和 `needs_document`（需要生成或修改文档、报告吗），由代码确定性算出类别。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-FT-12 | front-thinking | 不写 route_class_questions（基线） | route_decision 的 schema 有 task_class（枚举 L1～L4），没有 needs_data_tools / needs_document；系统提示词没有这两个问题的说明 |
+| RT-FT-13 | front-thinking | route_class_questions = true | schema 没有 task_class；有布尔型的 needs_data_tools、needs_document，且都是必填，排在 execution_role 之前；系统提示词写明两个问题的口径（含"保存结果的 write_file 不算"） |
+| RT-FT-14 | front-thinking | route_class_questions = true；模型依次回答 (否,否)、(是,否)、(否,是)、(是,是) | 路由结果的类别依次为 L1、L2、L3、L4 |
+| RT-FT-15 | front-thinking | route_class_questions = true，同时不思考 + front_reason_first | schema 第一个字段仍是 reason，其后紧跟 needs_data_tools、needs_document |
+| RT-FT-16 | front-thinking | route_class_questions = true，不改思考设置（开思考） | 请求不带 enable_thinking，schema 同样是两个是/否问题（开关与思考无关） |
 
 ## 托管配置、热注册与撤销（AG.2，实现前定义）
 
@@ -339,6 +352,26 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGDIAG-04 | agent-diagnose | ZCode 的凭证文件存在但不可读；另一次凭证文件不存在 | 不可读时检查结果仍为"存在"（只看是否存在，不读内容）；不存在时命中"缺少 ZCode 登录凭证"规则 |
 | RT-AGDIAG-06 | agent-diagnose | 自定义 agent 以未知报错退出 | 没有命中任何规则，结果标记为"未识别"；自定义命令不做登录 shell 检查 |
 | E2E-AGDIAG | agent-ui | 「助手」页签里未安装的 ZCode 点"排查" | 显示排查结果：大白话结论"还没有安装"、安装步骤（带复制按钮）和体检项 |
+
+## 助手排查：诊断包与请其他助手帮忙（AG.5 第 3、4 层，实现前定义）
+
+用模拟的 DLP 服务（`crates/server/tests/fixtures/dlp_server.py`，按 `tools/dlp-egress/docs/INTERFACE.md` 返回结构化结果，经 `[egress]` 的外发检查守卫调用）和模拟的 ACP 助手 `an-mock-acp`（可记录收到的提示词和工作目录、可指定回复文字）。不依赖真实的 dlp-egress 和真实助手。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-AGDIAG-05 | agent-diagnose | 出问题的助手错误输出里含家目录完整路径和本机用户名，配置里有带值的环境变量；分别在没有配置 DLP、配置了 DLP 时排查 | 结果里有诊断包：家目录换成 `~`，用户名、主机名、环境变量的值都不出现，环境变量只留名字；没配置 DLP 时注明"未经外发脱敏检查"；配置了 DLP 时诊断包是 DLP 返回的脱敏文本（渠道 `clipboard`、目的地 `user:clipboard`），用完即撤销 |
+| RT-AGDIAG-07 | agent-diagnose | 选一个已连通的助手当帮手，生成预览，再用同意凭证发送 | 预览返回完整待发内容、目的地说明和一次性凭证；帮手实际收到的内容与预览一字不差；不带凭证、凭证错误、凭证用过、凭证过期都被拒绝，且帮手没有被启动 |
+| RT-AGDIAG-08 | agent-diagnose | 发送后帮手请求写文件权限 | 权限被拒绝（帮手报告"没有获得写文件权限"），帮手的工作目录是临时空目录，结束后已删除 |
+| RT-AGDIAG-10 | agent-diagnose | 帮手超过时限不回复 | 返回大白话的超时说明；帮手进程已结束 |
+| RT-AGDIAG-11 | agent-diagnose | 一次发送还在进行时，再发第二次 | 第二次被拒绝，提示稍后再试；第一次正常完成 |
+| RT-AGDIAG-12 | agent-diagnose | 选出问题的那个助手、未连通的助手、未知助手当帮手 | 都被拒绝（409 / 404），不生成预览 |
+| RT-DLP-01 | dlp-egress | 开启了 `[egress]`（2026-11-18 合并 master 后由 `[dlp]` 改为 `[egress]`） | DLP 的三个工具不出现在能力目录（`GET /api/capabilities`）里，也不在 General 的工具清单里 |
+| RT-DLP-02 | dlp-egress | DLP 把内容里的客户名替换成 `[CUSTOMER_001]`（ANONYMIZE）；帮手的回复里带着这个占位符 | 预览和发给帮手的内容里只有占位符、没有原文；显示给用户的帮手回复已还原成原文（context 为 `local_ui`） |
+| RT-DLP-03 | dlp-egress | 内容里有疑似密钥（BLOCK，`secret_blocked`） | 不生成预览、不发出；大白话说明"有密钥或凭证，已拦下"并建议更换 |
+| RT-DLP-04 | dlp-egress | DLP 返回 REVIEW | 不生成预览、不发送；说明需要人工判断 |
+| RT-DLP-05 | dlp-egress | 没有开启 `[egress]`；DLP 超时；返回结构不合规；`api_version` 不是 "1.0"（与 INTERFACE.md 定稿一致） | 都不发送，说明原因；不出本机的排查（第 1～3 层）照常可用 |
+| RT-DLP-06 | dlp-egress | 一次发送结束（成功或帮手超时） | 用同一个 `task_id` 调用了 `egress_revoke`；日志里没有待发内容的原文 |
+| E2E-AGHELP | agent-ui | 检测失败的助手点"排查" → 看到诊断包（可复制）→ 选已连通的助手当帮手 → 看到完整预览和目的地 → 点"同意发送这一次" | 显示帮手的回复（占位符已还原） |
 
 ## Host 拒绝事件可观测性（实现前定义，R-20261113-L1）
 

@@ -407,6 +407,45 @@ pub struct DiagnoseReport {
     pub findings: Vec<Finding>,
     /// 检测失败但没有命中任何规则
     pub unmatched: bool,
+    /// 诊断包（第 3 层）：交给用户自己决定复制给谁，系统不往外发
+    pub package: DiagnosePackage,
+}
+
+/// 诊断包（AG.5 第 3 层）。先在本机做确定性处理（家目录换成 `~`、用户名和主机名替换掉、
+/// 环境变量只留名字）；配置了外发脱敏（DLP）时再经它检查
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DiagnosePackage {
+    /// 诊断包全文；DLP 拦下（例如含密钥）时为空
+    pub text: Option<String>,
+    /// 是否经过了外发脱敏检查
+    pub dlp_checked: bool,
+    /// 给用户的一句说明（是否经过检查、能不能复制）
+    pub note: String,
+}
+
+/// 请其他助手帮忙查（AG.5 第 4 层）的预览：将发送的完整内容、目的地说明和一次性同意凭证
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DiagnosePreview {
+    pub consent_id: String,
+    pub consent_token: String,
+    /// 将发送的完整内容，一字不差
+    pub content: String,
+    /// 目的地说明（发给谁、它之后会把内容发到哪里）
+    pub destination: String,
+    #[ts(type = "number")]
+    pub expires_in_secs: u64,
+}
+
+/// 帮手的回复（占位符已还原，只用于显示）
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DiagnoseSendResult {
+    pub helper: String,
+    pub reply: String,
+    /// 回复里的占位符是否已还原成原文
+    pub restored: bool,
 }
 
 // ───────────────────────── 对话里的卡片（AG.4）─────────────────────────
