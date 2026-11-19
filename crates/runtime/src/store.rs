@@ -411,6 +411,12 @@ impl Store {
         Ok(c)
     }
 
+    /// 确保指定 id 的会话存在（运营频道用固定 id）：已存在就原样返回，不改标题。不改表结构。
+    pub fn ensure_conversation(&self, _id: &str, title: &str) -> Result<Conversation> {
+        // 实现前骨架：先用随机 id 建会话，测试应因 id 不符而失败（Red）
+        self.create_conversation(title)
+    }
+
     pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>> {
         let _timer = ReadTimer::new("get_conversation");
         Ok(self

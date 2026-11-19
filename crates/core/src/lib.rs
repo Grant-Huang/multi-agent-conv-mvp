@@ -501,6 +501,23 @@ pub enum ChatCard {
         probes: Vec<ProbeOutcome>,
         error: Option<String>,
     },
+    /// 运营案例卡（运营频道）：引擎状态的快照，由发布器生成和更新；来源标为模拟
+    OpsCase {
+        case_id: String,
+        title: String,
+        /// P0 / P1
+        level: String,
+        stage: String,
+        summary: String,
+        owner: String,
+        /// 已批准时的批准人（卡片上显示）
+        approver: Option<String>,
+        /// 目前只有 simulation
+        provenance: String,
+        updated_at: u64,
+    },
+    /// 运营频道汇总卡：超过每小时上限后被合并的案例
+    OpsSummary { count: u32, case_ids: Vec<String> },
 }
 
 /// 消息 + 卡片（消息列表接口返回它；`Message` 本身不变）
