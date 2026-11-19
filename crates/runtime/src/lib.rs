@@ -380,7 +380,8 @@ impl Runtime {
                 },
             )
             .with_risk_rules(config.conversation.risk_rules)
-            .with_class_questions(config.conversation.route_class_questions),
+            .with_class_questions(config.conversation.route_class_questions)
+            .with_class_from_tools(config.conversation.route_class_from_tools),
         );
         let orchestrator = Arc::new(Orchestrator::new(
             store.clone(),

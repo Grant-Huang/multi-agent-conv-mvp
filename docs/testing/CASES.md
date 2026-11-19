@@ -287,6 +287,17 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-FT-15 | front-thinking | route_class_questions = true，同时不思考 + front_reason_first | schema 第一个字段仍是 reason，其后紧跟 needs_data_tools、needs_document |
 | RT-FT-16 | front-thinking | route_class_questions = true，不改思考设置（开思考） | 请求不带 enable_thinking，schema 同样是两个是/否问题（开关与思考无关） |
 
+### FT.5b 类别由工具清单算出（实现前定义，2026-11-19）
+
+开关 `[conversation] route_class_from_tools`，默认 false。打开后，只对执行角色为 general 的路由结果重算类别：要取数 = 工具清单里有 write_file 以外的工具；要文档 = 工具清单里有 write_file，或模型给的类别是 L3/L4。提示词与请求不变。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-FT-17 | front-thinking | 不写 route_class_from_tools（基线）；模型给 general、工具 [read_file]、类别 L1 | 类别保持 L1 |
+| RT-FT-18 | front-thinking | route_class_from_tools = true；模型依次给 general 且（工具 [read_file]，L1）、（工具 []，L2）、（工具 [write_file]，L1）、（工具 []，L3）、（工具 [read_file, write_file]，L1） | 类别依次为 L2、L1、L3、L3、L4 |
+| RT-FT-19 | front-thinking | route_class_from_tools = true；模型给 coding、工具 []、类别 L4 | 类别保持 L4（只改 general） |
+| RT-FT-20 | front-thinking | route_class_from_tools 开与关各路由一次同一任务 | 两次发给模型的请求（schema 与提示词）完全相同 |
+
 ## 托管配置、热注册与撤销（AG.2，实现前定义）
 
 接口：`POST /api/agents/proposals`（只校验、不写入，返回提议与一次性确认凭证）、`POST /api/agents/proposals/{id}/apply {"token"}`。提议类型：add_preset、add_custom、set_default、disable、enable、remove、revert。托管文件放在数据库同目录的 `agents.managed.toml`。
@@ -337,6 +348,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGCHAT-07 | agent-chat | 提议过期后再确认 | 410；原确认卡状态变为 expired |
 | RT-AGCHAT-08 | agent-chat | 旧数据库的 messages 表没有 card_json 列 | 打开时自动补列，可重复打开；旧消息可读，卡片为空 |
 | RT-AGCHAT-09 | agent-chat | 模型给的 agent_id 不在候选里 | 按格式不合格重试；第二次合格后正常生成卡片 |
+| RT-AGCHAT-10 | agent-chat | 开关打开；模型判"撤销"或"列出"，但多填了助手名（例如 `cursor`）| `decide_turn` 返回的管理助手判断里助手名为空：撤销和列出与具体助手无关，由程序直接清空（AG.4 第三轮评测：und-01/04/05 属于这一类）|
+| RT-AGCHAT-11 | agent-chat | 开关打开，发一条消息 | 发给模型的"管理助手"一节写明四条规则：没点名助手时不反问、助手名留空（由选择卡让用户点选）；让助手干一件具体的活是派任务，不追问细节；问"有哪些助手 / 默认是谁"走 list；撤销上一次修改是 undo、不是 enable，接入还没接的助手是 connect，enable 只用于恢复停用的。开关关闭时这一节不出现 |
 | E2E-AGCHAT | agent-ui | 对话里说"把 Claude Code 接进来" | 对话里出现确认卡 → 确认 → 对话里出现结果卡；刷新后两张卡仍在，确认卡显示已确认 |
 | E2E-AGCHOICE | agent-ui | 对话里说"帮我接个写代码的助手" | 对话里出现选择卡 → 点选一个 → 对话里出现确认卡 |
 

@@ -581,3 +581,96 @@ async fn rt_ft_16_class_questions_independent_of_thinking() {
     assert!(schema_keys(req).contains(&"needs_data_tools".to_string()));
     assert_eq!(out.decision.task_class, TaskClass::L4);
 }
+
+// ───────────── FT.5b：类别由工具清单算出（RT-FT-17 ~ RT-FT-20） ─────────────
+
+const FROM_TOOLS: &str = "route_class_from_tools = true";
+
+/// 模型直接给类别的 route_decision（指定角色、类别和工具）
+fn route_ct(role: &str, class: &str, tools: &[&str]) -> String {
+    json!({"reason":"测试","task_class":class,"execution_role":role,"required_tools":tools,"risk_level":"low"})
+        .to_string()
+}
+
+/// 取路由结果里的类别：成功时取决策；Policy 拒绝（如角色没有可用 agent）时取失败里带的决策
+async fn routed_class(rt: &Runtime, goal: &str) -> TaskClass {
+    match rt.router.route(goal, "", &[]).await {
+        Ok(out) => out.decision.task_class,
+        Err(f) => {
+            f.decision
+                .unwrap_or_else(|| panic!("路由没有给出决策：{}", f.message))
+                .task_class
+        }
+    }
+}
+
+/// RT-FT-17：不写 route_class_from_tools 时，类别保持模型给的值（基线守护）
+#[tokio::test]
+async fn rt_ft_17_class_from_tools_off_keeps_model_class() {
+    let llm = MockLlm::start(Arc::new(|_, _, _| {
+        route_ct("general", "L1", &["read_file"])
+    }))
+    .await;
+    let rt = runtime(&llm.base, 0, "", "");
+    assert_eq!(
+        routed_class(&rt, "读一下 notes/todo.md").await,
+        TaskClass::L1
+    );
+}
+
+/// RT-FT-18：打开后，general 任务按工具清单重算类别（方案 B：要文档 = 有 write_file 或模型给 L3/L4）
+#[tokio::test]
+async fn rt_ft_18_class_from_tools_for_general() {
+    let script: [(&str, &[&str]); 5] = [
+        ("L1", &["read_file"]),
+        ("L2", &[]),
+        ("L1", &["write_file"]),
+        ("L3", &[]),
+        ("L1", &["read_file", "write_file"]),
+    ];
+    let llm = MockLlm::start(Arc::new(move |_, idx, _| {
+        let (class, tools) = script[idx];
+        route_ct("general", class, tools)
+    }))
+    .await;
+    let rt = runtime(&llm.base, 0, "", FROM_TOOLS);
+    let mut got = Vec::new();
+    for _ in 0..5 {
+        got.push(routed_class(&rt, "任务").await);
+    }
+    assert_eq!(
+        got,
+        vec![
+            TaskClass::L2,
+            TaskClass::L1,
+            TaskClass::L3,
+            TaskClass::L3,
+            TaskClass::L4
+        ]
+    );
+}
+
+/// RT-FT-19：打开后，非 general 角色的类别不变
+#[tokio::test]
+async fn rt_ft_19_class_from_tools_ignores_other_roles() {
+    let llm = MockLlm::start(Arc::new(|_, _, _| route_ct("coding", "L4", &[]))).await;
+    let rt = runtime(&llm.base, 0, "", FROM_TOOLS);
+    assert_eq!(routed_class(&rt, "修复登录接口").await, TaskClass::L4);
+}
+
+/// RT-FT-20：开关只影响结果的计算，发给模型的请求（提示词与 schema）完全不变
+#[tokio::test]
+async fn rt_ft_20_class_from_tools_does_not_change_request() {
+    let mut reqs = Vec::new();
+    for conv in ["", FROM_TOOLS] {
+        let llm = MockLlm::start(Arc::new(|_, _, _| {
+            route_ct("general", "L2", &["read_file"])
+        }))
+        .await;
+        let rt = runtime(&llm.base, 0, "", conv);
+        routed_class(&rt, "读一下 notes/todo.md").await;
+        let req = llm.calls("route_decision")[0].clone();
+        reqs.push((req["messages"].clone(), req["response_format"].clone()));
+    }
+    assert_eq!(reqs[0], reqs[1]);
+}

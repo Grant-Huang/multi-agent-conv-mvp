@@ -10,11 +10,12 @@
 //!   --limit N                            只跑前 N 条
 //!   --label 名称                         结果文件名里的标记，例如模型名
 //!   --agent-management                   打开"对话里管理助手"（AG.4，只在内存里覆盖配置）；评测 evals/agents.jsonl 时用
-//!   --variant E0..E7                     FT 前台提速实验的配置组合（只在内存里覆盖，不改配置文件）：
+//!   --variant E0..E10                    FT 前台提速实验的配置组合（只在内存里覆盖，不改配置文件）：
 //!       E0 开思考（基线）  E1 关思考  E2 关思考+A  E3 关思考+A+B  E4 关思考+A+B+D  E5 开思考+B
-//!       E6 关思考+Q  E7 开思考+Q
+//!       E6 关思考+Q  E7 开思考+Q  E10 关思考+T（没有 E8、E9）
 //!       A = front_reason_first，B = [conversation] risk_rules，D = front_thinking_escalation，
-//!       Q = [conversation] route_class_questions（类别拆成两个是/否问题，FT.5）
+//!       Q = [conversation] route_class_questions（类别拆成两个是/否问题，FT.5），
+//!       T = [conversation] route_class_from_tools（general 任务的类别由工具清单算出，FT.5b）
 //! ```
 //!
 //! 数据集格式（每行一个 JSON，`//` 开头的行是注释）：
@@ -277,18 +278,20 @@ struct Args {
     agent_management: bool,
 }
 
-/// FT 实验组合：(关思考, A 先写理由, B 规则判风险, D 开思考重判, Q 类别拆成两个是/否问题)
-fn variant_flags(v: &str) -> Option<(bool, bool, bool, bool, bool)> {
+/// FT 实验组合：(关思考, A 先写理由, B 规则判风险, D 开思考重判, Q 类别拆成两个是/否问题, T 类别由工具清单算出)
+fn variant_flags(v: &str) -> Option<(bool, bool, bool, bool, bool, bool)> {
     Some(match v {
-        "E0" => (false, false, false, false, false),
-        "E1" => (true, false, false, false, false),
-        "E2" => (true, true, false, false, false),
-        "E3" => (true, true, true, false, false),
-        "E4" => (true, true, true, true, false),
-        "E5" => (false, false, true, false, false),
+        "E0" => (false, false, false, false, false, false),
+        "E1" => (true, false, false, false, false, false),
+        "E2" => (true, true, false, false, false, false),
+        "E3" => (true, true, true, false, false, false),
+        "E4" => (true, true, true, true, false, false),
+        "E5" => (false, false, true, false, false, false),
         // FT.5：E6 与 E1 对照（关思考），E7 与 E0 对照（开思考）
-        "E6" => (true, false, false, false, true),
-        "E7" => (false, false, false, false, true),
+        "E6" => (true, false, false, false, true, false),
+        "E7" => (false, false, false, false, true, false),
+        // FT.5b：E10 与 E1 对照（关思考）。不用 E8、E9：已有测试把它们当作"不存在的变体"的例子
+        "E10" => (true, false, false, false, false, true),
         _ => return None,
     })
 }
@@ -296,8 +299,8 @@ fn variant_flags(v: &str) -> Option<(bool, bool, bool, bool, bool)> {
 /// 在内存里按实验组合覆盖配置：作用于全部后端（这几个开关只影响 conversation / router 两个角色）。
 /// 没写 [backends] 时，按运行时同样的方式用 [llm] 合成 default 后端再覆盖。
 fn apply_variant(config: &mut AppConfig, v: &str) -> Result<()> {
-    let (off, a, b, d, q) =
-        variant_flags(v).with_context(|| format!("--variant 只能是 E0 到 E7，收到 {v}"))?;
+    let (off, a, b, d, q, t) =
+        variant_flags(v).with_context(|| format!("--variant 只能是 E0 到 E7 或 E10，收到 {v}"))?;
     if config.backends.is_empty() {
         let u = &config.models.base_urls;
         if [
@@ -327,6 +330,7 @@ fn apply_variant(config: &mut AppConfig, v: &str) -> Result<()> {
     }
     config.conversation.risk_rules = b;
     config.conversation.route_class_questions = q;
+    config.conversation.route_class_from_tools = t;
     Ok(())
 }
 
@@ -999,6 +1003,21 @@ mod tests {
             "不是 JSON".to_string(),
         ];
         assert_eq!(class_answers(&none), (None, None));
+    }
+
+    /// FT.5b：E10 = 关思考 + 类别由工具清单算出（对照 E1）；其余组合不开
+    #[test]
+    fn ft_class_from_tools_variant() {
+        let (mut c, _) =
+            AppConfig::parse("[llm]\nbase_url = \"http://x/v1\"\nmodel = \"m\"").unwrap();
+        apply_variant(&mut c, "E10").unwrap();
+        let s = &c.backends["default"];
+        assert_eq!(s.front_structured_thinking, Some(false));
+        assert!(c.conversation.route_class_from_tools);
+        assert!(!c.conversation.route_class_questions);
+        apply_variant(&mut c, "E1").unwrap();
+        assert!(!c.conversation.route_class_from_tools);
+        assert!(apply_variant(&mut c, "E11").is_err());
     }
 
     #[test]
