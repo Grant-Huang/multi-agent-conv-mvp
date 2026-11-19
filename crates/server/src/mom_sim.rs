@@ -3,6 +3,10 @@
 //! 供会话 agent 与制造桌面查询：工厂可观测状态、趋势预测、what-if 方案比较，以及创建 DES 仿真。
 //! 返回值均标注 `provenance: simulation`，不含标准答案与隐状态；查询接口不改变仿真世界。
 //! 与 `mom.rs` 共用同一个引擎和状态，路由在 `mom::router` 中合并。
+//!
+//! 阶段⑤a-3（DES-28）：接了模拟工厂（`an-mom --des-mcp`）时，创建经连接器进行；远程仿真的工厂视图与趋势预测
+//! 转调模拟工厂的 `equipment_status`、`equipment_trend`（与进程内同一套函数，格式不变）；
+//! `/api/mom/des/tools` 只开放观测工具。模拟工厂不在线时返回 503（`E_DES_UNAVAILABLE`），不回退到进程内仿真。
 
 use crate::mom::AppState;
 use an_runtime::mom::des::{DesSimulationConfig, WhatIfRequest};
@@ -48,6 +52,8 @@ async fn with_engine(
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/mom/des/simulations", post(create))
+        .route("/api/mom/des/tools", get(des_tools))
+        .route("/api/mom/des/tools/{tool}", post(des_tool_call))
         .route("/api/mom/factory", get(factory))
         .route("/api/mom/factory/forecast", get(forecast))
         .route("/api/mom/factory/whatif", post(whatif))
@@ -128,18 +134,85 @@ struct WhatIfBody {
 }
 
 async fn create(State(s): State<AppState>, Json(config): Json<DesSimulationConfig>) -> ApiResult {
+    if let Some(des) = s.des.clone() {
+        let id = des
+            .create_simulation(&s.engine, config)
+            .await
+            .map_err(crate::mom::des_error)?;
+        return Ok(Json(
+            json!({"simulation_id": id, "provenance": "simulation", "source": "mcp"}),
+        ));
+    }
     with_engine(s, move |e| {
-        Ok(json!({"simulation_id": e.create_des_simulation(config)?, "provenance": "simulation"}))
+        Ok(json!({"simulation_id": e.create_des_simulation(config)?, "provenance": "simulation", "source": "in_process"}))
     })
     .await
 }
 
+/// 远程仿真改由模拟工厂的观测工具回答；返回 `None` 表示按进程内仿真处理。
+async fn remote_view(s: &AppState, tool: &str, simulation: &str) -> Option<ApiResult> {
+    let des = s.des.clone()?;
+    let sim = simulation.to_string();
+    let remote = with_engine(s.clone(), move |e| Ok(json!(e.des_is_remote(&sim))))
+        .await
+        .map(|v| v.0 == json!(true))
+        .unwrap_or(false);
+    if !remote {
+        return None;
+    }
+    Some(
+        des.call_agent_tool(tool, json!({"simulation_id": simulation}))
+            .await
+            .map(Json)
+            .map_err(crate::mom::des_error),
+    )
+}
+
 async fn factory(State(s): State<AppState>, Query(q): Query<SimulationQuery>) -> ApiResult {
+    if let Some(r) = remote_view(&s, "equipment_status", &q.simulation).await {
+        return r;
+    }
     with_engine(s, move |e| e.des_factory_view(&q.simulation)).await
 }
 
 async fn forecast(State(s): State<AppState>, Query(q): Query<SimulationQuery>) -> ApiResult {
+    if let Some(r) = remote_view(&s, "equipment_trend", &q.simulation).await {
+        return r;
+    }
     with_engine(s, move |e| e.des_forecast(&q.simulation)).await
+}
+
+/// 未接模拟工厂时工具接口的错误。
+fn no_factory() -> (StatusCode, Json<Value>) {
+    bad_request("no simulated factory connected; start an-mom with --des-mcp")
+}
+
+/// 桌面与会话可调用的模拟工厂工具（只有观测类）。
+async fn des_tools(State(s): State<AppState>) -> ApiResult {
+    let des = s.des.clone().ok_or_else(no_factory)?;
+    Ok(Json(
+        json!({"tools": des.agent_tools(), "provenance": "simulation"}),
+    ))
+}
+
+/// 以 agent 身份调用一个观测工具；其他工具返回 403，不发给模拟工厂。
+async fn des_tool_call(
+    State(s): State<AppState>,
+    Path(tool): Path<String>,
+    Json(args): Json<Value>,
+) -> ApiResult {
+    let des = s.des.clone().ok_or_else(no_factory)?;
+    if !des.agent_tools().contains(&tool) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            // 不回显工具名：被拒绝的管理工具名本身含 ground_truth 等敏感字样。
+            Json(json!({"error": "this tool is not allowed; only observation tools are exposed"})),
+        ));
+    }
+    des.call_agent_tool(&tool, args)
+        .await
+        .map(Json)
+        .map_err(crate::mom::des_error)
 }
 
 async fn whatif(State(s): State<AppState>, Json(body): Json<WhatIfBody>) -> ApiResult {

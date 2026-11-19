@@ -303,6 +303,7 @@ pub fn tool_catalog() -> Vec<ToolSpec> {
                 "type": "object",
                 "properties": {
                     "name": string("Display name"),
+                    "simulation_id": string("Optional id chosen by the caller, DES-<positive integer>; rejected if already used. Omit to let the factory number it"),
                     "factory": factory_schema(),
                     "scenario": scenario_schema()
                 },
@@ -625,7 +626,16 @@ impl FactoryService {
     pub fn call(&mut self, tool: &str, args: Value) -> Result<Value> {
         ensure!(args.is_object(), "arguments must be a JSON object");
         match tool {
-            "simulation_create" => self.create(parse(tool, args)?),
+            "simulation_create" => {
+                // 可选的 `simulation_id` 不属于仿真配置，先取出再按配置严格解析（阶段⑤a-3，DES-28）。
+                let mut args = args;
+                let requested = match args.as_object_mut().and_then(|m| m.remove("simulation_id")) {
+                    None | Some(Value::Null) => None,
+                    Some(Value::String(id)) => Some(id),
+                    Some(other) => bail!("simulation_id must be a string, got {other}"),
+                };
+                self.create(parse(tool, args)?, requested)
+            }
             "simulation_advance" => self.advance(parse(tool, args)?),
             "simulation_fault_inject" => self.fault(parse(tool, args)?),
             "simulation_ground_truth" => self.ground_truth(parse(tool, args)?),
@@ -860,16 +870,36 @@ impl FactoryService {
             .with_context(|| format!("unknown simulation {id}"))
     }
 
-    fn create(&mut self, config: SimulationConfig) -> Result<Value> {
+    fn create(&mut self, config: SimulationConfig, requested: Option<String>) -> Result<Value> {
         let name = text("name", &config.name)?;
         ensure!(
             self.sims.len() < MAX_SIMULATIONS,
             "simulation capacity reached ({MAX_SIMULATIONS})"
         );
+        // 编号：调用方指定时必须形如 `DES-正整数` 且未被使用（连接器传入引擎的下一个编号，
+        // 避免调用方重启后与旧仿真撞号）；不指定时取从 `DES-(已有数+1)` 起第一个未用的编号。
+        let id = match requested {
+            Some(id) => {
+                ensure!(
+                    id.strip_prefix("DES-")
+                        .and_then(|n| n.parse::<u64>().ok())
+                        .is_some_and(|n| n > 0 && format!("DES-{n}") == id),
+                    "simulation_id must look like DES-<positive integer>"
+                );
+                ensure!(
+                    !self.sims.contains_key(&id),
+                    "simulation {id} already exists"
+                );
+                id
+            }
+            None => (self.sims.len() + 1..)
+                .map(|n| format!("DES-{n}"))
+                .find(|id| !self.sims.contains_key(id))
+                .expect("a free id exists"),
+        };
         let factory = config.factory.unwrap_or_else(FactoryConfig::line_b_default);
         let scenario = config.scenario;
         let (run, attempt) = run_with_attempt(&factory, &scenario)?;
-        let id = format!("DES-{}", self.sims.len() + 1);
         let events: Vec<FactoryEvent> = run
             .events
             .into_iter()
