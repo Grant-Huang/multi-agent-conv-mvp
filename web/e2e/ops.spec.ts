@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-// 运营桌面与运营频道（docs/mom/OPS_DESK.md，DECISIONS 55–57）。
+// 运营桌面与运营频道（docs/mom/OPS_DESK.md，DECISIONS 56–58）。
 // 开启 [mom] chat_bridge 的实例每个用例单独启动在 18791（避免卡片、小时上限在用例间累积）；
 // E2E-OPSOFF 使用默认 harness（18787，未配置 [mom]，开关默认关闭）。
 const root = fileURLToPath(new URL('../../', import.meta.url));

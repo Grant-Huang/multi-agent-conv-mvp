@@ -599,7 +599,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 
-设计见 `docs/mom/OPS_DESK.md`，决策见 DECISIONS 第 55–57 条。以下为**草案**：待用户确认断言后，才写成可执行测试并登记到 `features.json`（因此暂不写成表格行，避免被 `check-map` 当作缺测试的已登记用例）。数据全部来自 DES 事件（先进程内），仅替换外部模型。
+设计见 `docs/mom/OPS_DESK.md`，决策见 DECISIONS 第 56–58 条。以下为**草案**：待用户确认断言后，才写成可执行测试并登记到 `features.json`（因此暂不写成表格行，避免被 `check-map` 当作缺测试的已登记用例）。数据全部来自 DES 事件（先进程内），仅替换外部模型。
 
 浏览器用例（`web/e2e/ops.spec.ts`，**断言已于 2026-11-18 经用户确认并冻结**；P2 一项按下方说明改写）：开关打开的实例每个用例单独启动，配置 `[mom] chat_bridge=true`、`ops_merge_secs=1`、`ops_hourly_cap=10`；E2E-OPSOFF 用默认 harness。
 
