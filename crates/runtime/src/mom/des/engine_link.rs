@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 const EXTENSION_CHUNK_MINUTES: u64 = 720;
 
 /// 同一引擎中 DES 仿真数量上限（与脚本仿真一致）。
-const MAX_DES_SIMULATIONS: usize = 50;
+pub(super) const MAX_DES_SIMULATIONS: usize = 50;
 
 /// 引擎中的一个 DES 仿真。不含标准答案和机制开关。
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,6 +41,9 @@ pub struct DesSimulation {
     /// 阶段①创建的仿真没有此字段，阶段②的查询对它们返回错误。
     #[serde(default)]
     pub(crate) replay: Option<DesReplay>,
+    /// 阶段⑤a-2：在模拟工厂中运行的仿真（远程模式）。与 `replay` 互斥：远程仿真没有重放输入，不会回退到进程内仿真。
+    #[serde(default)]
+    pub(crate) remote: Option<super::remote::RemoteDes>,
 }
 
 /// 重放一个 DES 仿真所需的全部输入。
@@ -237,6 +240,7 @@ impl Engine {
                 spares_lost: false,
                 cache: Arc::default(),
             }),
+            remote: None,
         };
         // 创建时已经推演过一次，直接放进缓存。
         if let Some(r) = &sim.replay {
@@ -261,6 +265,15 @@ impl Engine {
             .get(simulation_id)
             .context("unknown DES simulation")?;
         Ok(serde_json::to_value(truth)?)
+    }
+
+    /// 仿真的工厂结构：进程内仿真取重放输入中的配置，远程仿真取登记时的配置。
+    pub(in crate::mom) fn des_factory_config(&self, simulation_id: &str) -> Option<FactoryConfig> {
+        let sim = self.state.des_simulations.get(simulation_id)?;
+        sim.replay
+            .as_ref()
+            .map(|r| r.factory.clone())
+            .or_else(|| sim.remote.as_ref().map(|r| r.factory.clone()))
     }
 
     fn des_replay(&self, simulation_id: &str) -> Result<&DesReplay> {
@@ -307,7 +320,9 @@ impl Engine {
     fn refresh_des_observations(&mut self, now: u64) -> Result<()> {
         let mut updates: Vec<(String, Value)> = vec![];
         for sim in self.state.des_simulations.values() {
-            let Some(r) = &sim.replay else { continue };
+            if sim.replay.is_none() && sim.remote.is_none() {
+                continue;
+            }
             let prefix = format!("{}:", sim.id);
             let linked: Vec<String> = self
                 .state
@@ -323,7 +338,17 @@ impl Engine {
             if linked.is_empty() {
                 continue;
             }
-            let snapshot = serde_json::to_value(r.observe(&sim.id, now))?;
+            let snapshot = match (&sim.replay, &sim.remote) {
+                (Some(r), _) => serde_json::to_value(r.observe(&sim.id, now))?,
+                // 远程模式：连接器在推进前交来的快照，只在它的观测时刻与当前处理的分钟一致时写入。
+                // `advance` 会重新处理当前分钟，那时快照已是下一分钟的，跳过即保留上一分钟的快照，
+                // 与进程内模式一致；还没有快照时也不写入（不编造观测）。
+                (None, Some(remote)) => match &remote.observation {
+                    Some(o) if o.observed_at == now => serde_json::to_value(o)?,
+                    _ => continue,
+                },
+                (None, None) => continue,
+            };
             updates.extend(linked.into_iter().map(|id| (id, snapshot.clone())));
         }
         if updates.is_empty() {
@@ -436,6 +461,15 @@ impl Engine {
             .filter(|a: &Vec<String>| !a.is_empty())
             .unwrap_or_else(|| vec![c.asset.clone()]);
         let revision = c.plan_revision;
+        if self
+            .state
+            .des_simulations
+            .get(&sim_id)
+            .is_some_and(|s| s.remote.is_some())
+        {
+            return self
+                .des_after_execute_remote(case_id, &sim_id, &plan_id, &plan, &assets, revision);
+        }
         let replay = self.des_replay(&sim_id)?.clone();
         let now = self.now();
         let r = replay.factory.resources.clone();
@@ -570,17 +604,11 @@ impl Engine {
 
     /// 同一 DES 仿真中、同一产线（共用维修班组）的报警案例互相关联（D6），每对只记录一次。
     fn link_related_cases(&mut self, sim_id: &str, case_id: &str) -> Result<()> {
-        let Some(replay) = self
-            .state
-            .des_simulations
-            .get(sim_id)
-            .and_then(|s| s.replay.as_ref())
-        else {
+        let Some(factory) = self.des_factory_config(sim_id) else {
             return Ok(());
         };
         let line_of = |asset: &str| {
-            replay
-                .factory
+            factory
                 .machines
                 .iter()
                 .find(|m| m.id == asset)
@@ -652,18 +680,12 @@ impl Engine {
     /// 已执行的事项不再接收新成员；已执行动作的案例不加入事项。
     fn coordinate_incident(&mut self, sim_id: &str, case_id: &str) -> Result<()> {
         use super::coordination::{has_alarm, is_incident, is_member};
-        let Some(replay) = self
-            .state
-            .des_simulations
-            .get(sim_id)
-            .and_then(|s| s.replay.as_ref())
-        else {
+        let Some(factory) = self.des_factory_config(sim_id) else {
             return Ok(());
         };
-        let coord = replay.factory.coordination.clone();
+        let coord = factory.coordination.clone();
         let line_of = |asset: &str| {
-            replay
-                .factory
+            factory
                 .machines
                 .iter()
                 .find(|m| m.id == asset)

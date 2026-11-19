@@ -18,6 +18,7 @@ pub mod batch;
 mod coordination;
 mod engine_link;
 mod observe;
+pub mod remote;
 pub mod review;
 
 pub(crate) use coordination::des_template;
