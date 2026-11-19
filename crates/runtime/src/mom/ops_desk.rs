@@ -1,4 +1,4 @@
-//! 运营频道发布器与事件分级（docs/mom/OPS_DESK.md，DECISIONS 第 55–57 条）。
+//! 运营频道发布器与事件分级（docs/mom/OPS_DESK.md，DECISIONS 第 56–58 条）。
 //!
 //! 发布器是 MOM 事件发件箱的一个消费者：用自己的游标读新事件，按分级决定是否发到固定会话
 //! `ops-channel`。它自己的状态（游标、案例到消息的对应、小时配额、没发的原因）放在单独的 SQLite 文件里，
@@ -44,7 +44,12 @@ impl OpsLevel {
     }
 }
 
-const P0_KINDS: &[&str] = &["SafetyBlocked", "SlaBreached", "CompensationRequired", "BudgetExhausted"];
+const P0_KINDS: &[&str] = &[
+    "SafetyBlocked",
+    "SlaBreached",
+    "CompensationRequired",
+    "BudgetExhausted",
+];
 const P2_KINDS: &[&str] = &[
     "ObservationRecorded",
     "VerificationObservationRecorded",
@@ -125,7 +130,8 @@ impl OpsPublisher {
         Self::from_db(Connection::open_in_memory()?, store, cfg)
     }
     pub fn open(path: &Path, store: Arc<Store>, cfg: OpsConfig) -> Result<Self> {
-        let db = Connection::open(path).with_context(|| format!("无法打开运营频道状态库 {}", path.display()))?;
+        let db = Connection::open(path)
+            .with_context(|| format!("无法打开运营频道状态库 {}", path.display()))?;
         Self::from_db(db, store, cfg)
     }
     fn from_db(db: Connection, store: Arc<Store>, cfg: OpsConfig) -> Result<Self> {
@@ -137,7 +143,9 @@ impl OpsPublisher {
     fn meta(&self, key: &str) -> Result<Option<String>> {
         Ok(self
             .db
-            .query_row("SELECT value FROM ops_meta WHERE key=?1", [key], |r| r.get(0))
+            .query_row("SELECT value FROM ops_meta WHERE key=?1", [key], |r| {
+                r.get(0)
+            })
             .optional()?)
     }
     fn set_meta(&self, key: &str, value: &str) -> Result<()> {
@@ -159,7 +167,8 @@ impl OpsPublisher {
     /// `now_secs` 由调用方给，保证可重放。
     pub fn tick(&mut self, engine: &mut Engine, now_secs: u64) -> Result<TickReport> {
         let mut report = TickReport::default();
-        self.store.ensure_conversation(OPS_CHANNEL_ID, OPS_CHANNEL_TITLE)?;
+        self.store
+            .ensure_conversation(OPS_CHANNEL_ID, OPS_CHANNEL_TITLE)?;
         self.consume(engine, now_secs, &mut report)?;
         self.publish_dirty(engine, now_secs, &mut report)?;
         Ok(report)
@@ -168,7 +177,10 @@ impl OpsPublisher {
     /// 读新事件，按案例归并后标记“待发布”；纯过程事件只记原因
     fn consume(&mut self, engine: &Engine, now: u64, report: &mut TickReport) -> Result<()> {
         loop {
-            let cursor: u64 = self.meta("cursor")?.and_then(|v| v.parse().ok()).unwrap_or(0);
+            let cursor: u64 = self
+                .meta("cursor")?
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
             let events = engine.pending_events(cursor, 500)?;
             if events.is_empty() {
                 return Ok(());
@@ -176,7 +188,9 @@ impl OpsPublisher {
             let mut batch: Vec<(String, OpsLevel, u64)> = vec![];
             for ev in &events {
                 // 运行时内部事件不属于任何案例
-                let Ok(case) = engine.case(&ev.case_id) else { continue };
+                let Ok(case) = engine.case(&ev.case_id) else {
+                    continue;
+                };
                 let level = classify(&ev.kind, &case.stage);
                 match batch.iter_mut().find(|(id, _, _)| id == &ev.case_id) {
                     Some(entry) => {
@@ -218,7 +232,9 @@ impl OpsPublisher {
                 "SELECT case_id,message_id,last_posted_at,level,last_seq FROM ops_cases WHERE dirty=1
                  ORDER BY CASE level WHEN 'P0' THEN 0 ELSE 1 END, last_seq, case_id",
             )?;
-            let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?;
+            let rows = st.query_map([], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?;
             rows.collect::<rusqlite::Result<_>>()?
         };
         let mut newly_summarized: Vec<String> = vec![];
@@ -232,7 +248,8 @@ impl OpsPublisher {
                         report.skipped += 1;
                         continue;
                     }
-                    self.store.update_message_card(&mid, &card_for(case, OpsLevel::parse(&level)))?;
+                    self.store
+                        .update_message_card(&mid, &card_for(case, OpsLevel::parse(&level)))?;
                     self.db.execute(
                         "UPDATE ops_cases SET dirty=0,last_posted_at=?2 WHERE case_id=?1",
                         params![case_id, now],
@@ -243,7 +260,8 @@ impl OpsPublisher {
                     if OpsLevel::parse(&level) != OpsLevel::P0 && !needs_human(&case.stage) {
                         // P1：没有卡片的案例不新发
                         self.skip(&case_id, seq, "p1_no_card", now)?;
-                        self.db.execute("UPDATE ops_cases SET dirty=0 WHERE case_id=?1", [&case_id])?;
+                        self.db
+                            .execute("UPDATE ops_cases SET dirty=0 WHERE case_id=?1", [&case_id])?;
                         report.skipped += 1;
                         continue;
                     }
@@ -259,12 +277,18 @@ impl OpsPublisher {
                     }
                     let card = card_for(case, OpsLevel::parse(&level));
                     let content = format!("[模拟] 运营案例 {case_id}（详情见卡片）");
-                    let msg = self.store.add_message_with_card(OPS_CHANNEL_ID, "assistant", &content, &card)?;
+                    let msg = self.store.add_message_with_card(
+                        OPS_CHANNEL_ID,
+                        "assistant",
+                        &content,
+                        &card,
+                    )?;
                     self.db.execute(
                         "UPDATE ops_cases SET message_id=?2,dirty=0,last_posted_at=?3,summarized=0 WHERE case_id=?1",
                         params![case_id, msg.id, now],
                     )?;
-                    self.db.execute("INSERT INTO ops_posts(ts) VALUES(?1)", [now])?;
+                    self.db
+                        .execute("INSERT INTO ops_posts(ts) VALUES(?1)", [now])?;
                     report.posted += 1;
                 }
             }
@@ -283,7 +307,10 @@ impl OpsPublisher {
             .transpose()?
             .unwrap_or_default();
         ids.extend(added);
-        let card = an_core::ChatCard::OpsSummary { count: ids.len() as u32, case_ids: ids.clone() };
+        let card = an_core::ChatCard::OpsSummary {
+            count: ids.len() as u32,
+            case_ids: ids.clone(),
+        };
         match self.meta("summary_message")? {
             Some(mid) => self.store.update_message_card(&mid, &card)?,
             None => {
@@ -302,9 +329,15 @@ impl OpsPublisher {
 
     /// 每次“没发”的判断及原因
     pub fn skip_log(&self) -> Result<Vec<SkipRecord>> {
-        let mut st = self.db.prepare("SELECT case_id,seq,reason FROM ops_skips ORDER BY id")?;
+        let mut st = self
+            .db
+            .prepare("SELECT case_id,seq,reason FROM ops_skips ORDER BY id")?;
         let rows = st.query_map([], |r| {
-            Ok(SkipRecord { case_id: r.get(0)?, seq: r.get(1)?, reason: r.get(2)? })
+            Ok(SkipRecord {
+                case_id: r.get(0)?,
+                seq: r.get(1)?,
+                reason: r.get(2)?,
+            })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
@@ -324,15 +357,27 @@ fn stage_label(stage: &str) -> &'static str {
 }
 
 fn card_for(case: &Case, level: OpsLevel) -> an_core::ChatCard {
-    let level = if needs_human(&case.stage) { OpsLevel::P0 } else { level };
+    let level = if needs_human(&case.stage) {
+        OpsLevel::P0
+    } else {
+        level
+    };
     let approver = case.approvals.values().next().map(|a| a.approver.clone());
-    let what = if case.scenario == "s2" { "客户投诉" } else { "产线多扰动" };
+    let what = if case.scenario == "s2" {
+        "客户投诉"
+    } else {
+        "产线多扰动"
+    };
     an_core::ChatCard::OpsCase {
         case_id: case.id.clone(),
         title: format!("{what}：{}", case.asset),
         level: level.as_str().into(),
         stage: case.stage.clone(),
-        summary: format!("{}，约束：{}", stage_label(&case.stage), case.constraints.join("、")),
+        summary: format!(
+            "{}，约束：{}",
+            stage_label(&case.stage),
+            case.constraints.join("、")
+        ),
         owner: "调度".into(),
         approver,
         provenance: "simulation".into(),

@@ -52,7 +52,7 @@ pub struct AppConfig {
     pub mom: MomSection,
 }
 
-/// `[mom]`：运营频道和运营桌面（DECISIONS 第 55–57 条）。`chat_bridge` 默认关闭，关闭时行为与以前完全相同。
+/// `[mom]`：运营频道和运营桌面（DECISIONS 第 56–58 条）。`chat_bridge` 默认关闭，关闭时行为与以前完全相同。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MomSection {
