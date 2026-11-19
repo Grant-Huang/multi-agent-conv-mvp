@@ -47,6 +47,29 @@ pub struct AppConfig {
     /// 外发检查（dlp-egress）；默认 off，关闭时行为与以前完全相同
     #[serde(default)]
     pub egress: an_agents::egress::EgressConfig,
+    /// MOM 与会话的桥（运营桌面、运营频道）；默认关闭
+    #[serde(default)]
+    pub mom: MomSection,
+}
+
+/// `[mom]`：运营频道和运营桌面（DECISIONS 第 56–58 条）。`chat_bridge` 默认关闭，关闭时行为与以前完全相同。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MomSection {
+    pub chat_bridge: bool,
+    /// 同一案例的卡片更新合并窗口（秒）
+    pub ops_merge_secs: u64,
+    /// 运营频道每小时最多新发几张卡，超出的并入汇总卡
+    pub ops_hourly_cap: u32,
+}
+impl Default for MomSection {
+    fn default() -> Self {
+        Self {
+            chat_bridge: false,
+            ops_merge_secs: 60,
+            ops_hourly_cap: 10,
+        }
+    }
 }
 
 /// `[admission]`：外部 agent 的准入规则。默认值取自论文 §5.2。
