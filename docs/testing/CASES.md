@@ -287,6 +287,17 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-FT-15 | front-thinking | route_class_questions = true，同时不思考 + front_reason_first | schema 第一个字段仍是 reason，其后紧跟 needs_data_tools、needs_document |
 | RT-FT-16 | front-thinking | route_class_questions = true，不改思考设置（开思考） | 请求不带 enable_thinking，schema 同样是两个是/否问题（开关与思考无关） |
 
+### FT.5b 类别由工具清单算出（实现前定义，2026-11-19）
+
+开关 `[conversation] route_class_from_tools`，默认 false。打开后，只对执行角色为 general 的路由结果重算类别：要取数 = 工具清单里有 write_file 以外的工具；要文档 = 工具清单里有 write_file，或模型给的类别是 L3/L4。提示词与请求不变。
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-FT-17 | front-thinking | 不写 route_class_from_tools（基线）；模型给 general、工具 [read_file]、类别 L1 | 类别保持 L1 |
+| RT-FT-18 | front-thinking | route_class_from_tools = true；模型依次给 general 且（工具 [read_file]，L1）、（工具 []，L2）、（工具 [write_file]，L1）、（工具 []，L3）、（工具 [read_file, write_file]，L1） | 类别依次为 L2、L1、L3、L3、L4 |
+| RT-FT-19 | front-thinking | route_class_from_tools = true；模型给 coding、工具 []、类别 L4 | 类别保持 L4（只改 general） |
+| RT-FT-20 | front-thinking | route_class_from_tools 开与关各路由一次同一任务 | 两次发给模型的请求（schema 与提示词）完全相同 |
+
 ## 托管配置、热注册与撤销（AG.2，实现前定义）
 
 接口：`POST /api/agents/proposals`（只校验、不写入，返回提议与一次性确认凭证）、`POST /api/agents/proposals/{id}/apply {"token"}`。提议类型：add_preset、add_custom、set_default、disable、enable、remove、revert。托管文件放在数据库同目录的 `agents.managed.toml`。
