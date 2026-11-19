@@ -83,7 +83,7 @@ cd web && npm run build && npm run test:map
 
 ## 2. S2 — 只读来源 + 方案采纳模式统计 + 校验器
 
-**状态**：⏳  
+**状态**：✅（PR 待开）  
 **用例**：RT-INT-03、06、07、08（并入 `CASES.md`）  
 **落点**（仅 `crates/runtime`）：
 
@@ -520,7 +520,7 @@ G-6：无「个人」页签 → 角标挂会话列表即可；E2E-INTROUNREAD �
     "crates/runtime/src/introspect/",
     "crates/runtime/src/store.rs"
   ],
-  "coverage": "runtime",
+  "coverage": "backend",
   "cases": [],
   "runtime_cases": ["RT-INT-03", "RT-INT-06", "RT-INT-07", "RT-INT-08"]
 }
@@ -573,7 +573,7 @@ cd web && npm run test:map
 |---|---|---|
 | S0 | ✅ | #107 |
 | S1 | ✅ | #122 |
-| S2 | ⏳ | — |
+| S2 | ✅ | （本 PR） |
 | S3 | ⏳ | — |
 | S4 | ⏳ | — |
 | S5 | ⏳ | — |

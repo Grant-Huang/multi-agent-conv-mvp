@@ -638,6 +638,18 @@ D2（卡片批准联动）的 E2E-OPSAPPROVE 依赖 WP1 L2 的案例卡，待 L2
 |---|---|---|---|
 | PY-DLP-M5 | 字面点号/方括号/空键与嵌套路径共存，含客户名及普通值；另注入重复分析路径 | evaluate | 每个字段分别正确脱敏且结构/原输入保持；重复路径在写Vault前BLOCK；普通field_path仍为字符串 |
 
+
+## 业务内省 INT（S2：采纳模式统计与校验）
+
+设计见 `docs/memory/INTROSPECTION_PLAN.md`，可执行说明见 `docs/memory/INTROSPECTION_PLAYBOOK.md`。状态约定：动作成功为 `ACCEPTED`/`VERIFIED`，失败为 `FAILED`；成功并验证需 `verification` 非空。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-INT-03 | introspection | 某模板下 13 个带审批 Case：9 个成功并验证、2 个动作失败、2 个审批过期未执行 | 运行采纳模式内省 | 统计与回算一致（审批 13、成功并验证 9、失败 2、过期未用 2）；耗时为 complete_at−accepted_at；样本不足的分组只写「样本不足」；结论不含源数据没有的字段 |
+| RT-INT-06 | introspection | 任意内省分析路径 | 监视引擎状态 | 对 MOM 无写调用（序号、时间、阶段、动作数不变） |
+| RT-INT-07 | introspection | 样本低于门槛或证据不足 | 校验 | 验真为 inconclusive；不进入可推送集合 |
+| RT-INT-08 | introspection | 一条 Finding 的证据引用指向不存在的记录，或数字被篡改 | 校验 | 该条 Drop 并记原因；完好条目仍可 Accept |
+
 ## 围栏：审查进待人工的人工判定（实现前定义）
 
 设计见 [docs/fencing/REVIEW_VERDICT_DESIGN.md](../fencing/REVIEW_VERDICT_DESIGN.md)。未改 `orchestrator` / `store`，实现前须另批。下列用例冻结后只改业务代码。

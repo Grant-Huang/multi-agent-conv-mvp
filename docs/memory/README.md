@@ -16,7 +16,8 @@
 |---|---|---|
 | S0 | ✅ | 用例冻结、方案批准（PR #107） |
 | S1 | ✅（PR #122） | 5 张新表 + `Store` 读写；11 个 `int_store_*` 单元测试 |
-| S2–S8 | ⏳ | 见 [INTROSPECTION_PLAYBOOK.md](INTROSPECTION_PLAYBOOK.md) |
+| S2 | ✅ | SourceAdapter / 采纳模式 / 校验器 |
+| S3–S8 | ⏳ | 见 [INTROSPECTION_PLAYBOOK.md](INTROSPECTION_PLAYBOOK.md) |
 
 ## 接手规则（弱 agent 也必须遵守）
 
