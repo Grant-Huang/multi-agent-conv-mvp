@@ -293,7 +293,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 
 | Case | Feature | Given / When | Then |
 |---|---|---|---|
-| RT-FT-17 | front-thinking | 不写 route_class_from_tools（基线）；模型给 general、工具 [read_file]、类别 L1 | 类别保持 L1 |
+| RT-FT-17 | front-thinking | route_class_from_tools = false（2026-11-19 需求变更：原为"不写配置"，默认值改为打开后改为显式关闭，见 DECISIONS 第 46 条）；模型给 general、工具 [read_file]、类别 L1 | 类别保持 L1 |
 | RT-FT-18 | front-thinking | route_class_from_tools = true；模型依次给 general 且（工具 [read_file]，L1）、（工具 []，L2）、（工具 [write_file]，L1）、（工具 []，L3）、（工具 [read_file, write_file]，L1） | 类别依次为 L2、L1、L3、L3、L4 |
 | RT-FT-19 | front-thinking | route_class_from_tools = true；模型给 coding、工具 []、类别 L4 | 类别保持 L4（只改 general） |
 | RT-FT-20 | front-thinking | route_class_from_tools 开与关各路由一次同一任务 | 两次发给模型的请求（schema 与提示词）完全相同 |
@@ -306,6 +306,13 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|
 | RT-FT-21 | front-thinking | 不写 concise_task_goal（基线） | turn_decision 的系统提示词仍是原来的 task_goal 规则（含"写成完整、可独立执行的任务描述"），没有"不要添加用户没有提出的要求" |
 | RT-FT-22 | front-thinking | concise_task_goal = true | 系统提示词含"不要添加用户没有提出的要求"、仍要求补全指代、仍要求贴出的内容原样放进 task_goal；turn_decision 的 schema 与关闭时相同 |
+
+### FT.5b 默认打开（实现前定义，2026-11-19，见 DECISIONS 第 46 条）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-FT-23 | front-thinking | 不写 route_class_from_tools；模型给 general、工具 [read_file]、类别 L1 | 类别为 L2（默认打开） |
+| RT-FT-24 | front-thinking | route_class_questions = true 且 route_class_from_tools = true；模型回答"要取数、不要文档"，工具清单为空 | 类别为 L2（以两问为准，工具清单规则不介入） |
 
 ## 托管配置、热注册与撤销（AG.2，实现前定义）
 

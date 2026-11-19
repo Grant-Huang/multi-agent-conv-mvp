@@ -604,14 +604,16 @@ async fn routed_class(rt: &Runtime, goal: &str) -> TaskClass {
     }
 }
 
-/// RT-FT-17：不写 route_class_from_tools 时，类别保持模型给的值（基线守护）
+/// RT-FT-17：route_class_from_tools = false 时，类别保持模型给的值。
+/// 2026-11-19 需求变更（DECISIONS 第 46 条，用户同意）：默认值改为打开，
+/// 本用例由"不写配置"改为"显式关闭"，断言不变。
 #[tokio::test]
 async fn rt_ft_17_class_from_tools_off_keeps_model_class() {
     let llm = MockLlm::start(Arc::new(|_, _, _| {
         route_ct("general", "L1", &["read_file"])
     }))
     .await;
-    let rt = runtime(&llm.base, 0, "", "");
+    let rt = runtime(&llm.base, 0, "", "route_class_from_tools = false");
     assert_eq!(
         routed_class(&rt, "读一下 notes/todo.md").await,
         TaskClass::L1
@@ -715,5 +717,37 @@ async fn rt_ft_22_concise_goal_on_changes_prompt_only() {
     assert_eq!(
         on["response_format"], off["response_format"],
         "schema 不应改变"
+    );
+}
+
+// ───────────── FT.5b 默认打开（RT-FT-23 ~ RT-FT-24） ─────────────
+
+/// RT-FT-23：不写 route_class_from_tools 时默认打开，general 任务按工具清单重算类别
+#[tokio::test]
+async fn rt_ft_23_class_from_tools_on_by_default() {
+    let llm = MockLlm::start(Arc::new(|_, _, _| {
+        route_ct("general", "L1", &["read_file"])
+    }))
+    .await;
+    let rt = runtime(&llm.base, 0, "", "");
+    assert_eq!(
+        routed_class(&rt, "读一下 notes/todo.md").await,
+        TaskClass::L2
+    );
+}
+
+/// RT-FT-24：两问与工具清单规则同时打开时，以两问为准
+#[tokio::test]
+async fn rt_ft_24_class_questions_take_precedence() {
+    let llm = MockLlm::start(Arc::new(|_, _, _| route_q(true, false))).await;
+    let rt = runtime(
+        &llm.base,
+        0,
+        "",
+        "route_class_questions = true\nroute_class_from_tools = true",
+    );
+    assert_eq!(
+        routed_class(&rt, "帮我算一下 3600 * 0.975").await,
+        TaskClass::L2
     );
 }
