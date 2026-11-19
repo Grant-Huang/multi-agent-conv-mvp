@@ -130,6 +130,10 @@ pub struct ConversationSection {
     /// 由代码按现有定义算出类别。与是否思考无关。默认不开。
     #[serde(default)]
     pub route_class_questions: bool,
+    /// FT.5b：general 任务的类别改由路由列出的工具清单算出（有 write_file 以外的工具 = 要取数；
+    /// 有 write_file 或模型给 L3/L4 = 要文档）。只改结果，不改发给模型的请求。默认不开。
+    #[serde(default)]
+    pub route_class_from_tools: bool,
     /// AG.4：在对话里管理助手（"把 Cursor 接进来"等）。会改变前台判断的 schema，默认关；
     /// 用户本机评测达标后再决定是否打开
     #[serde(default)]
@@ -143,6 +147,7 @@ impl Default for ConversationSection {
             stream_replies: true,
             risk_rules: false,
             route_class_questions: false,
+            route_class_from_tools: false,
             agent_management: false,
         }
     }

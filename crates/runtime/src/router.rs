@@ -23,6 +23,8 @@ pub struct Router {
     risk_rules: bool,
     /// FT.5：类别不让模型直接选，改为回答两个是/否问题，由代码算出 L1–L4
     class_questions: bool,
+    /// FT.5b：general 任务的类别改由工具清单算出（方案 B）
+    class_from_tools: bool,
 }
 
 /// FT.5 打开时模型的输出：两个是/否问题代替 task_class，其余字段与 `RouteDecision` 相同。
@@ -49,6 +51,17 @@ impl RouteAnswer {
             reason: self.reason,
         }
     }
+}
+
+/// FT.5b（方案 B）：由工具清单重算 general 任务的类别。
+/// - 要取数：工具清单里有 `write_file` 以外的工具；
+/// - 要文档：工具清单里有 `write_file`，或者模型自己给的类别是 L3/L4
+///   （模型漏列 `write_file` 时仍按文档任务处理，宁可多质检一次，不漏审）。
+pub fn class_from_tools(model_class: TaskClass, required_tools: &[String]) -> TaskClass {
+    let needs_data_tools = required_tools.iter().any(|t| t != "write_file");
+    let needs_document = required_tools.iter().any(|t| t == "write_file")
+        || matches!(model_class, TaskClass::L3 | TaskClass::L4);
+    class_from_answers(needs_data_tools, needs_document)
 }
 
 /// FT.5：按现有定义由两个答案确定性地算出类别（与系统提示词里 L1–L4 的定义一致）。
@@ -160,6 +173,7 @@ impl Router {
             policy,
             risk_rules: false,
             class_questions: false,
+            class_from_tools: false,
         }
     }
 
@@ -172,6 +186,12 @@ impl Router {
     /// FT.5：类别改为回答两个是/否问题，由代码算出（与是否思考无关）
     pub fn with_class_questions(mut self, on: bool) -> Self {
         self.class_questions = on;
+        self
+    }
+
+    /// FT.5b：general 任务的类别改由工具清单算出（只改结果，不改发给模型的请求）
+    pub fn with_class_from_tools(mut self, on: bool) -> Self {
+        self.class_from_tools = on;
         self
     }
 
@@ -447,6 +467,19 @@ impl Router {
         };
 
         let mut decision = structured.value;
+        if self.class_from_tools && decision.execution_role == Role::General {
+            let before = decision.task_class;
+            decision.task_class = class_from_tools(before, &decision.required_tools);
+            if decision.task_class != before {
+                tracing::info!(
+                    event = "route.class_from_tools",
+                    from = ?before,
+                    to = ?decision.task_class,
+                    tools = ?decision.required_tools,
+                    "按工具清单改写了任务类别"
+                );
+            }
+        }
         if self.risk_rules && apply_risk_rules(task_goal, &mut decision) {
             tracing::info!(event = "route.risk_raised", risk = ?decision.risk_level, "规则提升了风险等级");
         }

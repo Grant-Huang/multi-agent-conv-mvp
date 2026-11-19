@@ -775,7 +775,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 模型 | `llm.request_failed`、`llm.format_retry`、`llm.structured_failed`、`llm.structured_ok`（debug 级别） | 请求失败、格式不合格重试、最终失败 |
 | Agent 排查 | `agent.diagnose`、`agent.diagnose_unmatched`、`agent.diagnose_sent` | 一次排查（分类、命中的结论数）；没有命中任何规则时只记分类和错误输出的长度，不记内容；第 4 层发给帮手时记帮手、内容摘要和长度（`task_id` 为 DLP 映射的作用域），不记内容 |
 | Agent 配置 | `agent.config_proposed`、`agent.config_applied`、`agent.config_reverted`、`agent.config_rejected`、`agent.managed_invalid`、`agent.env_missing` | 托管配置的提议、确认、撤销、被拒（凭证错误 / 过期）；托管文件读取失败；托管 agent 引用的环境变量没有设置 |
-| 前台提速 | `llm.escalated`、`route.risk_raised` | 不思考的判断可疑、开思考重判一次（`schema`、`reason`：format / high_risk / no_agent、`fast_ms`、`total_ms`）；规则把路由风险调高 |
+| 前台提速 | `llm.escalated`、`route.risk_raised`、`route.class_from_tools` | 不思考的判断可疑、开思考重判一次（`schema`、`reason`：format / high_risk / no_agent、`fast_ms`、`total_ms`）；规则把路由风险调高；按工具清单改写了 general 任务的类别（`from`、`to`、`tools`） |
 | HTTP入口 | `http.host_rejected` | Host 校验拒绝时记录 WARN，带 `code=E_HTTP_HOST`、`method`、不含查询串且最多200字符的 `path` 摘要、最多100字符的首个 `host` 摘要；请求尚无任务，`task_id` 为空。不记录请求体或其他请求头；独立 MOM 使用 `logs/an-mom.jsonl.*` |
 | 规则 | `policy.reject` | 没有可用 agent，拒绝派发 |
 | 准入 | `admission.preadmitted`、`admission.submitted`、`admission.clarified`、`admission.scored`、`admission.contracted`、`admission.approved`、`admission.activated`、`admission.rejected`、`admission.check`、`admission.warning`、`admission.downgraded`、`admission.revoked`、`admission.sampled`、`admission.bound` | agent 准入协议（E3）每次状态变化一条，带 `agent_id`；同名事件同时写入 `admission_events` 审计表 |
@@ -946,6 +946,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | | `agent_management` | false | AG.4 对话里管理助手（"把 Cursor 接进来"等）。会给前台判断加上 manage_agents 和三个枚举字段，评测达标前保持关闭 |
 | | `risk_rules` | false | 前台提速实验 B：路由后按关键词把风险只升不降（见 PLAN 的 FT 一节） |
 | | `route_class_questions` | false | 前台提速实验 FT.5（Q）：路由回答 `needs_data_tools`（计算、查时间、列出或读取工作目录文件、联网搜索算；保存结果的 write_file 不算）和 `needs_document` 两个是/否问题，由代码算出 L1–L4（否否 L1、是否 L2、否是 L3、是是 L4）。`RouteDecision` 和 Policy 不变；与是否思考无关 |
+| | `route_class_from_tools` | false | 前台提速实验 FT.5b（T）：只对 general 任务，按路由列出的工具清单重算类别：有 `write_file` 以外的工具 = 要取数；有 `write_file` 或模型给 L3/L4 = 要文档。提示词和请求不变；改写时记 `route.class_from_tools`。理由见 DECISIONS.md 第 43 条 |
 | `[backends.<名>]` | `front_structured_thinking` / `front_reason_first` / `front_thinking_escalation` | 不写 | 前台判断不思考；不思考时先写依据（A）；可疑时开思考重判一次（D）。A、D 只在关思考时生效 |
 | `[agents.general]` | `max_steps` / `max_concurrent` / `workspace_dir` | 6 / 4 / `workspace/files` | |
 | `[agents.general]` | `report_max_searches` / `report_parallel` | 6 / 3 | 研究报告（见 9.5）：检索去重后上限；同时写作的章节数 |
