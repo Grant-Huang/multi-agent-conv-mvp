@@ -11,6 +11,9 @@ PR 描述默认从环境变量 PR_BODY 读取（CI 中由 workflow 传入）。
 - 组件数 > 3（不计 docs / evals）：警告，建议拆分。
 - 删除的测试多于新增的测试：阻断，除非 PR 描述包含 `## 测试删除说明`（正文 ≥ 20 字）。
   这是粗略检测（按测试标记行计数），目的是提醒人工确认，不是证明测试被弱化。
+- 测试弱化信号（新增 `#[ignore]` / `.skip(` / `.only(` / `#[should_panic]`，或 assert
+  净减少）：阻断，除非 PR 描述包含 `## 测试变更说明`（正文 ≥ 20 字）。
+- 非纯文档改动缺少 `## 非目标` 或 Case/Feature ID：警告（不阻断）。
 
 退出码：0 = 通过或仅警告；1 = 阻断；2 = 运行错误。
 """
@@ -48,11 +51,29 @@ SIZE_NOTE_HEADING = "大改动说明"
 SIZE_NOTE_MIN_CHARS = 40
 TEST_NOTE_HEADING = "测试删除说明"
 TEST_NOTE_MIN_CHARS = 20
+WEAKEN_NOTE_HEADING = "测试变更说明"
+WEAKEN_NOTE_MIN_CHARS = 20
+SCOPE_NOTE_HEADING = "非目标"
+CASE_ID_PATTERN = re.compile(
+    r"\b(?:E2E|RT|HTTP|FT|AG|DES|INT)-[A-Z0-9-]+\b"
+    r"|\bFeature\s*ID\s*[:：]|Case\s*ID\s*[:：]|功能\s*ID\s*[:：]",
+    re.IGNORECASE,
+)
 
 # 测试标记：Rust #[test]、Python def test_、JS/TS it( / test( / describe(。
 TEST_MARKER = re.compile(
     r"#\[(?:tokio::)?test\b|\bdef test_|^\s*(?:it|test|describe)\(|^\s*it\.skip\(|^\s*test\.skip\("
 )
+# 弱化 / 收窄测试的新增信号（只看 + 行）。
+WEAKEN_ADDED = re.compile(
+    r"#\[ignore\]|\.skip\(|\.only\(|#\[should_panic\b|xit\(|xdescribe\(|it\.only\(|test\.only\("
+)
+# assert 净减少：Rust assert! / assert_eq!、Python assert、Jest/Vitest expect(...).to*
+ASSERT_LINE = re.compile(
+    r"\bassert(?:_eq|_ne|_matches)?!|\bassert\s+|\.to(?:Be|Equal|StrictEqual|Contain|Match|Throw)\("
+)
+DOC_PREFIXES = ("docs/", "evals/")
+DOC_SUFFIXES = (".md",)
 
 
 @dataclass
@@ -61,11 +82,27 @@ class Finding:
     message: str
 
 
+def is_doc_only(changes: list[FileChange]) -> bool:
+    """改动是否全部落在文档 / 评测 / Markdown（不含生成文件）。"""
+    counted = [c for c in changes if not is_generated(c.path)]
+    if not counted:
+        return True
+    for c in counted:
+        p = c.path
+        if p.startswith(DOC_PREFIXES) or p.endswith(DOC_SUFFIXES):
+            continue
+        return False
+    return True
+
+
 def evaluate(
     changes: list[FileChange],
     pr_body: str | None,
     removed_tests: int = 0,
     added_tests: int = 0,
+    weaken_added: int = 0,
+    assert_added: int = 0,
+    assert_removed: int = 0,
 ) -> dict:
     """纯函数：根据改动清单、PR 描述和测试标记计数给出结论。"""
     counted = [c for c in changes if not is_generated(c.path)]
@@ -77,6 +114,11 @@ def evaluate(
     has_size_note = bool(size_note and len(size_note) >= SIZE_NOTE_MIN_CHARS)
     test_note = pr_section(pr_body or "", TEST_NOTE_HEADING)
     has_test_note = bool(test_note and len(test_note) >= TEST_NOTE_MIN_CHARS)
+    weaken_note = pr_section(pr_body or "", WEAKEN_NOTE_HEADING)
+    has_weaken_note = bool(weaken_note and len(weaken_note) >= WEAKEN_NOTE_MIN_CHARS)
+    scope_note = pr_section(pr_body or "", SCOPE_NOTE_HEADING)
+    has_scope_note = bool(scope_note and len(scope_note) >= 8)
+    has_case_id = bool(CASE_ID_PATTERN.search(pr_body or ""))
 
     findings: list[Finding] = []
 
@@ -115,6 +157,40 @@ def evaluate(
                 Finding("block", msg + "。若是合理删除，请在描述中添加 `## 测试删除说明`（≥20 字）")
             )
 
+    assert_net_loss = assert_removed > assert_added
+    if weaken_added > 0 or assert_net_loss:
+        parts = []
+        if weaken_added > 0:
+            parts.append(f"新增弱化标记 {weaken_added} 处")
+        if assert_net_loss:
+            parts.append(f"assert 净减少 {assert_removed - assert_added}")
+        msg = "疑似测试弱化：" + "；".join(parts)
+        if has_weaken_note:
+            findings.append(Finding("warn", msg + "；已提供 `## 测试变更说明`，请审查人确认"))
+        else:
+            findings.append(
+                Finding(
+                    "block",
+                    msg + "。请说明原因并添加 `## 测试变更说明`（≥20 字），或恢复断言强度",
+                )
+            )
+
+    if counted and not is_doc_only(changes):
+        if not has_scope_note:
+            findings.append(
+                Finding(
+                    "warn",
+                    "非文档改动缺少 `## 非目标`（≥8 字）。请写明本次明确不改什么，防止范围扩大",
+                )
+            )
+        if not has_case_id:
+            findings.append(
+                Finding(
+                    "warn",
+                    "非文档改动未关联 Case/Feature ID（如 E2E-… / RT-… / Feature ID：…）",
+                )
+            )
+
     if any(f.severity == "block" for f in findings):
         status = "block"
     elif findings:
@@ -151,6 +227,56 @@ def count_test_markers(diff: str) -> tuple[int, int]:
     return added, removed
 
 
+def is_test_path(path: str) -> bool:
+    """是否像测试文件：弱化 / assert 净减少只在这些路径上计。
+
+    避免策略脚本、文档里出现 `.skip(` / `#[ignore]` 字样时自触发阻断。
+    """
+    p = path.replace("\\", "/")
+    base = p.rsplit("/", 1)[-1]
+    if "/tests/" in f"/{p}/" or p.startswith("tests/"):
+        return True
+    if base.startswith("test_") and base.endswith(".py"):
+        return True
+    if base.endswith(("_test.rs", "_test.py", ".spec.ts", ".spec.tsx", ".test.ts", ".test.tsx")):
+        return True
+    if base.endswith("_test.go"):
+        return True
+    return False
+
+
+def count_weaken_signals(diff: str) -> tuple[int, int, int]:
+    """返回 (弱化标记新增数, assert 新增数, assert 删除数)；只统计测试路径。"""
+    weaken_added = assert_added = assert_removed = 0
+    in_hunk = False
+    current: str | None = None
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            in_hunk = False
+            current = None
+            # diff --git a/path b/path
+            parts = line.split(" ")
+            if len(parts) >= 4 and parts[3].startswith("b/"):
+                current = parts[3][2:]
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if not in_hunk or not current or not is_test_path(current):
+            continue
+        if line.startswith("+"):
+            body = line[1:]
+            if WEAKEN_ADDED.search(body):
+                weaken_added += 1
+            if ASSERT_LINE.search(body):
+                assert_added += 1
+        elif line.startswith("-"):
+            body = line[1:]
+            if ASSERT_LINE.search(body):
+                assert_removed += 1
+    return weaken_added, assert_added, assert_removed
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="检查 PR 变更规模")
     parser.add_argument("--base", help="比较基线，默认 origin/$GITHUB_BASE_REF 或 origin/master")
@@ -172,7 +298,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     added_tests, removed_tests = count_test_markers(diff)
-    result = evaluate(changes, body, removed_tests=removed_tests, added_tests=added_tests)
+    weaken_added, assert_added, assert_removed = count_weaken_signals(diff)
+    result = evaluate(
+        changes,
+        body,
+        removed_tests=removed_tests,
+        added_tests=added_tests,
+        weaken_added=weaken_added,
+        assert_added=assert_added,
+        assert_removed=assert_removed,
+    )
 
     print(
         f"变更规模：{result['lines']} 行，{result['files']} 个文件，"

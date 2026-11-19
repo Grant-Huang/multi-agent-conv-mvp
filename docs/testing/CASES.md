@@ -636,3 +636,15 @@ D2（卡片批准联动）的 E2E-OPSAPPROVE 依赖 WP1 L2 的案例卡，待 L2
 | Case | Given | When | Then |
 |---|---|---|---|
 | PY-DLP-M5 | 字面点号/方括号/空键与嵌套路径共存，含客户名及普通值；另注入重复分析路径 | evaluate | 每个字段分别正确脱敏且结构/原输入保持；重复路径在写Vault前BLOCK；普通field_path仍为字符串 |
+
+## 围栏：审查进待人工的人工判定（实现前定义）
+
+设计见 [docs/fencing/REVIEW_VERDICT_DESIGN.md](../fencing/REVIEW_VERDICT_DESIGN.md)。未改 `orchestrator` / `store`，实现前须另批。下列用例冻结后只改业务代码。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-REV-01 | approval | 审查进入 NEEDS_HUMAN 且有 result | `POST .../review-verdict` accept | COMPLETED；事件含人工 note |
+| RT-REV-02 | approval | 同上，仍有返工轮次 | reject | 回到执行或 VERIFYING，带问题清单 |
+| RT-REV-03 | approval | 返工用尽 | reject | FAILED |
+| RT-REV-04 | approval | 已是 COMPLETED | accept 或 reject | 409，状态不变 |
+| E2E-REV-01 | approval | 浏览器任务卡为有 result 的待人工 | 点「判定通过」 | 状态与交付文案为已完成 |

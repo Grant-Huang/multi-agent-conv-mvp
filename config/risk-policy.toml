@@ -12,7 +12,8 @@
 default_level = "L2"
 
 [approvals]
-L0 = "自动合并允许（仍需通过 CI）"
+# L0 文案保留「可自动合并」策略意图；仓库默认未开启 auto-merge（见 docs/fencing/EVAL_LOOP.md）。
+L0 = "策略上允许自动合并（仍需通过 CI）；当前仓库未开启 auto-merge"
 L1 = "1 位审查人批准"
 L2 = "1 位审查人批准，且审查人不是作者"
 L3 = "需要模块负责人（CODEOWNERS）批准；修改本策略文件或 CI 的 PR 必须由人工确认"

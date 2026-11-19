@@ -2,6 +2,7 @@
 
 本文件是所有 AI 编码 agent 共用的规则入口。具体设计见 `docs/DESIGN.md`，当前计划见 `docs/PLAN.md`。
 注意：本文件是指导，不是安全边界；禁止事项由 CI、分支保护和权限配置强制执行。
+围栏落地说明见 `docs/fencing/README.md`（分支保护、bot 身份、影子审查、Eval、产品映射）。
 
 ## 开始前
 1. 读 `docs/DESIGN.md`（架构）和 `docs/PLAN.md`（当前里程碑）；排查问题或改动已有设计前，先看 `docs/DECISIONS.md`（设计决策和理由）。
