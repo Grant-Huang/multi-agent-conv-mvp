@@ -1,10 +1,12 @@
-# 业务内省：实现方案（待批准）
+# 业务内省：实现方案（已批准）
 
-状态：**已批准（2026-11-18，第 13 节 7 项全部同意）。S0 已完成，尚未改任何代码；每步完成后等用户确认再进入下一步。**
-依据：`docs/DECISIONS.md` 第 45–55 条；验收用例 `docs/memory/ACCEPTANCE.md`（RT-INT-*、E2E-MEM-*）。
+状态：**已批准（2026-11-18，第 13 节 7 项全部同意）。S0、S1 已完成（2026-11-19）；从 S2 起按 [INTROSPECTION_PLAYBOOK.md](INTROSPECTION_PLAYBOOK.md) 逐步做；每步一个 PR，用户确认后再进入下一步。**
+依据：`docs/DECISIONS.md` 第 45–55 条；验收用例 `docs/memory/ACCEPTANCE.md`（RT-INT-*、E2E-INTRO*）；入口 [README.md](README.md)。
 范围：只含**业务内省**（定时分析 → 发送闸门 → 推送到主窗口 → 未读角标 → 运行时标注）。个人风格、决策画像、组织 taste 属于另一份方案，不在这里。
 
-按 `AGENTS.md`，下列文件改动必须先经你批准，本文第 9 节逐项列出。
+**接手实现请读 Playbook，不要只读本节摘要。** 本节保留架构与批准记录；可执行粒度（类型签名、夹具、Red→Green、CASES 配方）在 Playbook。
+
+按 `AGENTS.md`，下列高风险改动已在第 13 节获批：`store.rs` 新建表（S1 已做完）、`ChatCard::Introspection`、`[introspection]`、`/api/introspection/*`。S2+ **不要再改表结构**，除非重新批准。
 
 ---
 
@@ -19,7 +21,8 @@
 | 5 | `ChatCard` 是 `an-core` 里导出到 TypeScript 的枚举 | 新增一个 `Introspection` 变体，要按 `AGENTS.md` 重新生成 `web/src/bindings/` 并一起提交 |
 | 6 | 后台任务的现有写法是 `lib.rs::start_background` 里 `tokio::spawn` + `loop { sleep }`，**没有取消信号** | 内省任务不能照抄，必须带取消和超时（第 5 节） |
 | 7 | `context_text` 把最近 6 条消息当背景交给执行 agent，只区分“用户 / 助手” | 内省消息会进入这里，要给它**加“数据，非指令”的标记** |
-| 8 | 仓库里**没有**“个人”页签、未读状态、个人记忆模块、登录与角色，也**没有**删除会话的接口 | 角标只能先挂在会话列表上；“不被抽取进记忆”只能写成约束，等记忆模块建好再测；会话“不可删除”目前天然成立，加了删除接口时要补守卫 |
+| 8 | 仓库里**没有**“个人”页签、个人记忆模块、登录与角色；也**没有**删除会话的接口 | 角标只能先挂在会话列表上；“不被抽取进记忆”只能写成约束（G-9）；会话“不可删除”目前天然成立，加了删除接口时要补守卫 |
+| 9 | S1 已落地：五张新表 + `Store` 读写 + `ensure_main_conversation`（`app_state.main_conversation_id`） | G-5「如何指定主窗口」已解决；后续步骤**复用**这些 API，不要重写存储层 |
 
 ---
 
@@ -254,17 +257,18 @@ operator_role = ""   # 预留，暂不生效
 
 | 步 | 目标 | 主要落点 | 对应用例 | 回滚 |
 |---|---|---|---|---|
-| S0 | 冻结业务内省的验收用例，记录批准，建进度清单。**不一次并入 `CASES.md`**（`check-map` 要求每个 RT 用例都有 Rust 测试），改为每步先写测试再并入 | 仅 docs | 冻结范围见 ACCEPTANCE 七之三 | 删除文档改动 |
-| S1 | 新表与 `Store` 读写方法 | `store.rs` | 存储层单元测试（`store.rs` 内；覆盖 RT-INT-09 幂等、RT-INT-26/27 的存储部分；RT 用例本身随 S4/S5 并入 `CASES.md`） | `enabled=false`；新表可忽略 |
-| S2 | `SourceAdapter` + `MomSource`（只读）+ 方案采纳模式的确定性统计 + 校验器 | `introspect/` | RT-INT-03、07、08、06（只读边界） | 删除新目录 |
+| S0 ✅ | 冻结业务内省的验收用例，记录批准，建进度清单。**不一次并入 `CASES.md`**（`check-map` 要求每个 RT 用例都有 Rust 测试），改为每步先写测试再并入 | 仅 docs（#107） | 冻结范围见 ACCEPTANCE 七之三 | 删除文档改动 |
+| S1 ✅ | 新表与 `Store` 读写方法 | `store.rs`（#122） | `int_store_*` 单元测试；RT-INT-09/26/27 存储部分；RT 行随 S4/S5 并入 | 新表可忽略 |
+| S2 | `SourceAdapter` + `MomSource`（只读）+ 方案采纳模式的确定性统计 + 校验器 | `introspect/` | RT-INT-03、06、07、08 | 删除新目录 |
 | S3 | 发送闸门 | `gate.rs` | RT-INT-16、17、18、19、20、22 | 同上 |
-| S4 | 定时调度、租约、超时、取消、清理 | `job.rs`、`lib.rs` | RT-INT-09、13、14、23 | 配置关闭 |
-| S5 | 主窗口会话、推送、未读、`is_operator`、`ChatCard` 新变体、`context_text` 标记 | `push.rs`、`operator.rs`、`core`、`conversation.rs` | RT-INT-21、24（除记忆部分）、25、26、27、28、29 | 配置关闭 |
-| S6 | HTTP 接口与前端：角标、内省页、标注 | `server`、`web` | E2E-MEM-03、04、05、06 | 隐藏入口 |
+| S4 | 定时调度、租约、超时、取消、清理 | `job.rs`、`lib.rs`、`config.rs` | RT-INT-09、13、14、23 | 配置关闭 |
+| S5 | 主窗口会话、推送、未读、`is_operator`、`ChatCard` 新变体、`context_text` 标记 | `push.rs`、`operator.rs`、`core`、`conversation.rs` | RT-INT-21、24（除记忆）、25、26、27、28（除记忆）、29 | 配置关闭 |
+| S6 | HTTP 接口与前端：角标、内省页、标注 | `server`、`web` | E2E-INTROVIEW、INTROLABEL、INTROPUSH、INTROUNREAD；RT-INT-10 | 隐藏入口 |
 | S7 | 用 DES 做“植入真值”评测；再决定要不要加模型解释层（默认关闭，后台槽位 2~5，取不到就跳过） | `des`、评测脚本 | RT-INT-15、评测报告 | 不启用模型层 |
-| S8 | “同因复发”：先核实根因字段，能取出就做 | `introspect/` | RT-INT-02 | 不启用该主题 |
+| S8 | “同因复发”：先核实根因字段，能取出就做 | `introspect/` | RT-INT-02（核实后或重写，需用户确认） | 不启用该主题 |
 
-每步尽量只动一个 crate；S5 同时动 `core` 和 `runtime`，因为 `ChatCard` 在 `core`，已在第 3 节标出。
+每步尽量只动一个 crate；S5 同时动 `core` 和 `runtime`，因为 `ChatCard` 在 `core`，已在第 3 节标出。  
+**逐步怎么写测试、类型签名、夹具、打分公式、CASES 配方 → [INTROSPECTION_PLAYBOOK.md](INTROSPECTION_PLAYBOOK.md)。**
 
 ---
 
@@ -303,4 +307,4 @@ operator_role = ""   # 预留，暂不生效
 6. 角标本期先挂在会话列表里的主窗口会话上，等“个人”页签做出来再迁移，是否可以？
 7. 发送闸门的初稿数字（阈值 4、日上限 1、样本门槛 10、超时 120 秒）是否作为初始值？
 
-批准后从 S0 开始；每一步完成后更新 `docs/PLAN.md` 的进度并等你确认再进入下一步。
+第 13 节 7 项已于 2026-11-18 全部批准；S0/S1 已完成。每一步完成后更新 `docs/PLAN.md` 与 Playbook 进度表，并等用户确认再进入下一步。

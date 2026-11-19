@@ -22,6 +22,7 @@ pub mod config;
 pub mod conv_lock;
 pub mod conversation;
 pub mod dream;
+pub mod introspect;
 pub mod link;
 pub mod mom;
 pub mod nodes;

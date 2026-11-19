@@ -946,11 +946,12 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 ## 业务内省（INT）
 
 > 授权：2026-11-18 用户批准 `docs/memory/INTROSPECTION_PLAN.md`（决策第 55 条）。验收用例见 `docs/memory/ACCEPTANCE.md`（业务内省部分已冻结）。
-> 每步流程：先写该步测试取得 Red → 并入 `CASES.md`、同步 `features.json` → 写实现到 Green；每步完成后更新本节，用户确认后再进入下一步。
-> 默认关闭：`[introspection] enabled = false`；数据库只新建表，不改已有表。
+> **可执行说明书（弱 agent 入口）**：`docs/memory/INTROSPECTION_PLAYBOOK.md`；目录说明见 `docs/memory/README.md`。
+> 每步流程：先写该步测试取得 Red → 并入 `CASES.md`、同步 `features.json` → 写实现到 Green；每步完成后更新本节与 Playbook 进度表，用户确认后再进入下一步。
+> 默认关闭：`[introspection] enabled = false`；数据库只新建表，不改已有表。一步一个 PR。
 
 - [x] **S0 冻结验收与进度清单**（2026-11-18）：业务内省用例冻结；补齐 RT-INT-13/14/15；RT-INT-01、04、05 暂缓，11、12 取消，02 待 S8；浏览器用例改名 `E2E-INTRO*`；RT-INT-03 改成与 MOM 真实字段一致
-- [ ] **S1 新表与 `Store` 读写方法**（`store.rs`，高风险，已批准）：存储层单元测试（`store.rs` 内，覆盖 RT-INT-09/26/27 的存储部分；RT 用例随 S4/S5 并入 `CASES.md`）
+- [x] **S1 新表与 `Store` 读写方法**（`store.rs`，高风险，已批准）：存储层单元测试（`store.rs` 内，覆盖 RT-INT-09/26/27 的存储部分；RT 用例随 S4/S5 并入 `CASES.md`）（2026-11-19：11 个 `int_store_*` 单元测试先 Red（10 个业务断言失败）后 Green；新增 5 张表，不改已有表；水位只随 done 任务推进；租约、幂等、未读、主窗口会话唯一均在存储层事务内保证；主窗口会话的“不能删除”随 S5 实现）
 - [ ] **S2 `SourceAdapter` + `MomSource` + 方案采纳模式统计 + 校验器**（`introspect/`）：RT-INT-03、06、07、08
 - [ ] **S3 发送闸门**：RT-INT-16、17、18、19、20、22
 - [ ] **S4 定时调度、租约、超时、取消、清理**：RT-INT-09、13、14、23
