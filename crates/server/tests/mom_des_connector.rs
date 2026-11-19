@@ -12,46 +12,14 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 
+// `an-des-mcp` 可执行文件的查找（与 `mom_des_http_mcp.rs` 共用）。
+#[path = "support/des_mcp.rs"]
+mod des_mcp;
+use des_mcp::des_mcp_bin;
+
 const START: u64 = 497;
 const ADMIN: &str = "connector-test-admin";
 const WAIT: Duration = Duration::from_secs(60);
-
-/// `an-des-mcp` 可执行文件：优先用环境变量 `AN_DES_MCP_BIN`；否则请 cargo 构建（已是最新时很快）并从构建输出中
-/// 取可执行文件的实际路径。不按测试程序的位置推算路径：不同 cargo 版本与 CI 的构建目录布局不同。
-fn des_mcp_bin() -> PathBuf {
-    static BIN: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-    BIN.get_or_init(|| {
-        if let Ok(p) = std::env::var("AN_DES_MCP_BIN") {
-            return PathBuf::from(p);
-        }
-        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-        // 在工作区根目录运行：CI 与本地都用相对的 CARGO_TARGET_DIR=target，测试的工作目录是 crates/server，
-        // 不切换目录会在 crates/server/target 下重新构建一遍。
-        let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let out = std::process::Command::new(cargo)
-            .current_dir(workspace)
-            .args([
-                "build",
-                "--locked",
-                "-p",
-                "an-des-mcp",
-                "--bin",
-                "an-des-mcp",
-                "--message-format=json",
-            ])
-            .stderr(std::process::Stdio::inherit())
-            .output()
-            .expect("run cargo build for an-des-mcp");
-        assert!(out.status.success(), "an-des-mcp must build");
-        String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-            .filter(|m| m["reason"] == "compiler-artifact")
-            .find_map(|m| m["executable"].as_str().map(PathBuf::from))
-            .expect("cargo reports the an-des-mcp executable")
-    })
-    .clone()
-}
 
 async fn connect() -> DesConnector {
     tokio::time::timeout(WAIT, DesConnector::spawn(&des_mcp_bin(), &[], ADMIN))
@@ -416,4 +384,78 @@ async fn rt_desc_05_review_truth_comes_from_the_factory_admin_tool() {
     };
     assert_eq!(rule(&mut remote.lock().unwrap()), rule(&mut local));
     assert_eq!(rule(&mut local), "pass");
+}
+
+/// 阶段⑤a-3（RT-DESC-12）：an-mom 重启后（新的模拟工厂进程）旧仿真不卡住新仿真，编号不冲突。
+#[tokio::test]
+async fn rt_desc_12_a_new_factory_ignores_old_simulations_and_keeps_ids_unique() {
+    // 连接器 A：创建 P0，案例审批执行后留下待发写操作（不发出）。
+    let a = connect().await;
+    let engine = Mutex::new(Engine::memory().unwrap());
+    let old = a
+        .create_simulation(&engine, config(1, Pattern::Script, 240))
+        .await
+        .unwrap();
+    let mut waiting = None;
+    for t in START..=START + 30 {
+        a.tick(&engine, t).await.unwrap();
+        waiting = waiting_case(&engine.lock().unwrap(), &BTreeSet::new());
+        if waiting.is_some() {
+            break;
+        }
+    }
+    let (id, plan) = waiting.expect("P0 reaches a decision");
+    decide(&mut engine.lock().unwrap(), &id, &plan);
+    let pending = engine.lock().unwrap().des_pending_writes();
+    assert!(!pending.is_empty(), "writes wait for dispatch");
+    drop(a);
+
+    // 连接器 B（新进程，相当于 an-mom 重启）：不发旧仿真的写操作，也不报错。
+    let b = connect().await;
+    let sent = tokio::time::timeout(WAIT, b.dispatch_writes(&engine))
+        .await
+        .expect("dispatch must not hang")
+        .expect("old simulations do not block dispatch");
+    assert!(sent.is_empty(), "nothing sent for {old}: {sent:?}");
+    assert_eq!(
+        engine.lock().unwrap().des_pending_writes(),
+        pending,
+        "old pending writes stay as they were"
+    );
+
+    // B 的新仿真编号不与旧仿真冲突，两边一致，照常推进。
+    let now = engine.lock().unwrap().now();
+    let new = b
+        .create_simulation(&engine, config(7, cluster(), 120))
+        .await
+        .expect("a new simulation is created next to the old one");
+    assert_eq!(new, "DES-2");
+    b.tick(&engine, now + 10)
+        .await
+        .expect("the new simulation advances");
+    let status = b
+        .call_agent_tool("equipment_status", json!({"simulation_id": new}))
+        .await
+        .unwrap();
+    assert_eq!(status["simulation_id"], "DES-2", "same id in the factory");
+    assert_eq!(status["observed_at"].as_u64(), Some(now + 10));
+
+    // 模拟工厂服务：调用方指定的编号重复或格式不对时拒绝。
+    let mut svc = an_des::FactoryService::new(an_des::ServiceConfig { admin_token: None });
+    let mut args = serde_json::to_value(config(1, Pattern::Script, 60)).unwrap();
+    args["simulation_id"] = json!("DES-5");
+    let created = svc.call("simulation_create", args.clone()).unwrap();
+    assert_eq!(
+        created["simulation_id"], "DES-5",
+        "the requested id is used"
+    );
+    assert!(
+        svc.call("simulation_create", args.clone()).is_err(),
+        "a duplicate id is rejected"
+    );
+    args["simulation_id"] = json!("other-1");
+    assert!(
+        svc.call("simulation_create", args).is_err(),
+        "ids look like DES-n"
+    );
 }

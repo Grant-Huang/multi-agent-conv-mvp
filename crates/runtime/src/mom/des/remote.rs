@@ -55,6 +55,20 @@ pub(crate) struct RemoteDes {
 }
 
 impl Engine {
+    /// 下一个仿真编号（与进程内创建的编号规则相同）。连接器把它传给模拟工厂，
+    /// 使两边编号一致，并且调用方重启后新仿真不会与数据库里的旧仿真撞号（阶段⑤a-3，DES-28）。
+    pub fn des_next_simulation_id(&self) -> String {
+        format!("DES-{}", self.state.des_simulations.len() + 1)
+    }
+
+    /// 是否为在模拟工厂中运行的远程仿真（未知编号返回 false）。
+    pub fn des_is_remote(&self, simulation_id: &str) -> bool {
+        self.state
+            .des_simulations
+            .get(simulation_id)
+            .is_some_and(|s| s.remote.is_some())
+    }
+
     /// 登记一个在模拟工厂中运行的仿真（编号由模拟工厂分配）。不保存重放输入。
     pub fn create_remote_des_simulation(
         &mut self,

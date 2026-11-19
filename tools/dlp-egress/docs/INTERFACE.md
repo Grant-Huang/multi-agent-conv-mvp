@@ -138,6 +138,11 @@
 
 `AMOUNT` 带 `constraints: ["preserve:AMOUNT"]` 时保留。trust = `internal` 的目的地：除 `SECRET` 外全部原样保留。
 
+#### R-20261118-M2 补充
+
+预检所有层级JSON键名（含路由对象），凭证或租户主数据命中时直接BLOCK，不回显原键、不写Vault。普通键与值处理保持。
+`sensitive_json_key`：JSON键名含凭证或租户主数据，BLOCK；此结构键预检对所有目的地适用，内部目的地的普通值保留规则不变。
+
 ### 4.6 Token 格式
 
 `[<TYPE>_<NNN>]`，编号在 `(tenant, task, type)` 内从 001 起按首次出现顺序递增。正则：`\[([A-Z][A-Z_]*?)_(\d{3,})\]`。
@@ -197,3 +202,8 @@
 | 9.9 | 结构化返回 | 强烈同意；Rust 侧 MCP 客户端按输出 schema 校验，不过即失败、不外发 | `structured_output` + output schema |
 
 不兼容变更（相对 v0.1）：返回改为外壳结构；`vault_ref` 改名 `request_id`；恢复默认上下文由 `task_postprocess` 改为 `local_ui`，且只允许 `local_ui`。
+
+#### R-20261118-M5 补充
+
+内部使用含字符串键/整数数组索引的元组路径，阻止字面点号、方括号和空键产生串字段；重复分析路径在写Vault前BLOCK。field_path仍为原格式字符串，仅用于展示，特殊键的展示歧义不再参与寻址。
+`duplicate_json_path`：分析得到重复内部路径，BLOCK，不写Vault；没有新增字段或改变field_path类型。
