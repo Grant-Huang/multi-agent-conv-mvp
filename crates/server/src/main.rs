@@ -63,6 +63,7 @@ async fn main() -> Result<()> {
     let mut app = an_server::api(rt.clone());
     // Fixture identities must never become public production authorization.
     let mut mom_clock = None;
+    let mut ops_publisher = None;
     if config
         .server
         .bind
@@ -74,6 +75,25 @@ async fn main() -> Result<()> {
             an_runtime::mom::Engine::open(db)?,
         )));
         mom_clock = Some(an_server::mom::spawn_clock(state.clone()));
+        // 运营频道（[mom] chat_bridge，默认关闭）：发布器消费 MOM 发件箱，案例卡进固定会话 ops-channel
+        if config.mom.chat_bridge {
+            let ops_db = std::path::Path::new(&config.server.db_path).with_extension("ops.db");
+            let publisher = Arc::new(std::sync::Mutex::new(
+                an_runtime::mom::ops_desk::OpsPublisher::open(
+                    &ops_db,
+                    rt.store.clone(),
+                    an_runtime::mom::ops_desk::OpsConfig {
+                        merge_secs: config.mom.ops_merge_secs,
+                        hourly_cap: config.mom.ops_hourly_cap,
+                    },
+                )?,
+            ));
+            ops_publisher = Some(an_server::mom_ops::spawn_publisher(
+                state.engine.clone(),
+                publisher.clone(),
+            ));
+            app = app.merge(an_server::mom_ops::router(publisher));
+        }
         app = app
             .route(
                 "/mom/",
@@ -121,6 +141,9 @@ async fn main() -> Result<()> {
     axum::serve(listener, app).await?;
     if let Some(clock) = mom_clock {
         clock.abort();
+    }
+    if let Some(ops) = ops_publisher {
+        ops.abort();
     }
     Ok(())
 }

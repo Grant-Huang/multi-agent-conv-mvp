@@ -84,10 +84,15 @@ function writeCurrentConv(id: string | null) {
   }
 }
 
+/** 运营频道的固定会话 id（与后端 `OPS_CHANNEL_ID` 一致） */
+const OPS_CHANNEL_ID = "ops-channel";
+
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
+  // 运营频道未读数；null 表示没有开启运营频道（[mom] chat_bridge 关闭，接口 404）
+  const [opsUnread, setOpsUnread] = useState<number | null>(null);
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [sideTab, setSideTab] = useState<SideTab>("tasks");
@@ -241,6 +246,39 @@ export default function App() {
     if (sideTab === "tasks" && current) api.tasks(current).then(setTasks).catch(() => {});
   }, [sideTab, current]);
 
+  // 运营频道：每 2 秒看一次未读；频道会话打开时顺带刷新消息（卡片是就地更新的，不走任务事件）
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+  useEffect(() => {
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const r = await api.opsUnread();
+        if (stopped) return;
+        setOpsUnread(r.unread);
+        if (!conversationsRef.current.some((c) => c.id === OPS_CHANNEL_ID)) loadConversations().catch(() => {});
+        if (currentRef.current === OPS_CHANNEL_ID) {
+          api.messages(OPS_CHANNEL_ID).then((m) => !stopped && setMessages(m)).catch(() => {});
+          if (opsViewed.current && r.unread > 0) {
+            await api.opsRead();
+            if (!stopped) setOpsUnread(0);
+          }
+        }
+      } catch {
+        // 404：没有开启运营频道，不再轮询
+        if (!stopped) setOpsUnread(null);
+        stopped = true;
+        clearInterval(timer);
+      }
+    };
+    const timer = setInterval(poll, 2000);
+    poll();
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [loadConversations]);
+
   const newConversation = async () => {
     const c = await api.createConversation();
     await loadConversations();
@@ -248,9 +286,15 @@ export default function App() {
     setNavOpen(false);
   };
 
+  // 只有用户点开运营频道才算已读；页面刷新时自动回到该会话不清未读
+  const opsViewed = useRef(false);
   const selectConversation = (id: string) => {
     setCurrent(id);
     setNavOpen(false);
+    opsViewed.current = id === OPS_CHANNEL_ID;
+    if (opsViewed.current && opsUnread !== null) {
+      api.opsRead().then(() => setOpsUnread(0)).catch(() => {});
+    }
   };
 
   /** 发送消息：先乐观地显示用户消息，等后端返回后再整体刷新 */
@@ -326,6 +370,9 @@ export default function App() {
               title={c.title}
             >
               {c.title}
+              {c.id === OPS_CHANNEL_ID && opsUnread !== null && opsUnread > 0 && (
+                <span className="badge unread" data-testid="ops-unread">{opsUnread}</span>
+              )}
             </button>
           ))}
         </nav>

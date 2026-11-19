@@ -327,6 +327,20 @@ impl OpsPublisher {
         Ok(())
     }
 
+    /// 运营频道里用户还没看过的新消息数（新卡、汇总卡各算一条；就地更新原卡不算）
+    pub fn unread(&self) -> Result<u32> {
+        let total = self.store.list_message_views(OPS_CHANNEL_ID, None)?.len() as u32;
+        let read: u32 = self
+            .meta("read_count")?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        Ok(total.saturating_sub(read))
+    }
+    /// 用户打开了运营频道：当前所有消息记为已读
+    pub fn mark_read(&mut self) -> Result<()> {
+        let total = self.store.list_message_views(OPS_CHANNEL_ID, None)?.len();
+        self.set_meta("read_count", &total.to_string())
+    }
     /// 每次“没发”的判断及原因
     pub fn skip_log(&self) -> Result<Vec<SkipRecord>> {
         let mut st = self

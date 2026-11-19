@@ -47,9 +47,13 @@ const MessageRow = memo(function MessageRow(props: {
   // 失败任务也显示走马灯：失败原因就是历史的最后一行
   const showTicker = !!tickerTask && (isRunning(tickerTask) || lines.length > 0 || tickerTask.status === "FAILED");
   return (
-    <div className={`msg ${m.role}`}>
+    <div
+      className={`msg ${m.role}`}
+      data-testid={m.card?.type === "ops_case" ? "ops-card" : m.card?.type === "ops_summary" ? "ops-summary" : undefined}
+    >
       <div className={m.role === "user" ? "bubble" : "bubble md"}>
-        {m.role === "user" ? m.content : <MarkdownText text={m.content} />}
+        {/* 运营频道的卡片消息：正文只是给人和模型的一句说明，界面只显示卡片 */}
+        {m.card?.type === "ops_case" || m.card?.type === "ops_summary" ? null : m.role === "user" ? m.content : <MarkdownText text={m.content} />}
         {/* AG.4：对话里的卡片（确认 / 选择 / 引导 / 结果 / 发现） */}
         {m.card && (
           <ChatCardView card={m.card} conversationId={m.conversation_id} onChanged={() => onCardChanged?.()} />

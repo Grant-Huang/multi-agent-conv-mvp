@@ -255,3 +255,34 @@ fn rt_opsdesk_08_ensure_conversation_uses_fixed_id_and_is_idempotent() {
         "不清空已有消息"
     );
 }
+
+#[test]
+fn rt_opsdesk_09_unread_counts_new_messages_until_read() {
+    let dir = std::env::temp_dir().join(format!("ops-rt09-{}", an_core::new_id("t")));
+    std::fs::create_dir_all(&dir).unwrap();
+    let ops_db = dir.join("ops.db");
+    let store = store();
+    let mut e = Engine::memory().unwrap();
+    let a = pending_case(&mut e, "RT09A");
+    let mut p = OpsPublisher::open(&ops_db, store.clone(), cfg(0, 10)).unwrap();
+    assert_eq!(p.unread().unwrap(), 0, "还没有消息");
+    p.tick(&mut e, 1000).unwrap();
+    assert_eq!(p.unread().unwrap(), 1);
+    // 就地更新原卡不增加未读（批准要在案例证据过期前做，所以紧接着发完卡就批准）
+    approve(&mut e, &a);
+    assert_eq!(p.tick(&mut e, 1001).unwrap().updated, 1);
+    assert_eq!(p.unread().unwrap(), 1);
+    pending_case(&mut e, "RT09B");
+    p.tick(&mut e, 1002).unwrap();
+    assert_eq!(p.unread().unwrap(), 2);
+    p.mark_read().unwrap();
+    assert_eq!(p.unread().unwrap(), 0);
+    // 新卡增加未读；重启后已读位置仍在
+    pending_case(&mut e, "RT09C");
+    p.tick(&mut e, 1003).unwrap();
+    assert_eq!(p.unread().unwrap(), 1);
+    drop(p);
+    let p = OpsPublisher::open(&ops_db, store, cfg(0, 10)).unwrap();
+    assert_eq!(p.unread().unwrap(), 1);
+    let _ = std::fs::remove_dir_all(dir);
+}
