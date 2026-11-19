@@ -667,7 +667,8 @@
     "sources": [
       "crates/server/src/mom.rs",
       "web/src/App.tsx",
-      "web/e2e/ops.spec.ts"
+      "web/e2e/ops.spec.ts",
+      "crates/runtime/src/mom/ops_desk.rs"
     ],
     "coverage": "browser",
     "cases": [
@@ -677,6 +678,13 @@
       "E2E-OPSNOISE",
       "E2E-OPSOFF"
     ],
-    "runtime_cases": []
+    "runtime_cases": [
+      "RT-OPSDESK-01",
+      "RT-OPSDESK-02",
+      "RT-OPSDESK-03",
+      "RT-OPSDESK-04",
+      "RT-OPSDESK-05",
+      "RT-OPSDESK-08"
+    ]
   }
 ]

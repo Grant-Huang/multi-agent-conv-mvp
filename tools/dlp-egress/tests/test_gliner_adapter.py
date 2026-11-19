@@ -57,3 +57,41 @@ def test_benchmark_can_enable_gliner(monkeypatch, tmp_path):
     assert rep["config"]["gliner_model"] == "/models/fake"
     assert rep["config"]["gliner_threshold"] == 0.3
     assert rep["safety"]["secret_missed"] == 0
+
+
+# ---------------------------------------------------------------- GLiNER 不参与“升级决策”（D-019）
+class LabelEchoGliner:
+    """只对调用方实际请求的标签返回结果，用来检查适配器向模型请求了哪些标签。"""
+
+    def __init__(self):
+        self.requested = []
+
+    def predict_entities(self, text, labels, threshold=0.5):
+        self.requested = list(labels)
+        out = []
+        if "confidential business information" in labels:
+            out.append({"start": 0, "end": 4, "label": "confidential business information", "score": 0.9})
+        if "person name" in labels and "王晓峰" in text:
+            i = text.find("王晓峰")
+            out.append({"start": i, "end": i + 3, "label": "person name", "score": 0.9})
+        return out
+
+
+def test_default_gliner_labels_only_cover_name_like_entities():
+    """默认标签只含名称类实体（客户、项目、厂区、人名），不含会触发审批 / 拦截的类型。
+
+    gold-v3 本地评测：机密标签带来 23 次过度拦截，只多拦住 1 条危险放行。
+    """
+    model = LabelEchoGliner()
+    det = Detector(master_data=None, gliner_recognizer=GlinerRecognizer(model))
+    got = {(e.type, e.source) for e in det.detect("年度计划请发给王晓峰确认", "zh")}
+    assert "confidential business information" not in model.requested
+    assert ("PERSON", "gliner") in got
+    assert not any(t in ("INTERNAL_INFO", "SECRET") for t, _ in got)
+
+
+def test_confidential_label_can_still_be_enabled_explicitly():
+    labels = {"person name": "PERSON", "confidential business information": "INTERNAL_INFO"}
+    det = Detector(master_data=None, gliner_recognizer=GlinerRecognizer(LabelEchoGliner(), labels=labels))
+    got = {(e.type, e.source) for e in det.detect("年度计划请发给王晓峰确认", "zh")}
+    assert ("INTERNAL_INFO", "gliner") in got

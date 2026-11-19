@@ -4,6 +4,7 @@ pub mod des;
 mod engine;
 mod master;
 mod model;
+pub mod ops_desk;
 mod simulation;
 pub mod tools;
 pub use engine::Engine;
