@@ -286,13 +286,18 @@ _GONG_WORDS = "单厂艺程作具序位件资人业装期时种"
 _ZH_COMMON_PREFIX = ("所有|全部|此段|该段|这些|上述|以下|相关|其他|确认|转发|交付|提交|附件|参考|补充|"
                      "原始|书面|纸质|审核|申请|培训|学习|会议|证明|送审|报送|整理|归档")
 
+# “项目”后接这些词时是普通用语（项目经理、项目编码…），不是项目名
+_PROJECT_COMMON = ("进展|延期|计划|预算|经理|管理|组|部|名称|编号|编码|代号|代码|成员|进度|周报|名单|负责|"
+                   "启动|验收|文件|资料")
+_ZH_PROJECT_CODE = r"[一-鿿]{2}[0-9A-Za-z]{0,4}"
+
 ORG_RULES = [
     # 两字前缀不能是指代词 / 动词等普通词，否则“所有材料、确认材料、转发材料”会被当成公司名
     Rule("CUSTOMER", re.compile(rf"(?!{_ZH_COMMON_PREFIX}){_ZH_CHAR}{{2}}(?:{_ZH_COMPANY_SUFFIX})"), 0.6),
     Rule("CUSTOMER", re.compile(
         rf"(?<![A-Za-z])(?:[A-Z][a-z]+ ){{1,2}}(?:{_EN_COMPANY_SUFFIX}|[A-Z][a-z]*works)(?![A-Za-z])"), 0.6),
     # "项目+两字代号"；排除 "项目进展/项目经理" 等普通词
-    Rule("PROJECT", re.compile(r"项目(?!进展|延期|计划|预算|经理|管理|组|部|名称|编号|编码|代号|代码|成员|进度|周报|名单|负责|启动|验收|文件|资料)[一-鿿]{2}[0-9A-Za-z]{0,4}"), 0.6),
+    Rule("PROJECT", re.compile(rf"项目(?!{_PROJECT_COMMON}){_ZH_PROJECT_CODE}"), 0.6),
     Rule("PROJECT", re.compile(r"(?<![A-Za-z])Project [A-Z][a-z]+(?:-\d+)?(?![A-Za-z0-9])"), 0.65),
     # 厂区：前缀中不允许出现 "厂" 与常见虚词/动词/否定词，避免 "工厂临港一厂"、"不包含工厂" 这类误命中
     Rule("PLANT", re.compile(
