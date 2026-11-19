@@ -75,6 +75,12 @@ cd web && npm run build                                                   → �
 
 本机磁盘额度有限，以上命令在 `CARGO_PROFILE_DEV_DEBUG=0` 的环境中运行。这个变量只去掉调试信息，不影响测试行为。`Cargo.lock` 只为 `an-server` 新增了 `an-des` 与 `rmcp` 两条依赖记录，没有引入新的第三方包。
 
+**CI 修正（第一次推送后）：** CI 上 RT-DESC-01～05 全部失败，报 `cannot start …/target/debug/build/an-server/<hash>/an-des-mcp: No such file or directory`。原因是测试辅助函数按测试程序的位置推算 `an-des-mcp` 的路径，而 CI 的 cargo 把测试程序放在 `target/debug/build/<包>/<hash>/` 下，推算出的路径不对。修正：
+- 改为请 cargo 构建，并从 `--message-format=json` 的输出中读取可执行文件的实际路径；
+- 构建在工作区根目录运行，否则相对的 `CARGO_TARGET_DIR=target` 会在 `crates/server/target` 下重新构建一遍。
+
+只改了测试辅助函数，没有改任何断言。本地验证：5 个用例通过；先删除 `target/debug/an-des-mcp` 再运行也通过；运行后没有残留目录。
+
 **超时、取消与清理**
 - 握手超时 10 秒，每次工具调用超时 30 秒，超时报 `E_DES_UNAVAILABLE`；
 - 子进程设置 `kill_on_drop`，连接器被丢弃时子进程随之结束；
