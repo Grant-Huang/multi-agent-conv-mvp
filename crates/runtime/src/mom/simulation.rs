@@ -265,6 +265,15 @@ impl Engine {
             return Ok(());
         }
         self.advance(self.now() + 1)?;
+        self.playback_finish_step()
+    }
+    /// 自动播放是否进行中。
+    pub fn playback_playing(&self) -> bool {
+        self.state.playback.playing
+    }
+    /// 自动播放一步的后半段：时钟已推进一分钟之后，运行子任务并扣减剩余分钟。
+    /// 接了模拟工厂时（阶段⑤a-3），时钟由连接器推进，再调用这里。
+    pub fn playback_finish_step(&mut self) -> Result<()> {
         self.run_children()?;
         self.update(|s, _| {
             s.playback.remaining_minutes = s.playback.remaining_minutes.saturating_sub(1);

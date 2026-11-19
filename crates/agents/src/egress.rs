@@ -427,7 +427,7 @@ impl TextEvaluation {
     /// 不能发送时给用户的大白话说明
     pub fn refusal(&self) -> String {
         if self.reason_codes.iter().any(|c| c == "secret_blocked") {
-            "内容里有密钥或凭证，已拦下，没有发送。如果这是真实的密钥，建议尽快更换。".into()
+            "内容里有密钥或凭证，已拦下，这次不发出去。若这是真实的密钥，建议尽快更换。".into()
         } else if self.decision == "REVIEW" {
             "内容里有需要人工判断的机密信息，这次不发送。".into()
         } else if self.reason_codes.iter().any(|c| c == "destination_unknown") {

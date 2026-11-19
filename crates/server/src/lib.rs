@@ -21,6 +21,7 @@
 pub mod admission_api;
 pub mod host_guard;
 pub mod mom;
+pub mod mom_des_connector;
 pub mod mom_relos;
 pub mod mom_sim;
 

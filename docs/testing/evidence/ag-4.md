@@ -44,3 +44,26 @@ web playwright（全部浏览器用例）：23 passed
 偶发失败记录：前一次全量运行中原有用例 `host_guard` RT-HOST-02 再次出现 `ConnectionReset`（AG.3 时也出现过一次）。单独连跑 30 次全部通过，只在全量并行负载下偶发；本次没有改动 Host 防护或 an-mom。建议另行修复这条用例对连接关闭时序的依赖。
 
 本地结果不代替 GitHub CI。
+
+
+---
+
+# AG.4 第三轮评测后的修改（2026-11-19，DECISIONS 第 44 条）
+
+## Red → Green
+
+- `cargo test -p an-server --test agent_chat`：
+  - 实现前：`8 passed; 2 failed`。
+    - RT-AGCHAT-10：撤销时助手名仍为 `claude`；
+    - RT-AGCHAT-11：提示词缺"不要反问"等规则。
+  - 实现后：`10 passed`。
+
+## 改动
+
+- `crates/runtime/src/conversation.rs`：解析管理助手判断时，撤销 / 列出的助手名在校验候选之前清空。
+- `crates/runtime/src/agent_chat.rs`：管理助手一节补四条规则（见 DECISIONS 第 44 条）。只在 `agent_management` 打开时出现，开关关闭时提示词不变（RT-AGCHAT-11 后半段检查）。
+
+## 还没验证的
+
+- 第二步是提示词修改，效果只能用真实模型评测证明：需要在本机重跑 `evals/agents.jsonl`，按 `evals/ROUND3_GUIDE.md` 至少两次。
+- 第一步预计能解决第三轮的 3 条口径错误（und-01、und-04、und-05）。第二步针对的 10 条模型错误能改对多少，以重跑结果为准。

@@ -123,15 +123,17 @@
     "id": "tools-evals",
     "document": "docs/feature-map/features/research-and-tools.md",
     "sources": [
+      "tools/dlp-egress/tests/test_review_m5.py",
       "tools/dlp-egress/tests/test_review_m3.py",
       "tools/websearch/README.md",
       "tools/dlp-egress/README.md",
       "crates/server/src/bin/eval.rs",
-      "tools/dlp-egress/tests/test_review_h1.py"
+      "tools/dlp-egress/tests/test_review_h1.py",
+      "tools/dlp-egress/tests/test_review_m2.py"
     ],
     "coverage": "backend",
     "cases": [],
-    "note": "R-20261118-M3：PY-DLP-M3为Python evaluate端到端测试；证据见docs/testing/evidence/r-20261118-m3.md，不计入Rust或浏览器用例。"
+    "note": "R-20261118-M3：PY-DLP-M3为Python evaluate端到端测试；证据见docs/testing/evidence/r-20261118-m3.md，不计入Rust或浏览器用例。 PY-DLP-M2为Python evaluate端到端；证据见docs/testing/evidence/r-20261118-m2.md。"
   },
   {
     "id": "egress",
@@ -313,7 +315,10 @@
       "crates/des/src/observe.rs",
       "crates/des/tests/factory.rs",
       "crates/des-mcp/src/main.rs",
-      "crates/des-mcp/tests/stdio.rs"
+      "crates/des-mcp/tests/stdio.rs",
+      "crates/runtime/src/mom/des/remote.rs",
+      "crates/server/src/mom_des_connector.rs",
+      "crates/server/tests/mom_des_connector.rs"
     ],
     "coverage": "backend",
     "cases": [],
@@ -329,9 +334,21 @@
       "RT-DESM-01",
       "RT-DESM-02",
       "RT-DESM-03",
-      "RT-DES-30"
+      "RT-DES-30",
+      "RT-DESC-01",
+      "RT-DESC-02",
+      "RT-DESC-03",
+      "RT-DESC-04",
+      "RT-DESC-05",
+      "RT-DESC-06",
+      "RT-DESC-07",
+      "RT-DESC-08",
+      "RT-DESC-09",
+      "RT-DESC-10",
+      "RT-DESC-11",
+      "RT-DESC-12"
     ],
-    "note": "阶段⑤a-1：模拟工厂服务（an-des，含从 an-runtime 迁入的仿真内核）与 MCP stdio 服务（an-des-mcp），已实现并转绿；⑤a-2 连接器用例见 CASES.md 草案。参数为建模假设（台账 M27、M28）。"
+    "note": "阶段⑤a-1：模拟工厂服务（an-des）与 MCP stdio 服务（an-des-mcp）；阶段⑤a-2：AgentNexus 侧连接器与引擎远程仿真模式（RT-DESC-01～05），均已实现；阶段⑤a-3：an-mom 接入连接器（RT-DESC-06～12），已实现。参数为建模假设（台账 M27、M28）。"
   },
   {
     "id": "agent-links",
@@ -590,7 +607,9 @@
       "RT-AGCHAT-06",
       "RT-AGCHAT-07",
       "RT-AGCHAT-08",
-      "RT-AGCHAT-09"
+      "RT-AGCHAT-09",
+      "RT-AGCHAT-10",
+      "RT-AGCHAT-11"
     ]
   },
   {
