@@ -58,7 +58,7 @@
 - `an-agents/src/diagnose.rs`：诊断包组装 `package_text` 和本机确定性处理 `scrub_local`（家目录、用户名、主机名替换；环境变量只列名字）。
 - `an-core`：`DiagnosePackage`、`DiagnosePreview`、`DiagnoseSendResult`；`DiagnoseReport` 增加 `package`。已重新生成 TS 类型。
 - `[dlp]` 配置（`AppConfig.dlp`）；`Runtime.dlp`、`Runtime.diagnose_send`。
-- `an-runtime/src/agent_diagnose.rs`（新）：第 3 层诊断包；第 4 层预览和发送（同意凭证、全局闸门、帮手临时实例、还原、撤销）。
+- `an-runtime/src/agent_diagnose.rs`（新）：第 3 层诊断包；第 4 层预览和发出（同意凭证、全局闸门、帮手临时实例、还原、撤销）。
 - `POST /api/agents/diagnose/preview`、`POST /api/agents/diagnose/send`；排查卡增加诊断包、选择帮手、外发预览、帮手回复。
 - `config.example.toml`：DLP 接入示例改为 `[dlp]`，原来放在 `[[mcp.servers]]` 会把工具暴露给模型。
 - 测试工具：模拟 DLP 服务 `crates/server/tests/fixtures/dlp_server.py`；`an-mock-acp` 新增 `AN_MOCK_ACP_RECORD`、`AN_MOCK_ACP_REPLY`。

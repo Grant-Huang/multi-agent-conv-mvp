@@ -367,7 +367,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGDIAG-12 | agent-diagnose | 选出问题的那个助手、未连通的助手、未知助手当帮手 | 都被拒绝（409 / 404），不生成预览 |
 | RT-DLP-01 | dlp-egress | 开启了 `[egress]`（2026-11-18 合并 master 后由 `[dlp]` 改为 `[egress]`） | DLP 的三个工具不出现在能力目录（`GET /api/capabilities`）里，也不在 General 的工具清单里 |
 | RT-DLP-02 | dlp-egress | DLP 把内容里的客户名替换成 `[CUSTOMER_001]`（ANONYMIZE）；帮手的回复里带着这个占位符 | 预览和发给帮手的内容里只有占位符、没有原文；显示给用户的帮手回复已还原成原文（context 为 `local_ui`） |
-| RT-DLP-03 | dlp-egress | 内容里有疑似密钥（BLOCK，`secret_blocked`） | 不生成预览、不发送；大白话说明"有密钥或凭证，已拦下"并建议更换 |
+| RT-DLP-03 | dlp-egress | 内容里有疑似密钥（BLOCK，`secret_blocked`） | 不生成预览、不发出；大白话说明"有密钥或凭证，已拦下"并建议更换 |
 | RT-DLP-04 | dlp-egress | DLP 返回 REVIEW | 不生成预览、不发送；说明需要人工判断 |
 | RT-DLP-05 | dlp-egress | 没有开启 `[egress]`；DLP 超时；返回结构不合规；`api_version` 不是 "1.0"（与 INTERFACE.md 定稿一致） | 都不发送，说明原因；不出本机的排查（第 1～3 层）照常可用 |
 | RT-DLP-06 | dlp-egress | 一次发送结束（成功或帮手超时） | 用同一个 `task_id` 调用了 `egress_revoke`；日志里没有待发内容的原文 |
