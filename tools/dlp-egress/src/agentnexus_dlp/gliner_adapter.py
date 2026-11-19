@@ -17,14 +17,17 @@ from presidio_analyzer import EntityRecognizer, RecognizerResult
 from .recognizers import LANG
 
 # GLiNER 自然语言标签 → 本服务的规范实体类型
+# 默认只用名称类标签：这些实体只会被替换（ANONYMIZE），不会让决策升级为审批 / 拦截。
+# 机密信息与凭证的判定只由规则负责（D-019）：gold-v3 本地评测中，机密标签带来 23 次过度拦截，
+# 只多拦住 1 条危险放行。需要时可通过 labels 参数显式加入 CONFIDENTIAL_LABEL。
 DEFAULT_LABELS = {
     "customer company": "CUSTOMER",
     "supplier company": "CUSTOMER",
     "project code name": "PROJECT",
     "factory or plant": "PLANT",
     "person name": "PERSON",
-    "confidential business information": "INTERNAL_INFO",
 }
+CONFIDENTIAL_LABEL = {"confidential business information": "INTERNAL_INFO"}
 
 
 class GlinerRecognizer(EntityRecognizer):
