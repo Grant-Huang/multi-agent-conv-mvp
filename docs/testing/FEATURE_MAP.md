@@ -66,6 +66,10 @@ DES 审查修复（R-20261117-M1/L1，移植自 PR #84/#85 并适配阶段③）
 
 模拟工厂与 MCP 挂载阶段⑤a-1（`des-factory`）：RT-DESF-01～08、RT-DESM-01～03 与 RT-DES-30 定义独立的模拟工厂服务（13 个通用风格工具，分观测、执行、控制、管理四类；写操作需幂等键与审批引用；标准答案需管理口令）、经 stdio 挂载的 MCP 服务与进程内结果逐字节一致、以及与 MOM 进程内仿真一致；已实现并转绿（仿真内核迁入 `crates/des`）。⑤a-2 连接器用例为草案。
 
+模拟工厂连接器阶段⑤a-2（`des-factory`）：RT-DESC-01～05 定义 AgentNexus 侧连接器与引擎远程仿真模式：MCP 模式与进程内一致、写操作只在审批执行后发出且幂等、agent 只开放观测工具、模拟工厂离线时明确报错且不回退、审核标准答案来自管理入口；已实现并转绿（an-mom 接入见下条⑤a-3）。
+
+模拟工厂接入 an-mom 阶段⑤a-3（`des-factory`）：RT-DESC-06～12 定义 `an-mom --des-mcp` 启动、HTTP 创建与推进走连接器且与进程内一致、审批执行返回时写操作已发出、后台时钟经连接器推进、模拟工厂离线时返回 503 不回退、桌面只开放观测工具、重启后旧仿真不卡住新仿真；已实现并转绿。
+
 专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
 
 每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。
@@ -76,6 +80,8 @@ R-FIRST-05：补充要求先完成 Router/Policy 校验，再取消旧任务并�
 
 R-20261110-H1：binding 仅在 Contracted 阶段可登记/重登记，Active 不允许就地改写接入地址、角色、类型或并发。RT-ADM-18 为 Runtime 集成；`server/tests/admission.rs::active_agent_reactivation_returns_conflict_without_binding_or_event_changes` 为 HTTP 回归，验证重复 activate 返回 409 且记录、审计事件、注册卡片不变。证据见 [R-20261110-H1](evidence/r-20261110-h1.md)；不代表准入接口已经有身份认证或 endpoint 网络白名单。
 R-20261118-H1：PY-DLP-H1以真实evaluate管线验证路由字段下嵌套dict/list凭证BLOCK、客户Token化，以及漏分析字符串的fail closed。 证据见 [r-20261118-h1.md](evidence/r-20261118-h1.md)。
+
+R-20261118-M2：预检所有层级JSON键名（含路由对象），凭证或租户主数据命中时直接BLOCK，不回显原键、不写Vault。普通键与值处理保持。 PY-DLP-M2与原有Python全量/评测门槛验证；[证据](evidence/r-20261118-m2.md)。
 
 ## MOM 独立设计原型
 
@@ -101,3 +107,5 @@ R-20261113-L1 11-16预审：RT-HOST-10确定性验证其他监听者不能满足
 R-20261116-L1：RT-HOST-11确定性验证外国监听者不能满足自身子进程就绪。host_guard共用support/service_readiness.rs，确认独立捕获的自身监听日志、Child存活及端口；只串行化启动交接，原RT-HOST-01/02断言不变，连续100次默认并行验证。证据见[evidence/r-20261116-l1.md](evidence/r-20261116-l1.md)。
 
 R-20261118-M3：PY-DLP-M3以真实evaluate管线验证8种凭证全部BLOCK、非凭证Unicode保留，700条与留出集安全门槛照常执行。 证据见 [r-20261118-m3.md](evidence/r-20261118-m3.md)。
+
+R-20261118-M5：内部使用含字符串键/整数数组索引的元组路径，阻止字面点号、方括号和空键产生串字段；重复分析路径在写Vault前BLOCK。field_path仍为原格式字符串，仅用于展示，特殊键的展示歧义不再参与寻址。 PY-DLP-M5与原有Python全量/评测门槛验证；[证据](evidence/r-20261118-m5.md)。

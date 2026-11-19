@@ -182,9 +182,9 @@ AMOUNT_RULES = [
     Rule("AMOUNT", re.compile(rf"(?<![\d.,])(?:{_NUM})\s?(?:万元|亿元|万美元|美元|欧元|元)"), 0.85),
 ]
 
-_ZH_METRIC = ("一次合格率|首检合格率|良品率|报废率|可用率|良率|合格率|不良率|直通率|稼动率|温度|扭矩|压力|转速|节拍|"
+_ZH_METRIC = ("一次合格率|首检合格率|首检通过率|一次通过率|通过率|良品率|报废率|可用率|良率|合格率|不良率|直通率|稼动率|温度|扭矩|压力|转速|节拍|"
               "能耗|电流|电压|振动|湿度|功率|产能|速度|OEE|CPK|Cpk")
-_EN_METRIC = ("first[- ]pass yield|availability|yield|temperature|torque|pressure|cycle time|OEE|Cpk|speed|"
+_EN_METRIC = ("first[- ]pass yield|pass rate|availability|yield|temperature|torque|pressure|cycle time|OEE|Cpk|speed|"
               "throughput|scrap rate|defect rate|uptime|downtime|vibration|current|voltage|humidity|power|takt time")
 _UNIT = (r"%|℃|°C|°F|C|F|N·m|N m|Nm|kN|s|秒|ms|min|分钟|h|小时|MPa|kPa|Pa|bar|rpm|r/min|V|A|kW|W|Hz|"
          r"mm/s|mm|μm|um|kg|t|件/小时|pcs/h|ppm")
@@ -204,13 +204,14 @@ _ZH_SECRET_MOD = r"(?:内部|未公开的?|未发布的?|保密的?|机密的?|�
 _ZH_SECRET_CONCEPT = (
     "报价底线|底价|折扣协议|返利条款|返利协议|返点政策|工艺窗口|工艺配方|配方参数|工艺参数表|换线策略|"
     "成本结构|成本明细|毛利目标|利润率目标|定价策略|投标策略|采购底价|商业计划|未公开路线图|产品路线图|"
-    "源代码|设计图纸")
+    "源代码|设计图纸|最低净价|最低可接受价|让步区间|议价授权范围|议价授权|谈判底线")
 _EN_SECRET_MOD = (r"(?:(?:internal|unpublished|unreleased|confidential|proprietary|customer-specific|"
                   r"supplier|undisclosed|secret)\s+)?")
 _EN_SECRET_CONCEPT = (
     "price floor|floor price|rebate terms|rebate agreement|discount agreement|process window|process recipe|"
     "recipe parameters|changeover strategy|cost structure|cost breakdown|margin targets?|pricing strategy|"
-    "bid strategy|product roadmap|source code|design drawings")
+    "bid strategy|product roadmap|source code|design drawings|lowest acceptable price|lowest net price|"
+    "walk-away price")
 # 修饰语驱动：“机密修饰语 + 至多 8 个字（或 3 个词）+ 商业文件类名词 + 可选版本号”
 _ZH_CONF_MOD = (r"(?:仅限内部的?|限制传播的?|严禁外传的?|不得外传的?|内部|未公开的?|尚未公开的?|未发布的?|不公开的?|"
                 r"保密的?|机密的?|限内部的?|客户定制的?)")
@@ -224,7 +225,40 @@ _EN_CONF_HEAD = (r"(?:arrangements?|agreements?|matrix|assumptions|playbook|stra
                  r"targets?|list|parameters)")
 _EN_VERSION = r"(?:\s+(?:rev(?:ision)?\.?|version|v)\s*#?\d+|\s+#\d+)?"
 
+# 密级 / 流转限制标记驱动（第三轮，见 D-018）：
+#   [限定语（…的/时/后/前）] + 1~3 个标记 + 至多 20 个字 + 机密类名词收尾
+# 标记表达“不能公开、只在小范围流转”，是通用写法，不针对任何数据集的句式。
+_ZH_MARK = (r"(?:涉密的?|保密的?|机密等级的?|机密的?|秘密的?|内部|未公开的?|尚未公开的?|未公布的?|尚未公布的?|"
+            r"未发布的?|未宣布的?|未披露的?|暂不披露的?|不得外传的?|严禁外传的?|禁止外发的?|"
+            r"不得转[一-鿿]{1,8}?的|(?:未经|未获)(?:批准|许可|授权)|不得引用的?|"
+            r"限[一-鿿]{1,6}?(?:查看|流转|传阅|知悉)的?)")
+# 限定语里不能出现这些字：它们通常是前文的动词/连词（“是…”“涉及…”“材料中有…”），
+# 否则最左匹配会把前文吞进实体。
+_ZH_QUAL = r"(?:(?:(?![是为在把将请对向从和与及或了到有含括中写])[一-鿿]){1,8}(?:的|时|后|前))?"
+_ZH_MARK_HEAD = (r"(?:上限|下限|区间|范围|边界|条件|顺序|次序|路线|安排|判断|阈值|方案|规则|底线|底价|净价|策略|计划|"
+                 r"清单|名单|预算|参数|配方|报价|价格|成本|毛利|条款|协议|根因)")
+# 英文：密级标记直接放在名词短语前，短语遇到标点或谓语/连词即结束
+_EN_CLASS = (r"(?:need-to-know|controlled-access|limited-circulation|approval-chain only|"
+             r"for cleared recipients only|restricted(?: to [a-z]+(?: [a-z]+)?)?|embargoed(?: until [a-z-]+)?|"
+             r"non-?public|not-yet-disclosed|not yet [a-z-]+|confidential(?: working)?|proprietary|"
+             r"private committee|internal only)")
+_EN_STOP = r"(?:and|or|but|is|are|was|were|will|has|have|had|which|that|so|we|you|it|to|from|this|should|must)"
+_EN_WORD = rf"(?!{_EN_STOP}(?![a-z-]))[a-z][a-z-]*"
+# 英文：短语内带“未公开”类修饰词 + 机密类名词收尾 + 可选的 for a/the X 补语
+_EN_INNER = (r"(?:unannounced|undisclosed|unapproved|unreleased|still-unreleased|not-yet-disclosed|internal|"
+             r"private|confidential|unpublished|non-?public)")
+_EN_MARK_HEAD = (r"(?:plan|range|adjustment|sequencing|order|floor|ranking|trigger|workaround|assumptions|price|"
+                 r"terms|thresholds?|matrix|playbook|strategy|ladder|budget|roadmap|recipe|window|reallocation|"
+                 r"allocation|settlement)")
+
 INTERNAL_INFO_RULES = [
+    Rule("INTERNAL_INFO", re.compile(
+        rf"{_ZH_QUAL}{_ZH_MARK}{{1,3}}[一-鿿、]{{0,20}}{_ZH_MARK_HEAD}"), 0.75),
+    Rule("INTERNAL_INFO", re.compile(
+        rf"(?i)(?<![A-Za-z-]){_EN_CLASS}\s+the(?:\s+{_EN_WORD}){{1,8}}"), 0.75),
+    Rule("INTERNAL_INFO", re.compile(
+        rf"(?i)(?<![A-Za-z-])the(?:\s+{_EN_WORD}){{0,2}}?\s+{_EN_INNER}(?:\s+{_EN_WORD}){{0,6}}\s+{_EN_MARK_HEAD}"
+        rf"(?![A-Za-z-])(?:\s+for\s+(?:a|an|the)\s+[a-z-]+(?:\s+[a-z-]+)?)?"), 0.75),
     Rule("INTERNAL_INFO", re.compile(rf"{_ZH_CONF_MOD}[\u4e00-\u9fff]{{0,8}}{_ZH_CONF_HEAD}{_ZH_VERSION}"), 0.75),
     Rule("INTERNAL_INFO", re.compile(
         rf"(?i)(?<![A-Za-z]){_EN_CONF_MOD}(?:\s+[a-z][a-z-]*){{0,3}}\s+{_EN_CONF_HEAD}(?![A-Za-z]){_EN_VERSION}"),
@@ -249,12 +283,21 @@ _EN_NAME = r"[A-Z][a-z]+ [A-Z][a-z]+"
 _PLANT_STOP = "厂交付含包不无有该此各本个其完成做次巡进前往去回"
 _GONG_WORDS = "单厂艺程作具序位件资人业装期时种"
 
+_ZH_COMMON_PREFIX = ("所有|全部|此段|该段|这些|上述|以下|相关|其他|确认|转发|交付|提交|附件|参考|补充|"
+                     "原始|书面|纸质|审核|申请|培训|学习|会议|证明|送审|报送|整理|归档")
+
+# “项目”后接这些词时是普通用语（项目经理、项目编码…），不是项目名
+_PROJECT_COMMON = ("进展|延期|计划|预算|经理|管理|组|部|名称|编号|编码|代号|代码|成员|进度|周报|名单|负责|"
+                   "启动|验收|文件|资料")
+_ZH_PROJECT_CODE = r"[一-鿿]{2}[0-9A-Za-z]{0,4}"
+
 ORG_RULES = [
-    Rule("CUSTOMER", re.compile(rf"{_ZH_CHAR}{{2}}(?:{_ZH_COMPANY_SUFFIX})"), 0.6),
+    # 两字前缀不能是指代词 / 动词等普通词，否则“所有材料、确认材料、转发材料”会被当成公司名
+    Rule("CUSTOMER", re.compile(rf"(?!{_ZH_COMMON_PREFIX}){_ZH_CHAR}{{2}}(?:{_ZH_COMPANY_SUFFIX})"), 0.6),
     Rule("CUSTOMER", re.compile(
         rf"(?<![A-Za-z])(?:[A-Z][a-z]+ ){{1,2}}(?:{_EN_COMPANY_SUFFIX}|[A-Z][a-z]*works)(?![A-Za-z])"), 0.6),
     # "项目+两字代号"；排除 "项目进展/项目经理" 等普通词
-    Rule("PROJECT", re.compile(r"项目(?!进展|延期|计划|预算|经理|管理|组|部|名称|编号)[一-鿿]{2}[0-9A-Za-z]{0,4}"), 0.6),
+    Rule("PROJECT", re.compile(rf"项目(?!{_PROJECT_COMMON}){_ZH_PROJECT_CODE}"), 0.6),
     Rule("PROJECT", re.compile(r"(?<![A-Za-z])Project [A-Z][a-z]+(?:-\d+)?(?![A-Za-z0-9])"), 0.65),
     # 厂区：前缀中不允许出现 "厂" 与常见虚词/动词/否定词，避免 "工厂临港一厂"、"不包含工厂" 这类误命中
     Rule("PLANT", re.compile(

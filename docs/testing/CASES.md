@@ -18,6 +18,12 @@
 
 每次输出日志、测试结果和截图；失败保留 trace。正向通过只证明这些路径，未覆盖功能在地图中明确标注。另用校验器测试注入重复 ID、未知用例、缺文档和缺测试，确认地图失配确实失败。
 
+## R-20261118-M2 JSON 键名检测
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-M2 | external_untrusted；顶层、嵌套数组及路由对象的键名含合成凭证或租户主数据 | evaluate JSON | BLOCK且不可发送，不回显敏感键名、不写Vault；普通键与结构保持 |
+
 ## R-20261118-H1 嵌套路由载荷
 
 | Case | Given | When | Then |
@@ -540,14 +546,49 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DESM-03 | des-factory | MCP 服务已创建一个仿真 | 调用未知仿真、错误口令、缺审批引用的写操作；然后关闭 stdin | 业务错误作为工具错误返回，不带数据，服务继续可用。未知工具可以是协议错误。关闭 stdin 后进程在 5 秒内正常退出 |
 | RT-DES-30 | des-factory | P0 seed 1 与并发簇 seed 7 | 同一配置分别在 MOM 引擎（进程内）与模拟工厂服务中创建，在相同时刻推进 | 仿真编号相同，各时刻的可观测设备状态相同。服务事件等于内核事件加仿真编号前缀（种类、来源、设备、客户、时刻、载荷都相同）。服务的标准答案与审核层读到的相同 |
 
-### 阶段⑤a-2（AgentNexus 侧连接器）用例草案
+## 模拟工厂连接器（阶段⑤a-2）
 
-以下用例在⑤a-1 转绿后编写测试（依赖真实的服务接口），届时再按测试规范登记到 features.json：
-- RT-DESC-01：同 seed P0 与并发簇，MCP 模式（调度器推进模拟工厂 → 连接器拉取事件 → MOM 推进）与进程内模式一致。比较的内容包括案例、事件种类序列、`world.des` 快照、排产方案与执行结果。
-- RT-DESC-02：写操作只在审批并 `execute` 之后由连接器发出，幂等键为"案例:方案修订号:动作"，并带审批引用；回执写回动作。传输中断后重发，同键只生效一次。
-- RT-DESC-03：AgentNexus 暴露给 agent 与桌面的模拟工厂工具只有观测类，不含执行、控制与管理类。
-- RT-DESC-04：模拟工厂不在线（命令不存在、进程退出）时，连接器返回明确错误 `E_DES_UNAVAILABLE`，不回退到进程内仿真，也不写入假观测。
-- RT-DESC-05：MCP 模式下，审核层的标准答案来自模拟工厂管理入口，规则结果与进程内模式一致。
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a"⑤a-2 设计"，决策见 [DECISIONS.md](../DECISIONS.md) DES-27。
+
+对外约定：
+- 服务层连接器 `an_server::mom_des_connector::DesConnector`（经 stdio 启动 `an-des-mcp`）；
+- 引擎的远程仿真模式 `an_runtime::mom::des::remote`（`create_remote_des_simulation`、`des_ingest_remote`、`des_pending_writes`、`des_record_write_receipt`、`des_set_remote_truth`）；
+- 错误码 `E_DES_UNAVAILABLE`。
+
+测试在 `crates/server/tests/mom_des_connector.rs`。测试会找 `an-des-mcp` 可执行文件：优先用环境变量 `AN_DES_MCP_BIN`，否则在同一 target 目录中找，找不到时构建一次。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DESC-01 | des-factory | 同一配置（P0 seed 1、并发簇 seed 7，240 分钟）分别在进程内引擎与"连接器 + 模拟工厂"中创建 | 两边逐分钟推进；每当出现等待决策且有推荐方案的案例，两边做同样的选定、批准、执行（MCP 模式随后由连接器发出写操作） | 仿真编号相同；结束时两边每个案例的批次、阶段、模板、事件种类序列、`world.des` 设备快照、排产方案（编号、可行性、完成时刻）、动作（工具、状态、完成时刻）完全一致 |
+| RT-DESC-02 | des-factory | MCP 模式 P0，案例等待决策 | 先在未审批时执行；再审批并执行；把待发写操作发出一次但不记录回执，再正式发出一次 | 审批前没有任何写操作；未审批的执行被拒绝且不产生写操作。审批执行后的写操作包含维修单，幂等键以案例编号开头、等于参数中的 `idempotency_key`，并带上指向该案例的审批引用。重发返回与第一次相同的单号（同键只生效一次）；回执记录后不再有待发写操作；维修动作的完成时刻与回执一致，动作回执含单号 |
+| RT-DESC-03 | des-factory | MCP 模式 P0 | 读取开放给 agent 的工具；以 agent 身份调用观测工具，再调用执行、控制、管理工具 | 开放的工具恰好是 6 个观测类工具。观测调用成功；其余三类被拒绝（错误含 not allowed），且没有发给模拟工厂（被拒绝的推进没有改变时钟） |
+| RT-DESC-04 | des-factory | 命令不存在；或模拟工厂运行中进程被杀 | 启动连接器；推进 | 启动在超时内报 `E_DES_UNAVAILABLE`；进程退出后推进报 `E_DES_UNAVAILABLE`，引擎时钟与案例数不变（不静默推进、不写假观测），引擎中也没有进程内仿真可以回退（`des_factory_view` 报错） |
+| RT-DESC-05 | des-factory | 同一配置分别在进程内与 MCP 模式创建 | 读取审核用标准答案；两边对同一案例记录同一根因假设并取审核报告 | MCP 模式的标准答案与进程内相同（来自模拟工厂管理入口）；根因规则结果相同且为 pass |
+
+### 阶段⑤a-3：an-mom 接入模拟工厂连接器（2026-11-19 用户确认）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a"⑤a-3 设计"，决策见 [DECISIONS.md](../DECISIONS.md) DES-28。
+
+对外约定（新增，均为增量）：
+- 启动参数 `an-mom --des-mcp <命令>`（或环境变量 `AN_MOM_DES_MCP`）：启动时经 stdio 拉起模拟工厂；启动失败则 an-mom 退出并报 `E_DES_UNAVAILABLE`，不回退到进程内仿真；
+- `AppState::with_des(连接器)`；`mom::clock_step(&AppState)`：共享时钟走一步（后台时钟每秒调用一次）；
+- `POST /api/mom/des/simulations` 返回新增字段 `source`（`mcp` 或 `in_process`）；
+- `GET /api/mom/des/tools`、`POST /api/mom/des/tools/{tool}`：桌面与会话经连接器调用观测工具；
+- 模拟工厂不在线时 HTTP 返回 503，正文 `code` 为 `E_DES_UNAVAILABLE`。
+- 模拟工厂工具 `simulation_create` 增加可选参数 `simulation_id`（`DES-正整数`，已存在则拒绝），连接器传入引擎的下一个编号；
+- an-mom 启动时打印实际监听地址（`--bind 127.0.0.1:0` 时为系统分配的端口）。
+
+测试在 `crates/server/tests/mom_des_connector.rs`（RT-DESC-12）与 `crates/server/tests/mom_des_http_mcp.rs`（RT-DESC-06～11）。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DESC-06 | des-factory | 已构建的 `an-mom` 与 `an-des-mcp` | 运行 `an-mom --help`；用不存在的命令启动 `an-mom --des-mcp`；用真实的 `an-des-mcp` 启动并经 HTTP 创建 P0 仿真、读取工具清单 | 帮助中有 `--des-mcp`；命令不存在时 15 秒内以非零状态退出，错误输出含 `E_DES_UNAVAILABLE`；真实启动后创建返回 200、`source` 为 `mcp`，工具清单恰好是 6 个观测工具 |
+| RT-DESC-07 | des-factory | 两个 an-mom 服务：一个进程内，一个接了模拟工厂 | 两边各用 S1 场景取得案例，再创建 P0（seed 1，240 分钟）仿真，用 `advance` 命令推进 120 分钟 | 两边仿真编号相同；`source` 分别为 `in_process` 与 `mcp`；所有 DES 案例（批次以仿真编号开头）的批次、阶段、事件种类序列完全一致，且至少有一个 DES 案例 |
+| RT-DESC-08 | des-factory | 接了模拟工厂的 an-mom，P0 案例等待决策 | 经 HTTP 先执行（未审批），再选定推荐方案、审批、执行，然后再推进 30 分钟 | 未审批的执行返回 400，且没有发出写操作；审批后的执行返回 200，返回时写操作已经发出：至少一张维修单，审批引用指向该案例；执行返回的案例中维修动作的回执含单号；之后推进不重发（已发写操作数不变） |
+| RT-DESC-09 | des-factory | 接了模拟工厂的 an-mom，已有 S1 案例（共享时钟已过仿真起点），已创建 P0 仿真，播放 5 分钟 | 调用 `clock_step` 5 次；再调用 1 次（播放已结束）；重新播放后杀掉模拟工厂进程再调用 1 次 | 前 5 次后引擎时钟前进 5 分钟，模拟工厂 `equipment_status` 的观测时刻等于引擎时钟；第 6 次时钟不动；杀掉后 `clock_step` 报 `E_DES_UNAVAILABLE`，引擎时钟不变，播放被暂停 |
+| RT-DESC-10 | des-factory | 接了模拟工厂的 an-mom，已有 S1 案例与一个 P0 仿真，然后杀掉模拟工厂进程 | 创建仿真；对 S1 案例发 `advance` 命令；经工具接口读取设备状态 | 三者都返回 503，`code` 为 `E_DES_UNAVAILABLE`，10 秒内返回；引擎中仿真数与时钟不变（不回退到进程内仿真、不静默推进） |
+| RT-DESC-11 | des-factory | 一个进程内 an-mom；一个接了模拟工厂、已创建 P0 仿真并推进 30 分钟的 an-mom | 读工具清单；调用 `equipment_status`、`simulation_ground_truth`、`simulation_advance`；读工厂视图、what-if、趋势预测 | 进程内服务的工具清单返回 400（没有接模拟工厂）。接了模拟工厂的：工具清单恰好 6 个观测工具；`equipment_status` 返回 200 且 `provenance` 为 `simulation`；管理与控制工具返回 403（含 not allowed），被拒绝的推进没有改变模拟工厂时钟；工厂视图与模拟工厂 `equipment_status` 的结果相同、截至时刻等于引擎时钟；趋势预测与 `equipment_trend` 的结果相同；what-if 返回 3 个方案；三者都不含标准答案字段 |
+| RT-DESC-12 | des-factory | 连接器 A 创建 P0 仿真，案例审批执行后留下待发写操作（未发出）；随后换成新的连接器 B（模拟工厂新进程，相当于 an-mom 重启） | B 发出待发写操作；B 创建新仿真并推进；另外直接调用模拟工厂服务，用已存在的编号或格式不对的编号创建仿真 | B 发出 0 个写操作且不报错，A 的仿真的待发写操作原样保留；B 的新仿真编号为 `DES-2`（与旧仿真不冲突，模拟工厂中也是这个编号），照常创建和推进（旧仿真不会卡住新仿真）；重复编号与格式不对的编号都被拒绝 |
 
 ## R-20261118-M3 常见凭证与同形字
 
@@ -555,3 +596,9 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|
 | PY-DLP-M3 | 中文密码/口令、token=、DB_PASS=、OpenAI项目key、Google key、同形字AWS/GitHub，共8种合成输入 | evaluate到external_untrusted | 全部BLOCK、不可发送且无原值；其余原文（含℃）不变；正常Unicode和术语不被改写 |
 
+
+## R-20261118-M5 JSON 路径不碰撞
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-M5 | 字面点号/方括号/空键与嵌套路径共存，含客户名及普通值；另注入重复分析路径 | evaluate | 每个字段分别正确脱敏且结构/原输入保持；重复路径在写Vault前BLOCK；普通field_path仍为字符串 |

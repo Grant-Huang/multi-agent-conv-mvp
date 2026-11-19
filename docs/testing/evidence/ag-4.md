@@ -48,7 +48,7 @@ web playwright（全部浏览器用例）：23 passed
 
 ---
 
-# AG.4 第三轮评测后的修改（2026-11-19，DECISIONS 第 42 条）
+# AG.4 第三轮评测后的修改（2026-11-19，DECISIONS 第 44 条）
 
 ## Red → Green
 
@@ -61,7 +61,7 @@ web playwright（全部浏览器用例）：23 passed
 ## 改动
 
 - `crates/runtime/src/conversation.rs`：解析管理助手判断时，撤销 / 列出的助手名在校验候选之前清空。
-- `crates/runtime/src/agent_chat.rs`：管理助手一节补四条规则（见 DECISIONS 第 42 条）。只在 `agent_management` 打开时出现，开关关闭时提示词不变（RT-AGCHAT-11 后半段检查）。
+- `crates/runtime/src/agent_chat.rs`：管理助手一节补四条规则（见 DECISIONS 第 44 条）。只在 `agent_management` 打开时出现，开关关闭时提示词不变（RT-AGCHAT-11 后半段检查）。
 
 ## 还没验证的
 
