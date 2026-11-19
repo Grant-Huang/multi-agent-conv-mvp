@@ -337,9 +337,16 @@
       "RT-DESC-02",
       "RT-DESC-03",
       "RT-DESC-04",
-      "RT-DESC-05"
+      "RT-DESC-05",
+      "RT-DESC-06",
+      "RT-DESC-07",
+      "RT-DESC-08",
+      "RT-DESC-09",
+      "RT-DESC-10",
+      "RT-DESC-11",
+      "RT-DESC-12"
     ],
-    "note": "阶段⑤a-1：模拟工厂服务（an-des）与 MCP stdio 服务（an-des-mcp）；阶段⑤a-2：AgentNexus 侧连接器与引擎远程仿真模式（RT-DESC-01～05），均已实现；an-mom 接入为下一步。参数为建模假设（台账 M27、M28）。"
+    "note": "阶段⑤a-1：模拟工厂服务（an-des）与 MCP stdio 服务（an-des-mcp）；阶段⑤a-2：AgentNexus 侧连接器与引擎远程仿真模式（RT-DESC-01～05），均已实现；阶段⑤a-3：an-mom 接入连接器（RT-DESC-06～12，草案，Red）。参数为建模假设（台账 M27、M28）。"
   },
   {
     "id": "agent-links",

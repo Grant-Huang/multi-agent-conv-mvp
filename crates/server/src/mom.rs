@@ -27,6 +27,9 @@ pub struct AppState {
     pub relos: Option<Arc<crate::mom_relos::RelosClient>>,
     /// 车间 DES 审核层的 AI 审核（阶段④）；未配置时 AI 审核不可用，只做规则检查。
     pub reviewer: Option<Arc<dyn an_runtime::mom::des::review::Reviewer>>,
+    /// 阶段⑤a-3：模拟工厂连接器（`an-mom --des-mcp`）。配置后，创建仿真、推进时钟、发写操作都经它进行，
+    /// 不回退到进程内仿真；未配置时使用进程内仿真（行为与之前相同）。
+    pub des: Option<Arc<crate::mom_des_connector::DesConnector>>,
 }
 impl AppState {
     pub fn scripted(engine: Arc<Mutex<Engine>>) -> Self {
@@ -37,7 +40,13 @@ impl AppState {
             active: Arc::new(Mutex::new(BTreeSet::new())),
             relos: None,
             reviewer: None,
+            des: None,
         }
+    }
+    /// 接入模拟工厂连接器（阶段⑤a-3）。
+    pub fn with_des(mut self, connector: Arc<crate::mom_des_connector::DesConnector>) -> Self {
+        self.des = Some(connector);
+        self
     }
     /// 配置车间 DES 审核层的 AI 审核（阶段④）。
     pub fn with_reviewer(
@@ -99,15 +108,29 @@ pub fn spawn_clock(state: AppState) -> tokio::task::JoinHandle<()> {
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             timer.tick().await;
-            let Ok(mut engine) = state.engine.lock() else {
-                break;
-            };
-            if let Err(error) = engine.playback_tick() {
-                let _ = engine.set_playback(false, 0);
+            if let Err(error) = clock_step(&state).await {
+                if error.to_string().contains("runtime unavailable") {
+                    break;
+                }
                 tracing::warn!(event="task.status",task_id="mom-clock",error=%error,"MOM playback paused after error");
             }
         }
     })
+}
+
+/// 共享时钟走一步（后台时钟每秒调用一次；测试直接调用）。出错时暂停播放并返回错误。
+///
+/// 阶段⑤a-3 骨架：暂时只有进程内行为，接了模拟工厂时尚未经连接器推进（RT-DESC-09 预期失败）。
+pub async fn clock_step(state: &AppState) -> anyhow::Result<()> {
+    let mut engine = state
+        .engine
+        .lock()
+        .map_err(|_| anyhow::anyhow!("runtime unavailable"))?;
+    if let Err(error) = engine.playback_tick() {
+        let _ = engine.set_playback(false, 0);
+        return Err(error);
+    }
+    Ok(())
 }
 async fn simulations(State(s): State<AppState>) -> ApiResult<Value> {
     run(&s, |e| Ok(e.simulations_view()))

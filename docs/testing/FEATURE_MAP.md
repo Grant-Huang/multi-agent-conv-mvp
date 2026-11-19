@@ -68,6 +68,8 @@ DES 审查修复（R-20261117-M1/L1，移植自 PR #84/#85 并适配阶段③）
 
 模拟工厂连接器阶段⑤a-2（`des-factory`）：RT-DESC-01～05 定义 AgentNexus 侧连接器与引擎远程仿真模式：MCP 模式与进程内一致、写操作只在审批执行后发出且幂等、agent 只开放观测工具、模拟工厂离线时明确报错且不回退、审核标准答案来自管理入口；已实现并转绿（an-mom 接入为下一步）。
 
+模拟工厂接入 an-mom 阶段⑤a-3（`des-factory`）：RT-DESC-06～12 定义 `an-mom --des-mcp` 启动、HTTP 创建与推进走连接器且与进程内一致、审批执行返回时写操作已发出、后台时钟经连接器推进、模拟工厂离线时返回 503 不回退、桌面只开放观测工具、重启后旧仿真不卡住新仿真；草案，失败测试（Red）待用户确认。
+
 专家工作流节点绑定（E1-C 方案 B）：RT-BIND-01～10（`crates/runtime/tests/promoted_templates.rs`）覆盖 R1–R8 绑定规则、分段、模板校验对错误模板的拒绝，以及 9 条真实专家工作流的编译与统计；未经专家确认的模板不晋升。
 
 每日审查回归：RT-MOM-01～05（`crates/runtime/tests/mom.rs`）覆盖联锁、终态、事件时间、失败重放和阻断案例租约。HTTP 联锁入口由 `crates/server/tests/mom.rs::safety_trip_rejects_http_patch_and_dispatch_without_side_effects` 验证；它不代表浏览器安全路径已验证。执行证据见 `docs/review/2026-11-06-fixes.md`。
