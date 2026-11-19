@@ -138,6 +138,11 @@
 
 `AMOUNT` 带 `constraints: ["preserve:AMOUNT"]` 时保留。trust = `internal` 的目的地：除 `SECRET` 外全部原样保留。
 
+#### R-20261118-M2 补充
+
+预检所有层级JSON键名（含路由对象），凭证或租户主数据命中时直接BLOCK，不回显原键、不写Vault。普通键与值处理保持。
+`sensitive_json_key`：JSON键名含凭证或租户主数据，BLOCK；此结构键预检对所有目的地适用，内部目的地的普通值保留规则不变。
+
 ### 4.6 Token 格式
 
 `[<TYPE>_<NNN>]`，编号在 `(tenant, task, type)` 内从 001 起按首次出现顺序递增。正则：`\[([A-Z][A-Z_]*?)_(\d{3,})\]`。
