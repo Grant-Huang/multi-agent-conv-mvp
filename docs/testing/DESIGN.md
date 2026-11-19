@@ -11,7 +11,7 @@
 ## 结构
 
 - docs/testing/features.json：稳定 Feature ID、Case ID、文档/实现/测试位置、用户路径、预期结果、覆盖层级。
-- docs/testing/FEATURE_MAP.md：当前功能入口和边界，面向操作与排错。
+- docs/feature-map/（README 索引 + features/ 各功能文件）与 docs/feature-map/COVERAGE.md：当前功能入口、驱动方法和边界，面向操作与排错。
 - docs/testing/CASES.md：在实现验证 harness 前定稿的浏览器验收用例。
 - web/verification/check-map.mjs：检查重复/未知 ID、路径缺失、用例没有测试、测试未登记等；不把“文件存在”当作功能已通过。
 - web/e2e/*.spec.ts：Playwright Chromium 测试，走 UI→HTTP/SSE→Rust Runtime→SQLite/文件。仅 OpenAI 兼容模型端点用本机假服务。

@@ -31,7 +31,7 @@
 评审 agent 必须自己读，不接受任何人的总结：
 
 1. 本次范围的 diff（`git diff <上次截止提交>..origin/master`），以及 diff 涉及的上下游代码；
-2. `docs/DESIGN.md`、`docs/PLAN.md`、`docs/testing/FEATURE_MAP.md`、`docs/testing/features.json`；
+2. `docs/DESIGN.md`、`docs/PLAN.md`、`docs/feature-map/README.md`、`docs/feature-map/COVERAGE.md`、`docs/testing/features.json`；
 3. 本文与 `docs/review/findings.jsonl`（已知问题，不重复报告）；
 4. 检查命令的实际输出（第 6 节）。
 
