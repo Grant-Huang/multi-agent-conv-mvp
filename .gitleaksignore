@@ -1,0 +1,4 @@
+# gitleaks 误报指纹。每条都要写明理由，只能是测试用的假值。
+# 提交 03d47f4 中 RT-DLP-03 的假密钥 "sk-live-…"，只用于让模拟 DLP 服务返回 secret_blocked，不是真实凭证。
+# 历史提交在共享分支上不改写；当前代码已改为运行时拼出假值（见 dab73e9）。用户 2026-11-19 批准加入本条。
+03d47f4b4003aee5cec1fccf893f7ba63c23d5f1:crates/server/tests/agent_diagnose_send.rs:generic-api-key:578
