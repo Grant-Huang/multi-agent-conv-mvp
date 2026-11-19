@@ -313,7 +313,10 @@
       "crates/des/src/observe.rs",
       "crates/des/tests/factory.rs",
       "crates/des-mcp/src/main.rs",
-      "crates/des-mcp/tests/stdio.rs"
+      "crates/des-mcp/tests/stdio.rs",
+      "crates/runtime/src/mom/des/remote.rs",
+      "crates/server/src/mom_des_connector.rs",
+      "crates/server/tests/mom_des_connector.rs"
     ],
     "coverage": "backend",
     "cases": [],
@@ -329,9 +332,14 @@
       "RT-DESM-01",
       "RT-DESM-02",
       "RT-DESM-03",
-      "RT-DES-30"
+      "RT-DES-30",
+      "RT-DESC-01",
+      "RT-DESC-02",
+      "RT-DESC-03",
+      "RT-DESC-04",
+      "RT-DESC-05"
     ],
-    "note": "阶段⑤a-1：模拟工厂服务（an-des，含从 an-runtime 迁入的仿真内核）与 MCP stdio 服务（an-des-mcp），已实现并转绿；⑤a-2 连接器用例见 CASES.md 草案。参数为建模假设（台账 M27、M28）。"
+    "note": "阶段⑤a-1：模拟工厂服务（an-des）与 MCP stdio 服务（an-des-mcp）已实现；阶段⑤a-2：AgentNexus 侧连接器与引擎远程仿真模式（RT-DESC-01～05）实现前 Red。参数为建模假设（台账 M27、M28）。"
   },
   {
     "id": "agent-links",
