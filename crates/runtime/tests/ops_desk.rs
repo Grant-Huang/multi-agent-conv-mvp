@@ -11,19 +11,23 @@ fn store() -> Arc<Store> {
 fn cfg(merge_secs: u64, hourly_cap: u32) -> OpsConfig {
     OpsConfig { merge_secs, hourly_cap }
 }
-/// 一个待批准的 S1 案例；batch 不同则是不同案例
+/// 一个待批准的 S1 案例；batch 不同则是不同案例。事件时间以引擎当前时间为基准（与服务端的场景生成一致），
+/// 这样同一个引擎里可以连续建多个案例，每个都能走到待批准。
 fn pending_case(e: &mut Engine, batch: &str) -> String {
-    let mut a = EventInput::s1("order", 497);
+    let base = e.now().max(497);
+    let mut a = EventInput::s1("order", base);
     a.id = format!("{batch}-order");
     a.batch = batch.into();
     let id = e.ingest(a).unwrap();
-    for (k, t) in [("vibration", 503), ("quality", 511)] {
-        let mut x = EventInput::s1(k, t);
+    for (k, d) in [("vibration", 6), ("quality", 14)] {
+        e.advance(base + d).unwrap();
+        let mut x = EventInput::s1(k, base + d);
         x.id = format!("{batch}-{k}");
         x.batch = batch.into();
         e.ingest(x).unwrap();
     }
-    e.advance(514).unwrap();
+    e.advance(base + 17).unwrap();
+    assert_eq!(e.case(&id).unwrap().stage, "WAITING_HUMAN");
     id
 }
 fn approve(e: &mut Engine, id: &str) {

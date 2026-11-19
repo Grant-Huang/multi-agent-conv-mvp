@@ -959,3 +959,10 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [ ] **S8 同因复发**：先核实根因字段，RT-INT-02 视核实结果重写
 
 已知缺口：G-1（误报标注）、G-3（闸门数字未校准）、G-4（无登录与角色）、G-6（无“个人”页签）、G-7（无推送数据）、G-8（无经验库）、G-9（无个人记忆模块）、G-10（无 regressed 与根因字段）。详见 `docs/memory/ACCEPTANCE.md`。
+
+### 运营桌面与运营频道进度（D0–D3，设计见 mom/OPS_DESK.md）
+
+- [x] **D0a 后端**（2026-11-19）：事件分级、运营频道发布器、`[mom]` 配置、`Store::ensure_conversation`、`ChatCard::OpsCase/OpsSummary`；RT-OPSDESK-01～05、08 转绿。尚未接入服务进程，开关默认关闭。
+- [ ] **D0b 服务与前端**：服务端按开关启动发布器并挂 `/api/mom/desk` 等接口；会话列表出现运营频道，渲染案例卡与汇总卡，未读角标；E2E-OPSCHANNEL、OPSNOISE、OPSOFF 转绿。
+- [ ] **D1 桌面看板**：E2E-OPSDESK、OPSDRAWER，RT-OPSDESK-06、07。
+- [ ] **D2 卡片批准联动**、**D3 任务/资源入口与 MCP 连接器回归**。

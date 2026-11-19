@@ -412,9 +412,13 @@ impl Store {
     }
 
     /// 确保指定 id 的会话存在（运营频道用固定 id）：已存在就原样返回，不改标题。不改表结构。
-    pub fn ensure_conversation(&self, _id: &str, title: &str) -> Result<Conversation> {
-        // 实现前骨架：先用随机 id 建会话，测试应因 id 不符而失败（Red）
-        self.create_conversation(title)
+    pub fn ensure_conversation(&self, id: &str, title: &str) -> Result<Conversation> {
+        self.write().execute(
+            "INSERT OR IGNORE INTO conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+            params![id, title, now()],
+        )?;
+        self.get_conversation(id)?
+            .with_context(|| format!("会话 {id} 创建后读不到"))
     }
 
     pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>> {

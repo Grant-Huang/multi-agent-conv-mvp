@@ -14,3 +14,14 @@
 | RT-OPSDESK-08 | 失败 | 会话 id 是随机值，应为固定的 `ops-channel` |
 
 6 个全部失败，且都是业务断言失败，不是编译或环境错误。
+
+## Green（同日，实现后）
+
+`CARGO_TARGET_DIR=target cargo test -p an-runtime --test ops_desk`：6 passed。
+
+实现中只改了一处测试夹具：`pending_case` 起初对每个案例都用固定的事件时间 497 起算，同一引擎里第二个案例起走不到“待批准”（引擎时钟已经是 514）；改成以引擎当前时间为基准（与服务端场景生成一致），断言本身没有改。
+
+完整门槛：
+- `cargo test --no-fail-fast`：只有 `an-server --test admission` 的 `rt_adm_14_admission_http_end_to_end` 失败（“任务未结束”）；同一用例在干净的 `origin/master` 上同样失败，与本改动无关。
+- `cargo clippy --all-targets`：无警告。
+- `cd web && npm run build`：通过（`ChatCard.ts` 绑定已由 `cargo test -p an-core` 重新生成）。
