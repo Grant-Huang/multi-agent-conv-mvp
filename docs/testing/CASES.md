@@ -337,6 +337,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGCHAT-07 | agent-chat | 提议过期后再确认 | 410；原确认卡状态变为 expired |
 | RT-AGCHAT-08 | agent-chat | 旧数据库的 messages 表没有 card_json 列 | 打开时自动补列，可重复打开；旧消息可读，卡片为空 |
 | RT-AGCHAT-09 | agent-chat | 模型给的 agent_id 不在候选里 | 按格式不合格重试；第二次合格后正常生成卡片 |
+| RT-AGCHAT-10 | agent-chat | 开关打开；模型判"撤销"或"列出"，但多填了助手名（例如 `cursor`）| `decide_turn` 返回的管理助手判断里助手名为空：撤销和列出与具体助手无关，由程序直接清空（AG.4 第三轮评测：und-01/04/05 属于这一类）|
+| RT-AGCHAT-11 | agent-chat | 开关打开，发一条消息 | 发给模型的"管理助手"一节写明四条规则：没点名助手时不反问、助手名留空（由选择卡让用户点选）；让助手干一件具体的活是派任务，不追问细节；问"有哪些助手 / 默认是谁"走 list；撤销上一次修改是 undo、不是 enable，接入还没接的助手是 connect，enable 只用于恢复停用的。开关关闭时这一节不出现 |
 | E2E-AGCHAT | agent-ui | 对话里说"把 Claude Code 接进来" | 对话里出现确认卡 → 确认 → 对话里出现结果卡；刷新后两张卡仍在，确认卡显示已确认 |
 | E2E-AGCHOICE | agent-ui | 对话里说"帮我接个写代码的助手" | 对话里出现选择卡 → 点选一个 → 对话里出现确认卡 |
 

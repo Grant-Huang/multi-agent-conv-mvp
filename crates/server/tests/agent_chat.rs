@@ -441,3 +441,95 @@ async fn rt_agchat_09_unknown_agent_id_retries() {
     assert_eq!(llm.turn_requests().len(), 2, "应重试一次");
     assert_eq!(last_assistant(&msgs)["card"]["type"], "confirm");
 }
+
+/// 只有一条用户消息的对话历史（直接调用 decide_turn 用，与评测工具相同的路径）
+fn history(text: &str) -> Vec<an_core::Message> {
+    vec![an_core::Message {
+        id: "m1".into(),
+        conversation_id: "c1".into(),
+        role: "user".into(),
+        content: text.into(),
+        task_id: None,
+        created_at: String::new(),
+    }]
+}
+
+/// RT-AGCHAT-10：撤销 / 列出与具体助手无关，模型多填的助手名由程序清空
+#[tokio::test]
+async fn rt_agchat_10_undo_and_list_ignore_agent_id() {
+    let _g = ENV_LOCK.lock().await;
+    let sb = Sandbox::new("10");
+    let llm = MockLlm::start(Arc::new(|text, _| {
+        if text.contains("列") {
+            manage("list", "claude", "")
+        } else {
+            manage("undo", "claude", "coding")
+        }
+    }))
+    .await;
+    let (_base, rt) = sb.serve(&llm.base, true).await;
+    for (text, op) in [
+        ("撤销刚才的修改", an_core::AgentOp::Undo),
+        ("列一下有哪些助手", an_core::AgentOp::List),
+    ] {
+        let d = rt
+            .conversation
+            .decide_turn(&history(text), &[])
+            .await
+            .unwrap_or_else(|e| panic!("{text}：{}", e.message));
+        match d.value {
+            an_core::TurnDecision::ManageAgents {
+                op: got, agent_id, ..
+            } => {
+                assert_eq!(got, op, "{text}");
+                assert_eq!(agent_id, "", "{text}：撤销 / 列出时助手名应被清空");
+            }
+            other => panic!("{text}：应为管理助手，得到 {other:?}"),
+        }
+    }
+}
+
+/// RT-AGCHAT-11：开关打开时，"管理助手"一节写明四条规则；关闭时不出现
+#[tokio::test]
+async fn rt_agchat_11_prompt_rules_for_common_mistakes() {
+    let _g = ENV_LOCK.lock().await;
+    let sb = Sandbox::new("11");
+    let llm = MockLlm::start(Arc::new(|_, _| manage("list", "", ""))).await;
+    let (_base, rt) = sb.serve(&llm.base, true).await;
+    rt.conversation
+        .decide_turn(&history("你好"), &[])
+        .await
+        .unwrap();
+    let req = llm.turn_requests().pop().expect("应请求前台判断");
+    let system = req["messages"][0]["content"].as_str().unwrap_or("");
+    for (rule, why) in [
+        ("不要反问", "没点名助手时不反问"),
+        ("留空", "没点名助手时助手名留空"),
+        ("选择卡", "说明由选择卡让用户点选"),
+        ("不追问", "让助手干具体的活时不追问细节"),
+        ("默认是谁", "问默认是谁走 list"),
+        ("不是 enable", "撤销不是 enable"),
+        ("只用于恢复", "enable 只用于恢复停用的"),
+    ] {
+        assert!(
+            system.contains(rule),
+            "缺少规则（{why}）：「{rule}」\n{system}"
+        );
+    }
+
+    let sb2 = Sandbox::new("11b");
+    let llm2 = MockLlm::start(Arc::new(|_, _| {
+        json!({"action":"respond","question":"","task_goal":"","task_id":"","follow_up_kind":"","change":""})
+    }))
+    .await;
+    let (_b2, rt2) = sb2.serve(&llm2.base, false).await;
+    rt2.conversation
+        .decide_turn(&history("你好"), &[])
+        .await
+        .unwrap();
+    let off = llm2.turn_requests().pop().unwrap()["messages"][0]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    assert!(!off.contains("管理助手"), "开关关闭时不应出现管理助手一节");
+}
