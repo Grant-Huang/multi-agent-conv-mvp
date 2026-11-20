@@ -77,6 +77,30 @@ export interface NodesView {
   paired: PairedNode[];
 }
 
+/** 业务内省结论（HTTP 列表项） */
+export interface IntroFinding {
+  id: string;
+  job_id: string;
+  topic: string;
+  json: unknown;
+  verification: string;
+  gate_score: number | null;
+  gate_reason: string;
+  pushed: boolean;
+  verdict: string | null;
+  verdict_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntroLabel {
+  id: string;
+  finding_id: string;
+  kind: string;
+  note: string;
+  created_at: string;
+}
+
 /** 一个后端的健康状况（/api/health 和 /api/diagnostics 都带） */
 export interface BackendStatus {
   name: string;
@@ -202,6 +226,31 @@ export const api = {
       `/api/mom/desk/cases/${encodeURIComponent(id)}/open-in-channel`,
       { method: "POST", body: "{}" },
     ),
+  /** 业务内省未读；403 时由调用方处理 */
+  introUnread: () =>
+    request<{ unread: number; conversation_id: string | null; title: string }>("/api/introspection/unread"),
+  introRead: () => request<{ ok: boolean; marked: number; unread: number }>("/api/introspection/read", { method: "POST" }),
+  introFindings: (includeRejected = false) =>
+    request<{ findings: IntroFinding[] }>(
+      `/api/introspection/findings${includeRejected ? "?include_rejected=true" : ""}`,
+    ),
+  introFinding: (id: string) =>
+    request<{ finding: IntroFinding; labels: IntroLabel[] }>(`/api/introspection/findings/${encodeURIComponent(id)}`),
+  introVerdict: (id: string, verdict: "confirmed" | "rejected", note = "") =>
+    request<{ ok: boolean; finding: IntroFinding }>(`/api/introspection/findings/${encodeURIComponent(id)}/verdict`, {
+      method: "POST",
+      body: JSON.stringify({ verdict, note }),
+    }),
+  introLabel: (id: string, kind: "should_push" | "should_not_push", note = "") =>
+    request<{ ok: boolean; label: IntroLabel }>(`/api/introspection/findings/${encodeURIComponent(id)}/label`, {
+      method: "POST",
+      body: JSON.stringify({ kind, note }),
+    }),
+  introRun: (fixture?: string) =>
+    request<{ status: string; job_id?: string; reason?: string; error?: string }>("/api/introspection/run", {
+      method: "POST",
+      body: JSON.stringify(fixture ? { fixture } : {}),
+    }),
   tasks: (cid: string) => request<TaskRecord[]>(`/api/tasks?conversation_id=${cid}`),
   task: (id: string, after?: string) => request<TaskDetail>(`/api/tasks/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   cancel: (id: string) => request<{ cancelled: boolean }>(`/api/tasks/${id}/cancel`, { method: "POST" }),

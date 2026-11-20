@@ -703,10 +703,18 @@
       "crates/runtime/src/introspect/",
       "crates/runtime/src/store.rs",
       "crates/runtime/src/conversation.rs",
-      "crates/core/src/lib.rs"
+      "crates/core/src/lib.rs",
+      "crates/server/src/introspection_api.rs",
+      "web/src/components/IntrospectionPanel.tsx",
+      "web/e2e/intro.spec.ts"
     ],
-    "coverage": "backend",
-    "cases": [],
+    "coverage": "browser",
+    "cases": [
+      "E2E-INTROVIEW",
+      "E2E-INTROLABEL",
+      "E2E-INTROPUSH",
+      "E2E-INTROUNREAD"
+    ],
     "runtime_cases": [
       "RT-INT-03",
       "RT-INT-06",
@@ -728,7 +736,8 @@
       "RT-INT-26",
       "RT-INT-27",
       "RT-INT-28",
-      "RT-INT-29"
+      "RT-INT-29",
+      "RT-INT-10"
     ]
   }
 ]
