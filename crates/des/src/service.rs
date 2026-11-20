@@ -112,6 +112,7 @@ fn write_fields() -> [(&'static str, Value, bool); 2] {
 
 /// `simulation_create.factory` 的 schema（与 `FactoryConfig` 的反序列化规则一致；null 使用默认 Line-B）。
 fn factory_schema() -> Value {
+    let duration = |desc: &str| json!({"type": "integer", "minimum": 0, "maximum": crate::MAX_DURATION_MINUTES, "description": desc});
     let count = |desc: &str| json!({"type": "integer", "minimum": 0, "description": desc});
     json!({
         "type": ["object", "null"],
@@ -139,11 +140,11 @@ fn factory_schema() -> Value {
                     "uncertified": {"type": "array", "items": {"type": "string"}},
                     "missing_tool": {"type": "array", "items": {"type": "string"}},
                     "tool_spares": count("Spare tools in the store"),
-                    "tool_transfer_minutes": count("Tool transfer lead time (minutes)"),
-                    "maintenance_minutes": count("Repair time (minutes)"),
+                    "tool_transfer_minutes": duration("Tool transfer lead time (minutes)"),
+                    "maintenance_minutes": duration("Repair time (minutes)"),
                     "maintenance_crews": count("Maintenance crews"),
-                    "finish_batch_minutes": count("Time to finish the current batch (minutes)"),
-                    "inspection_minutes": count("Release inspection time (minutes)"),
+                    "finish_batch_minutes": duration("Time to finish the current batch (minutes)"),
+                    "inspection_minutes": duration("Release inspection time (minutes)"),
                     "urgent_capacity_share": {"type": "number", "minimum": 0, "maximum": 1}
                 },
                 "additionalProperties": false
@@ -191,7 +192,7 @@ fn scenario_schema() -> Value {
                     simple("unconstrained")
                 ]
             },
-            "start_minute": {"type": "integer", "minimum": 0, "description": "Virtual minute the simulation starts"},
+            "start_minute": {"type": "integer", "minimum": 0, "maximum": crate::MAX_START_MINUTE, "description": "Virtual minute the simulation starts"},
             "horizon_minutes": {"type": "integer", "minimum": 1, "maximum": crate::scenario::MAX_HORIZON_MINUTES, "description": "Simulated duration (minutes)"},
             "mechanisms": {
                 "type": ["object", "null"],
@@ -303,6 +304,7 @@ pub fn tool_catalog() -> Vec<ToolSpec> {
                 "type": "object",
                 "properties": {
                     "name": string("Display name"),
+                    "simulation_id": string("Optional id chosen by the caller, DES-<positive integer>; rejected if already used. Omit to let the factory number it"),
                     "factory": factory_schema(),
                     "scenario": scenario_schema()
                 },
@@ -625,7 +627,16 @@ impl FactoryService {
     pub fn call(&mut self, tool: &str, args: Value) -> Result<Value> {
         ensure!(args.is_object(), "arguments must be a JSON object");
         match tool {
-            "simulation_create" => self.create(parse(tool, args)?),
+            "simulation_create" => {
+                // 可选的 `simulation_id` 不属于仿真配置，先取出再按配置严格解析（阶段⑤a-3，DES-28）。
+                let mut args = args;
+                let requested = match args.as_object_mut().and_then(|m| m.remove("simulation_id")) {
+                    None | Some(Value::Null) => None,
+                    Some(Value::String(id)) => Some(id),
+                    Some(other) => bail!("simulation_id must be a string, got {other}"),
+                };
+                self.create(parse(tool, args)?, requested)
+            }
             "simulation_advance" => self.advance(parse(tool, args)?),
             "simulation_fault_inject" => self.fault(parse(tool, args)?),
             "simulation_ground_truth" => self.ground_truth(parse(tool, args)?),
@@ -741,18 +752,50 @@ impl FactoryService {
                     "unknown machine {}",
                     a.machine
                 );
+                let ahead = sim.now.saturating_add(MAX_SCHEDULE_AHEAD_MINUTES);
                 ensure!(
-                    a.start_minute >= sim.now
-                        && a.start_minute <= sim.now + MAX_SCHEDULE_AHEAD_MINUTES,
+                    a.start_minute >= sim.now && a.start_minute <= ahead,
                     "start_minute must be between now ({}) and {} minutes ahead",
                     sim.now,
                     MAX_SCHEDULE_AHEAD_MINUTES
                 );
                 ensure!(sim.orders.len() < MAX_ORDERS, "work order capacity reached");
-                let end = a.start_minute + sim.factory.resources.maintenance_minutes;
+                // 同一设备维修未结束时拒绝再下单（R-20261119-M13）。
+                let busy = sim.interventions.iter().any(|iv| match iv {
+                    Intervention::Maintenance {
+                        machine,
+                        end_minute,
+                        ..
+                    } => machine == &a.machine && *end_minute > a.start_minute,
+                    _ => false,
+                });
+                ensure!(
+                    !busy,
+                    "machine {} already has an overlapping maintenance order",
+                    a.machine
+                );
+                let prior: Vec<(u64, u64)> = sim
+                    .interventions
+                    .iter()
+                    .filter_map(|iv| match iv {
+                        Intervention::Maintenance {
+                            start_minute,
+                            end_minute,
+                            ..
+                        } => Some((*start_minute, *end_minute)),
+                        _ => None,
+                    })
+                    .collect();
+                let crews = sim.factory.resources.maintenance_crews.max(1) as usize;
+                let mut free = crate::crew_free_after(crews, &prior);
+                let (begin, end) = crate::schedule_next_maintenance(
+                    a.start_minute,
+                    sim.factory.resources.maintenance_minutes,
+                    &mut free,
+                )?;
                 sim.intervene(Intervention::Maintenance {
                     machine: a.machine.clone(),
-                    start_minute: a.start_minute,
+                    start_minute: begin,
                     end_minute: end,
                 });
                 Ok(record(
@@ -762,7 +805,7 @@ impl FactoryService {
                     json!({
                         "kind": "maintenance",
                         "machine": a.machine,
-                        "start_minute": a.start_minute,
+                        "start_minute": begin,
                         "complete_minute": end,
                         "status": "accepted",
                     }),
@@ -860,16 +903,36 @@ impl FactoryService {
             .with_context(|| format!("unknown simulation {id}"))
     }
 
-    fn create(&mut self, config: SimulationConfig) -> Result<Value> {
+    fn create(&mut self, config: SimulationConfig, requested: Option<String>) -> Result<Value> {
         let name = text("name", &config.name)?;
         ensure!(
             self.sims.len() < MAX_SIMULATIONS,
             "simulation capacity reached ({MAX_SIMULATIONS})"
         );
+        // 编号：调用方指定时必须形如 `DES-正整数` 且未被使用（连接器传入引擎的下一个编号，
+        // 避免调用方重启后与旧仿真撞号）；不指定时取从 `DES-(已有数+1)` 起第一个未用的编号。
+        let id = match requested {
+            Some(id) => {
+                ensure!(
+                    id.strip_prefix("DES-")
+                        .and_then(|n| n.parse::<u64>().ok())
+                        .is_some_and(|n| n > 0 && format!("DES-{n}") == id),
+                    "simulation_id must look like DES-<positive integer>"
+                );
+                ensure!(
+                    !self.sims.contains_key(&id),
+                    "simulation {id} already exists"
+                );
+                id
+            }
+            None => (self.sims.len() + 1..)
+                .map(|n| format!("DES-{n}"))
+                .find(|id| !self.sims.contains_key(id))
+                .expect("a free id exists"),
+        };
         let factory = config.factory.unwrap_or_else(FactoryConfig::line_b_default);
         let scenario = config.scenario;
         let (run, attempt) = run_with_attempt(&factory, &scenario)?;
-        let id = format!("DES-{}", self.sims.len() + 1);
         let events: Vec<FactoryEvent> = run
             .events
             .into_iter()

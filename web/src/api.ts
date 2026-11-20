@@ -162,6 +162,9 @@ export const api = {
     request<MessageView>(`/api/conversations/${cid}/agent-proposals`, { method: "POST", body: JSON.stringify(change) }),
   send: (cid: string, text: string) =>
     request<TurnOutcome>(`/api/conversations/${cid}/messages`, { method: "POST", body: JSON.stringify({ text }) }),
+  /** 运营频道未读数；开关关闭时接口不存在（404），调用方当作没有运营频道 */
+  opsUnread: () => request<{ unread: number }>("/api/mom/desk/unread"),
+  opsRead: () => request<{ unread: number }>("/api/mom/desk/read", { method: "POST" }),
   tasks: (cid: string) => request<TaskRecord[]>(`/api/tasks?conversation_id=${cid}`),
   task: (id: string, after?: string) => request<TaskDetail>(`/api/tasks/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   cancel: (id: string) => request<{ cancelled: boolean }>(`/api/tasks/${id}/cancel`, { method: "POST" }),

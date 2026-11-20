@@ -295,8 +295,15 @@ impl AcpAgent {
                 self.cfg.install_hint.clone(),
             );
         };
-        let cwd = self.workdir.clone();
-        let _ = tokio::fs::create_dir_all(&cwd).await;
+        let _ = tokio::fs::create_dir_all(&self.workdir).await;
+        let cwd = match self.workdir.canonicalize() {
+            Ok(p) => p,
+            Err(e) => {
+                let detail = format!("无法解析工作目录：{e}");
+                let kind = classify_probe_error(false, &detail);
+                return probe_outcome(id, kind, Some(detail), None);
+            }
+        };
         // 检测用的子进程由我们自己启动（不交给 SDK 的 AcpAgent），这样能完整读到它的错误输出。
         // 原因（RT-AGCAT-10）：进程一启动就退出时（例如缺 node），写握手请求会遇到 Broken pipe，
         // 这个错误有时先于"进程退出 + 错误输出"返回，SDK 报出的错误里就没有错误输出，

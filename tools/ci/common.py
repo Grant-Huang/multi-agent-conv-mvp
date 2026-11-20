@@ -90,9 +90,32 @@ class FileChange:
     binary: bool
 
 
+def expand_diff_paths(path: str) -> list[str]:
+    """把 git 可能给出的重命名路径拆成旧路径与新路径。
+
+    即使调用方已加 `--no-renames`，这里仍作兜底：若出现 `old => new` 或
+    `dir/{old => new}`，两边路径都返回，风险分级取较高者，避免把迁入 L3
+    目录的文件误判成 L0（见 docs/review/2026-11-06-ci-fences.md H2）。
+    """
+    path = path.strip()
+    if " => " not in path:
+        return [path]
+    # git 花括号重命名：tools/{ci => lib}/common.py
+    m = re.match(r"^(.*)\{(.*) => (.*)\}(.*)$", path)
+    if m:
+        prefix, old, new, suffix = m.groups()
+        return [f"{prefix}{old}{suffix}", f"{prefix}{new}{suffix}"]
+    old, new = path.split(" => ", 1)
+    return [old, new]
+
+
 def changed_files(base: str, head: str = "HEAD", cwd: str | None = None) -> list[FileChange]:
-    """`base...head` 之间的改动（三点语法：只看 head 相对于分叉点的改动）。"""
-    out = run_git(["diff", "--numstat", f"{base}...{head}"], cwd=cwd)
+    """`base...head` 之间的改动（三点语法：只看 head 相对于分叉点的改动）。
+
+    使用 `--no-renames`：重命名显示为删除旧路径 + 新增新路径，两边都参与
+    风险分级与规模统计，避免「文档改工作流」这类迁入被判成 L0。
+    """
+    out = run_git(["diff", "--numstat", "--no-renames", f"{base}...{head}"], cwd=cwd)
     changes: list[FileChange] = []
     for line in out.splitlines():
         parts = line.split("\t")
@@ -100,9 +123,10 @@ def changed_files(base: str, head: str = "HEAD", cwd: str | None = None) -> list
             continue
         a, d, path = parts
         binary = a == "-" or d == "-"
-        changes.append(
-            FileChange(path, 0 if binary else int(a), 0 if binary else int(d), binary)
-        )
+        added = 0 if binary else int(a)
+        deleted = 0 if binary else int(d)
+        for p in expand_diff_paths(path):
+            changes.append(FileChange(p, added, deleted, binary))
     return changes
 
 
@@ -110,7 +134,7 @@ def diff_text(
     base: str, head: str = "HEAD", paths: list[str] | None = None, cwd: str | None = None
 ) -> str:
     """`base...head` 的统一 diff（unified=0，只含改动行，便于解析新增行）。"""
-    args = ["diff", "--unified=0", f"{base}...{head}"]
+    args = ["diff", "--unified=0", "--no-renames", f"{base}...{head}"]
     if paths:
         args += ["--", *paths]
     return run_git(args, cwd=cwd)

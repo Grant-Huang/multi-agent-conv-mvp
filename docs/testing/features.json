@@ -1,7 +1,7 @@
 [
   {
     "id": "conversation",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/conversation.md",
     "sources": [
       "web/src/App.tsx",
       "web/src/components/ChatView.tsx",
@@ -20,7 +20,7 @@
   },
   {
     "id": "tasks",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/tasks.md",
     "sources": [
       "web/src/components/TaskPanel.tsx",
       "web/src/components/TaskTicker.tsx",
@@ -38,7 +38,7 @@
   },
   {
     "id": "approval",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/approval.md",
     "sources": [
       "crates/runtime/src/policy.rs",
       "web/src/components/ChatView.tsx",
@@ -55,7 +55,7 @@
   },
   {
     "id": "assignment",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/tasks.md",
     "sources": [
       "crates/runtime/src/registry.rs",
       "crates/runtime/src/orchestrator.rs",
@@ -76,7 +76,7 @@
   },
   {
     "id": "cancellation",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/tasks.md",
     "sources": [
       "web/src/components/ConfirmButton.tsx",
       "crates/runtime/src/orchestrator.rs"
@@ -88,7 +88,7 @@
   },
   {
     "id": "observability",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/observability.md",
     "sources": [
       "web/src/components/DiagnosticsPanel.tsx",
       "web/src/diag.test.tsx",
@@ -101,7 +101,7 @@
   },
   {
     "id": "nodes",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/nodes.md",
     "sources": [
       "web/src/components/NodesPanel.tsx",
       "crates/server/tests/e2e.rs"
@@ -111,7 +111,7 @@
   },
   {
     "id": "feedback",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/observability.md",
     "sources": [
       "web/src/misroute.test.tsx",
       "crates/runtime/src/store.rs"
@@ -121,21 +121,23 @@
   },
   {
     "id": "tools-evals",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/research-and-tools.md",
     "sources": [
+      "tools/dlp-egress/tests/test_review_m5.py",
       "tools/dlp-egress/tests/test_review_m3.py",
       "tools/websearch/README.md",
       "tools/dlp-egress/README.md",
       "crates/server/src/bin/eval.rs",
-      "tools/dlp-egress/tests/test_review_h1.py"
+      "tools/dlp-egress/tests/test_review_h1.py",
+      "tools/dlp-egress/tests/test_review_m2.py"
     ],
     "coverage": "backend",
     "cases": [],
-    "note": "R-20261118-M3：PY-DLP-M3为Python evaluate端到端测试；证据见docs/testing/evidence/r-20261118-m3.md，不计入Rust或浏览器用例。"
+    "note": "R-20261118-M3：PY-DLP-M3为Python evaluate端到端测试；证据见docs/testing/evidence/r-20261118-m3.md，不计入Rust或浏览器用例。 PY-DLP-M2为Python evaluate端到端；证据见docs/testing/evidence/r-20261118-m2.md。"
   },
   {
     "id": "egress",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/egress-dlp.md",
     "sources": [
       "crates/agents/src/egress.rs",
       "crates/llm/src/egress.rs",
@@ -166,7 +168,7 @@
   },
   {
     "id": "reports",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/research-and-tools.md",
     "sources": [
       "crates/agents/src/general.rs",
       "crates/agents/src/report.rs",
@@ -189,7 +191,7 @@
   },
   {
     "id": "templates",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/research-and-tools.md",
     "sources": [
       "crates/runtime/src/template.rs",
       "crates/llm/src/backend.rs"
@@ -297,7 +299,9 @@
       "RT-DES-29",
       "RT-DES-31",
       "RT-DES-32",
-      "RT-DES-33"
+      "RT-DES-33",
+      "RT-DES-34",
+      "RT-DES-35"
     ],
     "note": "阶段①～④与③b 已实现；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。RT-DES-22/23 为 engine_link.rs 中的单元测试（重放计数与缓存共享），不计入 runtime 集成测试映射。RT-DES-30 属于 des-factory。"
   },
@@ -329,21 +333,31 @@
       "RT-DESF-06",
       "RT-DESF-07",
       "RT-DESF-08",
+      "RT-DESF-09",
+      "RT-DESF-10",
       "RT-DESM-01",
       "RT-DESM-02",
       "RT-DESM-03",
+      "RT-DESM-04",
       "RT-DES-30",
       "RT-DESC-01",
       "RT-DESC-02",
       "RT-DESC-03",
       "RT-DESC-04",
-      "RT-DESC-05"
+      "RT-DESC-05",
+      "RT-DESC-06",
+      "RT-DESC-07",
+      "RT-DESC-08",
+      "RT-DESC-09",
+      "RT-DESC-10",
+      "RT-DESC-11",
+      "RT-DESC-12"
     ],
-    "note": "阶段⑤a-1：模拟工厂服务（an-des）与 MCP stdio 服务（an-des-mcp）；阶段⑤a-2：AgentNexus 侧连接器与引擎远程仿真模式（RT-DESC-01～05），均已实现；an-mom 接入为下一步。参数为建模假设（台账 M27、M28）。"
+    "note": "阶段⑤a-1：模拟工厂服务（an-des）与 MCP stdio 服务（an-des-mcp）；阶段⑤a-2：AgentNexus 侧连接器与引擎远程仿真模式（RT-DESC-01～05），均已实现；阶段⑤a-3：an-mom 接入连接器（RT-DESC-06～12），已实现。参数为建模假设（台账 M27、M28）。"
   },
   {
     "id": "agent-links",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/runtime/src/link.rs",
       "crates/server/src/lib.rs",
@@ -355,7 +369,7 @@
   },
   {
     "id": "admission",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/routing-and-admission.md",
     "sources": [
       "crates/runtime/src/admission.rs",
       "crates/runtime/src/store.rs",
@@ -401,7 +415,7 @@
   },
   {
     "id": "git-evidence",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/git-evidence.md",
     "sources": [
       "crates/agents/src/util.rs",
       "crates/agents/tests/git_evidence.rs"
@@ -418,7 +432,7 @@
   },
   {
     "id": "http-host",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/observability.md",
     "sources": [
       "crates/server/src/host_guard.rs",
       "crates/server/src/main.rs",
@@ -447,7 +461,7 @@
   },
   {
     "id": "acp-discovery",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/agents/src/acp.rs",
       "crates/runtime/src/lib.rs",
@@ -465,7 +479,7 @@
   },
   {
     "id": "agent-catalog",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/agents/src/catalog.rs",
       "crates/agents/src/acp.rs",
@@ -490,7 +504,7 @@
   },
   {
     "id": "front-thinking",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/routing-and-admission.md",
     "sources": [
       "crates/runtime/src/conversation.rs",
       "crates/runtime/src/router.rs",
@@ -528,7 +542,7 @@
   },
   {
     "id": "agent-config",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/runtime/src/agent_config.rs",
       "crates/runtime/src/registry.rs",
@@ -558,7 +572,7 @@
   },
   {
     "id": "agent-ui",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "web/src/components/AgentsPanel.tsx",
       "web/src/components/AgentCards.tsx",
@@ -583,7 +597,7 @@
   },
   {
     "id": "agent-chat",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/runtime/src/conversation.rs",
       "crates/runtime/src/store.rs",
@@ -609,7 +623,7 @@
   },
   {
     "id": "agent-diagnose",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/agents/src/diagnose.rs",
       "crates/agents/src/catalog.rs",
@@ -634,7 +648,7 @@
   },
   {
     "id": "dlp-egress",
-    "document": "docs/testing/FEATURE_MAP.md",
+    "document": "docs/feature-map/features/egress-dlp.md",
     "sources": [
       "crates/agents/src/egress.rs",
       "crates/runtime/src/config.rs",
@@ -649,6 +663,65 @@
       "RT-DLP-04",
       "RT-DLP-05",
       "RT-DLP-06"
+    ]
+  },
+  {
+    "id": "ops-desk",
+    "document": "docs/mom/OPS_DESK.md",
+    "sources": [
+      "crates/server/src/mom.rs",
+      "web/src/App.tsx",
+      "web/e2e/ops.spec.ts",
+      "crates/runtime/src/mom/ops_desk.rs",
+      "crates/runtime/src/mom/ops_view.rs",
+      "crates/server/src/mom_ops.rs",
+      "crates/server/tests/mom_ops.rs"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-OPSDESK",
+      "E2E-OPSDRAWER",
+      "E2E-OPSCHANNEL",
+      "E2E-OPSNOISE",
+      "E2E-OPSOFF"
+    ],
+    "runtime_cases": [
+      "RT-OPSDESK-01",
+      "RT-OPSDESK-02",
+      "RT-OPSDESK-03",
+      "RT-OPSDESK-04",
+      "RT-OPSDESK-05",
+      "RT-OPSDESK-06",
+      "RT-OPSDESK-07",
+      "RT-OPSDESK-08",
+      "RT-OPSDESK-09",
+      "RT-OPSDESK-10"
+    ]
+  },
+  {
+    "id": "introspection",
+    "document": "docs/memory/INTROSPECTION_PLAN.md",
+    "sources": [
+      "crates/runtime/src/introspect/",
+      "crates/runtime/src/store.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-INT-03",
+      "RT-INT-06",
+      "RT-INT-07",
+      "RT-INT-08",
+      "RT-INT-16",
+      "RT-INT-17",
+      "RT-INT-18",
+      "RT-INT-19",
+      "RT-INT-20",
+      "RT-INT-22",
+      "RT-INT-09",
+      "RT-INT-13",
+      "RT-INT-14",
+      "RT-INT-23"
     ]
   }
 ]

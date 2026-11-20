@@ -1,0 +1,78 @@
+# 合并前 AI 审查影子模式（见 docs/fencing/SHADOW_REVIEW.md）。
+# 只发评论，不阻断合并。第三方 action 固定 SHA。
+
+name: pr-shadow-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: shadow-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  shadow-review:
+    name: shadow-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.13"
+      - name: 风险分级
+        id: risk
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: |
+          python3 tools/ci/risk_classify.py --json-out risk.json
+          level=$(python3 -c 'import json; print(json.load(open("risk.json"))["level"])')
+          approval=$(python3 -c 'import json; print(json.load(open("risk.json"))["approval"])')
+          echo "level=$level" >> "$GITHUB_OUTPUT"
+          echo "approval=$approval" >> "$GITHUB_OUTPUT"
+      - name: 发布或更新影子审查评论
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LEVEL: ${{ steps.risk.outputs.level }}
+          APPROVAL: ${{ steps.risk.outputs.approval }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          marker="<!-- agentnexus-shadow-review -->"
+          body=$(cat <<EOF
+          ${marker}
+          ## 影子审查（不阻断合并）
+
+          | 项 | 值 |
+          |---|---|
+          | 风险等级 | **${LEVEL}** |
+          | 审批要求 | ${APPROVAL} |
+          | 模式 | 影子：只提醒，不作为必需检查 |
+
+          ### 对照 REVIEW.md 的清单（请人工勾选）
+
+          - [ ] 范围与「非目标」一致，无顺手重构
+          - [ ] 验证证据是真实命令输出，非空话
+          - [ ] 未通过删改断言 / ignore / skip 让测试变绿
+          - [ ] L2/L3（状态机、子进程、权限、CI）已有方案或负责人知情
+          - [ ] 回滚方式可执行
+
+          高风险文件见 \`AGENTS.md\`「先停下来问人」。升级为阻断前的规则见 \`docs/fencing/SHADOW_REVIEW.md\`。
+          EOF
+          )
+          # 去掉 heredoc 引入的公共缩进
+          body=$(printf '%s\n' "$body" | sed 's/^          //')
+          existing=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --paginate \
+            --jq ".[] | select(.body | contains(\"${marker}\")) | .id" | head -n1)
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/${{ github.repository }}/issues/comments/${existing}" -f body="$body"
+          else
+            gh api --method POST "repos/${{ github.repository }}/issues/${PR}/comments" -f body="$body"
+          fi

@@ -501,6 +501,23 @@ pub enum ChatCard {
         probes: Vec<ProbeOutcome>,
         error: Option<String>,
     },
+    /// 运营案例卡（运营频道）：引擎状态的快照，由发布器生成和更新；来源标为模拟
+    OpsCase {
+        case_id: String,
+        title: String,
+        /// P0 / P1
+        level: String,
+        stage: String,
+        summary: String,
+        owner: String,
+        /// 已批准时的批准人（卡片上显示）
+        approver: Option<String>,
+        /// 目前只有 simulation
+        provenance: String,
+        updated_at: u64,
+    },
+    /// 运营频道汇总卡：超过每小时上限后被合并的案例
+    OpsSummary { count: u32, case_ids: Vec<String> },
 }
 
 /// 消息 + 卡片（消息列表接口返回它；`Message` 本身不变）
@@ -848,6 +865,8 @@ pub mod codes {
     pub const ACP_RUNTIME: &str = "E_ACP_RUNTIME";
     pub const ACP_STOP: &str = "E_ACP_STOP";
     pub const REVIEW_FAILED: &str = "E_REVIEW_FAILED";
+    /// 人工审核结论针对的 AI 审核版本已过期（R-20261119-M14）
+    pub const REVIEW_STALE: &str = "E_REVIEW_STALE";
     pub const TASK_TIMEOUT: &str = "E_TASK_TIMEOUT";
     // agent 准入（E3）
     /// 准入协议步骤顺序不对（例如未澄清就打分）

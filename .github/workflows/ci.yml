@@ -1,11 +1,9 @@
 # CI 门禁（设计说明见 docs/CI_GATES.md）。
 #
-# 注意：
-# - 第三方 action 目前使用主版本标签（如 @v4）。正式启用前应固定到具体 commit SHA，
-#   并由维护者核对，这一步尚未完成（见 docs/CI_GATES.md 的"待办"）。
+# - 第三方 action 固定到完整 commit SHA（标签仅作注释），升级由 Dependabot / 人工 PR。
 # - 本文件属于 L3 风险等级（config/risk-policy.toml），修改需要人工确认。
 # - 分支保护应把下列 job 名称设为必需检查：rust、web、python-websearch、python-tools、
-#   change-policy、security。
+#   change-policy、security（python-dlp-egress 建议一并设为必需）。
 
 name: ci
 
@@ -35,24 +33,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      # actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # 钉死版本（与 rust-toolchain.toml 一致）。钉到 commit SHA 时必须显式传 toolchain，
+      # 否则 action 报 'toolchain' is a required input。
+      # dtolnay/rust-toolchain@master（2026-11 pin）
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
         with:
+          toolchain: "1.100.0"
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      # Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
 
-      # 格式：未格式化的代码不允许合并（一次性格式化见 PR 的第二个提交）。
       - name: cargo fmt
         run: cargo fmt --all -- --check
 
-      # 静态检查：任何 warning 都视为失败，与 AGENTS.md 一致。
       - name: cargo clippy
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: cargo test
         run: cargo test --locked --workspace
 
-      # ts-rs 生成的 TypeScript 类型必须与 Rust 类型同步：重新生成后不应有差异。
       - name: bindings 是否最新
         run: |
           cargo test --locked -p an-core
@@ -67,8 +68,9 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "22"
           cache: npm
@@ -76,6 +78,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # 功能地图与 features.json 一致性（AGENTS.md 要求同步）
+      - run: npm run test:map
       - run: npm run build
 
   # ---------- Python：websearch 工具 ----------
@@ -87,10 +91,10 @@ jobs:
       run:
         working-directory: tools/websearch
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
       - run: uv sync --frozen
-      # pyproject.toml 中已设置 -m 'not live'，默认不访问真实网络。
       - name: 测试与覆盖率（阈值 80%，见 pyproject.toml）
         run: uv run pytest --cov --cov-report=term
       - name: flake8
@@ -105,10 +109,9 @@ jobs:
       run:
         working-directory: tools/dlp-egress
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
       - run: uv sync --frozen
-      # 含 700 条评测集与留出集的安全底线门槛；不访问网络，不加载 GLiNER 模型。
       - name: 测试与覆盖率（阈值 80%，见 pyproject.toml）
         run: uv run pytest --cov --cov-report=term
       - name: flake8
@@ -120,9 +123,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      # 策略脚本只用标准库；测试与 flake8 通过 uv 临时安装，不写入仓库。
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
       - name: pytest（策略脚本）
         working-directory: tools/ci
         run: uv run --no-project --python 3.13 --with pytest python -m pytest -q
@@ -134,14 +136,13 @@ jobs:
     name: change-policy
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # 只对 PR 有意义：push 到 master 时没有"基线 vs 变更"的审查对象。
     if: github.event_name == 'pull_request'
     steps:
-      # 需要完整历史才能计算 base...head 的差异。
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v7
+      # actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.13"
       - name: 风险分级
@@ -149,19 +150,17 @@ jobs:
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
       - name: 变更规模
-        # PR 描述经由环境变量传入，不直接拼进 run 脚本，避免被描述内容注入命令。
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: python3 tools/ci/change_size_check.py
-      # 提示注入 / 工作流注入扫描（第七层：规范自动执行；规则与局限见脚本头部注释和
-      # 7-fence-review.md 第 4 节）。同样经环境变量传入 PR 描述。
       - name: 提示注入扫描
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: python3 tools/ci/injection_scan.py --json-out injection.json
-      - uses: actions/upload-artifact@v7
+      # actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: risk-report
@@ -176,25 +175,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # 完整历史：密钥扫描需要覆盖所有提交，而不只是最新一次。
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      # 依赖漏洞扫描（RustSec 数据库）。使用预编译安装器，避免每次从源码编译。
-      - uses: taiki-e/install-action@v2
+      # taiki-e/install-action@v2
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f
         with:
           tool: cargo-audit
       - name: cargo audit
         run: cargo audit
-      # 前端生产依赖漏洞扫描：只看会进入产物的依赖，high 及以上阻断。
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "22"
       - name: npm audit（生产依赖）
         working-directory: web
         run: npm audit --omit=dev --audit-level=high
-      # 密钥泄露扫描：检查全部历史，防止 API key 被提交。
+      # gitleaks/gitleaks-action@v3
       - name: gitleaks
-        uses: gitleaks/gitleaks-action@v3
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

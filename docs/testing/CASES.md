@@ -18,6 +18,12 @@
 
 每次输出日志、测试结果和截图；失败保留 trace。正向通过只证明这些路径，未覆盖功能在地图中明确标注。另用校验器测试注入重复 ID、未知用例、缺文档和缺测试，确认地图失配确实失败。
 
+## R-20261118-M2 JSON 键名检测
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-M2 | external_untrusted；顶层、嵌套数组及路由对象的键名含合成凭证或租户主数据 | evaluate JSON | BLOCK且不可发送，不回显敏感键名、不写Vault；普通键与结构保持 |
+
 ## R-20261118-H1 嵌套路由载荷
 
 | Case | Given | When | Then |
@@ -527,6 +533,24 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-32 | mom-des | P0 案例已执行方案 C | 先在没有 AI 审核时"同意"；再在 AI 审核降级（模型报错）后"同意"；然后 AI 审核得结论 A 并"同意"；再运行 AI 审核得结论 B | 前两次"同意"被拒绝。对 A 的"同意"记录 AI 审核版本。得到 B 后，AI 审核版本号增加，报告的 `human` 为空（还没有人对 B 下结论），历史记录中原来的"同意"标明针对的版本、`applies_to_current_ai = false` |
 | HTTP-DES-05 | mom-des | 只有一个异步工作线程的服务，配置了脚本审核替身，P0 DES 案例 | 先在没有 AI 审核时 POST 同意；再让另一线程持引擎锁 2 秒，同时 POST AI 审核，并在请求期间每 50 ms 打一次心跳 | 同意返回 400。心跳的最大间隔小于 1 秒（处理函数不在异步工作线程上同步等锁）；AI 审核最终返回 200，状态 completed |
 
+## 审查修复 2026-11-19：R-20261119-M2、M13、M14
+
+问题与验收来自审查报告 `docs/review/2026-11-19.md`（分支 `review/2026-11-19`）。决策见 [DECISIONS.md](../DECISIONS.md) DES-29（由本线修）、DES-30（修法）。已转绿，证据见 [review-2026-11-19-des.md](evidence/review-2026-11-19-des.md)。
+
+测试位置：
+- `crates/des/tests/factory.rs`：RT-DESF-09、10；
+- `crates/des-mcp/tests/stdio.rs`：RT-DESM-04；
+- `crates/runtime/tests/mom_des.rs`：RT-DES-34；
+- `crates/server/tests/mom_des.rs`：RT-DES-35。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DESF-09 | des-factory | 模拟工厂服务中已有一个 P0 仿真（M2） | 用 `start_minute = u64::MAX-10`、`horizon_minutes = u64::MAX`、维修耗时 `u64::MAX` 的工厂分别创建仿真；用 `start_minute = u64::MAX` 下维修单 | 都作为业务错误返回，不 panic；已有仿真的全部观测不变；下一个新仿真编号仍是 `DES-2`（被拒绝的创建不占编号） |
+| RT-DESM-04 | des-factory | MCP 服务（stdio）已创建 DES-1（M2） | 用 `start_minute = u64::MAX-10` 创建仿真；再读 DES-1 的设备状态 | 创建返回工具错误（`isError`），不是 -32603 内部错误；DES-1 的设备状态与之前相同（服务没有因锁中毒而永久不可用） |
+| RT-DESF-10 | des-factory | 默认工厂（1 个维修班组，维修 240 分钟）的 P0 仿真（M13） | 在当前时刻依次给 CNC-XX、CNC-XY 下维修单；再给 CNC-XX 下一张；再给 CNC-XZ 下一张；重发 CNC-XY 的单 | 第一张 [497, 737)；第二张排到 737 开始、977 完成；CNC-XX 维修未结束时的第二张被拒绝；CNC-XZ 排到 977 开始；重发返回原回执 |
+| RT-DES-34 | mom-des | P0 案例已执行，AI 审核先后得到结论 A（版本 a）和 B（版本 b）（M14） | 按版本 a 提交"同意"；再按版本 b 提交"同意" | 按 a 提交被拒绝，错误含 `E_REVIEW_STALE`，报告的 `human` 仍为空；按 b 提交成功，记录的 `ai_version` 为 b |
+| RT-DES-35 | mom-des | an-mom 服务配置了脚本审核替身，P0 DES 案例运行了两次 AI 审核（版本 a、b）（M14） | POST 人工结论：不带 `ai_version`；带 a；带 b | 不带时返回 4xx；带 a 返回 409；带 b 返回 200，报告中 `human.ai_version` 为 b |
+
 ## 模拟工厂与 MCP 挂载（阶段⑤a-1）
 
 设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a。对外约定：
@@ -575,9 +599,125 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DESC-04 | des-factory | 命令不存在；或模拟工厂运行中进程被杀 | 启动连接器；推进 | 启动在超时内报 `E_DES_UNAVAILABLE`；进程退出后推进报 `E_DES_UNAVAILABLE`，引擎时钟与案例数不变（不静默推进、不写假观测），引擎中也没有进程内仿真可以回退（`des_factory_view` 报错） |
 | RT-DESC-05 | des-factory | 同一配置分别在进程内与 MCP 模式创建 | 读取审核用标准答案；两边对同一案例记录同一根因假设并取审核报告 | MCP 模式的标准答案与进程内相同（来自模拟工厂管理入口）；根因规则结果相同且为 pass |
 
+### 阶段⑤a-3：an-mom 接入模拟工厂连接器（2026-11-19 用户确认）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a"⑤a-3 设计"，决策见 [DECISIONS.md](../DECISIONS.md) DES-28。
+
+对外约定（新增，均为增量）：
+- 启动参数 `an-mom --des-mcp <命令>`（或环境变量 `AN_MOM_DES_MCP`）：启动时经 stdio 拉起模拟工厂；启动失败则 an-mom 退出并报 `E_DES_UNAVAILABLE`，不回退到进程内仿真；
+- `AppState::with_des(连接器)`；`mom::clock_step(&AppState)`：共享时钟走一步（后台时钟每秒调用一次）；
+- `POST /api/mom/des/simulations` 返回新增字段 `source`（`mcp` 或 `in_process`）；
+- `GET /api/mom/des/tools`、`POST /api/mom/des/tools/{tool}`：桌面与会话经连接器调用观测工具；
+- 模拟工厂不在线时 HTTP 返回 503，正文 `code` 为 `E_DES_UNAVAILABLE`。
+- 模拟工厂工具 `simulation_create` 增加可选参数 `simulation_id`（`DES-正整数`，已存在则拒绝），连接器传入引擎的下一个编号；
+- an-mom 启动时打印实际监听地址（`--bind 127.0.0.1:0` 时为系统分配的端口）。
+
+测试在 `crates/server/tests/mom_des_connector.rs`（RT-DESC-12）与 `crates/server/tests/mom_des_http_mcp.rs`（RT-DESC-06～11）。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DESC-06 | des-factory | 已构建的 `an-mom` 与 `an-des-mcp` | 运行 `an-mom --help`；用不存在的命令启动 `an-mom --des-mcp`；用真实的 `an-des-mcp` 启动并经 HTTP 创建 P0 仿真、读取工具清单 | 帮助中有 `--des-mcp`；命令不存在时 15 秒内以非零状态退出，错误输出含 `E_DES_UNAVAILABLE`；真实启动后创建返回 200、`source` 为 `mcp`，工具清单恰好是 6 个观测工具 |
+| RT-DESC-07 | des-factory | 两个 an-mom 服务：一个进程内，一个接了模拟工厂 | 两边各用 S1 场景取得案例，再创建 P0（seed 1，240 分钟）仿真，用 `advance` 命令推进 120 分钟 | 两边仿真编号相同；`source` 分别为 `in_process` 与 `mcp`；所有 DES 案例（批次以仿真编号开头）的批次、阶段、事件种类序列完全一致，且至少有一个 DES 案例 |
+| RT-DESC-08 | des-factory | 接了模拟工厂的 an-mom，P0 案例等待决策 | 经 HTTP 先执行（未审批），再选定推荐方案、审批、执行，然后再推进 30 分钟 | 未审批的执行返回 400，且没有发出写操作；审批后的执行返回 200，返回时写操作已经发出：至少一张维修单，审批引用指向该案例；执行返回的案例中维修动作的回执含单号；之后推进不重发（已发写操作数不变） |
+| RT-DESC-09 | des-factory | 接了模拟工厂的 an-mom，已有 S1 案例（共享时钟已过仿真起点），已创建 P0 仿真，播放 5 分钟 | 调用 `clock_step` 5 次；再调用 1 次（播放已结束）；重新播放后杀掉模拟工厂进程再调用 1 次 | 前 5 次后引擎时钟前进 5 分钟，模拟工厂 `equipment_status` 的观测时刻等于引擎时钟；第 6 次时钟不动；杀掉后 `clock_step` 报 `E_DES_UNAVAILABLE`，引擎时钟不变，播放被暂停 |
+| RT-DESC-10 | des-factory | 接了模拟工厂的 an-mom，已有 S1 案例与一个 P0 仿真，然后杀掉模拟工厂进程 | 创建仿真；对 S1 案例发 `advance` 命令；经工具接口读取设备状态 | 三者都返回 503，`code` 为 `E_DES_UNAVAILABLE`，10 秒内返回；引擎中仿真数与时钟不变（不回退到进程内仿真、不静默推进） |
+| RT-DESC-11 | des-factory | 一个进程内 an-mom；一个接了模拟工厂、已创建 P0 仿真并推进 30 分钟的 an-mom | 读工具清单；调用 `equipment_status`、`simulation_ground_truth`、`simulation_advance`；读工厂视图、what-if、趋势预测 | 进程内服务的工具清单返回 400（没有接模拟工厂）。接了模拟工厂的：工具清单恰好 6 个观测工具；`equipment_status` 返回 200 且 `provenance` 为 `simulation`；管理与控制工具返回 403（含 not allowed），被拒绝的推进没有改变模拟工厂时钟；工厂视图与模拟工厂 `equipment_status` 的结果相同、截至时刻等于引擎时钟；趋势预测与 `equipment_trend` 的结果相同；what-if 返回 3 个方案；三者都不含标准答案字段 |
+| RT-DESC-12 | des-factory | 连接器 A 创建 P0 仿真，案例审批执行后留下待发写操作（未发出）；随后换成新的连接器 B（模拟工厂新进程，相当于 an-mom 重启） | B 发出待发写操作；B 创建新仿真并推进；另外直接调用模拟工厂服务，用已存在的编号或格式不对的编号创建仿真 | B 发出 0 个写操作且不报错，A 的仿真的待发写操作原样保留；B 的新仿真编号为 `DES-2`（与旧仿真不冲突，模拟工厂中也是这个编号），照常创建和推进（旧仿真不会卡住新仿真）；重复编号与格式不对的编号都被拒绝 |
+
 ## R-20261118-M3 常见凭证与同形字
 
 | Case | Given | When | Then |
 |---|---|---|---|
 | PY-DLP-M3 | 中文密码/口令、token=、DB_PASS=、OpenAI项目key、Google key、同形字AWS/GitHub，共8种合成输入 | evaluate到external_untrusted | 全部BLOCK、不可发送且无原值；其余原文（含℃）不变；正常Unicode和术语不被改写 |
 
+
+## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
+
+设计见 `docs/mom/OPS_DESK.md`，决策见 DECISIONS 第 56–58 条。以下为**草案**：待用户确认断言后，才写成可执行测试并登记到 `features.json`（因此暂不写成表格行，避免被 `check-map` 当作缺测试的已登记用例）。数据全部来自 DES 事件（先进程内），仅替换外部模型。
+
+浏览器用例（`web/e2e/ops.spec.ts`，**断言已于 2026-11-18 经用户确认并冻结**；P2 一项按下方说明改写）：开关打开的实例每个用例单独启动，配置 `[mom] chat_bridge=true`、`ops_merge_secs=1`、`ops_hourly_cap=10`；E2E-OPSOFF 用默认 harness。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| E2E-OPSDESK | ops-desk | 开关打开；一个待批准案例、一个受阻案例（安全联锁）、一个已完成案例 | 打开“运营桌面”页签 | 厂况条“待批准 1”“受阻 1”；待批准置顶、受阻其次；已完成默认折叠且保留总数；每行有“模拟”标识且只有一个按钮；桌面没有“批准”入口；选“待我批准”筛选后刷新仍保持 |
+| E2E-OPSDRAWER | ops-desk | 开关打开；一个待批准案例 | 点击事项行 | 抽屉依次有“发生了什么与影响、责任、方案与前提、缺什么、进展与下次反馈、凭什么算解决”；原始数据默认折叠、展开后可见；抽屉无批准按钮；Esc 关闭后焦点回到触发的事项行 |
+| E2E-OPSCHANNEL | ops-desk | 开关打开；注入一个待批准案例 | 查看页签未读数，打开运营频道，再批准该案例 | 未读数为 1，打开后清零；频道里该案例只有一张带“模拟”的卡；批准后同一张卡更新（含批准人）、频道消息条数不变；频道没有模型回复，也没有任务 |
+| E2E-OPSNOISE | ops-desk | 开关打开，每小时上限 10；一个已有卡片的案例，再来 12 个新案例 | 对已有卡片的案例重复上报 10 次观测；再注入 12 个新案例 | 重复观测不新增频道消息；卡片总数为 10，另有一张“另有 3 条”汇总卡；桌面仍有全部 13 个事项 |
+| E2E-OPSOFF | ops-desk | 默认 harness，未配置 `[mom]`（基线：现状本来就通过，用于防止回归） | 注入 MOM 案例，打开页面，发一句问候 | 没有“运营桌面”页签、没有运营频道、`/api/mom/desk` 为 404；原有会话回复正常 |
+
+说明：原草案里 E2E-OPSNOISE 的“大量 P2 读数不进频道”改写为“同一案例重复观测只更新原卡”。原因：进程内 MOM 目前没有纯过程读数（每次观测都会让案例的计划失效），纯 P2 要等 DES 事件接入后才有；P2 的分级由 RT-OPSDESK-01 覆盖。这是实现前的改写，不是为迎合实现改断言。
+
+Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_opsdesk_NN_`）。D0a（后端）的 01–05、08 已写成可执行测试；D0b 的 09 已绿；D1-1 的 06、07 已写成可执行测试并转绿，见 `docs/testing/evidence/ops-desk-d1-1-red.md`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-OPSDESK-01 | ops-desk | 一组事件种类与案例阶段的组合 | 调用分级函数 | 安全联锁、超期和“等待人决定”为 P0；纯观测和过程事件为 P2（不因案例阶段变化）；其余状态变化为 P1；同输入恒得同输出，不调用模型 |
+| RT-OPSDESK-02 | ops-desk | 文件库里的引擎与发布器，已发出一张卡 | 重启后再 tick；随后批准案例再 tick | 重启后没有新事件时不重复发；重启期间的新事件不漏，更新原卡（带批准人），频道仍只有一条消息 |
+| RT-OPSDESK-03 | ops-desk | 一个待批准案例 | 发布器 tick | 运营频道会话存在且 id 固定；消息正文含案例号和“模拟”；卡片是来源为 simulation 的 P0 案例卡；不关联任务，频道下没有任务 |
+| RT-OPSDESK-04 | ops-desk | 不同的 `[mom]` 配置文本 | 解析配置 | 未配置时开关关闭；打开开关时合并窗口默认 60 秒、每小时上限默认 10；显式配置值被采用；无未知字段 |
+| RT-OPSDESK-05 | ops-desk | 合并窗口 60 秒；另一组每小时上限 2 张、5 个待批准案例 | 窗口内更新案例；一次 tick 处理 5 个案例 | 窗口内不更新，并记录原因 `merge_window`，窗口后才更新原卡；上限内发 2 张卡，其余 3 个并入唯一一张汇总卡，记录原因 `hourly_cap`，没有案例被静默丢弃 |
+| RT-OPSDESK-08 | ops-desk | 主库 | 用固定 id 创建会话两次，中间写入消息 | id 为固定值；第二次不改标题和创建时间，不清空消息，会话只有一条 |
+| RT-OPSDESK-06 | ops-desk | 一个待批准案例，发布器未 tick | 对同一案例调用 `open_case` 两次，再 tick；对不存在的案例调用 | 两次返回同一非空消息 id；频道里该案例只有一张卡；tick 后消息条数不变；不存在的案例错误以 `E_CASE_NOT_FOUND` 开头 |
+| RT-OPSDESK-07 | ops-desk | 零案例引擎；另造待批准、受阻、已关闭各一 | 调用 `desk_view` | 零案例 `state=no_data`；有案例时 `state=ok`，`rows[0]` 待批准、`rows[1]` 受阻、已完成最后；`strip` 计数一致；每行 `provenance=simulation` 且 case_id 都在引擎里；结果确定 |
+| RT-OPSDESK-09 | ops-desk | 发布器（文件库），先后发出几张卡 | 查看未读、批准已发卡的案例、再发新卡、标记已读、重启 | 无消息时未读为 0；每张新卡、汇总卡各加 1；就地更新原卡不增加；标记已读后为 0；已读位置重启后仍在 |
+| RT-OPSDESK-10 | ops-desk | 服务端同时挂 MOM 与运营桌面路由，已创建 s1 案例 | `GET /api/mom/desk`；`GET …/cases/{id}`；对同一案例 `POST …/open-in-channel` 两次；对不存在案例 GET/POST | desk 200 且 rows 案例集合与 `/mom/api/mom/cases` 相同；详情含 `projection_seq`；两次 open 返回同一 `message_id`；不存在案例 404 |
+
+说明：RT-OPSDESK-06/07 属 D1-1（`crates/runtime/tests/ops_desk.rs`）；RT-OPSDESK-10 属 D1-2（`crates/server/tests/mom_ops.rs`，函数 `rt_opsdesk_10_desk_api_matches_engine_and_open_is_idempotent`）。证据见 `docs/testing/evidence/ops-desk-d1-1-red.md`、`ops-desk-d1-2-red.md`。
+
+说明：原草案 RT-OPSDESK-03 的“不进入记忆抽取”本期无法验证——仓库里还没有个人记忆抽取模块（见 `docs/memory/` 的缺口 G-9）。这里改为断言消息带结构化案例卡，日后的抽取器按卡片类型跳过即可；等记忆模块出现时再补断言。原 RT-OPSDESK-04 的“无桌面接口和发布器”属于服务层，放到 D0b 的服务端测试。
+
+D2（卡片批准联动）的 E2E-OPSAPPROVE 依赖 WP1 L2 的案例卡，待 L2 用例定稿后一并补写。
+
+## R-20261118-M5 JSON 路径不碰撞
+
+| Case | Given | When | Then |
+|---|---|---|---|
+| PY-DLP-M5 | 字面点号/方括号/空键与嵌套路径共存，含客户名及普通值；另注入重复分析路径 | evaluate | 每个字段分别正确脱敏且结构/原输入保持；重复路径在写Vault前BLOCK；普通field_path仍为字符串 |
+
+
+## 业务内省 INT（S2：采纳模式统计与校验）
+
+设计见 `docs/memory/INTROSPECTION_PLAN.md`，可执行说明见 `docs/memory/INTROSPECTION_PLAYBOOK.md`。状态约定：动作成功为 `ACCEPTED`/`VERIFIED`，失败为 `FAILED`；成功并验证需 `verification` 非空。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-INT-03 | introspection | 某模板下 13 个带审批 Case：9 个成功并验证、2 个动作失败、2 个审批过期未执行 | 运行采纳模式内省 | 统计与回算一致（审批 13、成功并验证 9、失败 2、过期未用 2）；耗时为 complete_at−accepted_at；样本不足的分组只写「样本不足」；结论不含源数据没有的字段 |
+| RT-INT-06 | introspection | 任意内省分析路径 | 监视引擎状态 | 对 MOM 无写调用（序号、时间、阶段、动作数不变） |
+| RT-INT-07 | introspection | 样本低于门槛或证据不足 | 校验 | 验真为 inconclusive；不进入可推送集合 |
+| RT-INT-08 | introspection | 一条 Finding 的证据引用指向不存在的记录，或数字被篡改 | 校验 | 该条 Drop 并记原因；完好条目仍可 Accept |
+
+
+## 业务内省 INT（S3：发送闸门）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-INT-16 | introspection | 定时内省结束；没有任何结论通过发送闸门 | 查看闸门结果 | 全部不推送；每条都有未推送原因 |
+| RT-INT-17 | introspection | 一条 Supported+影响面+下一步；一条 Inconclusive | 闸门判定 | 前者推送；后者不推送并写明原因 |
+| RT-INT-18 | introspection | 规则分低于阈值、模型 +1；另一条规则已达阈值、模型无理由 −1；第三条有理由 −1 压到阈下 | 闸门判定 | 模型不能单独越阈；无理由压分忽略仍推；有理由压到阈下则不推且原因含模型理由 |
+| RT-INT-19 | introspection | 已推送且未读 | 再次判定 | 不重复推送 |
+| RT-INT-20 | introspection | 当日已达日上限；另有待处理项 | 判定 | 不外发；原因含「日上限」与「另有 N 项」 |
+| RT-INT-22 | introspection | 运营负责人标注该推/不该推 | 保存标注 | 与结论关联；闸门配置对象不变 |
+
+
+
+## 业务内省 INT（S4：调度、租约、超时、取消）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-INT-09 | introspection | 同一数据水位与输入哈希 | 内省任务重跑两次 | 不产生重复 Finding；稳定 ID 不变；水位不回退 |
+| RT-INT-13 | introspection | 任务已写入 1 条 Finding，尚有主题未处理 | 发出取消 | 状态 cancelled；不再写新 Finding；已写入保留；租约释放 |
+| RT-INT-14 | introspection | 分析被拖慢超过超时；另有租约过期的 running 遗留任务 | 到达超时；启动清理 | 前者 failed 且错误含超时、Finding 保留、水位不推进；后者标 failed |
+| RT-INT-23 | introspection | 未到调度间隔；或手动触发 | 查看是否运行 / 跑手动 | 未到点不调度；手动也走同一发送闸门并记录原因 |
+
+
+## 围栏：审查进待人工的人工判定（实现前定义）
+
+设计见 [docs/fencing/REVIEW_VERDICT_DESIGN.md](../fencing/REVIEW_VERDICT_DESIGN.md)。未改 `orchestrator` / `store`，实现前须另批。下列用例冻结后只改业务代码。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-REV-01 | approval | 审查进入 NEEDS_HUMAN 且有 result | `POST .../review-verdict` accept | COMPLETED；事件含人工 note |
+| RT-REV-02 | approval | 同上，仍有返工轮次 | reject | 回到执行或 VERIFYING，带问题清单 |
+| RT-REV-03 | approval | 返工用尽 | reject | FAILED |
+| RT-REV-04 | approval | 已是 COMPLETED | accept 或 reject | 409，状态不变 |
+| E2E-REV-01 | approval | 浏览器任务卡为有 result 的待人工 | 点「判定通过」 | 状态与交付文案为已完成 |

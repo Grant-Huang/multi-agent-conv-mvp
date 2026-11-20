@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import risk_classify as rc
-from tests.conftest import commit_all
+from tests.conftest import commit_all, git
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_POLICY = REPO_ROOT / "config" / "risk-policy.toml"
@@ -160,3 +160,85 @@ def test_cli_returns_2_on_missing_policy(repo):
         cwd=repo, capture_output=True, text=True, check=False,
     )
     assert proc.returncode == 2
+
+
+def test_rename_into_github_workflows_is_l3(repo):
+    """重命名进入 .github 必须判为 L3，不能因旧路径是 docs 而变成 L0。"""
+    (repo / "docs").mkdir()
+    (repo / "docs" / "notes.md").write_text("name: x\n", encoding="utf-8")
+    commit_all(repo, "doc")
+    git(repo, "checkout", "-q", "-b", "move")
+    (repo / ".github" / "workflows").mkdir(parents=True)
+    git(repo, "mv", "docs/notes.md", ".github/workflows/notes.yml")
+    commit_all(repo, "to workflow")
+
+    policy = repo / "policy.toml"
+    policy.write_text(
+        'default_level = "L2"\n'
+        "[[rules]]\nlevel = \"L0\"\npaths = [\"docs/**\", \"**/*.md\"]\nreason = \"文档\"\n"
+        "[[rules]]\nlevel = \"L3\"\npaths = [\".github/**\"]\nreason = \"治理\"\n",
+        encoding="utf-8",
+    )
+    out = repo / "risk.json"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(rc.__file__)),
+            "--base",
+            "feature",
+            "--head",
+            "move",
+            "--policy",
+            str(policy),
+            "--json-out",
+            str(out),
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    import json
+
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["level"] == "L3"
+    paths = {f["path"] for f in data["files"]}
+    assert ".github/workflows/notes.yml" in paths
+
+
+def test_rename_out_of_tools_ci_keeps_l3_from_old_path(repo):
+    """把 tools/ci 脚本移走时，旧路径仍是 L3，整体不得降为未登记的 L2。"""
+    (repo / "tools" / "ci").mkdir(parents=True)
+    (repo / "tools" / "ci" / "common.py").write_text("x = 1\n", encoding="utf-8")
+    commit_all(repo, "ci script")
+    git(repo, "checkout", "-q", "-b", "move")
+    (repo / "tools" / "lib").mkdir(parents=True)
+    git(repo, "mv", "tools/ci/common.py", "tools/lib/common.py")
+    commit_all(repo, "leave ci")
+
+    # 用真实仓库策略：tools/ci/** 是 L3。
+    out = repo / "risk.json"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(rc.__file__)),
+            "--base",
+            "feature",
+            "--head",
+            "move",
+            "--policy",
+            str(REAL_POLICY),
+            "--json-out",
+            str(out),
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    import json
+
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["level"] == "L3"

@@ -860,6 +860,31 @@ impl Engine {
         }))
     }
 
+    /// 人工结论，并写明人看到的 AI 审核版本（审查修复 R-20261119-M14）。
+    ///
+    /// 版本不是当前 AI 审核版本时拒绝，错误含 `E_REVIEW_STALE`。
+    pub fn des_human_review_for(
+        &mut self,
+        case_id: &str,
+        ai_version: u64,
+        decision: &str,
+        reason: &str,
+        actor: &str,
+    ) -> Result<()> {
+        let current = self
+            .state
+            .des_reviews
+            .get(case_id)
+            .and_then(|r| r.ai.as_ref())
+            .and_then(|ai| ai["version"].as_u64());
+        ensure!(
+            current == Some(ai_version),
+            "{}: human decision targets AI version {ai_version}, current is {current:?}",
+            an_core::codes::REVIEW_STALE
+        );
+        self.des_human_review(case_id, decision, reason, actor)
+    }
+
     /// 人工确认（`agree`）或推翻（`override`，必须写理由）AI 审核结论。
     ///
     pub fn des_human_review(

@@ -21,4 +21,16 @@ command: string | null,
 /**
  * pending / applied / expired
  */
-state: string, } | { "type": "result", ok: boolean, summary: string, probes: Array<ProbeOutcome>, error: string | null, };
+state: string, } | { "type": "result", ok: boolean, summary: string, probes: Array<ProbeOutcome>, error: string | null, } | { "type": "ops_case", case_id: string, title: string, 
+/**
+ * P0 / P1
+ */
+level: string, stage: string, summary: string, owner: string, 
+/**
+ * 已批准时的批准人（卡片上显示）
+ */
+approver: string | null, 
+/**
+ * 目前只有 simulation
+ */
+provenance: string, updated_at: bigint, } | { "type": "ops_summary", count: number, case_ids: Array<string>, };

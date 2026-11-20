@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { ChatCard } from "../bindings/ChatCard";
 import type { ChoiceOption } from "../bindings/ChoiceOption";
 import { api, type ChangeRequest } from "../api";
+import { OpsCaseCard, OpsSummaryCard } from "./OpsCards";
 import { ConfirmCard, DiscoveryCard, GuideCard, ResultCard, loadUiLevel, roleLabel } from "./AgentCards";
 
 /** 选择卡的点选 → 对应的修改请求 */
@@ -108,6 +109,12 @@ export function ChatCardView(props: { card: ChatCard; conversationId: string; on
           onClose={() => setHidden(true)}
         />
       );
+      break;
+    case "ops_case":
+      body = <OpsCaseCard card={card} />;
+      break;
+    case "ops_summary":
+      body = <OpsSummaryCard card={card} />;
       break;
   }
   return (

@@ -18,6 +18,7 @@ use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
 };
 use serde_json::Value;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 
 /// 管理口令所在的环境变量。
@@ -96,12 +97,20 @@ impl ServerHandler for DesServer {
         let name = request.name.to_string();
         let args = Value::Object(request.arguments.unwrap_or_default());
         let service = self.service.clone();
-        // 仿真计算在阻塞线程中执行；锁中毒（之前的调用崩溃）时报告为工具错误。
+        // 仿真计算在阻塞线程中执行。兜住 panic，并把中毒的锁恢复，避免一次溢出让整进程不可用（R-20261119-M2）。
         let outcome = tokio::task::spawn_blocking(move || {
-            let mut svc = service
-                .lock()
-                .map_err(|_| anyhow::anyhow!("simulated factory unavailable"))?;
-            svc.call(&name, args)
+            let caught = catch_unwind(AssertUnwindSafe(|| {
+                let mut svc = service
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                svc.call(&name, args)
+            }));
+            match caught {
+                Ok(result) => result,
+                Err(_) => Err(anyhow::anyhow!(
+                    "simulated factory panicked while handling {name}"
+                )),
+            }
         })
         .await
         .map_err(|_| McpError::internal_error("simulated factory worker failed", None))?;

@@ -34,6 +34,7 @@
 | M5 | 9B vs 35B A/B（路由判断 + 最终回答） | 暂停：9B 已下线（2026-11-05），初步结果留档 |
 | M6 | 复杂话题 e2e 综合评估 + 10 用户压测 | 待开始 |
 | FT | 前台提速：关思考后用"先写理由 + 规则判风险 + 可疑时再思考"补回准确率 | FT.3 实验与错例分析、决策小模型评估已完成；FT.5（类别拆成两个是/否问题）已实现，待本机实验（2026-11-18）；决策记录见 `docs/DECISIONS.md` |
+| INT | 业务内省：定时分析 MOM 数据 → 发送闸门 → 推送到主窗口 → 未读角标 → 运行时标注 | S0 已完成（2026-11-18）；见文末“业务内省（INT）”一节 |
 | AG | 对话式接入 agent（发现 → 检测 → 确认 → 接入，以会话为主） | 设计基础已确认（2026-11-16），细节待细化；见下方"AG"一节 |
 
 顺序：M0 → M2 → pre-M3 → M3 已完成。M1 已完成（1.1~1.6）。下一步 M4（4.3 等确认），然后 M6。M5 暂停。
@@ -765,7 +766,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
   - **用户属性预留**：前端设置项"使用水平"，默认"专业"，保存在浏览器本地；卡片组件接收这个属性，"普通"模式的展示本次不实现（等用户权限 / 分类时再做）。
   - **不做**：对话里的意图识别（AG.4）；卡片写进会话历史（需要新的消息类型，涉及 `store.rs`，放到 AG.4 一起设计）。
   - **用例（实现前先写，浏览器 E2E）**：E2E-AGLIST 页签列出预设和自定义 agent 的状态与来源；E2E-AGCONNECT 已安装的预设点"接入"→ 确认卡 → 确认 → 结果卡显示已接入和检测结果，任务可以分给它；E2E-AGUNDO 结果卡上点"撤销"后恢复；E2E-AGDISABLE 停用最后一个写代码的 agent，确认卡有警告，之后在对话里让它改代码，得到大白话回复；E2E-AGGUIDE 未安装的显示安装步骤和复制按钮，"重新检测"给出"未安装"的结果；E2E-AGFIRST 首次打开出现发现卡，关掉后刷新不再出现；E2E-AGTOML config.toml 来源的 agent 没有停用按钮
-- [ ] **AG.4 对话里管理助手：意图、向导、卡片进历史**（2026-11-17 用户批准；实现完成，RT-AGCHAT-01～09、E2E-AGCHAT、E2E-AGCHOICE 通过，证据见 `docs/testing/evidence/ag-4.md`；**待用户本机评测**：`evals/agents.jsonl` ≥ 96%，且 `evals/routing.jsonl` 不下降，达标后决定是否默认打开开关；2026-11-18 第三轮 R1：agents.jsonl 74/90（82.2%），仍未达标，开关保持关闭；R2～R9 未跑）（2026-11-19：按第三轮错例做了"三步"修改的前两步，RT-AGCHAT-10、11；第三步待用户本机重跑评测，见 DECISIONS 第 44 条）
+- [ ] **AG.4 对话里管理助手：意图、向导、卡片进历史**（2026-11-17 用户批准；实现完成，RT-AGCHAT-01～09、E2E-AGCHAT、E2E-AGCHOICE 通过，证据见 `docs/testing/evidence/ag-4.md`；**待用户本机评测**：`evals/agents.jsonl` ≥ 96%，且 `evals/routing.jsonl` 不下降，达标后决定是否默认打开开关；2026-11-18 第三轮 R1：agents.jsonl 74/90（82.2%），仍未达标，开关保持关闭；R2～R9 未跑）（2026-11-19：按第三轮错例做了"三步"修改的前两步，RT-AGCHAT-10、11；第三步待用户本机重跑评测，见 DECISIONS 第 44 条）（2026-11-19 复测：84/90、86/90，仍未达 96%，见 DECISIONS 第 59 条）
   - **总开关**：`[conversation] agent_management`，**默认关**。前台判断的 schema 变了会影响所有对话的判断准确率，所以先关着；用户本机评测达标（见"验收"）后再决定是否默认打开。关着时请求和行为与现在完全相同。
   - **意图（模型只做选择题）**：前台判断新增动作 `manage_agents`，附三个字段，全部是枚举：
     - `agent_op`：connect（接入）/ set_default（设为默认）/ disable（停用）/ enable（恢复）/ list（看看有哪些）/ undo（撤销刚才的修改）/ ""；
@@ -916,17 +917,18 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 | DLP-7 | 1000 条模拟测试集（AI 生成，不入库）基线评测 | 带主数据：实体 F1 0.743、决策准确率 0.848、危险放行 141、凭证漏放 152/200；无词典：F1 0.477、准确率 0.768。未据此调参 |
 | DLP-8 | 1000 条作为开发集（70/30 拆分）的第二轮规则改进；评测口径修正；数据质量评估；决策记录 | 验证 30%：危险放行 39→0、凭证漏放 24→0、准确率 0.854→1.000（带名单）/ 0.784→0.952（无词典）；700 条与留出集无变化。`tools/dlp-egress/docs/DEV_SET_REVIEW.md`、`docs/DECISIONS.md` |
 | DLP-9 | gold-v3 改作开发集（D-018）的第三轮规则改进：机密短语按密级标记识别、谈判底线概念、通过率指标、普通词误报修复 | gold-v3 验证 302 条：危险放行 70→12、凭证漏放 0、准确率 0.738→0.960（带名单）/ 0.715→0.934（无词典）；700 条、v1、留出集无变化。`DEV_SET_REVIEW.md` 第 3 节 |
+| DLP-10 | GLiNER 本地评测（T3）与调整：默认只用名称类标签（D-019）；部署默认关闭、按需开启（D-020） | 用户本地 J-0.5（口径 B）：过度拦截 23→0，客户 / 人名召回 0.81 / 0.93，P95 105 ms。`DEV_SET_REVIEW.md` 第 3.7 节 |
 
 ### 进行中（等外部输入）
 
-- [ ] 本地测试：T1–T4 按 `LOCAL_TEST_GUIDE.md` 执行并回传结果，重点是 GLiNER（T3）与外发检查真实部署（T4）
+- [ ] 本地测试：T3（GLiNER）已完成（DLP-10）；外发检查真实部署（T4）待执行
 - [ ] 部署：先 `audit` 运行，按部署说明第 3 节复核后再决定是否切换 `enforce`
 - [ ] 人工编写的未公开测试集（≥ 300 条，见 `DEV_SET_REVIEW.md` 第 1.4 节建议），作为上线验收依据
 
 ### 待补项（后续再做，按建议顺序）
 
 1. **识别能力**（模拟测试集暴露的问题，优先）：无密级标记的机密信息（需语义模型）、凭证上下文多样性、无词典的人员 / 厂区 / 项目；
-   以及根据 GLiNER 本地评测结果决定是否默认启用、选哪个模型和阈值、中文分词配置
+   以及 GLiNER 人名单独阈值（如 0.7）的评测（D-020 影响项）
 2. `egress_commit` 接口：绑定载荷哈希、目的地、有效期、幂等键，防止 TOCTOU（设计文档第 7 节）
 3. 人工审批流：REVIEW → `NEEDS_HUMAN` → 审批后执行；放开 MCP `external_write`；编码 agent 派发前检查；
    新增目的地信任等级 `contracted`（已签约处理方：凭证拦截、机密转人工、标识符原样，D-016）（必经化方案第三阶段）
@@ -937,3 +939,37 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 8. 网络层兜底：出站代理白名单与部署检查脚本（必经化方案第四阶段）
 10. DLP 审计日志落盘：由 AgentNexus 拉起时 DLP 的 stderr 不保存，DLP 侧 `dlp.evaluate` 日志目前看不到
 9. 重识别风险：稀有指标组合、跨请求关联的评估与缓解（设计文档第 11 节第 8 项）
+
+## 系统打通与整体场景 E2E（草案，待用户确认）
+
+目标、工作包顺序与首个工作包“DES-MOM-会话闭环”的方案选项见 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)；缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)。方案经用户确认前不改代码。
+
+---
+
+## 业务内省（INT）
+
+> 授权：2026-11-18 用户批准 `docs/memory/INTROSPECTION_PLAN.md`（决策第 55 条）。验收用例见 `docs/memory/ACCEPTANCE.md`（业务内省部分已冻结）。
+> **可执行说明书（弱 agent 入口）**：`docs/memory/INTROSPECTION_PLAYBOOK.md`；目录说明见 `docs/memory/README.md`。
+> 每步流程：先写该步测试取得 Red → 并入 `CASES.md`、同步 `features.json` → 写实现到 Green；每步完成后更新本节与 Playbook 进度表，用户确认后再进入下一步。
+> 默认关闭：`[introspection] enabled = false`；数据库只新建表，不改已有表。一步一个 PR。
+
+- [x] **S0 冻结验收与进度清单**（2026-11-18）：业务内省用例冻结；补齐 RT-INT-13/14/15；RT-INT-01、04、05 暂缓，11、12 取消，02 待 S8；浏览器用例改名 `E2E-INTRO*`；RT-INT-03 改成与 MOM 真实字段一致
+- [x] **S1 新表与 `Store` 读写方法**（`store.rs`，高风险，已批准）：存储层单元测试（`store.rs` 内，覆盖 RT-INT-09/26/27 的存储部分；RT 用例随 S4/S5 并入 `CASES.md`）（2026-11-19：11 个 `int_store_*` 单元测试先 Red（10 个业务断言失败）后 Green；新增 5 张表，不改已有表；水位只随 done 任务推进；租约、幂等、未读、主窗口会话唯一均在存储层事务内保证；主窗口会话的“不能删除”随 S5 实现）
+- [x] **S2 `SourceAdapter` + `MomSource` + 方案采纳模式统计 + 校验器**（`introspect/`）：RT-INT-03、06、07、08（2026-11-19：`rt_int_03/06/07/08` 先 Red（空桩返回 0 条）后 Green；状态约定 ACCEPTED/FAILED；MomSource 只读，events limit≤1000）
+- [x] **S3 发送闸门**：RT-INT-16、17、18、19、20、22（2026-11-19：`rt_int_16`～`22` 先 Red 后 Green；规则分主、模型 ±1 不能单独越阈；日上限原因含「另有 N 项」）
+- [x] **S4 定时调度、租约、超时、取消、清理**：RT-INT-09、13、14、23（2026-11-19：`run_once` + `[introspection]` 默认关；先 Red 后 Green）
+- [ ] **S5 主窗口会话、推送、未读、权限、`ChatCard::Introspection`、`context_text` 标记**：RT-INT-21、24、25、26、27、28、29
+- [ ] **S6 HTTP 接口与前端**：E2E-INTROVIEW、INTROLABEL、INTROPUSH、INTROUNREAD、RT-INT-10
+- [ ] **S7 DES“植入真值”评测；模型解释层（默认关闭）**：RT-INT-15
+- [ ] **S8 同因复发**：先核实根因字段，RT-INT-02 视核实结果重写
+
+已知缺口：G-1（误报标注）、G-3（闸门数字未校准）、G-4（无登录与角色）、G-6（无“个人”页签）、G-7（无推送数据）、G-8（无经验库）、G-9（无个人记忆模块）、G-10（无 regressed 与根因字段）。详见 `docs/memory/ACCEPTANCE.md`。
+
+### 运营桌面与运营频道进度（D0–D3，设计见 mom/OPS_DESK.md）
+
+- [x] **D0a 后端**（2026-11-19）：事件分级、运营频道发布器、`[mom]` 配置、`Store::ensure_conversation`、`ChatCard::OpsCase/OpsSummary`；RT-OPSDESK-01～05、08 转绿。尚未接入服务进程，开关默认关闭。
+- [x] **D0b 服务与前端**（2026-11-19）：服务端按开关启动发布器并挂未读接口 `/api/mom/desk/unread`、`/read`；会话列表出现运营频道，渲染案例卡与汇总卡，未读角标；RT-OPSDESK-09、E2E-OPSCHANNEL、OPSOFF 转绿；E2E-OPSNOISE 的频道部分通过，桌面部分等 D1。证据见 `testing/evidence/ops-desk-d0b.md`。
+- [x] **D1-1 运行时读模型**（2026-11-19）：`desk_view` + `OpsPublisher::open_case`；RT-OPSDESK-06、07 转绿。证据见 `testing/evidence/ops-desk-d1-1-red.md`。
+- [x] **D1-2 服务端接口**（2026-11-19）：`GET /api/mom/desk`、`GET /api/mom/desk/cases/{id}`、`POST …/open-in-channel`；RT-OPSDESK-10 转绿。证据见 `testing/evidence/ops-desk-d1-2-red.md`。
+- [ ] **D1-3 前端桌面**：E2E-OPSDESK、OPSDRAWER、OPSNOISE。执行级任务卡见 `mom/OPS_DESK_TASKS.md`；其余工作包见 `INTEGRATION_PLAN.md` 第五节、`mom/WP1_TASKS.md`。
+- [ ] **D2 卡片批准联动**、**D3 任务/资源入口与 MCP 连接器回归**。

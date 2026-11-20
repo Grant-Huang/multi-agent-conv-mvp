@@ -3,6 +3,7 @@
 //! 背景（2026-11-18 CI 偶发失败）：缺 node 时 `env` 打印错误后立刻退出，我们写握手请求时会遇到
 //! Broken pipe。这个写失败的错误有时先于"进程退出 + 错误输出末尾"返回，分类时看不到错误输出，
 //! 就把"缺依赖"误判成"握手失败"。本地复现约两成概率，所以这里连续 50 轮、每轮 8 个并发检测。
+use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -96,5 +97,76 @@ async fn rt_agcat_10_exit_before_handshake_is_classified_by_stderr() {
         t.elapsed() < Duration::from_secs(2),
         "检测耗时 {:?}，补等错误输出应有上限",
         t.elapsed()
+    );
+}
+
+fn mock_acp_binary() -> PathBuf {
+    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = std::env::var("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| workspace.join("target"));
+    let target = if target.is_absolute() {
+        target
+    } else {
+        workspace.join(target)
+    };
+    target.join("debug/an-mock-acp")
+}
+
+/// probe 握手时传给 `session/new` 的工作目录必须为绝对路径（与 `run()` 一致）
+#[tokio::test]
+async fn probe_session_new_cwd_is_canonical() {
+    let mock = mock_acp_binary();
+    assert!(
+        mock.is_file(),
+        "缺少 {}，请先 cargo build -p an-server --bin an-mock-acp",
+        mock.display()
+    );
+    let dir = Dir::new("cwd");
+    let base = dir.0.clone();
+    let rel = PathBuf::from("workspace/code");
+    std::fs::create_dir_all(base.join(&rel)).unwrap();
+    let probe_cwd_file = base.join("probe-cwd.txt");
+    let prev_cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(&base).unwrap();
+
+    let mut env = BTreeMap::new();
+    env.insert(
+        "AN_MOCK_ACP_PROBE_CWD".into(),
+        probe_cwd_file.to_string_lossy().into_owned(),
+    );
+    let a = AcpAgent::new(
+        AcpConfig {
+            id: "probe-cwd".into(),
+            name: None,
+            command: mock.to_string_lossy().into_owned(),
+            args: vec![],
+            env,
+            role: Role::Coding,
+            agent_type: None,
+            max_concurrent: 1,
+            workdir: Some(rel.clone()),
+            timeout_secs: 60,
+            permission: PermissionMode::DenyAll,
+            install_hint: None,
+        },
+        base.join("unused-default"),
+    );
+
+    let out = a.probe_detailed(Duration::from_secs(10)).await;
+    std::env::set_current_dir(prev_cwd).unwrap();
+
+    assert_eq!(out.kind, ProbeKind::Ok, "{:?}", out.detail);
+    let recorded = std::fs::read_to_string(&probe_cwd_file).unwrap();
+    let recorded_path = PathBuf::from(recorded.trim());
+    assert!(
+        recorded_path.is_absolute(),
+        "probe 应发送绝对路径，实际为 {:?}",
+        recorded_path
+    );
+    assert_eq!(
+        recorded_path,
+        base.join(&rel).canonicalize().unwrap(),
+        "canonical 路径应与相对 workdir 解析结果一致"
     );
 }

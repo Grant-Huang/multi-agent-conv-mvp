@@ -355,3 +355,9 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
   border-left: 3px solid var(--warn, #c77700);
   padding-left: 0.5rem;
 }
+
+/* 运营频道：未读角标与案例卡 */
+.badge { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 11px; background: var(--border, #ddd); }
+.badge.unread { margin-left: 6px; background: #d33; color: #fff; }
+.badge.sim { background: #eee; color: #666; }
+.ops-card.level-p0 { border-left: 3px solid #d33; }

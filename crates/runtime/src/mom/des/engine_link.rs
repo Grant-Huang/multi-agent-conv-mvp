@@ -288,6 +288,18 @@ impl Engine {
 
     /// 比较候选方案（A 继续用、B 批后停机维修、C 立即停机维修）。只读，只用可观测状态。
     pub fn des_whatif(&self, simulation_id: &str, request: &WhatIfRequest) -> Result<Value> {
+        // 远程仿真（阶段⑤a-3）：用连接器最近交来的快照计算，与写入案例 `world.des` 的是同一份。
+        if let Some(remote) = self
+            .state
+            .des_simulations
+            .get(simulation_id)
+            .and_then(|s| s.remote.as_ref())
+        {
+            let o = remote.observation.as_ref().context(
+                "no observation from the simulated factory yet; advance the clock first",
+            )?;
+            return observe::whatif(o, request);
+        }
         let o = self
             .des_replay(simulation_id)?
             .observe(simulation_id, self.now());
@@ -481,15 +493,40 @@ impl Engine {
             "C" => Some(now),
             _ => None,
         };
-        // 维修班组依次排班：每台设备分给最早空闲的班组（只有 1 个班组时依次维修）。
+        // 维修班组依次排班（与模拟工厂共用 an_des::schedule；累计此前已接受的维修）。
         let maintenance_end = maintenance_start.map(|start| {
-            let mut crews = vec![start; r.maintenance_crews.max(1) as usize];
+            let prior: Vec<(u64, u64)> = replay
+                .interventions
+                .iter()
+                .filter_map(|iv| match iv {
+                    Intervention::Maintenance {
+                        start_minute,
+                        end_minute,
+                        ..
+                    } => Some((*start_minute, *end_minute)),
+                    _ => None,
+                })
+                .collect();
+            let mut crews = an_des::crew_free_after(r.maintenance_crews.max(1) as usize, &prior);
             let mut last_end = start;
             for machine in &assets {
-                let crew = (0..crews.len()).min_by_key(|&i| crews[i]).unwrap_or(0);
-                let begin = crews[crew].max(start);
-                let end = begin + r.maintenance_minutes;
-                crews[crew] = end;
+                // 该设备维修尚未结束：不再重复安排。
+                let already = replay.interventions.iter().any(|iv| match iv {
+                    Intervention::Maintenance {
+                        machine: m,
+                        end_minute,
+                        ..
+                    } => m == machine && *end_minute > start,
+                    _ => false,
+                });
+                if already {
+                    continue;
+                }
+                let Ok((begin, end)) =
+                    an_des::schedule_next_maintenance(start, r.maintenance_minutes, &mut crews)
+                else {
+                    continue;
+                };
                 last_end = last_end.max(end);
                 interventions.push(Intervention::Maintenance {
                     machine: machine.clone(),

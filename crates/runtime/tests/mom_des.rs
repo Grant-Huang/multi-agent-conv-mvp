@@ -2106,3 +2106,54 @@ async fn rt_des_32_human_review_is_bound_to_an_ai_review_version() {
     assert_eq!(history[0]["ai_version"], version_a);
     assert_eq!(history[0]["applies_to_current_ai"], false);
 }
+
+/// 审查修复 R-20261119-M14：人工结论带上人看到的 AI 审核版本；版本已过期时拒绝（错误码 `E_REVIEW_STALE`），
+/// 不再默认绑定服务端"当前"版本。
+#[tokio::test]
+async fn rt_des_34_human_review_names_the_ai_version_it_saw() {
+    let (engine, id) = executed_case();
+    let input = engine.lock().unwrap().des_ai_review_input(&id).unwrap();
+    let first = input["evidence_ids"][0].as_str().unwrap().to_string();
+    let says = |summary: &str| {
+        reviewer(
+            Ok(
+                serde_json::json!({"conclusions":[{"judgement":"reasonable","statement":summary,"evidence_refs":[first]}],"summary":summary}),
+            ),
+            0,
+        )
+    };
+    let wait = std::time::Duration::from_secs(5);
+    // 甲看到结论 A（版本 a），之后乙重跑得到结论 B（版本 b）。
+    let a = run_ai_review(&engine, &id, &says("conclusion A"), wait)
+        .await
+        .unwrap()["ai"]["version"]
+        .as_u64()
+        .expect("version A");
+    let b = run_ai_review(&engine, &id, &says("conclusion B"), wait)
+        .await
+        .unwrap()["ai"]["version"]
+        .as_u64()
+        .expect("version B");
+    assert_ne!(a, b);
+    // 甲按自己看到的版本 a 点同意：被拒绝，不能记成对 B 的同意。
+    let err = engine
+        .lock()
+        .unwrap()
+        .des_human_review_for(&id, a, "agree", "", "supervisor")
+        .expect_err("a decision on a superseded AI review is rejected");
+    assert!(err.to_string().contains("E_REVIEW_STALE"), "{err}");
+    let report = engine.lock().unwrap().des_review_report(&id).unwrap();
+    assert!(
+        report["human"].is_null(),
+        "nothing is recorded for the current version: {}",
+        report["human"]
+    );
+    // 针对当前版本 b 的结论照常记录。
+    engine
+        .lock()
+        .unwrap()
+        .des_human_review_for(&id, b, "agree", "", "supervisor")
+        .expect("agree with the version on screen");
+    let report = engine.lock().unwrap().des_review_report(&id).unwrap();
+    assert_eq!(report["human"]["ai_version"], b);
+}

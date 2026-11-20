@@ -12,7 +12,7 @@ use crate::{
     Mechanisms, Pattern, ResourceContention, Sample, ScenarioConfig, Telemetry, TrueRelation,
     CPK_THRESHOLD,
 };
-use anyhow::{bail, ensure, Result};
+use anyhow::{bail, ensure, Context, Result};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -174,6 +174,20 @@ fn precheck(factory: &FactoryConfig, cfg: &ScenarioConfig) -> Result<()> {
         (1..=MAX_HORIZON_MINUTES).contains(&cfg.horizon_minutes),
         "horizon must be 1..={MAX_HORIZON_MINUTES} minutes"
     );
+    ensure!(
+        cfg.start_minute <= super::MAX_START_MINUTE,
+        "start_minute must be at most {} minutes",
+        super::MAX_START_MINUTE
+    );
+    cfg.start_minute
+        .checked_add(cfg.horizon_minutes)
+        .context("start_minute + horizon_minutes overflow")?;
+    super::validate_resource_durations(
+        factory.resources.maintenance_minutes,
+        factory.resources.tool_transfer_minutes,
+        factory.resources.finish_batch_minutes,
+        factory.resources.inspection_minutes,
+    )?;
     let unsatisfiable = |why: &str| -> Result<()> {
         bail!(
             "scenario constraint not satisfiable: {:?}: {why}",
