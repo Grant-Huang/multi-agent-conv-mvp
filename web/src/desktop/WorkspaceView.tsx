@@ -7,17 +7,22 @@ import {
 } from "./mockData";
 import { loadExecOpen, saveExecOpen } from "./readAnchorStore";
 import { WorkspaceComposer } from "./WorkspaceComposer";
+import { ApprovalMockPanel } from "./ApprovalMockPanel";
+import { ResumeMockPanel } from "./ResumeMockPanel";
 
 type Props = {
   taskId: string;
   onBack: () => void;
   onOpenEvidence?: () => void;
   onOpenSettings?: () => void;
+  onOpenTask?: (taskId: string) => void;
 };
 
-export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings }: Props) {
+export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, onOpenTask }: Props) {
   const [layout, setLayout] = useState<WorkspaceLayout>(() => readWorkspaceLayout());
   const [execOpen, setExecOpen] = useState(() => loadExecOpen(taskId));
+  const [showAppr, setShowAppr] = useState(false);
+  const [showResume, setShowResume] = useState(false);
 
   useEffect(() => {
     setExecOpen(loadExecOpen(taskId));
@@ -107,6 +112,28 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings }
               <p>O-Agent 执行摘要（模拟）：已采集质量记录，等待核验。</p>
             </div>
           )}
+          <div className="workspace-mock-toggles">
+            <button
+              type="button"
+              className="btn small"
+              data-testid="workspace-open-appr"
+              aria-expanded={showAppr}
+              onClick={() => setShowAppr((v) => !v)}
+            >
+              {showAppr ? "收起审批模拟" : "动作审批模拟"}
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="workspace-open-resume"
+              aria-expanded={showResume}
+              onClick={() => setShowResume((v) => !v)}
+            >
+              {showResume ? "收起 Run 恢复" : "异步 Run 恢复"}
+            </button>
+          </div>
+          {showAppr && <ApprovalMockPanel taskId={taskId} />}
+          {showResume && <ResumeMockPanel onOpenTask={onOpenTask} />}
           <p className="workspace-hint">草稿与作用域按 Task 隔离（A2）。</p>
           <WorkspaceComposer taskId={taskId} />
         </section>

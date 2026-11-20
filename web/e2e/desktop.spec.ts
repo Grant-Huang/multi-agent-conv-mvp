@@ -304,3 +304,61 @@ test('E2E-ADATTN: 输入中普通建议不抢焦点且可静音', async ({ page 
   await expect(page.getByTestId('attn-item-urgent')).toBeVisible();
   await expect(input).toBeFocused();
 });
+
+test('E2E-ADAPPR: 审批版本失效、拒绝与执行一次', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-appr').click();
+  await expect(page.getByTestId('approval-mock-panel')).toBeVisible();
+  await page.getByTestId('appr-reset').click();
+  await expect(page.getByTestId('appr-revision')).toHaveText('1');
+
+  await page.getByTestId('appr-approve').click();
+  await expect(page.getByTestId('appr-status')).toHaveText('approved');
+  await page.getByTestId('appr-params').fill('改排产 + 刀具补齐');
+  await page.getByTestId('appr-bump').click();
+  await expect(page.getByTestId('appr-revision')).toHaveText('2');
+  await expect(page.getByTestId('appr-status')).toHaveText('pending');
+  await page.getByTestId('appr-execute').click();
+  await expect(page.getByTestId('appr-error')).toContainText('尚未批准');
+
+  await page.getByTestId('appr-approve').click();
+  await page.getByTestId('appr-execute').click();
+  await expect(page.getByTestId('appr-exec-count')).toHaveText('1');
+  await page.getByTestId('appr-execute').click();
+  await expect(page.getByTestId('appr-exec-count')).toHaveText('1');
+
+  await page.getByTestId('appr-reset').click();
+  await page.getByTestId('appr-reject').click();
+  await expect(page.getByTestId('appr-status')).toHaveText('rejected');
+  await page.getByTestId('appr-execute').click();
+  await expect(page.getByTestId('appr-error')).toContainText('拒绝或过期');
+
+  await page.getByTestId('appr-reset').click();
+  await page.getByTestId('appr-approve').click();
+  await page.getByTestId('appr-execute-unknown').click();
+  await expect(page.getByTestId('appr-receipt')).toHaveText('unknown');
+  await page.getByTestId('appr-ack-unknown').click();
+  await expect(page.getByTestId('appr-receipt')).toHaveText('applied');
+  await expect(page.getByTestId('appr-exec-count')).toHaveText('1');
+});
+
+test('E2E-ADRESUME: 双任务断线重放不串写', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-resume').click();
+  await expect(page.getByTestId('resume-mock-panel')).toBeVisible();
+  await page.getByTestId('resume-seed').click();
+  await expect(page.getByTestId('resume-status-TASK-2026-018')).toHaveText('running');
+  await expect(page.getByTestId('resume-status-TASK-2026-021')).toHaveText('waiting_input');
+
+  await page.getByTestId('resume-replay-a').click();
+  await expect(page.getByTestId('resume-progress-TASK-2026-018')).toContainText('80%');
+  await expect(page.getByTestId('resume-events-TASK-2026-018')).toHaveText('事件 2');
+  await expect(page.getByTestId('resume-status-TASK-2026-021')).toHaveText('waiting_input');
+
+  await page.getByTestId('resume-continue-b').click();
+  await expect(page.getByTestId('resume-status-TASK-2026-021')).toHaveText('running');
+  await expect(page.getByTestId('resume-progress-TASK-2026-021')).toContainText('Line-B');
+  await expect(page.getByTestId('resume-status-TASK-2026-018')).toHaveText('running');
+});

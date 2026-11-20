@@ -650,6 +650,7 @@ export default function App() {
             }}
             onOpenEvidence={() => openEvidence(workspaceTaskId)}
             onOpenSettings={() => openSettings("assistant", "assistant")}
+            onOpenTask={(id) => openWorkspace(id)}
           />
         )}
         {mainView === "des-experiment" && (
