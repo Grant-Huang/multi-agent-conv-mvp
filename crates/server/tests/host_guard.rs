@@ -72,6 +72,24 @@ impl Server {
     }
 }
 
+/// 基线：生产入口（含 static fallback）必须挂载业务内省 HTTP，避免前端内省页落到裸 404 HTML。
+#[tokio::test]
+async fn introspection_findings_ok_with_static_fallback() {
+    let s = Server::start(false).await;
+    let good = format!("Host: 127.0.0.1:{}\r\n", s.port);
+    let out = s
+        .request("GET", "/api/introspection/findings", &good, "")
+        .await;
+    assert!(
+        out.starts_with("HTTP/1.1 200"),
+        "内省列表须由 API 处理，不能被 static fallback 吃成 404 HTML：{out}"
+    );
+    assert!(
+        out.contains("\"findings\""),
+        "响应须为 findings JSON：{out}"
+    );
+}
+
 #[tokio::test]
 async fn rt_host_01_production_entrypoints_reject_foreign_host_before_side_effects() {
     for mom in [false, true] {

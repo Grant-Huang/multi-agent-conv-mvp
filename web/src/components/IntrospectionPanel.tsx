@@ -2,6 +2,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type IntroFinding } from "../api";
 
+/** 把接口错误收成可读提示；裸 HTTP 404 多半是旧后端二进制（无 /api/introspection/*）。 */
+export function formatIntroLoadError(err: unknown): string {
+  const raw = String(err);
+  if (/HTTP 404/.test(raw)) {
+    return "内省接口不可用（HTTP 404）。若刚更新了前端，请用当前代码重新编译并重启后端：cargo run --bin agentnexus";
+  }
+  return raw.replace(/^Error:\s*/, "");
+}
+
 export function IntrospectionPanel(props: { onOpenFinding?: (id: string) => void }) {
   const [findings, setFindings] = useState<IntroFinding[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -14,7 +23,7 @@ export function IntrospectionPanel(props: { onOpenFinding?: (id: string) => void
       setFindings(r.findings);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(formatIntroLoadError(e));
       setFindings([]);
     }
   }, []);
@@ -35,7 +44,7 @@ export function IntrospectionPanel(props: { onOpenFinding?: (id: string) => void
         setSelected(d.finding);
       }
     } catch (e) {
-      setError(String(e));
+      setError(formatIntroLoadError(e));
     } finally {
       setBusy(null);
     }
