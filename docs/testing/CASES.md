@@ -733,6 +733,13 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | RT-INT-15 | introspection | 模型解释已开启；后台槽位不可用 | 内省需要解释 | 不排队；记 `introspection.job_skipped`（无槽位）；仍产出确定性结论且无解释文字 |
 
 
+## 业务内省 INT（S8：同设备/同批次描述性共现）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-INT-02 | introspection | 多条 Case 共享同一非空 asset（或 batch）；另有不同键与单例；无根因/无 regressed | 跑同设备/同批次共现内省 | 计数与回算一致；证据引用可解析；结论含「描述性共现，非根因」；样本不足只写「样本不足」；单例不产出 |
+
+
 ## 围栏：审查进待人工的人工判定（实现前定义）
 
 设计见 [docs/fencing/REVIEW_VERDICT_DESIGN.md](../fencing/REVIEW_VERDICT_DESIGN.md)。未改 `orchestrator` / `store`，实现前须另批。下列用例冻结后只改业务代码。

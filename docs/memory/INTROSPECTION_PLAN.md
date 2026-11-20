@@ -265,7 +265,7 @@ operator_role = ""   # 预留，暂不生效
 | S5 ✅ | 主窗口会话、推送、未读、`is_operator`、`ChatCard` 新变体、`context_text` 标记 | `push.rs`、`operator.rs`、`core`、`conversation.rs` | RT-INT-21、24（除记忆）、25、26、27、28（除记忆）、29 | 配置关闭 |
 | S6 ✅ | HTTP 接口与前端：角标、内省页、标注 | `server`、`web` | E2E-INTROVIEW、INTROLABEL、INTROPUSH、INTROUNREAD；RT-INT-10 | 隐藏入口 |
 | S7 ✅ | 用 DES 做“植入真值”评测；再决定要不要加模型解释层（默认关闭，后台槽位 2~5，取不到就跳过） | `des`、评测脚本 | RT-INT-15、评测报告 | 不启用模型层 |
-| S8 | “同因复发”：先核实根因字段，能取出就做 | `introspect/` | RT-INT-02（核实后或重写，需用户确认） | 不启用该主题 |
+| S8 ✅ | 同设备/同批次描述性共现（第一阶段）；已确认根因复发留第二阶段 | `introspect/cooccur.rs` | RT-INT-02；RT-INT-02b 待定 | 不启用共现主题 |
 
 每步尽量只动一个 crate；S5 同时动 `core` 和 `runtime`，因为 `ChatCard` 在 `core`，已在第 3 节标出。  
 **逐步怎么写测试、类型签名、夹具、打分公式、CASES 配方 → [INTROSPECTION_PLAYBOOK.md](INTROSPECTION_PLAYBOOK.md)。**
@@ -293,7 +293,7 @@ operator_role = ""   # 预留，暂不生效
 | G-7 | 本仓库没有推送、配额、忽略率数据，“推送质量”主题无法做 | 有真实推送来源（或接入 V2.2 的数据）后再做 |
 | G-8 | 没有历史经验库，“经验验真”主题无法做 | 建立带适用条件的经验库后再做 |
 | G-9 | 个人记忆模块不存在，“内省消息不被抽取进记忆”目前只是约束，无法测试 | 记忆模块建好后补用例 |
-| G-10 | MOM 现有数据没有 `regressed` 和显式根因字段 | S8 核实后决定，或在 MOM 里补字段（另议） |
+| G-10 | MOM 无 `regressed` / Case 级真根因 | S8 第一阶段已做描述性共现；第二阶段（RT-INT-02b）等根因与整改记录（另议） |
 
 ---
 

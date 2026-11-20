@@ -19,6 +19,10 @@ pub struct CaseSummary {
     /// 分组键；空字符串视为 `"_default"`。
     pub template: String,
     pub scenario: String,
+    /// 设备号；空则不参与同设备共现（S8）。
+    pub asset: String,
+    /// 批次号；空则不参与同批次共现（S8）。
+    pub batch: String,
     pub approvals: Vec<ApprovalSummary>,
     pub actions: Vec<ActionSummary>,
     /// `(sequence, at)`，用于耗时与引用解析。
@@ -91,6 +95,8 @@ impl MomSource {
                     c.template.clone()
                 },
                 scenario: c.scenario.clone(),
+                asset: c.asset.clone(),
+                batch: c.batch.clone(),
                 approvals: c
                     .approvals
                     .iter()

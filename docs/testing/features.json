@@ -718,7 +718,9 @@
       "web/e2e/intro.spec.ts",
       "crates/runtime/src/introspect/explain.rs",
       "crates/runtime/src/introspect/eval.rs",
-      "docs/memory/eval.md"
+      "docs/memory/eval.md",
+      "crates/runtime/src/introspect/cooccur.rs",
+      "crates/runtime/tests/introspection_cooccur.rs"
     ],
     "coverage": "browser",
     "cases": [
@@ -750,7 +752,8 @@
       "RT-INT-28",
       "RT-INT-29",
       "RT-INT-10",
-      "RT-INT-15"
+      "RT-INT-15",
+      "RT-INT-02"
     ]
   }
 ]

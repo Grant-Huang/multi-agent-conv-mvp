@@ -32,6 +32,8 @@ fn case(id: &str, template: &str) -> CaseSummary {
         case_id: id.into(),
         template: template.into(),
         scenario: "s1".into(),
+        asset: String::new(),
+        batch: String::new(),
         approvals: vec![ApprovalSummary {
             id: "production".into(),
             scope: "production".into(),
@@ -207,7 +209,7 @@ fn des_eval_covers_planted_alarm_assets_in_evidence() {
         contentions: vec![],
     };
     let drafts = analyze_adoption(&source_with_asset_case(), NOW, 1).unwrap();
-    assert_adoption_stats(&drafts[0].stats, 1, 1, 0).unwrap();
+    assert_adoption_stats(drafts[0].stats.as_adoption().unwrap(), 1, 1, 0).unwrap();
     let report = coverage_against_truth(&truth, &drafts);
     assert_eq!(report.alarm_count, 1);
     assert!(
@@ -224,6 +226,8 @@ fn source_with_asset_case() -> MemorySource {
             case_id: "case-CNC-XX-planted".into(),
             template: "tpl-des".into(),
             scenario: "s1".into(),
+            asset: String::new(),
+            batch: String::new(),
             approvals: vec![ApprovalSummary {
                 id: "p".into(),
                 scope: "production".into(),
