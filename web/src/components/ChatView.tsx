@@ -8,6 +8,7 @@ import type { ChatCard } from "../bindings/ChatCard";
 /** 对话区的消息：原有消息，可选带一张卡片（AG.4；旧数据和旧调用方没有 card） */
 export type ChatMessageItem = Message & { card?: ChatCard | null };
 import type { TaskRecord } from "../bindings/TaskRecord";
+import { shouldShowArtifactList } from "../artifacts";
 import { taskStatusLine } from "../labels";
 import { ApprovalInfo } from "./ApprovalInfo";
 import { ArtifactList } from "./ArtifactList";
@@ -93,7 +94,9 @@ const MessageRow = memo(function MessageRow(props: {
                 />
               </div>
             )}
-            {task.result && <ArtifactList artifacts={task.result.artifacts} summary={task.result.summary} />}
+            {task.result && shouldShowArtifactList(task) && (
+              <ArtifactList artifacts={task.result.artifacts} summary={task.result.summary} />
+            )}
           </div>
         )}
       </div>

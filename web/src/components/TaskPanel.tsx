@@ -1,6 +1,7 @@
 // 任务面板：任务列表，点击展开查看事件时间线、结果、产物、证据、审查意见。
 import { useState } from "react";
 import { api } from "../api";
+import { shouldShowArtifactList } from "../artifacts";
 import type { TaskEvent } from "../bindings/TaskEvent";
 import type { TaskRecord } from "../bindings/TaskRecord";
 import type { TaskStatus } from "../bindings/TaskStatus";
@@ -139,7 +140,9 @@ function TaskCard(props: {
           {d.result && (
             <Section title={`执行结果（${d.result.status === "succeeded" ? "进程成功" : "进程失败"}）`}>
               <pre>{d.result.summary}</pre>
-              <ArtifactList artifacts={d.result.artifacts} summary={d.result.summary} />
+              {shouldShowArtifactList(d) && (
+                <ArtifactList artifacts={d.result.artifacts} summary={d.result.summary} />
+              )}
               {d.result.evidence.length > 0 && (
                 <details>
                   <summary>证据（{d.result.evidence.length} 条）</summary>
