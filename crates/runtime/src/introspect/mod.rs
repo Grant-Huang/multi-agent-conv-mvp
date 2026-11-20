@@ -20,7 +20,8 @@ pub use finding::{
 pub use gate::{decide, GateConfig, GateDecision, GateInput};
 pub use job::{run_once, should_run_schedule, RunOnceOptions, RunOnceOutcome, RunOnceRequest};
 pub use operator::{
-    ensure_operator, ensure_operator_with, is_operator, log_operator_role_status, AccessDenied,
+    ensure_operator, ensure_operator_with, is_operator, lock_operator_override,
+    log_operator_role_status, set_operator_override, AccessDenied,
 };
 pub use push::{push_finding, PushResult, INTROSPECTION_PREFIX, MAIN_CONVERSATION_TITLE};
 pub use source::{

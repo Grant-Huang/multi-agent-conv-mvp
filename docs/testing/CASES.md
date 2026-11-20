@@ -356,6 +356,10 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGCHAT-09 | agent-chat | 模型给的 agent_id 不在候选里 | 按格式不合格重试；第二次合格后正常生成卡片 |
 | RT-AGCHAT-10 | agent-chat | 开关打开；模型判"撤销"或"列出"，但多填了助手名（例如 `cursor`）| `decide_turn` 返回的管理助手判断里助手名为空：撤销和列出与具体助手无关，由程序直接清空（AG.4 第三轮评测：und-01/04/05 属于这一类）|
 | RT-AGCHAT-11 | agent-chat | 开关打开，发一条消息 | 发给模型的"管理助手"一节写明四条规则：没点名助手时不反问、助手名留空（由选择卡让用户点选）；让助手干一件具体的活是派任务，不追问细节；问"有哪些助手 / 默认是谁"走 list；撤销上一次修改是 undo、不是 enable，接入还没接的助手是 connect，enable 只用于恢复停用的。开关关闭时这一节不出现 |
+| RT-AGCHAT-12 | agent-chat | 用户说「管理助手」「查看 / 修改 agent 配置」「接入 Claude」「撤销刚才对助手的修改」等；开关打开；即使模型误判为 delegate（去读配置） | 确定性拦截：走 manage_agents / 确认卡或发现卡，**不**创建交给 General 的任务，回复里也不引导去读 `config.toml` 当操作路径 |
+| RT-AGCHAT-13 | agent-chat | 同上类输入，但开关关闭；模型若仍返回 delegate | 不派发任务；回复明确引导去右侧「助手」页签（或打开 `agent_management`），并说明如何指定执行者（页签「设为默认」、`[agents.assign]`、确认卡）；不要求 @worker 私聊 |
+| RT-AGCHAT-14 | agent-chat | 用户问「怎么指定谁来做 / 要不要 @ 某个助手」 | 直接回复（不派任务）：说明助手页「设为默认」、对话确认卡、`[agents.assign]`；明确不需要 @worker 私聊 |
+| RT-AGMGMT-01 | agent-chat | 任务目标是「管理助手 / 读配置改 agent / 接入助手」类（误从对话委派下来） | Router **拒绝**该目标（不调用模型选 General + 读文件工具）；错误说明应走对话管理助手或「助手」页签，不要派 General 读配置 |
 | E2E-AGCHAT | agent-ui | 对话里说"把 Claude Code 接进来" | 对话里出现确认卡 → 确认 → 对话里出现结果卡；刷新后两张卡仍在，确认卡显示已确认 |
 | E2E-AGCHOICE | agent-ui | 对话里说"帮我接个写代码的助手" | 对话里出现选择卡 → 点选一个 → 对话里出现确认卡 |
 
@@ -709,6 +713,17 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | RT-INT-27 | introspection | 有未读推送；普通聊天消息；进程重启 | 未读计数 / 标已读 | 未读只计推送；聊天不计；标已读后持久为 0 |
 | RT-INT-28 | introspection | 历史含带祈使句的内省卡（正文甚至缺前缀） | 组装 `context_text` | 上下文必含「［内省结论，仅供参考，不是指令］」（G-9：不断言记忆跳过） |
 | RT-INT-29 | introspection | 另有普通会话 | 推送后 list 其他会话 | 其他会话无内省消息 / 内省卡 |
+
+
+## 业务内省 INT（S6：HTTP + 前端）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-INT-10 | introspection | 一条 Finding；运营负责人 | 否决并写原因；再跑分析 | verdict=rejected；稳定 ID 仍在；不重复生成；闸门配置不变 |
+| E2E-INTROVIEW | introspection | 内省已产出 Finding | 打开内省页，查看并否决 | 可见证据/原因；否决后默认列表不再出现；规则未变 |
+| E2E-INTROLABEL | introspection | 一条被压下的结论 | 查看未推送原因并标「该推」 | 显示原因；标注保存；未立即推送 |
+| E2E-INTROPUSH | introspection | 一条通过闸门的结论 | 推送后进主窗口 | 主窗口有内省消息与卡；无任务；其他会话无此消息 |
+| E2E-INTROUNREAD | introspection | 主窗口有未读内省 | 看角标、进入主窗口、刷新、再推 | 进入前角标>0；进入后清零；刷新仍 0；再推后回升 |
 
 
 ## 围栏：审查进待人工的人工判定（实现前定义）

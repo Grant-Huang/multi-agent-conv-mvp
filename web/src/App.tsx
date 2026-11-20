@@ -14,6 +14,7 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { AgentsPanel } from "./components/AgentsPanel";
 import { DiscoveryCard } from "./components/AgentCards";
 import { OpsDesk } from "./components/OpsDesk";
+import { IntrospectionPanel } from "./components/IntrospectionPanel";
 import type { CatalogItem } from "./bindings/CatalogItem";
 import { roleLabel } from "./labels";
 
@@ -24,7 +25,7 @@ const MAX_PROGRESS_LINES = 30;
 /** 开发者模式的本地开关键（只是界面偏好，不影响数据） */
 const DEV_MODE_KEY = "agentnexus.devMode";
 
-type SideTab = "tasks" | "agents" | "nodes" | "diag" | "logs";
+type SideTab = "tasks" | "agents" | "nodes" | "diag" | "logs" | "intro";
 /** 首次打开时的"发现卡"是否已经看过（按浏览器记录，AG.3 用户确认） */
 const AGENTS_INTRO_KEY = "an.agentsIntroSeen";
 
@@ -98,6 +99,9 @@ export default function App() {
   const [opsUnread, setOpsUnread] = useState<number | null>(null);
   // 中间栏：会话 / 运营桌面（仅 chat_bridge 开启时出现桌面页签）
   const [mainView, setMainView] = useState<MainView>("chat");
+  // 业务内省未读；null 表示接口不可用（403/失败）
+  const [introUnread, setIntroUnread] = useState<number | null>(null);
+  const [introMainId, setIntroMainId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [sideTab, setSideTab] = useState<SideTab>("tasks");
@@ -284,6 +288,40 @@ export default function App() {
     };
   }, [loadConversations]);
 
+  // 业务内省未读角标（挂会话列表主窗口；G-6）
+  const introViewed = useRef(false);
+  useEffect(() => {
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const r = await api.introUnread();
+        if (stopped) return;
+        setIntroUnread(r.unread);
+        if (r.conversation_id) {
+          setIntroMainId(r.conversation_id);
+          if (!conversationsRef.current.some((c) => c.id === r.conversation_id)) {
+            loadConversations().catch(() => {});
+          }
+          if (currentRef.current === r.conversation_id) {
+            api.messages(r.conversation_id).then((m) => !stopped && setMessages(m)).catch(() => {});
+            if (introViewed.current && r.unread > 0) {
+              await api.introRead();
+              if (!stopped) setIntroUnread(0);
+            }
+          }
+        }
+      } catch {
+        if (!stopped) setIntroUnread(null);
+      }
+    };
+    const timer = setInterval(poll, 2000);
+    poll();
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [loadConversations]);
+
   const newConversation = async () => {
     const c = await api.createConversation();
     await loadConversations();
@@ -301,6 +339,10 @@ export default function App() {
     opsViewed.current = id === OPS_CHANNEL_ID;
     if (opsViewed.current && opsUnread !== null) {
       api.opsRead().then(() => setOpsUnread(0)).catch(() => {});
+    }
+    introViewed.current = introMainId !== null && id === introMainId;
+    if (introViewed.current && introUnread !== null) {
+      api.introRead().then(() => setIntroUnread(0)).catch(() => {});
     }
   };
 
@@ -385,6 +427,9 @@ export default function App() {
               {c.id === OPS_CHANNEL_ID && opsUnread !== null && opsUnread > 0 && (
                 <span className="badge unread" data-testid="ops-unread">{opsUnread}</span>
               )}
+              {introMainId && c.id === introMainId && introUnread !== null && introUnread > 0 && (
+                <span className="badge unread" data-testid="intro-unread">{introUnread}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -456,6 +501,9 @@ export default function App() {
           <TabButton id="tasks" label="任务" active={activeTab} onSelect={setSideTab}>
             {tasks.length > 0 && <span className="count">{tasks.length}</span>}
           </TabButton>
+          <TabButton id="intro" label="内省" active={activeTab} onSelect={setSideTab}>
+            {introUnread !== null && introUnread > 0 && <span className="count" data-testid="intro-tab-unread">{introUnread}</span>}
+          </TabButton>
           <TabButton id="agents" label="助手" active={activeTab} onSelect={setSideTab} />
           <TabButton id="nodes" label="节点" active={activeTab} onSelect={setSideTab} />
           {devMode && <TabButton id="diag" label="诊断" active={activeTab} onSelect={setSideTab} />}
@@ -470,6 +518,7 @@ export default function App() {
             messageIds={Object.fromEntries(messages.filter((m) => m.role === "user" && m.task_id).map((m) => [m.task_id as string, m.id]))}
           />
         )}
+        {activeTab === "intro" && <IntrospectionPanel />}
         {activeTab === "agents" && <AgentsPanel />}
         {activeTab === "nodes" && <NodesPanel />}
         {activeTab === "diag" && <DiagnosticsPanel refreshTick={panelTick} />}

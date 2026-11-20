@@ -104,6 +104,10 @@ impl AgentAdmin {
              - 问\"现在有哪些助手\"\"默认是谁在做某类事\"：agent_op=list，不要直接回答。\n\
              - 撤销、撤回、恢复原样**上一次对助手的修改**：agent_op=undo，不是 enable。\
              接入或配置一个**还没接入**的助手：agent_op=connect；enable 只用于恢复已经停用的助手。\n\
+             - 「管理助手」「查看 / 修改 agent 配置」「接入或撤销助手」也是这一条（agent_op=list 或对应操作），\
+             **禁止** action=delegate 让 General 去读 config.toml 或工作目录里的配置文件。\n\
+             - 问「怎么指定谁来做 / 要不要 @ 某个助手」：action=respond，说明用助手页「设为默认」、对话确认卡或 \
+             [agents.assign]，不需要 @worker 私聊。\n\
              - 不适用时 agent_op、agent_id、agent_role 都填空字符串。\n\
              可选的助手（id：名称）：\n{}",
             lines.join("\n")
@@ -287,7 +291,10 @@ impl AgentAdmin {
                     .filter(|c| c.status == CatalogStatus::NotInstalled)
                     .count();
                 return (
-                    format!("这是本机可以用的助手：已接入 {connected} 个，已安装可以接入 {installable} 个，还没安装 {missing} 个。可以直接点卡片上的按钮。"),
+                    format!(
+                        "这是本机可以用的助手：已接入 {connected} 个，已安装可以接入 {installable} 个，还没安装 {missing} 个。可以直接点卡片上的按钮。\n\n{}",
+                        executor_howto()
+                    ),
                     Some(ChatCard::Discovery { items: catalog }),
                 );
             }
@@ -412,6 +419,265 @@ impl AgentAdmin {
         match self.confirm_card(change) {
             Ok((content, card)) => (content, Some(card)),
             Err(e) => (e.to_string(), None),
+        }
+    }
+}
+
+/// 对话里识别到的「管理助手 / 配置」意图（确定性，不依赖模型）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MgmtHint {
+    /// 明确的管理动作（接入、列出、设默认等）
+    Action(AgentOp),
+    /// 询问如何指定执行者 / 要不要 @ 助手——直接给话术，不派任务
+    HowTo,
+}
+
+/// 如何指定执行者的固定话术（RT-AGCHAT-13/14）：页签设默认、确认卡、`[agents.assign]`，无需 @ 私聊。
+pub fn executor_howto() -> &'static str {
+    "指定谁来做任务，可以这样：\n\
+     1. 打开右侧「助手」页签，在对应助手上点「设为默认」；\n\
+     2. 在对话里说「以后写代码交给某某」（打开对话管理助手时会出现确认卡，点确认后生效）；\n\
+     3. 管理员也可在 config.toml 的 [agents.assign] 里写死某类任务的执行组。\n\
+     不需要 @某个助手私聊——在本会话里直接说任务即可，系统会按默认执行者派发。"
+}
+
+/// 开关关闭时，管理类意图的引导回复（不派 General 读配置）。
+pub fn management_disabled_guidance() -> String {
+    format!(
+        "这类操作是在管理本机助手（接入、停用、改默认执行者等），不会派后台去读配置文件。\n\
+         请到右侧「助手」页签操作；若希望在对话里直接说「把某某接进来」，可在配置里打开 [conversation] agent_management。\n\n\
+         {}",
+        executor_howto()
+    )
+}
+
+/// 用户是否在说「管理助手 / 改 agent 配置 / 接入或撤销」类意图。
+/// 排除「用助手干活」「读某个文件」「比较 / 安装说明」等，避免误拦。
+pub fn mgmt_hint(text: &str) -> Option<MgmtHint> {
+    let t = text.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let lower = t.to_lowercase();
+
+    // 用某个助手干活（改代码、写文件等）→ 派任务，不是管理
+    if looks_like_use_agent_work(t) {
+        return None;
+    }
+    // 明确读某个路径下的文件（如 notes/agents.md）→ 派 general，不是管理
+    if looks_like_file_read(t) && !looks_like_connect_or_config(t, &lower) {
+        return None;
+    }
+    // 比较、概念解释（含「解释一下怎么接入」）→ 交给前台直接回答
+    if looks_like_ask_or_compare(t) {
+        return None;
+    }
+
+    // 如何指定执行者 / 要不要 @
+    if looks_like_executor_howto(t) {
+        return Some(MgmtHint::HowTo);
+    }
+
+    if let Some(op) = detect_mgmt_action(t, &lower) {
+        return Some(MgmtHint::Action(op));
+    }
+    None
+}
+
+fn looks_like_use_agent_work(t: &str) -> bool {
+    // 「用 Cursor 帮我改…」「让 Claude 写…」
+    let work = [
+        "帮我改",
+        "帮我写",
+        "帮我修",
+        "改一下",
+        "写一下",
+        "修一下",
+        "实现",
+        "重构",
+    ];
+    if !work.iter().any(|w| t.contains(w)) {
+        return false;
+    }
+    t.contains("用 ")
+        || t.contains("用Cursor")
+        || t.contains("用 Claude")
+        || t.contains("用 claude")
+        || t.contains("用 cursor")
+        || t.contains("让 ")
+        || t.contains("叫 ")
+}
+
+fn looks_like_file_read(t: &str) -> bool {
+    let read = t.contains("读一下")
+        || t.contains("读取")
+        || t.contains("打开")
+        || t.contains("看一下文件");
+    if !read {
+        return false;
+    }
+    t.contains('/')
+        || t.contains(".md")
+        || t.contains(".rs")
+        || t.contains(".txt")
+        || t.contains(".json")
+        || t.contains("notes/")
+}
+
+fn looks_like_ask_or_compare(t: &str) -> bool {
+    t.contains("哪个好")
+        || t.contains("有什么区别")
+        || t.contains("怎么安装")
+        || t.starts_with("解释")
+        || t.contains("解释一下")
+}
+
+fn looks_like_executor_howto(t: &str) -> bool {
+    let ask = t.contains("怎么")
+        || t.contains("如何")
+        || t.contains("要不要")
+        || t.contains("？")
+        || t.contains("?");
+    if !ask {
+        return false;
+    }
+    t.contains("指定谁")
+        || t.contains("指定执行者")
+        || t.contains("谁来做")
+        || t.contains("设为默认")
+        || t.contains("@worker")
+        || t.contains("@ 助手")
+        || t.contains("@助手")
+        || t.contains("私聊")
+}
+
+fn looks_like_connect_or_config(t: &str, lower: &str) -> bool {
+    t.contains("接进来")
+        || t.contains("接入")
+        || t.contains("管理助手")
+        || (t.contains("配置")
+            && (lower.contains("agent") || t.contains("助手") || t.contains("执行者")))
+}
+
+fn detect_mgmt_action(t: &str, lower: &str) -> Option<AgentOp> {
+    // 撤销对助手的修改（优先于 enable：避免「恢复原样」歧义）
+    if (t.contains("撤销") || t.contains("撤回") || t.contains("改回去"))
+        && (t.contains("助手") || t.contains("agent") || t.contains("修改") || t.contains("刚才"))
+    {
+        return Some(AgentOp::Undo);
+    }
+    if t.contains("停用") || t.contains("停掉") || t.contains("关掉一个") {
+        return Some(AgentOp::Disable);
+    }
+    if t.contains("恢复启用")
+        || (t.contains("启用") && (t.contains("助手") || lower.contains("agent")))
+        || (t.contains("恢复") && t.contains("停"))
+    {
+        return Some(AgentOp::Enable);
+    }
+    if t.contains("设为默认")
+        || t.contains("默认助手")
+        || (t.contains("以后")
+            && (t.contains("交给") || t.contains("换成") || t.contains("别用"))
+            && (t.contains("写代码")
+                || t.contains("coding")
+                || lower.contains("cursor")
+                || lower.contains("claude")
+                || lower.contains("pi")
+                || lower.contains("zcode")
+                || t.contains("助手")))
+    {
+        return Some(AgentOp::SetDefault);
+    }
+    if t.contains("接进来")
+        || t.contains("接入")
+        || (t.contains("配置好")
+            && (lower.contains("cursor")
+                || lower.contains("claude")
+                || lower.contains("codex")
+                || lower.contains("zcode")
+                || t.contains("助手")
+                || lower.contains("agent")))
+    {
+        return Some(AgentOp::Connect);
+    }
+    if t.contains("管理助手")
+        || t.contains("有哪些助手")
+        || t.contains("看看有哪些助手")
+        || t.contains("默认是谁")
+        || (t.contains("列一下") && (t.contains("助手") || lower.contains("agent")))
+        || ((t.contains("查看")
+            || t.contains("改一下")
+            || t.contains("修改")
+            || t.contains("看看"))
+            && (lower.contains("agent") || t.contains("助手"))
+            && (t.contains("配置") || t.contains("设置")))
+        || t.contains("agent 配置")
+        || t.contains("agent配置")
+        || lower.contains("agents 配置")
+    {
+        return Some(AgentOp::List);
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rt_agchat_12_mgmt_hint_catches_manage_and_config() {
+        for (text, op) in [
+            ("管理助手", AgentOp::List),
+            ("看看有哪些助手", AgentOp::List),
+            ("查看一下 agent 配置", AgentOp::List),
+            ("帮我改一下 agent 配置", AgentOp::List),
+            ("把 Claude Code 接进来", AgentOp::Connect),
+            ("接入一个写代码的助手", AgentOp::Connect),
+            ("撤销刚才对助手的修改", AgentOp::Undo),
+            ("以后写代码交给 cursor", AgentOp::SetDefault),
+            ("把 zcode 停掉", AgentOp::Disable),
+        ] {
+            assert_eq!(
+                mgmt_hint(text),
+                Some(MgmtHint::Action(op)),
+                "应识别为管理助手：{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn rt_agchat_14_howto_specify_executor() {
+        for text in [
+            "怎么指定谁来做任务？",
+            "要不要 @worker 私聊才行？",
+            "如何设为默认执行者",
+        ] {
+            assert_eq!(mgmt_hint(text), Some(MgmtHint::HowTo), "{text}");
+        }
+        let howto = executor_howto();
+        assert!(howto.contains("设为默认"), "{howto}");
+        assert!(howto.contains("[agents.assign]"), "{howto}");
+        assert!(
+            howto.contains("确认卡") || howto.contains("确认"),
+            "{howto}"
+        );
+        assert!(
+            howto.contains("不需要 @") || howto.contains("不必 @"),
+            "{howto}"
+        );
+    }
+
+    #[test]
+    fn mgmt_hint_ignores_use_agent_work_and_file_reads() {
+        for text in [
+            "用 Cursor 帮我改一下 src/main.rs 里的函数",
+            "读一下 notes/agents.md，告诉我里面列了哪些助手",
+            "Cursor 和 Claude Code 哪个好",
+            "缓存过期时间改成 10 分钟",
+            "解释一下怎么把一个 agent 接入系统",
+        ] {
+            assert_eq!(mgmt_hint(text), None, "不应拦截：{text}");
         }
     }
 }

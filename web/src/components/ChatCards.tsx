@@ -116,6 +116,16 @@ export function ChatCardView(props: { card: ChatCard; conversationId: string; on
     case "ops_summary":
       body = <OpsSummaryCard card={card} />;
       break;
+    case "introspection":
+      body = (
+        <div className="intro-card" data-testid="intro-card">
+          <div className="intro-card-title">内省结论 · {card.topic}</div>
+          <p>{card.summary}</p>
+          <p className="muted">{card.gate_reason}</p>
+          <p className="muted">验真：{card.verification}</p>
+        </div>
+      );
+      break;
   }
   return (
     <div className="chat-card">

@@ -76,7 +76,7 @@ impl Default for MomSection {
 }
 
 /// `[introspection]`：业务内省定时分析与发送闸门。默认关闭。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IntrospectionSection {
     pub enabled: bool,

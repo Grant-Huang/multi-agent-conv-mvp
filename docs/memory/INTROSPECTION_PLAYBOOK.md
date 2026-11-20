@@ -443,7 +443,7 @@ RT-INT-24 / 28 的「不被抽取进个人记忆」：**跳过**，在测试名�
 
 ## 6. S6 — HTTP + 前端
 
-**状态**：⏳  
+**状态**：✅  
 **用例**：E2E-INTROVIEW、INTROLABEL、INTROPUSH、INTROUNREAD；RT-INT-10  
 **落点**：`crates/server/src/`（新路由模块或挂现有 router）、`web/src/`（角标 + 内省页最小 UI）。
 
@@ -576,7 +576,7 @@ cd web && npm run test:map
 | S2 | ✅ | （本 PR） |
 | S3 | ✅ | （本 PR） |
 | S4 | ✅ | #128 |
-| S5 | ✅ | （本 PR） |
-| S6 | ⏳ | — |
+| S5 | ✅ | #132 |
+| S6 | ✅ | （本 PR） |
 | S7 | ⏳ | — |
 | S8 | ⏳ | — |

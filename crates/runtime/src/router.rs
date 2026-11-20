@@ -385,6 +385,20 @@ impl Router {
         context: &str,
         examples: &[crate::prompts::CorrectionExample],
     ) -> Result<RouteOutcome, RouteFailure> {
+        // RT-AGMGMT-01：管理助手 / 改配置类目标不应派给 General 读配置文件。
+        if crate::agent_chat::mgmt_hint(task_goal).is_some() {
+            return Err(RouteFailure {
+                message: "这类请求是管理本机助手或改 agent 配置，应走对话里的 manage_agents / 右侧「助手」页签，\
+不要派 General 去读配置文件。"
+                    .into(),
+                decision: None,
+                raw_outputs: vec![],
+                attempts: 0,
+                latency_ms: 0,
+                escalated: None,
+            });
+        }
+
         // 始终让模型在全部角色中选择："该由谁做"只看任务本身。
         // 某角色当前没有可用的 agent 时由 Policy 明确报错（E_ROUTE_NO_AGENT），
         // 而不是让模型只能在可用角色里挑，把写代码的请求悄悄改派给别的角色。
