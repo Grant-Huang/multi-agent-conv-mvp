@@ -624,11 +624,11 @@ html[data-reduced-motion="1"] .btn {
 .attn-item { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: 13px; padding: 6px 8px; border-radius: 4px; background: rgba(127,127,127,.06); }
 .attn-item.attn-urgent { background: #ffe8e8; }
 
-/* A5.2 / A5.3 Mock 面板 */
+/* A5.2 / A5.3 / A5.4 Mock 面板 */
 .workspace-mock-toggles { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.appr-mock, .resume-mock, .voice-mock, .handoff-mock {
+.appr-mock, .resume-mock, .voice-mock, .handoff-mock, .accept-mock {
   margin: 8px 0; padding: 10px; border: 1px solid var(--border, #ddd); border-radius: 6px; font-size: 13px;
 }
-.appr-mock h3, .resume-mock h3, .voice-mock h3, .handoff-mock h3 { margin: 0 0 8px; font-size: 14px; }
+.appr-mock h3, .resume-mock h3, .voice-mock h3, .handoff-mock h3, .accept-mock h3 { margin: 0 0 8px; font-size: 14px; }
 .resume-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .resume-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }

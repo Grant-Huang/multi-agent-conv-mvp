@@ -430,3 +430,42 @@ test('E2E-ADHAND: 跨端草稿冲突与未授权转写不共享', async ({ page 
   await page.getByTestId('handoff-voice-share').click();
   await expect(page.getByTestId('handoff-voice-shared')).toHaveText('未授权不共享');
 });
+
+test('E2E-ADACCEPT: 丢回执回读与同操作 ID 幂等冲突', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-accept').click();
+  await expect(page.getByTestId('accept-mock-panel')).toBeVisible();
+  await page.getByTestId('accept-reset').click();
+
+  await page.getByTestId('accept-mode-legacy').click();
+  await expect(page.getByTestId('accept-mode')).toHaveText('现有');
+  await page.getByTestId('accept-drop-receipt').click();
+  await expect(page.getByTestId('accept-phase')).toHaveText('unknown');
+  await expect(page.getByTestId('accept-pending-hint')).toBeVisible();
+  await expect(page.getByTestId('accept-dispatch-count')).toHaveText('1');
+  await page.getByTestId('accept-retry').click();
+  await expect(page.getByTestId('accept-error')).toContainText('先回读');
+  await page.getByTestId('accept-readback').click();
+  await expect(page.getByTestId('accept-phase')).toHaveText('accepted');
+  await expect(page.getByTestId('accept-dispatch-count')).toHaveText('1');
+
+  await page.getByTestId('accept-reset').click();
+  await page.getByTestId('accept-mode-reliable').click();
+  await expect(page.getByTestId('accept-mode')).toHaveText('可靠');
+  await page.getByTestId('accept-drop-receipt').click();
+  await expect(page.getByTestId('accept-phase')).toHaveText('unknown');
+  await expect(page.getByTestId('accept-dispatch-count')).toHaveText('1');
+  await page.getByTestId('accept-retry').click();
+  await expect(page.getByTestId('accept-phase')).toHaveText('accepted');
+  await expect(page.getByTestId('accept-dispatch-count')).toHaveText('1');
+  await page.getByTestId('accept-retry').click();
+  await expect(page.getByTestId('accept-dispatch-count')).toHaveText('1');
+
+  await page.getByTestId('accept-change-text').click();
+  await page.getByTestId('accept-retry').click();
+  await expect(page.getByTestId('accept-phase')).toHaveText('conflict');
+  await expect(page.getByTestId('accept-error')).toContainText('409');
+  await expect(page.getByTestId('accept-dispatch-count')).toHaveText('1');
+  await expect(page.getByTestId('accept-task')).toHaveText(SMT03_TASK_ID);
+});

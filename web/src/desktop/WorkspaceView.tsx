@@ -11,6 +11,7 @@ import { ApprovalMockPanel } from "./ApprovalMockPanel";
 import { ResumeMockPanel } from "./ResumeMockPanel";
 import { VoiceMockPanel } from "./VoiceMockPanel";
 import { HandoffMockPanel } from "./HandoffMockPanel";
+import { AcceptMockPanel } from "./AcceptMockPanel";
 
 type Props = {
   taskId: string;
@@ -27,6 +28,7 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
   const [showResume, setShowResume] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
   const [showHandoff, setShowHandoff] = useState(false);
+  const [showAccept, setShowAccept] = useState(false);
 
   useEffect(() => {
     setExecOpen(loadExecOpen(taskId));
@@ -153,11 +155,21 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
             >
               {showHandoff ? "收起跨端续接" : "跨端续接模拟"}
             </button>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="workspace-open-accept"
+              aria-expanded={showAccept}
+              onClick={() => setShowAccept((v) => !v)}
+            >
+              {showAccept ? "收起受理模拟" : "受理模拟"}
+            </button>
           </div>
           {showAppr && <ApprovalMockPanel taskId={taskId} />}
           {showResume && <ResumeMockPanel onOpenTask={onOpenTask} />}
           {showVoice && <VoiceMockPanel />}
           {showHandoff && <HandoffMockPanel />}
+          {showAccept && <AcceptMockPanel />}
           <p className="workspace-hint">草稿与作用域按 Task 隔离（A2）。</p>
           <WorkspaceComposer taskId={taskId} />
         </section>
