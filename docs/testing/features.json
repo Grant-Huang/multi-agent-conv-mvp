@@ -685,5 +685,21 @@
       "RT-OPSDESK-08",
       "RT-OPSDESK-09"
     ]
+  },
+  {
+    "id": "introspection",
+    "document": "docs/memory/INTROSPECTION_PLAN.md",
+    "sources": [
+      "crates/runtime/src/introspect/",
+      "crates/runtime/src/store.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "runtime_cases": [
+      "RT-INT-03",
+      "RT-INT-06",
+      "RT-INT-07",
+      "RT-INT-08"
+    ]
   }
 ]
