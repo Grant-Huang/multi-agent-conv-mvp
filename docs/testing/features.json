@@ -729,6 +729,8 @@
       "web/src/desktop/VoiceMockPanel.tsx",
       "web/src/desktop/handoffMock.ts",
       "web/src/desktop/HandoffMockPanel.tsx",
+      "web/src/desktop/acceptMock.ts",
+      "web/src/desktop/AcceptMockPanel.tsx",
       "web/src/desktop/evidenceMock.ts",
       "web/src/desktop/mockData.ts",
       "web/src/components/ChatView.tsx",
@@ -739,7 +741,8 @@
       "docs/testing/evidence/ai-desktop-a2.1.md",
       "docs/testing/evidence/ai-desktop-a5.1.md",
       "docs/testing/evidence/ai-desktop-a5.2.md",
-      "docs/testing/evidence/ai-desktop-a5.3.md"
+      "docs/testing/evidence/ai-desktop-a5.3.md",
+      "docs/testing/evidence/ai-desktop-a5.4.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -757,7 +760,8 @@
       "E2E-ADAPPR",
       "E2E-ADRESUME",
       "E2E-ADVOICE",
-      "E2E-ADHAND"
+      "E2E-ADHAND",
+      "E2E-ADACCEPT"
     ]
   },
   {
