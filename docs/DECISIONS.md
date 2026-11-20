@@ -914,6 +914,13 @@
 - **出问题先看**：[设计增补](mom/DES_EXPERIMENT_OPS_SPLIT.md) 和 [实施计划](mom/WORLD_ADAPTER_PLAN.md)；M0 执行卡 [WA_M0_TASKS.md](mom/WA_M0_TASKS.md)；验收 DES-UI-01～06。
 - **与 DES-32 的关系**：双入口均纳入「完整前端」与每里程碑可测交付；实验控制 Mock 见 WORLD_ADAPTER_PLAN §4「实验控制与消息」。
 
+### 63. DES 仿真实验与 MOM 运营分设入口（2026-11-20，用户确认）
+
+- **问题**：MOM 运营公告板同时呈现实验配置和业务处置，用户难以识别当前任务。
+- **决定**：配置、试跑、运行控制与结果进入 DES 仿真实验；正式运行的业务事项经消息进入 AI 桌面。
+- **为什么**：让实验人员管理运行，让运营人员在业务上下文完成决定并查到回执。
+- **出问题先看**：[设计增补](mom/DES_EXPERIMENT_OPS_SPLIT.md) 和 [实施计划](mom/WORLD_ADAPTER_PLAN.md)。
+
 ### 待决定
 
 - 暂无（DES-31、DES-32、决定 62 已确认）。
