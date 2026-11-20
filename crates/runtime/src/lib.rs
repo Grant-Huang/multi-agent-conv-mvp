@@ -490,6 +490,53 @@ impl Runtime {
         if self.config.nodes.discovery {
             self.nodes.start_discovery();
         }
+        // 业务内省：默认关闭；打开后按 schedule_hours 调用 run_once（本期无 Engine 挂载时用空来源）
+        if self.config.introspection.enabled {
+            if !self.config.introspection.operator_role.is_empty() {
+                tracing::info!(
+                    event = "introspection.job_skipped",
+                    operator_role = %self.config.introspection.operator_role,
+                    "operator_role 已配置但暂不生效（决策第 53 条）"
+                );
+            }
+            let store = self.store.clone();
+            let cfg = self.config.introspection.clone();
+            tokio::spawn(async move {
+                let interval = Duration::from_secs(cfg.schedule_hours.max(1) * 3600);
+                let mut ticker = tokio::time::interval(interval);
+                loop {
+                    ticker.tick().await;
+                    let src = introspect::MemorySource {
+                        source_id: "mom".into(),
+                        cases: vec![],
+                    };
+                    let opts = introspect::RunOnceOptions::from_config(&cfg);
+                    let wm = store
+                        .introspection_latest_watermark()
+                        .ok()
+                        .flatten()
+                        .unwrap_or_else(|| "{}".into());
+                    if let Err(e) = introspect::run_once(introspect::RunOnceRequest {
+                        store: &store,
+                        source: &src,
+                        cfg: &cfg,
+                        trigger: "schedule",
+                        watermark_json: &wm,
+                        input_hash: "schedule",
+                        analysis_now: 0,
+                        opts,
+                    })
+                    .await
+                    {
+                        tracing::warn!(
+                            event = "introspection.job_failed",
+                            error = %e,
+                            "定时内省运行失败"
+                        );
+                    }
+                }
+            });
+        }
     }
 }
 

@@ -683,6 +683,17 @@ D2（卡片批准联动）的 E2E-OPSAPPROVE 依赖 WP1 L2 的案例卡，待 L2
 | RT-INT-22 | introspection | 运营负责人标注该推/不该推 | 保存标注 | 与结论关联；闸门配置对象不变 |
 
 
+
+## 业务内省 INT（S4：调度、租约、超时、取消）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-INT-09 | introspection | 同一数据水位与输入哈希 | 内省任务重跑两次 | 不产生重复 Finding；稳定 ID 不变；水位不回退 |
+| RT-INT-13 | introspection | 任务已写入 1 条 Finding，尚有主题未处理 | 发出取消 | 状态 cancelled；不再写新 Finding；已写入保留；租约释放 |
+| RT-INT-14 | introspection | 分析被拖慢超过超时；另有租约过期的 running 遗留任务 | 到达超时；启动清理 | 前者 failed 且错误含超时、Finding 保留、水位不推进；后者标 failed |
+| RT-INT-23 | introspection | 未到调度间隔；或手动触发 | 查看是否运行 / 跑手动 | 未到点不调度；手动也走同一发送闸门并记录原因 |
+
+
 ## 围栏：审查进待人工的人工判定（实现前定义）
 
 设计见 [docs/fencing/REVIEW_VERDICT_DESIGN.md](../fencing/REVIEW_VERDICT_DESIGN.md)。未改 `orchestrator` / `store`，实现前须另批。下列用例冻结后只改业务代码。

@@ -50,6 +50,9 @@ pub struct AppConfig {
     /// MOM 与会话的桥（运营桌面、运营频道）；默认关闭
     #[serde(default)]
     pub mom: MomSection,
+    /// 业务内省；默认关闭，关闭时行为与以前完全相同
+    #[serde(default)]
+    pub introspection: IntrospectionSection,
 }
 
 /// `[mom]`：运营频道和运营桌面（DECISIONS 第 56–58 条）。`chat_bridge` 默认关闭，关闭时行为与以前完全相同。
@@ -68,6 +71,34 @@ impl Default for MomSection {
             chat_bridge: false,
             ops_merge_secs: 60,
             ops_hourly_cap: 10,
+        }
+    }
+}
+
+/// `[introspection]`：业务内省定时分析与发送闸门。默认关闭。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IntrospectionSection {
+    pub enabled: bool,
+    pub schedule_hours: u64,
+    pub timeout_secs: u64,
+    pub min_samples: u32,
+    pub push_threshold: f64,
+    pub daily_cap: u32,
+    /// 预留，暂不生效（决策第 53 条）
+    pub operator_role: String,
+}
+
+impl Default for IntrospectionSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            schedule_hours: 24,
+            timeout_secs: 120,
+            min_samples: 10,
+            push_threshold: 4.0,
+            daily_cap: 1,
+            operator_role: String::new(),
         }
     }
 }

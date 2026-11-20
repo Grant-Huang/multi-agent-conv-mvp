@@ -9,6 +9,7 @@ an-core.workspace = true
 an-llm.workspace = true
 an-agents.workspace = true
 anyhow.workspace = true
+chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
