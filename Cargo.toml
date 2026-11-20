@@ -47,7 +47,7 @@ chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
-mdns-sd = "0.21"
+mdns-sd = "0.22"
 ts-rs = { version = "12", features = ["serde-json-impl"] }
 # ACP 官方 Rust SDK：process 用于启动 agent 子进程，stdio 用于假 agent（测试/演示）
 agent-client-protocol = "5"
