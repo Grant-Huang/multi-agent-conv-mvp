@@ -9,6 +9,8 @@
 
 采用完整前端先行，各里程碑用同一前端完成全流程。详见 [实施计划与 Mock 替换](WORLD_ADAPTER_PLAN.md) 和 [Playwright Feature Map](../feature-map/features/world-adapter.md)。
 
+[DES 实验与运营入口拆分](DES_EXPERIMENT_OPS_SPLIT.md) 定义实验人员和运营人员的产品路径。实验控制经独立入口授权，正式运行的可处置事项由 MOM 发布到 AI 桌面。
+
 ## 1. 目标与架构
 
 World Adapter 让 AgentNexus、审批服务和运营界面通过同一契约访问一个明确的世界。DES 复用现有 MCP 连接器和干预内核。生产侧按站点接入 MES、ERP 和设备数据源，先开放观测，再开放一个可查证的业务写动作。
