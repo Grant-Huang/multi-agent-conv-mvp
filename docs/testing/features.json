@@ -717,11 +717,15 @@
       "web/src/desktop/HistoryPanel.tsx",
       "web/src/desktop/SettingsPanel.tsx",
       "web/src/desktop/profileStore.ts",
+      "web/src/desktop/readAnchorStore.ts",
       "web/src/desktop/evidenceMock.ts",
       "web/src/desktop/mockData.ts",
+      "web/src/components/ChatView.tsx",
       "web/e2e/desktop.spec.ts",
+      "web/e2e/ops.spec.ts",
       "docs/ai-desktop/DESIGN.md",
-      "docs/ai-desktop/TRACEABILITY.md"
+      "docs/ai-desktop/TRACEABILITY.md",
+      "docs/testing/evidence/ai-desktop-a2.1.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -732,7 +736,8 @@
       "E2E-ADEVID",
       "E2E-ADHISTORY",
       "E2E-ADPROF",
-      "E2E-ADINPUT"
+      "E2E-ADINPUT",
+      "E2E-ADREAD"
     ]
   },
   {

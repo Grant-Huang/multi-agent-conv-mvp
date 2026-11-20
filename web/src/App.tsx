@@ -626,6 +626,7 @@ export default function App() {
         )}
         {mainView === "chat" && (
           <ChatView
+            conversationId={current}
             messages={messages}
             onRefresh={() => current && refreshConversation(current).catch(() => {})}
             tasks={tasks}
