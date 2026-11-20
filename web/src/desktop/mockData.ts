@@ -46,7 +46,7 @@ const VIEW_KEY = "an.desktop.mainView";
 const TASK_KEY = "an.desktop.workspaceTaskId";
 
 export type WorkspaceLayout = "s2" | "s3";
-export type DesktopMainView = "home" | "chat" | "desk" | "workspace";
+export type DesktopMainView = "home" | "chat" | "desk" | "workspace" | "des-experiment";
 
 export function readWorkspaceLayout(): WorkspaceLayout {
   try {
@@ -70,7 +70,9 @@ export function readDesktopView(): { view: DesktopMainView; taskId: string | nul
     const view = (localStorage.getItem(VIEW_KEY) as DesktopMainView | null) ?? "home";
     const taskId = localStorage.getItem(TASK_KEY);
     if (view === "workspace" && taskId) return { view, taskId };
-    if (view === "chat" || view === "desk" || view === "home") return { view, taskId: null };
+    if (view === "chat" || view === "desk" || view === "home" || view === "des-experiment") {
+      return { view, taskId: null };
+    }
     return { view: "home", taskId: null };
   } catch {
     return { view: "home", taskId: null };

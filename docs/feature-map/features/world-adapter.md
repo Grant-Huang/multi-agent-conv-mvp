@@ -1,6 +1,6 @@
 # World Adapter 与 MOM 工作台 Feature Map
 
-Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`docs/mom/DES_EXPERIMENT_OPS_SPLIT.md`、`web/e2e/des-experiment.spec.ts`；用例 `E2E-DESTRIAL`～`E2E-DESLOOP`（M0-0 已冻结，实现前 Red）。  
+Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`docs/mom/DES_EXPERIMENT_OPS_SPLIT.md`、`web/e2e/des-experiment.spec.ts`、`web/src/desktop/DesExperiment.tsx`；用例 `E2E-DESTRIAL`～`E2E-DESLOOP`（M0-0 冻结；M0-2 `E2E-DESTRIAL` Green，其余待 M0-3+）。  
 现有路径见 [MOM Feature Map](mom.md)。表中 `E2E-WA-*` 为设计编号，登记进 CASES/`features.json` 前须换成 `E2E-[A-Z]+`；控件名是 Playwright 定位契约。
 
 | 拟用例 | 操作路径与定位 | UI 和业务断言 | 追溯 |

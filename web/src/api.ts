@@ -193,11 +193,52 @@ export interface OpsDeskView {
 /** 抽屉详情：复用 human_view 的 JSON，字段按需读取 */
 export type OpsDeskCaseDetail = Record<string, unknown>;
 
+/** World Adapter M0 Mock（`/api/world/mock`，[mom] world_mock） */
+export interface WorldMockConfigResult {
+  protocol_version: number;
+  config_version: string;
+  request_id?: string | null;
+}
+export interface WorldMockTrialResult {
+  protocol_version: number;
+  trial_run_id: string;
+  world_id: string;
+  mode: string;
+  delivery_count: number;
+}
+export interface WorldMockOfficialResult {
+  protocol_version: number;
+  official_run_id: string;
+  world_id: string;
+  mode: string;
+  delivery_count: number;
+  case_id: string | null;
+  already?: boolean;
+}
+export interface WorldMockRun {
+  protocol_version: number;
+  run_id: string;
+  world_id: string;
+  mode: string;
+  config_version: string;
+  target_channel: string | null;
+  simulation_minute: number;
+  run_status: string;
+  delivery_count: number;
+  case_id: string | null;
+  action_count: number;
+  wait_label: string;
+  failed: boolean;
+}
+
+const WA_ROLE = { "X-WA-Role": "experimenter" };
+
 /** 统一的请求函数：非 2xx 时抛出后端返回的错误信息 */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const extra = (init?.headers as Record<string, string> | undefined) ?? {};
   const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: { "Content-Type": "application/json", ...extra },
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`);
@@ -303,6 +344,46 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ token }),
     }),
+  /** World Adapter M0 实验 Mock（决定 62）；未开 world_mock 时 404 */
+  worldMock: {
+    saveConfig: (body: {
+      factory: string;
+      scenario: string;
+      seed: number;
+      duration_minutes: number;
+      request_id?: string;
+    }) =>
+      request<WorldMockConfigResult>("/api/world/mock/experiment/configs", {
+        method: "POST",
+        headers: WA_ROLE,
+        body: JSON.stringify(body),
+      }),
+    startTrial: (body: { config_version: string; request_id?: string }) =>
+      request<WorldMockTrialResult>("/api/world/mock/experiment/trials", {
+        method: "POST",
+        headers: WA_ROLE,
+        body: JSON.stringify(body),
+      }),
+    startOfficial: (body: {
+      config_version: string;
+      target_channel: string;
+      start_key: string;
+      request_id?: string;
+    }) =>
+      request<WorldMockOfficialResult>("/api/world/mock/experiment/official", {
+        method: "POST",
+        headers: WA_ROLE,
+        body: JSON.stringify(body),
+      }),
+    getRun: (runId: string) =>
+      request<WorldMockRun>(`/api/world/mock/experiment/runs/${encodeURIComponent(runId)}`),
+    controlRun: (runId: string, body: { action: string; minutes?: number; request_id?: string }) =>
+      request<WorldMockRun>(`/api/world/mock/experiment/runs/${encodeURIComponent(runId)}`, {
+        method: "POST",
+        headers: WA_ROLE,
+        body: JSON.stringify(body),
+      }),
+  },
 };
 
 /** 订阅某个会话的 SSE 事件流，返回取消订阅函数 */
