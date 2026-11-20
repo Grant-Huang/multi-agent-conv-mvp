@@ -533,3 +533,94 @@ async fn rt_agchat_11_prompt_rules_for_common_mistakes() {
         .to_string();
     assert!(!off.contains("管理助手"), "开关关闭时不应出现管理助手一节");
 }
+
+/// 模型故意误判为 delegate（去读配置），用来验证确定性拦截。
+fn wrong_delegate(goal: &str) -> Value {
+    json!({"action":"delegate","question":"","task_goal":goal,"task_id":"","follow_up_kind":"","change":"",
+           "agent_op":"","agent_id":"","agent_role":""})
+}
+
+/// RT-AGCHAT-12：开关打开时，管理 / 改配置类输入即使模型误判 delegate，仍走 manage 路径、不派任务
+#[tokio::test]
+async fn rt_agchat_12_mgmt_overrides_wrong_delegate() {
+    let _g = ENV_LOCK.lock().await;
+    let sb = Sandbox::new("12");
+    let llm = MockLlm::start(Arc::new(|text, _| {
+        wrong_delegate(&format!("读取配置并处理：{text}"))
+    }))
+    .await;
+    let (base, rt) = sb.serve(&llm.base, true).await;
+    for text in ["管理助手", "帮我改一下 agent 配置", "把 Claude Code 接进来"] {
+        let (cid, msgs) = say(&base, None, text).await;
+        let reply = last_assistant(&msgs);
+        let content = reply["content"].as_str().unwrap_or("");
+        assert!(
+            reply["card"].is_object()
+                || content.contains("助手")
+                || content.contains("确认")
+                || content.contains("选择"),
+            "应走管理助手路径：{text} → {reply}"
+        );
+        let tasks = get(&base, &format!("/api/tasks?conversation_id={cid}")).await;
+        let n = tasks.as_array().map(|a| a.len()).unwrap_or(0);
+        assert_eq!(n, 0, "不应创建 General 任务：{text} → {tasks}");
+        assert!(
+            !content.contains("根据您的要求做"),
+            "不应走委派话术：{content}"
+        );
+    }
+    let _ = rt;
+}
+
+/// RT-AGCHAT-13：开关关闭时，同类输入不派任务，并引导助手页 / 指定执行者
+#[tokio::test]
+async fn rt_agchat_13_disabled_guides_without_delegate() {
+    let _g = ENV_LOCK.lock().await;
+    let sb = Sandbox::new("13");
+    let llm = MockLlm::start(Arc::new(|text, _| {
+        wrong_delegate(&format!("读 config.toml：{text}"))
+    }))
+    .await;
+    let (base, _rt) = sb.serve(&llm.base, false).await;
+    let (cid, msgs) = say(&base, None, "管理助手，改一下配置").await;
+    let reply = last_assistant(&msgs);
+    let content = reply["content"].as_str().unwrap_or("");
+    assert!(
+        content.contains("助手") && content.contains("页签"),
+        "应引导到助手页签：{content}"
+    );
+    assert!(
+        content.contains("设为默认") && content.contains("[agents.assign]"),
+        "应说明如何指定执行者：{content}"
+    );
+    assert!(
+        content.contains("不需要 @") || content.contains("不必 @"),
+        "应说明无需 @ 私聊：{content}"
+    );
+    let tasks = get(&base, &format!("/api/tasks?conversation_id={cid}")).await;
+    assert_eq!(
+        tasks.as_array().map(|a| a.len()).unwrap_or(0),
+        0,
+        "开关关闭时也不应派 General：{tasks}"
+    );
+}
+
+/// RT-AGCHAT-14：问如何指定执行者 → 直接话术，不派任务
+#[tokio::test]
+async fn rt_agchat_14_howto_executor_no_task() {
+    let _g = ENV_LOCK.lock().await;
+    let sb = Sandbox::new("14");
+    let llm = MockLlm::start(Arc::new(|_, _| wrong_delegate("随便派个后台"))).await;
+    let (base, _rt) = sb.serve(&llm.base, true).await;
+    let (cid, msgs) = say(&base, None, "怎么指定谁来做？要不要 @worker 私聊？").await;
+    let reply = last_assistant(&msgs);
+    let content = reply["content"].as_str().unwrap_or("");
+    assert!(content.contains("设为默认"), "{content}");
+    assert!(content.contains("[agents.assign]"), "{content}");
+    assert!(
+        content.contains("不需要 @") || content.contains("不必 @"),
+        "{content}"
+    );
+    let tasks = get(&base, &format!("/api/tasks?conversation_id={cid}")).await;
+    assert_eq!(tasks.as_array().map(|a| a.len()).unwrap_or(0), 0, "{tasks}");
+}
