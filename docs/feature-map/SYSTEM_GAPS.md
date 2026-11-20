@@ -87,4 +87,4 @@ flowchart LR
 
 已确认的 UE/交付规格见 [ai-desktop/DESIGN.md](../ai-desktop/DESIGN.md)。对照现状的 Desktop 专属缺口（AD-G1–AD-G12）、与 G01–G10 的挂靠关系、以及对 WP1/运营桌面计划的调整建议，见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md)。
 
-一句话：G01–G10 描述的是**模块间打通**；AD-G* 描述的是**产品壳尚未建成**。两者都要做；推荐以 Desktop A（完整前端 + Mock）为壳主轴，把运营三入口（原 D3）与 WP1 闭环嵌进该壳，而不是在现有「会话|运营桌面」页签上继续平行堆叠。
+一句话：G01–G10 描述的是**模块间打通**；AD-G* 描述的是**产品壳尚未建成**。2026-11-20 已确认：**直接做组织级 AI 桌面**（A1 一次换壳），不做双轨；打通能力作为桌面内模块与 Mock→真实替换（见 `ai-desktop/MOCK_REGISTRY.md`）。

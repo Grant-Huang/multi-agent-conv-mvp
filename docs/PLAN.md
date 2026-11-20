@@ -940,17 +940,17 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 ## 系统打通与整体场景 E2E
 
 目标、工作包顺序与首个工作包“DES-MOM-会话闭环”见 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)；缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)。  
-**产品壳主轴**（已确认 UE）：[AI Desktop V1.7](ai-desktop/DESIGN.md)；对照现状缺口与计划调整见 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)。WP1/运营能力嵌进 Desktop 壳，双轨关系见 INTEGRATION_PLAN §0。
+**产品主轴**（2026-11-20 确认）：直接做组织级 [AI Desktop V1.7](ai-desktop/DESIGN.md)；A1 一次换壳；缺口见 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)；Mock 开发与取代见 [ai-desktop/MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md)。原 WP1/运营为桌面内能力（INTEGRATION_PLAN §0），不做双轨。
 
 ### AI Desktop 进度（A→B→C→D）
 
-- [ ] **A0 追溯与用例登记**：原始清单 → Feature/Case；登记 AD-*（见 FEATURE_MAP）
-- [ ] **A1 壳层与导航**：首页三区、S1/S2/S3；现有会话/运营/内省迁入壳内
-- [ ] **A2 草稿、阅读锚点、上下文作用域**
+- [ ] **A0 追溯与用例登记**：特性清单 → Feature/Case；登记 AD-*；填 Mock 负责人
+- [ ] **A1 一次换壳**：首页三区、S1/S2/S3；移除旧一级页签，入口重定向
+- [ ] **A2 草稿、阅读锚点、上下文作用域**（SMT-03 可纯 Mock）
 - [ ] **A3 证据与历史面板**
 - [ ] **A4 助理、设置、键盘与响应式**
-- [ ] **A5 异步/协作/审批/移动 Mock 流程**
-- [ ] **B/C/D** 按能力替换 Mock（见 ai-desktop/PLAN.md）
+- [ ] **A5 异步/协作/审批/移动 Mock 流程**（M1–M6 贯通）
+- [ ] **B/C/D** 按 MOCK_REGISTRY 替换 Mock（全量 Feature Map 回归）
 
 ---
 

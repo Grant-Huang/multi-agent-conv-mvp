@@ -237,7 +237,7 @@ plan_revision: Option<u64>,  // 发卡时的 case.plan_revision
 
 依据 [UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md) 的“三入口（看板/任务/资源）”与 [AI Desktop V1.7](../ai-desktop/DESIGN.md)（运营入口复用 MOM 三入口）。D1 只做了“看板”。缺口与计划调整见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md) §5.2。
 
-### 8.1 默认口径（助手建议；用户未改口前按此拆卡）
+### 8.1 口径（2026-11-20 用户确认）
 
 | 入口 | 展示什么 | 不做 |
 |---|---|---|

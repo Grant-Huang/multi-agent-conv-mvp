@@ -19,7 +19,7 @@ A 优先完成完整前端外壳和贯通场景，再补齐各功能的决策与
 
 在 A 中，SMT-03 是首条贯通路径。运营桌面入口复用 MOM 视图及其「看板、任务、资源」信息架构。手机语音、跨端、权限与动作可以用模拟后端走完 UI 流程。真实麦克风、跨端服务、授权及业务副作用分别核验。
 
-实施顺序、Mock 生命周期及门禁见 [实施计划](PLAN.md)。每项用户路径、自动化操作及断言见 [目标 Feature Map](FEATURE_MAP.md)。对照当前主分支的缺口与计划调整见 [GAPS.md](GAPS.md)。
+实施顺序、Mock 生命周期及门禁见 [实施计划](PLAN.md)；Mock 注册与取代明细见 [MOCK_REGISTRY.md](MOCK_REGISTRY.md)。每项用户路径、自动化操作及断言见 [目标 Feature Map](FEATURE_MAP.md)。对照现状与已确认方向见 [GAPS.md](GAPS.md)（单轨桌面、A1 一次换壳、SMT-03 可纯 Mock）。
 
 ## 2. 导航、工作区与面板
 

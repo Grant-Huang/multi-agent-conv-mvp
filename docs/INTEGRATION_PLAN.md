@@ -5,19 +5,21 @@
 缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md) 与 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)，场景清单见 [SCENARIOS.md](feature-map/SCENARIOS.md)。  
 按 AGENTS.md：涉及 `orchestrator.rs` / `store.rs` / `registry.rs` / `acp.rs` / `util.rs` 的工作包，动手前先单独出方案并等你批准；每个工作包新增行为先在 `docs/testing/CASES.md` 定稿用例并见到业务断言 Red。
 
-## 0. 与 AI Desktop 的关系（2026-11-20 计划调整，助手建议）
+## 0. 与 AI Desktop 的关系（2026-11-20 用户确认：不做双轨）
 
-| 轨 | 职责 | 完成看什么 |
+**产品主轴只有一条：组织级 AI 桌面（V1.7）。** A1 一次换壳；本文 WP0–WP8 / WP1 / 运营 D* 是桌面内的能力与真实替换项，不再维护第二套前端导航。
+
+| 层级 | 职责 | 完成看什么 |
 |---|---|---|
-| **Desktop A–D** | 组织级工作桌面壳、S1/S2/S3、草稿/证据/设置、Mock→真实替换 | Feature Map AD-* 全绿；真实能力另有集成证据 |
-| **本文 WP0–WP8** | 模块打通与黄金场景 GS1–GS6 | 跨模块 E2E；无死胡同状态 |
+| **AI Desktop A–D** | 完整前端、Feature Map+Playwright、Mock→真实（见 [ai-desktop/MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md)） | 每里程碑 AD-* 全绿；已替换能力有真实集成证据 |
+| **本文 WP*** | 模块协议、黄金场景 GS1–GS6、高风险后端 | 跨模块断言；接入桌面后仍从桌面入口操作 |
 
 约束：
 
-1. **新用户入口默认落在 Desktop 壳内**；不再在旧「会话 | 运营桌面」平行页签上新增一级导航。  
-2. 运营桌面「看板 / 任务 / 资源」是 Desktop 内的运营模块（V1.7：复用 MOM 三入口 IA）；**D3a** 补任务+资源，**WP1-L4** 单独出方案，不绑在同一张卡。  
-3. GS1 仍以 DES→MOM→频道卡→批准→回写为断言链；UI 操作路径逐步迁到 Desktop 运营区与工作区。  
-4. Desktop A 可用 Mock 跑通 SMT-03；WP1 L1–L3 提供真实 MOM/DES 数据源，二者在混合模式回归中汇合。
+1. A1 **移除**旧「会话 | 运营桌面」一级页签模型，入口重定向进桌面模块。  
+2. 运营「看板 / 任务 / 资源」= 桌面内运营模块；**D3a** 补任务+资源；**L4** 单独方案。  
+3. GS1 断言链不变；操作路径只认桌面入口。  
+4. A 阶段 SMT-03 **允许纯 Mock**；L1–L3 等真实 MOM 能力在 B/C 与 M4/M5 替换时汇合。
 
 ## 一、目标与“完成”的定义
 
