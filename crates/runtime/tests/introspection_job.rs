@@ -78,6 +78,7 @@ async fn run(
         input_hash: hash,
         analysis_now: NOW,
         opts: o,
+        bus: None,
     })
     .await
     .unwrap()

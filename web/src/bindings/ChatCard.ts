@@ -33,4 +33,4 @@ approver: string | null,
 /**
  * 目前只有 simulation
  */
-provenance: string, updated_at: bigint, } | { "type": "ops_summary", count: number, case_ids: Array<string>, };
+provenance: string, updated_at: bigint, } | { "type": "ops_summary", count: number, case_ids: Array<string>, } | { "type": "introspection", finding_id: string, topic: string, summary: string, gate_reason: string, verification: string, };

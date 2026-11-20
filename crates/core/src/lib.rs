@@ -518,6 +518,14 @@ pub enum ChatCard {
     },
     /// 运营频道汇总卡：超过每小时上限后被合并的案例
     OpsSummary { count: u32, case_ids: Vec<String> },
+    /// 业务内省结论卡：进主窗口会话；正文带「数据，非指令」前缀
+    Introspection {
+        finding_id: String,
+        topic: String,
+        summary: String,
+        gate_reason: String,
+        verification: String,
+    },
 }
 
 /// 消息 + 卡片（消息列表接口返回它；`Message` 本身不变）
