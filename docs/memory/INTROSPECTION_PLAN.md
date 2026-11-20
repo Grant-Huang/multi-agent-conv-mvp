@@ -262,7 +262,7 @@ operator_role = ""   # 预留，暂不生效
 | S2 ✅ | `SourceAdapter` + `MomSource`（只读）+ 方案采纳模式的确定性统计 + 校验器 | `introspect/` | RT-INT-03、06、07、08 | 删除新目录 |
 | S3 ✅ | 发送闸门 | `gate.rs` | RT-INT-16、17、18、19、20、22 | 同上 |
 | S4 ✅ | 定时调度、租约、超时、取消、清理 | `job.rs`、`lib.rs`、`config.rs` | RT-INT-09、13、14、23 | 配置关闭 |
-| S5 | 主窗口会话、推送、未读、`is_operator`、`ChatCard` 新变体、`context_text` 标记 | `push.rs`、`operator.rs`、`core`、`conversation.rs` | RT-INT-21、24（除记忆）、25、26、27、28（除记忆）、29 | 配置关闭 |
+| S5 ✅ | 主窗口会话、推送、未读、`is_operator`、`ChatCard` 新变体、`context_text` 标记 | `push.rs`、`operator.rs`、`core`、`conversation.rs` | RT-INT-21、24（除记忆）、25、26、27、28（除记忆）、29 | 配置关闭 |
 | S6 | HTTP 接口与前端：角标、内省页、标注 | `server`、`web` | E2E-INTROVIEW、INTROLABEL、INTROPUSH、INTROUNREAD；RT-INT-10 | 隐藏入口 |
 | S7 | 用 DES 做“植入真值”评测；再决定要不要加模型解释层（默认关闭，后台槽位 2~5，取不到就跳过） | `des`、评测脚本 | RT-INT-15、评测报告 | 不启用模型层 |
 | S8 | “同因复发”：先核实根因字段，能取出就做 | `introspect/` | RT-INT-02（核实后或重写，需用户确认） | 不启用该主题 |

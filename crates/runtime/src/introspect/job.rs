@@ -12,6 +12,7 @@ use super::finding::{
 use super::gate::{decide, GateConfig, GateInput};
 use super::model::IntrospectionFinding;
 use super::source::SourceAdapter;
+use crate::bus::Bus;
 use crate::config::IntrospectionSection;
 use crate::store::Store;
 use an_core::now;
@@ -93,9 +94,11 @@ pub struct RunOnceRequest<'a> {
     pub input_hash: &'a str,
     pub analysis_now: u64,
     pub opts: RunOnceOptions,
+    /// 闸门通过后推送到主窗口时可选广播；测试可传 None。
+    pub bus: Option<&'a Bus>,
 }
 
-/// 跑一轮内省（定时或手动）。不调用推送。
+/// 跑一轮内省（定时或手动）。闸门通过时写入主窗口（S5），不走 handle_message。
 pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
     let RunOnceRequest {
         store,
@@ -106,6 +109,7 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
         input_hash,
         analysis_now,
         opts,
+        bus,
     } = req;
     let stale = store.introspection_fail_stale_jobs()?;
     if stale > 0 {
@@ -225,6 +229,8 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                         "写入结论"
                     );
 
+                    let already_pushed_unread =
+                        store.introspection_has_unread_push(&fid).unwrap_or(false);
                     let gin = GateInput {
                         finding_id: fid.clone(),
                         verification: draft.verification.clone(),
@@ -232,7 +238,7 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                         has_next_step: !draft.next_step.is_empty(),
                         first_or_worsened: inserted,
                         time_sensitive: false,
-                        already_pushed_unread: false,
+                        already_pushed_unread,
                         pushed_today: 0,
                         model_delta: 0,
                         model_reason: String::new(),
@@ -254,6 +260,23 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                         reason = %decision.reason,
                         "闸门判定"
                     );
+
+                    if decision.should_push {
+                        let summary = if draft.hypothesis.is_empty() {
+                            format!("内省结论（{}）", draft.scope)
+                        } else {
+                            draft.hypothesis.clone()
+                        };
+                        super::push::push_finding(
+                            store,
+                            bus,
+                            &fid,
+                            draft.topic,
+                            &summary,
+                            &decision.reason,
+                            draft.verification.as_str(),
+                        )?;
+                    }
 
                     written += 1;
                     if cancel_after == Some(written) {

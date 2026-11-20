@@ -1163,6 +1163,30 @@ impl Store {
         Ok(n as usize)
     }
 
+    /// 某条结论是否仍有未读推送（用于闸门「已推未读不重推」）。
+    pub fn introspection_has_unread_push(&self, finding_id: &str) -> Result<bool> {
+        let conn = self.read();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM introspection_pushes
+             WHERE finding_id = ?1 AND read_at IS NULL",
+            [finding_id],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    /// 某条结论已推送时返回对应消息 id；未推过返回 None（S5 推送幂等）。
+    pub fn introspection_pushed_message_id(&self, finding_id: &str) -> Result<Option<String>> {
+        let conn = self.read();
+        Ok(conn
+            .query_row(
+                "SELECT message_id FROM introspection_pushes WHERE finding_id = ?1 LIMIT 1",
+                [finding_id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     /// 全部标为已读，返回本次标记的条数。
     pub fn introspection_mark_all_read(&self) -> Result<usize> {
         Ok(self.write().execute(

@@ -492,14 +492,9 @@ impl Runtime {
         }
         // 业务内省：默认关闭；打开后按 schedule_hours 调用 run_once（本期无 Engine 挂载时用空来源）
         if self.config.introspection.enabled {
-            if !self.config.introspection.operator_role.is_empty() {
-                tracing::info!(
-                    event = "introspection.job_skipped",
-                    operator_role = %self.config.introspection.operator_role,
-                    "operator_role 已配置但暂不生效（决策第 53 条）"
-                );
-            }
+            introspect::operator::log_operator_role_status(&self.config.introspection);
             let store = self.store.clone();
+            let bus = self.bus.clone();
             let cfg = self.config.introspection.clone();
             tokio::spawn(async move {
                 let interval = Duration::from_secs(cfg.schedule_hours.max(1) * 3600);
@@ -525,6 +520,7 @@ impl Runtime {
                         input_hash: "schedule",
                         analysis_now: 0,
                         opts,
+                        bus: Some(bus.as_ref()),
                     })
                     .await
                     {

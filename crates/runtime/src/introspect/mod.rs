@@ -8,6 +8,8 @@ pub mod finding;
 pub mod gate;
 pub mod job;
 pub mod model;
+pub mod operator;
+pub mod push;
 pub mod source;
 
 pub use analyze::{analyze_adoption, stats_for_template, AdoptionStats, TOPIC_ADOPTION};
@@ -17,6 +19,10 @@ pub use finding::{
 };
 pub use gate::{decide, GateConfig, GateDecision, GateInput};
 pub use job::{run_once, should_run_schedule, RunOnceOptions, RunOnceOutcome, RunOnceRequest};
+pub use operator::{
+    ensure_operator, ensure_operator_with, is_operator, log_operator_role_status, AccessDenied,
+};
+pub use push::{push_finding, PushResult, INTROSPECTION_PREFIX, MAIN_CONVERSATION_TITLE};
 pub use source::{
     ActionSummary, ApprovalSummary, CaseSummary, MemorySource, MomSource, SourceAdapter,
 };

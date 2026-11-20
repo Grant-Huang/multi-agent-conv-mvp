@@ -699,7 +699,9 @@
     "document": "docs/memory/INTROSPECTION_PLAN.md",
     "sources": [
       "crates/runtime/src/introspect/",
-      "crates/runtime/src/store.rs"
+      "crates/runtime/src/store.rs",
+      "crates/runtime/src/conversation.rs",
+      "crates/core/src/lib.rs"
     ],
     "coverage": "backend",
     "cases": [],
@@ -717,7 +719,14 @@
       "RT-INT-09",
       "RT-INT-13",
       "RT-INT-14",
-      "RT-INT-23"
+      "RT-INT-23",
+      "RT-INT-21",
+      "RT-INT-24",
+      "RT-INT-25",
+      "RT-INT-26",
+      "RT-INT-27",
+      "RT-INT-28",
+      "RT-INT-29"
     ]
   }
 ]
