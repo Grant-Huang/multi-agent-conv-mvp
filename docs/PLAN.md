@@ -944,9 +944,9 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 
 ### AI Desktop 进度（A→B→C→D）
 
-- [ ] **A0 追溯与用例登记**：特性清单 → Feature/Case；登记 AD-*；填 Mock 负责人
-- [ ] **A1 一次换壳**：首页三区、S1/S2/S3；移除旧一级页签，入口重定向
-- [ ] **A2 草稿、阅读锚点、上下文作用域**（SMT-03 可纯 Mock）
+- [x] **A0 追溯与用例登记**（2026-11-20）：`TRACEABILITY.md`；E2E-ADNAV/ADLAYOUT 入 CASES/features.json
+- [x] **A1 一次换壳**（2026-11-20）：默认「我的 AI 桌面」三区；工作区 S2/S3；会话/运营为壳内模块；SMT-03 Mock；证据 `testing/evidence/ai-desktop-a1.md`
+- [ ] **A2 草稿、阅读锚点、上下文作用域**
 - [ ] **A3 证据与历史面板**
 - [ ] **A4 助理、设置、键盘与响应式**
 - [ ] **A5 异步/协作/审批/移动 Mock 流程**（M1–M6 贯通）

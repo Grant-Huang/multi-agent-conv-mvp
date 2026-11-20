@@ -619,6 +619,15 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | PY-DLP-M3 | 中文密码/口令、token=、DB_PASS=、OpenAI项目key、Google key、同形字AWS/GitHub，共8种合成输入 | evaluate到external_untrusted | 全部BLOCK、不可发送且无原值；其余原文（含℃）不变；正常Unicode和术语不被改写 |
 
 
+## AI Desktop A1（壳层与导航；断言冻结）
+
+设计见 `docs/ai-desktop/DESIGN.md`，追溯 `docs/ai-desktop/TRACEABILITY.md`，决定 61。A 阶段 SMT-03 允许纯 Mock（`TASK-2026-018`）。浏览器用例：`web/e2e/desktop.spec.ts`（默认 harness 18787）。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| E2E-ADNAV | ai-desktop | 干净浏览器；Mock 首页种子含 SMT-03 | 打开 `/`；从首页卡打开任务；返回桌面；再从侧栏「最近」打开同一任务；查看运营入口 | 见「我的 AI 桌面」与三区；工作区 Task ID 为 `TASK-2026-018`；返回后仍在桌面首页；再次打开仍为同一 ID；`[mom]` 未开时无「运营桌面」页签且可见「运营模块未启用」说明 |
+| E2E-ADLAYOUT | ai-desktop | 已从首页打开 SMT-03 工作区 | S2→S3→S2；刷新页面 | 仍在同一 Task；布局偏好恢复为离开前的 S2 或 S3；执行区展开状态可观察 |
+
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 
 设计见 `docs/mom/OPS_DESK.md`，决策见 DECISIONS 第 56–58 条。以下为**草案**：待用户确认断言后，才写成可执行测试并登记到 `features.json`（因此暂不写成表格行，避免被 `check-map` 当作缺测试的已登记用例）。数据全部来自 DES 事件（先进程内），仅替换外部模型。

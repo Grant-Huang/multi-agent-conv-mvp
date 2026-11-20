@@ -1,4 +1,4 @@
-// AgentNexus MVP 前端：左侧会话列表，中间对话，右侧任务面板 / 路由日志。
+// AgentNexus：组织级 AI 桌面壳（V1.7 A1）；会话/运营为壳内模块。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, subscribeEvents, type Health } from "./api";
 import type { TaskEvent } from "./bindings/TaskEvent";
@@ -15,10 +15,18 @@ import { AgentsPanel } from "./components/AgentsPanel";
 import { DiscoveryCard } from "./components/AgentCards";
 import { OpsDesk } from "./components/OpsDesk";
 import { IntrospectionPanel } from "./components/IntrospectionPanel";
+import { DesktopHome } from "./desktop/DesktopHome";
+import { WorkspaceView } from "./desktop/WorkspaceView";
+import {
+  SMT03_TASK_ID,
+  readDesktopView,
+  writeDesktopView,
+  type DesktopMainView,
+} from "./desktop/mockData";
 import type { CatalogItem } from "./bindings/CatalogItem";
 import { roleLabel } from "./labels";
 
-type MainView = "chat" | "desk";
+type MainView = DesktopMainView;
 
 /** 每个任务保留的进度条目数，超过后丢弃最早的 */
 const MAX_PROGRESS_LINES = 30;
@@ -97,8 +105,16 @@ export default function App() {
   const [current, setCurrent] = useState<string | null>(null);
   // 运营频道未读数；null 表示没有开启运营频道（[mom] chat_bridge 关闭，接口 404）
   const [opsUnread, setOpsUnread] = useState<number | null>(null);
-  // 中间栏：会话 / 运营桌面（仅 chat_bridge 开启时出现桌面页签）
-  const [mainView, setMainView] = useState<MainView>("chat");
+  // 桌面主视图：默认首页；workspace 带 Mock Task（A1）
+  const initialDesktop = readDesktopView();
+  const [mainView, setMainViewState] = useState<MainView>(initialDesktop.view);
+  const [workspaceTaskId, setWorkspaceTaskId] = useState<string | null>(initialDesktop.taskId);
+  const setMainView = (view: MainView, taskId: string | null = null) => {
+    setMainViewState(view);
+    if (view === "workspace" && taskId) setWorkspaceTaskId(taskId);
+    if (view !== "workspace") setWorkspaceTaskId(null);
+    writeDesktopView(view, view === "workspace" ? taskId : null);
+  };
   // 业务内省未读；null 表示接口不可用（403/失败）
   const [introUnread, setIntroUnread] = useState<number | null>(null);
   const [introMainId, setIntroMainId] = useState<string | null>(null);
@@ -333,6 +349,11 @@ export default function App() {
     setNavOpen(false);
   };
 
+  const openWorkspace = (taskId: string) => {
+    setMainView("workspace", taskId);
+    setNavOpen(false);
+  };
+
   // 只有用户点开运营频道才算已读；页面刷新时自动回到该会话不清未读
   const opsViewed = useRef(false);
   const selectConversation = (id: string) => {
@@ -415,14 +436,31 @@ export default function App() {
       {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />}
 
       <aside className="sidebar" aria-label="会话列表">
-        <div className="brand">AgentNexus <span>MVP</span></div>
+        <button type="button" className="brand brand-btn" onClick={() => setMainView("home")}>
+          AgentNexus <span>Desktop</span>
+        </button>
         <button className="btn primary" onClick={newConversation}>＋ 新会话</button>
+        <button
+          type="button"
+          className={`btn ${mainView === "home" ? "active" : ""}`}
+          onClick={() => setMainView("home")}
+        >
+          我的桌面
+        </button>
         <a className="btn" href="/mom/">MOM 运营沙盘</a>
-        <nav className="conv-list">
+        <p className="sidebar-label">最近</p>
+        <nav className="conv-list" aria-label="最近工作">
+          <button
+            type="button"
+            className={`conv-item ${mainView === "workspace" && workspaceTaskId === SMT03_TASK_ID ? "active" : ""}`}
+            onClick={() => openWorkspace(SMT03_TASK_ID)}
+          >
+            SMT-03 · {SMT03_TASK_ID}
+          </button>
           {conversations.map((c) => (
             <button
               key={c.id}
-              className={`conv-item ${c.id === current ? "active" : ""}`}
+              className={`conv-item ${mainView === "chat" && c.id === current ? "active" : ""}`}
               onClick={() => selectConversation(c.id)}
               title={c.title}
             >
@@ -452,17 +490,26 @@ export default function App() {
             {error}（点击关闭）
           </div>
         )}
-        {opsUnread !== null && (
-          <div className="main-tabs" role="tablist" aria-label="主视图">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mainView === "chat"}
-              className={mainView === "chat" ? "active" : ""}
-              onClick={() => setMainView("chat")}
-            >
-              会话
-            </button>
+        <div className="main-tabs" role="tablist" aria-label="主视图">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mainView === "home" || mainView === "workspace"}
+            className={mainView === "home" || mainView === "workspace" ? "active" : ""}
+            onClick={() => setMainView("home")}
+          >
+            我的桌面
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mainView === "chat"}
+            className={mainView === "chat" ? "active" : ""}
+            onClick={() => setMainView("chat")}
+          >
+            会话
+          </button>
+          {opsUnread !== null && (
             <button
               type="button"
               role="tab"
@@ -472,8 +519,8 @@ export default function App() {
             >
               运营桌面
             </button>
-          </div>
-        )}
+          )}
+        </div>
         {introCatalog && mainView === "chat" && (
           <DiscoveryCard
             catalog={introCatalog}
@@ -484,9 +531,16 @@ export default function App() {
             }}
           />
         )}
-        {mainView === "desk" && opsUnread !== null ? (
+        {mainView === "home" && (
+          <DesktopHome onOpenTask={(id) => openWorkspace(id)} opsEnabled={opsUnread !== null} />
+        )}
+        {mainView === "workspace" && workspaceTaskId && (
+          <WorkspaceView taskId={workspaceTaskId} onBack={() => setMainView("home")} />
+        )}
+        {mainView === "desk" && opsUnread !== null && (
           <OpsDesk onOpenChannel={openOpsChannel} />
-        ) : (
+        )}
+        {mainView === "chat" && (
           <ChatView
             messages={messages}
             onRefresh={() => current && refreshConversation(current).catch(() => {})}

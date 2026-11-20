@@ -706,6 +706,24 @@
     ]
   },
   {
+    "id": "ai-desktop",
+    "document": "docs/feature-map/features/ai-desktop.md",
+    "sources": [
+      "web/src/App.tsx",
+      "web/src/desktop/DesktopHome.tsx",
+      "web/src/desktop/WorkspaceView.tsx",
+      "web/src/desktop/mockData.ts",
+      "web/e2e/desktop.spec.ts",
+      "docs/ai-desktop/DESIGN.md",
+      "docs/ai-desktop/TRACEABILITY.md"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-ADNAV",
+      "E2E-ADLAYOUT"
+    ]
+  },
+  {
     "id": "introspection",
     "document": "docs/memory/INTROSPECTION_PLAN.md",
     "sources": [
