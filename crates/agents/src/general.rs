@@ -33,6 +33,11 @@ pub struct GeneralAgent {
     card: AgentCard,
 }
 
+/// 工具循环进度文案（含步数，避免多步失败时界面一直静默）
+pub fn format_tool_step(step: usize, max_steps: usize, tool: &str, args_preview: &str) -> String {
+    format!("第 {step}/{max_steps} 步：调用工具 {tool}，参数 {args_preview}")
+}
+
 /// 模型每一步的输出（扁平结构，小模型更容易遵守）
 #[derive(Debug, Deserialize)]
 struct Step {
@@ -191,8 +196,7 @@ impl GeneralAgent {
         let max_steps = self.max_steps;
         let mut searched = false;
 
-        // 步数只用于限制循环；进度文字只写工作内容，不带"第 N 步"
-        for _ in 1..=max_steps {
+        for step_no in 1..=max_steps {
             let must_search_first = needs_search && !searched;
             let step = match self
                 .llm
@@ -232,11 +236,11 @@ impl GeneralAgent {
                 });
             }
 
-            // 执行工具
-            events.progress(format!(
-                "调用工具 {}，参数 {}",
-                step.tool,
-                an_core::truncate_chars(&step.args.to_string(), 200)
+            events.progress(format_tool_step(
+                step_no,
+                max_steps,
+                &step.tool,
+                an_core::truncate_chars(&step.args.to_string(), 200).as_str(),
             ));
             let (ok, observation) = match self.tools.call(&step.tool, &step.args).await {
                 Ok(out) => {
@@ -284,5 +288,17 @@ impl GeneralAgent {
             artifacts,
             ..TaskResult::failed(format!("超过最大步数 {max_steps} 仍未完成"))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_tool_step;
+
+    #[test]
+    fn tool_step_progress_shows_index_and_total() {
+        let s = format_tool_step(3, 6, "web_search", r#"{"q":"x"}"#);
+        assert!(s.contains("第 3/6 步"));
+        assert!(s.contains("web_search"));
     }
 }

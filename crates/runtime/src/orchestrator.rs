@@ -35,6 +35,7 @@ use tokio::time::Instant;
 use crate::bus::Bus;
 use crate::composer::Composer;
 use crate::registry::{display_name, AgentRegistry};
+use crate::run_progress::{run_phase_label, spawn_orchestrator_heartbeat};
 use crate::store::{Store, ACTIVE_STATUSES};
 
 /// 结束任务时允许的起点：执行中、审查中，或排队时就出错（例如没有可用 agent）
@@ -487,7 +488,16 @@ impl Orchestrator {
         sink.progress(format!("由 {shown} 执行"));
         tracing::info!(event = "agent.run_start", task_id = %task.id, agent_id = %card.id, kind = %card.kind, location = %card.location, member_index = lease.member_index, group_size = lease.group_size, waited_ms = assignment.waited_ms);
         let started = std::time::Instant::now();
+        let phase = run_phase_label(round);
+        let heartbeat = spawn_orchestrator_heartbeat(
+            sink.clone(),
+            shown.clone(),
+            phase,
+            started,
+            self.task_timeout,
+        );
         let outcome = tokio::time::timeout_at(deadline, lease.agent.run(spec, sink.clone())).await;
+        heartbeat.abort();
         let elapsed_ms = started.elapsed().as_millis() as u64;
         // 名额在审查之前归还，让排队的任务尽早开始
         drop(lease);
@@ -1059,5 +1069,35 @@ mod tests {
             .errors
             .join("")
             .contains(codes::TASK_TIMEOUT));
+    }
+
+    /// 执行耗时超过心跳间隔时，应推送编排器进度（走马灯可见）
+    #[tokio::test]
+    async fn long_run_emits_orchestrator_heartbeat() {
+        let hold = Duration::from_secs(crate::run_progress::HEARTBEAT_INTERVAL_SECS + 5);
+        let e = env(1, hold, Duration::from_secs(120));
+        let conv = e.store.create_conversation("t").unwrap().id;
+        let mut rx = e.bus.subscribe();
+        let task = e
+            .orch
+            .submit(&conv, "g", "", route(), policy(true))
+            .unwrap();
+        wait_for(&e.store, &task.id, &[TaskStatus::Running], 5).await;
+        let deadline = std::time::Instant::now() + Duration::from_secs(90);
+        let mut saw = false;
+        while std::time::Instant::now() < deadline {
+            if let Ok(ev) = rx.try_recv() {
+                if ev.task_id.as_deref() == Some(task.id.as_str())
+                    && ev.kind == EventKind::Progress
+                    && ev.message.contains("仍在执行中")
+                {
+                    saw = true;
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        wait_for(&e.store, &task.id, &[TaskStatus::Completed], 120).await;
+        assert!(saw, "长任务执行期间应收到编排器心跳");
     }
 }

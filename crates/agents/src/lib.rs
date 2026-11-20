@@ -18,6 +18,7 @@ pub mod egress;
 pub mod general;
 pub mod mcp;
 pub mod proc_group;
+pub mod progress_watch;
 pub mod remote;
 pub mod report;
 pub mod reviewer;
