@@ -13,7 +13,7 @@ an-des.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-rmcp = { version = "=3.9.0", default-features = false, features = ["server", "transport-async-rw"] }
+rmcp = { version = "=3.10.0", default-features = false, features = ["server", "transport-async-rw"] }
 
 [dev-dependencies]
-rmcp = { version = "=3.9.0", default-features = false, features = ["client", "transport-async-rw"] }
+rmcp = { version = "=3.10.0", default-features = false, features = ["client", "transport-async-rw"] }
