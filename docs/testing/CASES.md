@@ -726,6 +726,13 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | E2E-INTROUNREAD | introspection | 主窗口有未读内省 | 看角标、进入主窗口、刷新、再推 | 进入前角标>0；进入后清零；刷新仍 0；再推后回升 |
 
 
+## 业务内省 INT（S7：模型解释 + DES 评测）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-INT-15 | introspection | 模型解释已开启；后台槽位不可用 | 内省需要解释 | 不排队；记 `introspection.job_skipped`（无槽位）；仍产出确定性结论且无解释文字 |
+
+
 ## 围栏：审查进待人工的人工判定（实现前定义）
 
 设计见 [docs/fencing/REVIEW_VERDICT_DESIGN.md](../fencing/REVIEW_VERDICT_DESIGN.md)。未改 `orchestrator` / `store`，实现前须另批。下列用例冻结后只改业务代码。

@@ -27,3 +27,4 @@ an-des.workspace = true
 [dev-dependencies]
 # 阶段⑤a：模拟工厂服务与进程内内核的一致性（RT-DES-30）
 an-des.workspace = true
+tracing-subscriber.workspace = true

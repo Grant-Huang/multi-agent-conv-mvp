@@ -87,6 +87,8 @@ pub struct IntrospectionSection {
     pub daily_cap: u32,
     /// 预留，暂不生效（决策第 53 条）
     pub operator_role: String,
+    /// 模型解释层（S7）：默认关闭；开启后用后台槽位，取不到则跳过（不排队）
+    pub model_explain: bool,
 }
 
 impl Default for IntrospectionSection {
@@ -99,6 +101,7 @@ impl Default for IntrospectionSection {
             push_threshold: 4.0,
             daily_cap: 1,
             operator_role: String::new(),
+            model_explain: false,
         }
     }
 }

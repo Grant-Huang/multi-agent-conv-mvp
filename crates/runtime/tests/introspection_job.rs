@@ -19,6 +19,7 @@ fn cfg() -> IntrospectionSection {
         push_threshold: 4.0,
         daily_cap: 1,
         operator_role: String::new(),
+        model_explain: false,
     }
 }
 
@@ -79,6 +80,7 @@ async fn run(
         analysis_now: NOW,
         opts: o,
         bus: None,
+        explainer: None,
     })
     .await
     .unwrap()

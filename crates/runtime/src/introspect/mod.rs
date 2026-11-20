@@ -4,6 +4,8 @@
 //! `docs/memory/INTROSPECTION_PLAN.md`、`docs/memory/INTROSPECTION_PLAYBOOK.md`。
 
 pub mod analyze;
+pub mod eval;
+pub mod explain;
 pub mod finding;
 pub mod gate;
 pub mod job;
@@ -13,6 +15,11 @@ pub mod push;
 pub mod source;
 
 pub use analyze::{analyze_adoption, stats_for_template, AdoptionStats, TOPIC_ADOPTION};
+pub use eval::{assert_adoption_stats, coverage_against_truth, truth_alarm_assets, DesEvalReport};
+pub use explain::{
+    slot_explainer_from_backends, AlwaysSkipExplainer, ExplainOutcome, FixedExplainer,
+    ModelExplainer, SlotGatedExplainer,
+};
 pub use finding::{
     input_digest_from_stats, stable_finding_id, validate_draft, EvidenceRef, FindingDraft,
     ValidateOutcome, Verification,

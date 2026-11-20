@@ -957,7 +957,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **S4 定时调度、租约、超时、取消、清理**：RT-INT-09、13、14、23（2026-11-19：`run_once` + `[introspection]` 默认关；先 Red 后 Green）
 - [x] **S5 主窗口会话、推送、未读、权限、`ChatCard::Introspection`、`context_text` 标记**：RT-INT-21、24、25、26、27、28、29（2026-11-19：`push_finding` 写入唯一主窗口 + Introspection 卡 + 前缀；`is_operator` 恒 true、测试可注入拒绝；未读只计推送；`context_text` 保证前缀；记忆断言 G-9 跳过）
 - [x] **S6 HTTP 与前端（角标、内省页、标注）**：E2E-INTROVIEW/LABEL/PUSH/UNREAD；RT-INT-10（2026-11-20：`/api/introspection/*`；会话列表主窗口角标；内省页否决/标注；fixture 驱动手动 run）
-- [ ] **S7 DES“植入真值”评测；模型解释层（默认关闭）**：RT-INT-15
+- [x] **S7 DES“植入真值”评测；模型解释层（默认关闭）**：RT-INT-15（2026-11-20：`model_explain` 默认 false；无槽位跳过并 `job_skipped`；`docs/memory/eval.md` + `coverage_against_truth`）
 - [ ] **S8 同因复发**：先核实根因字段，RT-INT-02 视核实结果重写
 
 已知缺口：G-1（误报标注）、G-3（闸门数字未校准）、G-4（无登录与角色）、G-6（无“个人”页签）、G-7（无推送数据）、G-8（无经验库）、G-9（无个人记忆模块）、G-10（无 regressed 与根因字段）。详见 `docs/memory/ACCEPTANCE.md`。

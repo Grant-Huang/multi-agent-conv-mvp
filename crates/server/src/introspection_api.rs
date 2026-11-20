@@ -225,6 +225,11 @@ async fn run_manual(State(rt): State<AppState>, body: Option<Json<RunBody>>) -> 
         .store
         .introspection_latest_watermark()?
         .unwrap_or_else(|| "{}".into());
+    let explainer = if cfg.model_explain {
+        an_runtime::introspect::slot_explainer_from_backends(&rt.backends)
+    } else {
+        None
+    };
     let outcome = run_once(RunOnceRequest {
         store: &rt.store,
         source: &src,
@@ -235,6 +240,7 @@ async fn run_manual(State(rt): State<AppState>, body: Option<Json<RunBody>>) -> 
         analysis_now: 1000,
         opts,
         bus: Some(rt.bus.as_ref()),
+        explainer,
     })
     .await
     .map_err(AppError::from)?;
