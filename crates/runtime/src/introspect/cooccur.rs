@@ -121,7 +121,42 @@ fn drafts_for_kind(
     out
 }
 
-/// 产出同设备与同批次共现草稿（可为空）。
+/// 同一批案例的设备/批次共现合并为一条，避免内省页双条、闸门双推。
+pub fn merge_cooccur_by_case_ids(drafts: Vec<FindingDraft>) -> Vec<FindingDraft> {
+    let mut kept: BTreeMap<String, FindingDraft> = BTreeMap::new();
+    let mut rest = Vec::new();
+    for d in drafts {
+        let Some(stats) = d.stats.as_cooccur() else {
+            rest.push(d);
+            continue;
+        };
+        let id_key = stats.case_ids.join("\0");
+        match kept.get_mut(&id_key) {
+            None => {
+                kept.insert(id_key, d);
+            }
+            Some(existing) => {
+                let other_kind = stats.key_kind.as_str();
+                let other_key = stats.key.as_str();
+                if existing.verification == Verification::Supported
+                    && !existing.hypothesis.contains(other_key)
+                {
+                    let kind_zh = if other_kind == "batch" {
+                        "批次"
+                    } else {
+                        "设备"
+                    };
+                    existing.hypothesis =
+                        format!("{}；兼同{kind_zh}「{other_key}」", existing.hypothesis);
+                }
+            }
+        }
+    }
+    rest.extend(kept.into_values());
+    rest
+}
+
+/// 产出同设备与同批次共现草稿（可为空）；同案例集合合并为一条。
 pub fn analyze_cooccurrence(
     src: &dyn SourceAdapter,
     now: u64,
@@ -138,5 +173,5 @@ pub fn analyze_cooccurrence(
         now,
         min_samples,
     ));
-    Ok(out)
+    Ok(merge_cooccur_by_case_ids(out))
 }

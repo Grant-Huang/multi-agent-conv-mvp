@@ -23,6 +23,7 @@ fn base(ver: Verification) -> GateInput {
         model_delta: 0,
         model_reason: String::new(),
         extra_pending: 0,
+        interrupt_eligible: true,
     }
 }
 
@@ -40,6 +41,7 @@ fn strong() -> GateInput {
         model_delta: 0,
         model_reason: String::new(),
         extra_pending: 0,
+        interrupt_eligible: true,
     }
 }
 
@@ -79,6 +81,7 @@ fn rt_int_17_supported_with_impact_and_next_step_pushes_inconclusive_does_not() 
         model_delta: 0,
         model_reason: String::new(),
         extra_pending: 0,
+        interrupt_eligible: true,
     };
     let fail = base(Verification::Inconclusive);
     let a = decide(&pass, &cfg());
@@ -104,6 +107,7 @@ fn rt_int_18_model_cannot_alone_cross_threshold_and_blank_reason_ignored() {
         model_delta: 1,
         model_reason: "我觉得很重要".into(),
         extra_pending: 0,
+        interrupt_eligible: true,
     };
     let d = decide(&alone, &cfg());
     assert!(!d.should_push);
@@ -134,6 +138,7 @@ fn rt_int_18_model_cannot_alone_cross_threshold_and_blank_reason_ignored() {
         model_delta: -1,
         model_reason: "不相关".into(),
         extra_pending: 0,
+        interrupt_eligible: true,
     };
     // rules=4, score=3 → 不推
     let d3 = decide(&press, &cfg());
@@ -159,6 +164,19 @@ fn rt_int_20_daily_cap_blocks_with_extra_pending_hint() {
     assert!(!d.should_push);
     assert!(d.reason.contains("日上限"), "reason={}", d.reason);
     assert!(d.reason.contains("另有 3 项"), "reason={}", d.reason);
+}
+
+#[test]
+fn investigate_worthy_without_interrupt_stays_on_page() {
+    let mut inp = strong();
+    inp.interrupt_eligible = false;
+    let d = decide(&inp, &cfg());
+    assert!(!d.should_push);
+    assert!(
+        d.reason.contains("仅内省页") || d.reason.contains("不主动打扰"),
+        "reason={}",
+        d.reason
+    );
 }
 
 #[test]

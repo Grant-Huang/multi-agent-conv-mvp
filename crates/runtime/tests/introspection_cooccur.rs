@@ -96,3 +96,28 @@ fn rt_int_02_descriptive_cooccur_counts_refs_and_insufficient() {
         "单例不算反复出现"
     );
 }
+
+/// 设备与批次指向同一批案例时合并为一条（避免双结论）。
+#[test]
+fn same_case_set_asset_and_batch_merge_to_one_finding() {
+    let mut cases = Vec::new();
+    for i in 0..10 {
+        cases.push(case(&format!("c{i}"), "CNC-01", "B-100"));
+    }
+    let src = MemorySource {
+        source_id: "mom".into(),
+        cases,
+    };
+    let drafts = analyze_cooccurrence(&src, NOW, 10).unwrap();
+    let supported: Vec<_> = drafts
+        .iter()
+        .filter(|d| d.verification == Verification::Supported)
+        .collect();
+    assert_eq!(supported.len(), 1, "同批案例只留一条：{supported:?}");
+    assert!(supported[0].hypothesis.contains(NON_ROOT_CAUSE_LABEL));
+    assert!(
+        supported[0].hypothesis.contains("CNC-01") && supported[0].hypothesis.contains("B-100"),
+        "hypothesis={}",
+        supported[0].hypothesis
+    );
+}

@@ -1163,6 +1163,20 @@ impl Store {
         Ok(n as usize)
     }
 
+    /// 今日（UTC）已投递的内省推送条数，供日配额按真实投递记录执行。
+    pub fn introspection_pushes_today(&self) -> Result<u32> {
+        let _timer = ReadTimer::new("introspection_pushes_today");
+        let day = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let start = format!("{day}T00:00:00.000Z");
+        let conn = self.read();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM introspection_pushes WHERE pushed_at >= ?1",
+            [start],
+            |r| r.get(0),
+        )?;
+        Ok(n as u32)
+    }
+
     /// 某条结论是否仍有未读推送（用于闸门「已推未读不重推」）。
     pub fn introspection_has_unread_push(&self, finding_id: &str) -> Result<bool> {
         let conn = self.read();
