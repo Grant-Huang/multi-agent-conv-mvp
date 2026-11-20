@@ -797,7 +797,7 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | E2E-WABIND | world-adapter | 桌面可进「MOM 工作台」；有模拟世界与 DES 世界 | 「选择世界」→「看板」「任务」「资源」分别打开同一事项；返回后再进；再切另一世界 | 同一 world/case；返回保持世界与入口筛选；跨世界列表不泄露上一世界事项 |
 | E2E-WACHANNEL | world-adapter | Mock 实例上工作台有事项 | 打开事项 →「前往运营频道」 | 离开工作台进入运营频道会话；频道入口可见 |
 
-M0-5 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～08 + `des-experiment` + `mom-workbench` + `wa-integration`）。`E2E-DESLOOP` 使用双浏览器上下文（实验员 / 运营员）。配套 WA-02～04、06～10 仍按 Feature Map 后续登记。
+M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-experiment` + `mom-workbench` + `wa-integration`）。`E2E-DESLOOP` 使用双浏览器上下文（实验员 / 运营员）。H1～H4 准出与覆盖矩阵见 `docs/testing/evidence/wa-m0-6.md`、`docs/mom/WA_MOCK_REGISTRY.md`。Feature Map 中未登记的 `E2E-WA-09/10`（客诉移交 / 生产确认）属 M3/M4，Mock 路径保留。
 
 ### M0-1 服务端 Mock HTTP 合同（`crates/server/tests/mom_world_mock.rs`）
 
@@ -813,3 +813,4 @@ M0-5 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～08 + `des-experiment
 | RT-WA-06 | world-adapter | 正式运行；测试控件开 | Execute 后注入 `lose_receipt` 再 Confirm；另注入 `partial_fail` | 先 `unknown`；再 `failed` 且含部分成功子动作证据 |
 | RT-WA-07 | world-adapter | 正式运行已暂停 | 实验员 pause → step 1 分钟 | `run_status=paused` 时事项投影为等待而非失败；step 后 `simulation_minute` +1 且执行可 Confirm 前进 |
 | RT-WA-08 | world-adapter | 审核员与运营员 | 审核员读 `ground_truth`；运营员读同一接口 | 审核员可见；运营员 `ACCESS_DENIED` 或字段为空 |
+| RT-WA-09 | world-adapter | 默认 `AppConfig`；未 merge Mock 路由的服务与已挂载 Mock | 读默认 `mom.world_mock`；对未挂载与已挂载分别 POST configs | 默认 `world_mock=false`；未挂载 → 404；挂载 → `protocol_version=1` 且有 `config_version` |

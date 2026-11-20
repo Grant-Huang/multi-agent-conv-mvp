@@ -44,6 +44,7 @@
 
 | Feature | 用户目标与真实入口 | 驱动方法/判据 | 测试与边界 |
 |---|---|---|---|
+| world-adapter | Desktop「DES 仿真实验」「运营频道」「MOM 工作台」 | Mock 全流程：试跑零投递、正式发卡、批准执行、暂停推进、隔离、双角色闭环；工作台三入口同 case；前往运营频道；`world_mock` 替换钩子 | `E2E-DES*`、`E2E-WABIND`、`E2E-WACHANNEL`、`RT-WA-01～09`；套件 `scripts/wa-m0-suite.sh`；替换台账 [WA_MOCK_REGISTRY.md](../mom/WA_MOCK_REGISTRY.md)；准出 [wa-m0-6.md](../testing/evidence/wa-m0-6.md)；未登记 WA-09/10 与深度 UI 属后续里程碑 |
 | mom | 独立 an-mom 人类看板与 Agent 机器视图 | S1 审批后下发、核验再关闭；S2 初复独立，缺证据不能关闭8D | E2E-MOM/E2E-COMPLAINT；业务系统、主模型及审批身份仍为替代件，见 MOM Mock 清单 |
 
 MOM 增量：主界面左侧 **MOM 运营沙盘** → 同源 `/mom/`；配置持续仿真与播放暂停、事件队列和完整 gap 详情由 E2E-MOMDYNAMIC 验证。独立8790服务仍保留。两者均为明确标识的模拟模式。
