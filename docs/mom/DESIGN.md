@@ -2,15 +2,15 @@
 
 日期：2026-11-05（America/Vancouver）。状态：A 层模拟实现已落地，未连接生产系统。运行方式及实施边界见 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
 
-人类工作台的导航、事项闭环、DAG 交互及 AI 会话边界遵守 [UI / UE 设计原则](UI_UX_PRINCIPLES.md)。该文档为界面开发约束，不代表目标能力已实现。
+人类工作台的导航、事项闭环、DAG 交互及 AI 会话边界遵守 [UI / UE 设计原则](UI_UX_PRINCIPLES.md)。该文档为界面开发约束，不代表目标能力已实现。统一世界访问（DES 与生产）见 [WORLD_ADAPTER.md](WORLD_ADAPTER.md)；产品里程碑见 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md)。DES 内核与远程工厂基线见 [DES_CLOSED_LOOP.md](DES_CLOSED_LOOP.md)。
 
 ## 1. 目标与范围
 
 用两条业务流程拉动共同架构：S1 插单、设备与质量多扰动；S2 重大客户投诉。默认一个 Master 负责解释、编排建议和统一交互，运行时控制状态、权限、关卡、预算；仅对耗时、专业、可独立交付的调查按需启动子 Agent。公告板提供同一事实版本的 agent 视图和人类视图。Mock 与真实能力逐项登记在 [MOCK_REGISTER.md](MOCK_REGISTER.md)，测试计划见 [TEST_PLAN.md](TEST_PLAN.md)。
 
-原设计阶段仅交付文档。后续按用户授权实现隔离 MOM 模块、独立 SQLite v1 和模拟 HTTP 服务；不修改原有 orchestrator/store/registry、AgentAdapter 与现有配置字段。当前实现与完整生产目标之间的差距统一登记在 Mock 清单。
+原设计阶段仅交付文档。后续按用户授权实现隔离 MOM 模块、独立 SQLite v1 和模拟 HTTP 服务；不修改原有 orchestrator/store/registry、AgentAdapter 与现有配置字段。当前实现与完整生产目标之间的差距统一登记在 Mock 清单。会话、审批服务与运营界面经 World Adapter（Observe / Subscribe / Propose / Execute / Confirm）访问当前世界；MOM 仍是案例、方案修订、审批与动作记录的权威来源（决定 61）。
 
-非目标：生产设备闭环控制、自动客户发信、自动质量放行、全厂排产求解器、无限递归 agent、自动证明根因、完整通用 BPM 引擎。人类批准不能绕过法定或工厂强制安全约束。
+非目标：PLC/现场联锁与设备闭环控制、自动客户发信、自动质量放行、全厂排产求解器、无限递归 agent、自动证明根因、完整通用 BPM 引擎。人类批准不能绕过法定或工厂强制安全约束。经真实身份审批的可查证业务写动作（如维修工单创建）属 World Adapter M4，不是本文件 A 层沙盘范围，也不等于设备控制。
 
 ## 2. 架构与职责
 

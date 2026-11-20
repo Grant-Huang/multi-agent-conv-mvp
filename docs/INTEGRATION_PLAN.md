@@ -1,8 +1,8 @@
 # 系统打通计划：从“三块各自完整”到“完整系统 + 整体场景 E2E”
 
-状态：**WP1 方案已确认并在实施中**（决定见 [DECISIONS.md](DECISIONS.md) 第 56–58、60 条）；**产品壳主轴**见已确认的 [AI Desktop V1.7](ai-desktop/DESIGN.md)（交付顺序 A→B→C→D）。其余工作包仍是助手建议，开工前需用户确认。  
-**执行级任务卡**：Desktop [ai-desktop/PLAN.md](ai-desktop/PLAN.md) + [ai-desktop/FEATURE_MAP.md](ai-desktop/FEATURE_MAP.md)；运营桌面 [mom/OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md)；WP1 其余部分 [mom/WP1_TASKS.md](mom/WP1_TASKS.md)；其余工作包见本文第五节。  
-缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md) 与 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)，场景清单见 [SCENARIOS.md](feature-map/SCENARIOS.md)。  
+状态：**WP1 方案已确认并在实施中**（决定见 [DECISIONS.md](DECISIONS.md) 第 56–58、60、61 条）；**产品壳主轴**见已确认的 [AI Desktop V1.7](ai-desktop/DESIGN.md)（交付顺序 A→B→C→D）。**产品前门与 DES/生产统一契约按 World Adapter 推进**（决定 61；计划对齐见 DES-31，助手建议待确认）。运营桌面 D0～D2 已完成；D3 与 GS1 的完整工作台改走 [WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md) M0～M2。其余工作包仍是助手建议，开工前需用户确认。  
+**执行级任务卡**：Desktop [ai-desktop/PLAN.md](ai-desktop/PLAN.md) + [ai-desktop/FEATURE_MAP.md](ai-desktop/FEATURE_MAP.md)；运营桌面 [mom/OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md)；WP1 其余部分 [mom/WP1_TASKS.md](mom/WP1_TASKS.md)；World Adapter 见 [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md)；其余工作包见本文第五节。  
+缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md) 与 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)，场景清单见 [SCENARIOS.md](feature-map/SCENARIOS.md)。
 按 AGENTS.md：涉及 `orchestrator.rs` / `store.rs` / `registry.rs` / `acp.rs` / `util.rs` 的工作包，动手前先单独出方案并等你批准；每个工作包新增行为先在 `docs/testing/CASES.md` 定稿用例并见到业务断言 Red。
 
 ## 0. 与 AI Desktop 的关系（2026-11-20 用户确认：不做双轨）
@@ -29,7 +29,7 @@
 
 | 黄金场景 | 串起的模块 | 对应缺口 |
 |---|---|---|
-| **GS1 制造异常闭环**：DES 报警 → MOM 案例 → 会话里看到并追问 → 人批准 → 执行回写 DES → 复检核验 → 审核报告回到会话 | DES · MOM · 会话 · 审批 · 审核 | G01（本轮先做） |
+| **GS1 制造异常闭环**：选定世界 → DES 报警经 MOM 投递 → 工作台/会话观察与续读 → 人批准 → Execute/Confirm 回写 DES → 复检核验 → 审核报告可见（不含标准答案） | DES · MOM · World Adapter · 会话 · 审批 · 审核 | G01（本轮先做；验收对齐 WA-05/08） |
 | **GS2 写代码全链路**：无助手 → 对话接入 → 改代码 → diff 证据 → 审查 → 完成 | 助手管理 · 路由 · 编排 · git 证据 · Reviewer | S05 |
 | **GS3 审查需人工**：审查判需人工 → 用户验收通过/退回 → 返工或完成 | Reviewer · 审批 · 编排 | G04 |
 | **GS4 多问题拆分**：一条消息多个问题 → 拆成并行子任务 → 汇合回复 | 路由 · 模板 · 编排 · Composer | G02 |
@@ -111,15 +111,18 @@ sequenceDiagram
 | 触碰高风险文件 | 预计不触碰（需在方案评审时核实注入点） | 必然触碰 | 否 |
 | 为后续留的口子 | 之后可演进到 B（卡片/工具层不丢弃） | — | 无 |
 
-### 3.4 分阶段（推荐 A；每阶段独立可验收，均基于进程内 DES）
+### 3.4 分阶段（推荐 A；与 World Adapter 对齐）
+
+运营频道 + 桌面批准（L2 / D2）已落地。会话只读工具（L0～L1）与闭环回写卡片（L3）仍按本表推进。**远程工厂挂载（原 L4）中的⑤a-2/③已完成**；产品侧余下工作并入 World Adapter（DES-31）。
 
 | 阶段 | 内容 | 验收（先定义为用例，再实现） |
 |---|---|---|
 | **L0 关联与前置** | 统一 `case_id`/`conversation_id` 关联字段；MOM 日志带 `case_id`；主进程把 MOM 句柄注入会话侧装配点（核实 `runtime/lib.rs` 装配与 `main.rs` 顺序） | RT：案例事件可按 `case_id` 过滤；关联字段在日志里 |
-| **L1 会话可读** | 只读工具集：`mom_cases`（列表/详情摘要）、`mom_factory_status`、`mom_forecast`、`mom_whatif`；返回带 `provenance`/`observed_at`/`limitations`；General 可用，登记在 `/api/capabilities` | E2E：在会话问“CNC 现在怎么样/有哪些待处理案例”，回答内容与 `GET /api/mom/*` 一致且标注仿真；工具效果为 ReadOnly；越权调用（写）不存在 |
-| **L2 案例推到会话 + 人在会话批准** | 新 `ChatCard::MomCase`：标题、证据、方案列表、批准/驳回按钮；MOM 案例进入 `WAITING_HUMAN` 时向“运营会话”写卡；点击按钮调用 Engine 的 `approve/execute`（actor 明确）；`update_message_card` 更新状态 | E2E：DES 报警 → 会话出现卡片 → 点“批准” → 案例 `VERIFYING`（与 `/mom/` 页面显示一致）；未点击前没有任何执行；重复点击幂等；案例已被 `/mom/` 批准时卡片显示已处理 |
-| **L3 闭环回写与审核报告** | 执行→DES 回写→复检观测→核验→关闭；案例关闭后卡片更新并附审核层摘要（规则检查 + AI 审核降级标注 + 人确认入口） | E2E：全链路 GS1 从报警到关闭；缺核验证据时不能关闭并在卡片显示原因（延续 E2E-COMPLAINT 精神）；审核报告不含标准答案 |
-| **L4 连接器替换（可并行/之后）** | ⑤a-2：经 `an-des-mcp` 的 `FactoryService::call` 接口替换进程内 DES 调用；写操作带幂等键与审批引用 | 同种子下进程内与 MCP 模式结果一致（已有 RT-DESM-02 基线）；工厂离线时卡片显示明确错误 |
+| **L1 会话可读** | 只读工具集：`mom_cases`、`mom_factory_status`、`mom_forecast`、`mom_whatif`（或等价的 World Adapter Observe 投影）；返回带 `provenance`/`observed_at`/`limitations`；General 可用，登记在 `/api/capabilities` | E2E：会话追问与 `GET /api/mom/*` / Observe 一致且标注仿真；效果 ReadOnly；无写工具 |
+| **L2 案例推到会话 + 人批准** | **已由 D0～D2 落地**：`OpsCase` 卡 + 运营频道批准（决定 60）。会话内「问起才发卡」仍可选，L1 之后确认 | E2E-OPSAPPROVE 等已绿；跨世界/过期批准的协议断言并入 WA-03 |
+| **L3 闭环回写与审核报告** | 执行→DES 回写→复检→关闭；卡片更新并附审核摘要（不含标准答案） | 与 WA-05/08、E2E-WA-07 对齐；缺核验证据不能关闭 |
+| **L4 远程工厂（已完成基线）** | ⑤a-2 连接器 + ⑤a-3 `an-mom --des-mcp`（RT-DESC-01～12） | 同种子进程内与 MCP 一致；离线明确报错。**不再作为 WP1 阻塞项** |
+| **WA M0～M2 产品前门** | 完整工作台 + 协议 Mock → 远程 DES 读 → 远程 DES 写/确认；主应用 MOM 共享引擎与连接器 | [WORLD_ADAPTER_PLAN](mom/WORLD_ADAPTER_PLAN.md)；Feature Map `world-adapter.md`；GS1 最终验收走 WA-08 |
 
 ### 3.5 预计改动范围（待方案评审时逐项核实）
 
@@ -144,19 +147,20 @@ sequenceDiagram
 
 ### 3.7 不做（本轮明确排除）
 
-真实 MES/EAM 连接；让会话模型直接审批/执行；把 MOM 重写进 Task 模型（除非选 B）；多用户权限体系；DES 参数标定。
+让会话模型直接审批/执行；把 MOM 重写进 Task 模型（除非选 B）；完整多用户权限体系；DES 参数标定；PLC/现场联锁控制。  
+**修订（对齐决定 61）**：真实 MES/EAM **读取**与**首个可查证写动作**不在 WP1 L1～L3 内做，但列入 World Adapter M3～M4，不再视为永久排除。完整 React 工作台（看板/任务/资源）由 World Adapter M0 交付，不再适用决定 56「暂不用 MOM 界面」对产品前门的限制（该限制仍适用于 WP1 L1～L3 当时的范围）。
 
 ### 3.8 进度（与 PLAN.md / OPS_DESK_TASKS 同步）
 
 | 阶段 | 状态 | 说明 |
 |---|---|---|
-| 运营桌面/频道 D0a、D0b | 已完成（#118、#121） | 发布器、频道卡、未读 |
-| D1 桌面看板（D1-1～D1-3） | 已完成 | desk_view、desk API、OpsDesk 前端 |
-| D2 / L2 卡片批准 | 已完成（#136，决定 60） | OpsCase 批准；驳回本期不做 |
-| D3a 任务/资源子入口 | 未开始 | 拆出连接器；口径见 OPS_DESK_TASKS §8、ai-desktop/GAPS §5.2 |
-| L0、L1 | 未开始 | 任务卡见 WP1_TASKS |
-| L3 | 未开始 | 闭环回写与审核报告卡 |
-| L4 连接器 | 未开始 | **单独方案**；不堵 D3a |
+| 运营桌面/频道 D0～D2 | 已完成（#118、#121、#136） | 发布器、看板、频道批准 |
+| D3 任务/资源入口 | 改走 WA M0 | 见 OPS_DESK_TASKS §8、WORLD_ADAPTER_PLAN；挂入 AI Desktop 运营区 |
+| L0、L1 | 未开始 | 任务卡见 WP1_TASKS；可读面可与 WA Observe 合并设计 |
+| L2 | 已完成（D2） | 运营卡批准 |
+| L3 | 未开始 | 与 WA M2 确认/核验对齐 |
+| L4 连接器 | 基线已完成（⑤a-2/③） | 产品侧余下见 WA M1～M2 |
+| WA M0～M4 | 设计已确认，协议待实施 | 决定 61；DES-31 待确认 |
 
 ## 四、风险与回滚
 

@@ -939,8 +939,9 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 
 ## 系统打通与整体场景 E2E
 
-目标、工作包顺序与首个工作包“DES-MOM-会话闭环”见 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)；缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)。  
-**产品主轴**（2026-11-20 确认）：直接做组织级 [AI Desktop V1.7](ai-desktop/DESIGN.md)；A1 一次换壳；缺口见 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)；Mock 开发与取代见 [ai-desktop/MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md)。原 WP1/运营为桌面内能力（INTEGRATION_PLAN §0），不做双轨。
+目标与工作包顺序见 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)（WP1 方案已确认，决定 56–58、60）。  
+**产品主轴**（2026-11-20 确认）：直接做组织级 [AI Desktop V1.7](ai-desktop/DESIGN.md)；A1 一次换壳；缺口见 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)；Mock 开发与取代见 [ai-desktop/MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md)。原 WP1/运营为桌面内能力（INTEGRATION_PLAN §0），不做双轨。  
+产品前门与 DES/生产统一契约见 [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md)、[mom/WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)（决定 61）。原 DES 阶段⑤ / WP1 GS1 / 运营桌面 D3 的计划对齐见 DES-31（助手建议，待确认）。缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)。
 
 ### AI Desktop 进度（A→B→C→D）
 
@@ -951,6 +952,14 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [ ] **A4 助理、设置、键盘与响应式**
 - [ ] **A5 异步/协作/审批/移动 Mock 流程**（M1–M6 贯通）
 - [ ] **B/C/D** 按 MOCK_REGISTRY 替换 Mock（全量 Feature Map 回归）
+
+### World Adapter 里程碑（设计已确认，协议待实施）
+
+- [ ] **M0** 完整 React 工作台 + 协议 Mock（WA/UI 用例可跑；挂入 Desktop 运营区）
+- [ ] **M1** 远程 DES 读取（世界绑定、MOM 发布边界）
+- [ ] **M2** 远程 DES 动作与确认（保留 RT-DES-08～11 / RT-DESC 回归）
+- [ ] **M3** 生产只读
+- [ ] **M4** 首个可查证生产写动作（维修工单）
 
 ---
 
@@ -981,5 +990,4 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **D1-2 服务端接口**（2026-11-19）：`GET /api/mom/desk`、`GET /api/mom/desk/cases/{id}`、`POST …/open-in-channel`；RT-OPSDESK-10 转绿。证据见 `testing/evidence/ops-desk-d1-2-red.md`。
 - [x] **D1-3 前端桌面**（2026-11-19）：运营桌面页签、看板、筛选、详情抽屉；E2E-OPSDESK、OPSDRAWER、OPSNOISE、OPSCHANNEL、OPSOFF 全绿。证据见 `testing/evidence/ops-desk-d1-3.md`。
 - [x] **D2 卡片批准**（2026-11-20）：决定 60；`OpsCase` 携带 scope/plan_revision；`POST …/approve`；E2E-OPSAPPROVE、RT-OPSDESK-11 转绿。证据见 `testing/evidence/ops-desk-d2.md`。
-- [ ] **D3a 任务/资源子入口**（OpsDesk 二级 Tab；默认口径见 OPS_DESK_TASKS §8；对齐 Desktop A）
-- [ ] **D3b / WP1-L4 连接器替换**（单独方案，不堵 D3a）
+- [ ] **D3 任务/资源入口**：改由 World Adapter M0 工作台三入口承接（DES-31）；挂入 AI Desktop 运营区；连接器回归已由⑤a-2/③覆盖，产品侧读/写替换见 WA M1～M2。范围确认见 OPS_DESK_TASKS §8 与 WORLD_ADAPTER_PLAN。

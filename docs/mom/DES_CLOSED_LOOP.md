@@ -1,10 +1,10 @@
 # MOM 车间离散事件仿真（DES）闭环设计
 
-日期：2026-11-17（America/Vancouver）。状态（2026-11-18 更新）：阶段①～④与③b 已实现，见 `crates/runtime/src/mom/des/` 与 `crates/server/src/mom_sim.rs`。阶段⑤a-1 也已实现：仿真内核已迁入独立的模拟工厂 crate `crates/des/`（`an-des`），并新增 MCP stdio 服务 `crates/des-mcp/`（`an-des-mcp`）。阶段⑤a-2（连接器）与⑤（车间视图）尚在设计。本文是后续实施的基线；实施时按 §15 分阶段提交，每阶段先写用例和失败测试，再改实现。
+日期：2026-11-17（America/Vancouver）。状态（2026-11-20 更新）：阶段①～④与③b 已实现，见 `crates/runtime/src/mom/des/` 与 `crates/server/src/mom_sim.rs`。阶段⑤a-1～⑤a-3 已实现：仿真内核在 `crates/des/`（`an-des`），MCP 服务 `crates/des-mcp/`（`an-des-mcp`），连接器与 `an-mom --des-mcp` 接入已转绿（RT-DESC-01～12）。**原阶段⑤「车间视图」不再单独按 §11 SVG 标签页推进**；产品前门与工作台改由 [World Adapter 协议](WORLD_ADAPTER.md) 与 [前端先行计划](WORLD_ADAPTER_PLAN.md) 的 M0～M2 承接（决定 61、DES-31）。本文仍是 DES 内核与远程工厂的基线；新增产品契约按 World Adapter 分阶段提交，每阶段先写用例和失败测试，再改实现。
 
 决策记录（每个决定的结论、理由、验证方式与排查提示，用简单的话写）统一在 [docs/DECISIONS.md](../DECISIONS.md#车间仿真des)。
 
-相关文档：[DESIGN.md](DESIGN.md)（MOM 主架构）、[MOCK_REGISTER.md](MOCK_REGISTER.md)（Mock 台账）、[TEST_PLAN.md](TEST_PLAN.md)、[UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md)、[SPC_TASK_WORKSPACE.md](SPC_TASK_WORKSPACE.md)、[测试指南](../testing/README.md)。
+相关文档：[DESIGN.md](DESIGN.md)（MOM 主架构）、[WORLD_ADAPTER.md](WORLD_ADAPTER.md)（统一世界访问）、[WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md)（产品里程碑）、[MOCK_REGISTER.md](MOCK_REGISTER.md)（Mock 台账）、[TEST_PLAN.md](TEST_PLAN.md)、[UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md)、[SPC_TASK_WORKSPACE.md](SPC_TASK_WORKSPACE.md)、[测试指南](../testing/README.md)。
 
 ## 0. 决策记录
 
@@ -21,7 +21,7 @@
 | D2 | 执行后由同一原因产生的复检观测作为核验证据挂到原案例，不触发计划失效；新扰动仍触发重新规划 | 用户采纳推荐 |
 | D3 | 批量实验中的"人"使用可配置的模拟审批策略（延迟分布 + 选择规则） | 用户采纳推荐 |
 | D4 | "传统 MOM"对照组作为一种策略，在同一个 DES、同一组 seed 上运行 | 用户采纳推荐 |
-| D5 | 实施顺序：DES 内核和场景生成器（开环）→ 工具读取和 what-if → 执行与核验闭环 → 审核层和批量实验 → 车间视图 | 用户采纳推荐 |
+| D5 | 实施顺序：DES 内核和场景生成器（开环）→ 工具读取和 what-if → 执行与核验闭环 → 审核层和批量实验 → 产品前门 | 用户采纳推荐；产品前门现由 World Adapter M0～M2 承接（DES-31） |
 | D6 | 保留现有按键归并案例的规则，另增"关联案例"，跨案例关联由 DES 拓扑和 RelOS 关系给出 | 用户采纳推荐 |
 | D7 | 阶段 ① 只用现有三类事件（插单、振动、质量），但时间、设备、强度、数量都由场景生成器决定；新事件类型以后和 SPC 模板机制统一实现 | 用户采纳推荐 |
 | A1 | 批准：Mock 台账新增条目（见 §14），并相应修改 `crates/runtime/tests/mom.rs` 中台账条目数为 24 的断言。这是需求变更，不是为了让测试通过而改测试；实施 PR 必须单独说明 | 用户批准 |
@@ -375,17 +375,19 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 - 输出 CSV/JSON，每个 seed 每种策略一行：按期交付率、延期订单数、不良件数、误报和漏报次数、根因判断是否正确、关联识别的准确率和召回率、各阶段耗时、HITL 次数、模型和工具调用次数、审核结论、是否为非独立审核。
 - 报告必须列出使用的全部 Mock 编号和建模假设。
 
-## 11. 产品演示
-- 沿用现有播放控制和共享时钟。
-- 车间视图作为 `web/mom/` 的新标签页，代码放在新模块中，入口只增加挂载：工厂布局（SVG）、设备状态、队列长度、刀具库存、订单甘特图、振动和 Cpk 趋势、审核报告。
-- 界面改动按 `UI_UX_PRINCIPLES.md` 评审，满足 UI16（桌面、Pad、手机和键盘）。
+## 11. 产品演示与工作台（2026-11-20 修订）
 
-## 11a. 阶段⑤a：独立仿真引擎与 MCP 挂载（2026-11-17 用户确认；⑤a-1 已于 2026-11-18 实现）
+- 沿用现有播放控制和共享时钟。
+- **原「车间视图 = `web/mom/` SVG 新标签页」方案已让位给 World Adapter 前端先行路径**（见 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md)）：同一套 React 工作台（世界/看板/任务/资源/事项/方案与执行/AI）先接协议 Mock（M0），再替换远程 DES 读（M1）与写确认（M2）。设备布局、振动与 Cpk 趋势等车间可视化作为工作台内视图能力落地，不再单独开阶段⑤标签页 PR。
+- 界面改动按 `UI_UX_PRINCIPLES.md`（含 UI01～UI16）与 [world-adapter Feature Map](../feature-map/features/world-adapter.md) 评审。
+- 运营频道批准与运营桌面看板（决定 56～60）继续作为审批与盯盘入口；World Adapter 复用这些入口，不另造第二套批准链。
+
+## 11a. 阶段⑤a：独立仿真引擎与 MCP 挂载（2026-11-17 用户确认；⑤a-1～⑤a-3 均已实现）
 
 **目标**：把仿真内核做成可挂载的独立"模拟工厂"，AgentNexus 生产系统像接真实 MES/EAM/QMS 一样接入它；被测系统与仿真世界在进程和数据上彻底隔离，标准答案只在模拟工厂内。
 
 **用户决定**：
-1. 顺序：先完成阶段③b、④的实现，再做⑤a，然后才是⑤车间视图。③b、④的用例作为拆分前后行为一致的回归基线（同 seed 下进程内与 MCP 模式的事件、观测、执行结果一致）。
+1. 顺序：先完成阶段③b、④的实现，再做⑤a，然后才是产品前门。③b、④的用例作为拆分前后行为一致的回归基线（同 seed 下进程内与 MCP 模式的事件、观测、执行结果一致）。产品前门现由 World Adapter M0～M2 承接（不再按原「⑤ 车间视图」单列）。
 2. 传输：先做 stdio，随 AgentNexus 在本机启动；HTTP 以后再加。
 3. 工具命名按通用的 MES/EAM 风格设计，便于其他系统挂载，不使用 AgentNexus 专有概念。
 4. 写操作（维修、调拨、改排产）不交给模型直接调用：由 AgentNexus 在审批与 `execute` 之后经连接器发出，带幂等键并记录回执。这是 MCP 设计第 4 阶段"外部写入"的前置能力，属于权限策略变更，已获用户批准。
@@ -480,6 +482,19 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
   - 引擎新增 `playback_playing`、`playback_finish_step`（原 `playback_tick` 拆成两段，行为不变），以及 `des_is_remote`；`des_whatif` 对远程仿真改读连接器交来的快照。
   - 工具接口拒绝时的错误信息不回显工具名：被拒绝的管理工具名本身就含 `ground_truth` 字样（RT-DESC-11 发现）。
 
+## 11b. 阶段⑤ 之后：World Adapter 产品前门（2026-11-20）
+
+⑤a 解决的是「模拟工厂可挂载」。产品还缺统一契约与完整工作台，由 World Adapter 承接（决定 61、DES-31）：
+
+| World Adapter 阶段 | 与 DES 的关系 | 主要验收 |
+|---|---|---|
+| M0 前端 + 协议 Mock | 不依赖真实工厂；合同与 UI 全路径可跑 | WA-01～08、UI01～16 映射到可执行用例 |
+| M1 远程 DES 读取 | 主应用 MOM 复用 `with_des` / `DesConnector`；世界绑定；公开流以 MOM 投递边界为准 | WA-01、02、07 + RT-DESC 回归 |
+| M2 远程 DES 动作 | 复用待发写、子动作回执、干预重推演；补执行登记/确认与答案同步 | WA-03、04、05、08；保留 RT-DES-08～11 |
+| M3～M4 生产适配 | 同一契约换站点适配器；先读后写 | WA-06 |
+
+实施细则、发布边界、回执语义与持久化见 [WORLD_ADAPTER.md](WORLD_ADAPTER.md) §6～§9；里程碑与 Mock 替换见 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md)。WP1 会话只读工具与 GS1 黄金场景在 World Adapter 路径上验收（见 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md)）。
+
 ## 12. 改动范围、风险和回滚
 
 | 文件 | 改动 | 风险 |
@@ -491,7 +506,7 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 | `mom/model.rs` | 快照新字段、多方案提案结构、关联案例字段 | 中 |
 | 新增 `crates/server/src/mom_sim.rs`，`mom.rs` 只增加注册 | 仿真和审核接口 | 中（公开接口，已批准） |
 | `config.example.toml` 及配置加载 | 可选角色 `mom_reviewer` | 中（配置字段，已批准） |
-| `web/mom/` 新模块 | 车间视图 | 中 |
+| `web/` React 工作台 + World Adapter 服务层 | 产品前门（原车间视图） | 中（契约与公开接口，见 WORLD_ADAPTER） |
 | `docs/mom/MOCK_REGISTER.md`、`docs/testing/` | 台账条目、用例、功能地图 | 低 |
 
 不修改 `crates/runtime/src/orchestrator.rs`、`store.rs`、`registry.rs`、`crates/agents/src/acp.rs`、`util.rs`、`AgentAdapter`。
@@ -535,7 +550,7 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 | ② 工具读取、what-if、仿真接口 | §6.3、§6.4、§9 | RT-DES-06 what-if 前后真实状态哈希不变<br>RT-DES-07 缺刀或未认证的方案被判为不可行并列出违反项<br>HTTP-DES-01 仿真接口返回 `provenance=simulation` 和截至时间，不含隐状态<br>HTTP-DES-02 what-if 超出上限时返回明确错误，服务仍可响应 |
 | ③ 执行与核验闭环 | §6.5～§6.7 | RT-DES-08 选择方案 B 并执行后磨损复位，后续 Cpk 窗口恢复，核验通过<br>RT-DES-09 执行后的同源复检观测不使计划失效<br>RT-DES-10 新的无关扰动仍触发重新规划<br>RT-DES-11 调拨耗时由 DES 决定；失败产生补偿事件<br>RT-DES-18 共享刀具的两个案例被标为关联案例，并遵守预留冲突<br>E2E-DES-01 界面显示多个方案，主管选择 B 后审批，可看到执行进度 |
 | ④ 审核层与批量实验 | §7、§8、§10 | RT-DES-12 规则检查能检出构造的错误处理（未审批执行、把巧合判为根因）<br>RT-DES-13 AI 审核结论都引用证据；审核失败时报告标为不可用，规则结果照常交人<br>RT-DES-14 人推翻 AI 结论时分歧被记录<br>RT-DES-15 100 个 seed 的批量运行可复现，两种策略使用同一组 seed，导出 CSV<br>RT-DES-19 审核模型降级顺序正确；同模型审核被标注为非独立审核 |
-| ⑤ 车间视图 | §11 | E2E-DES-02 桌面、Pad、手机三种尺寸下无横向溢出，键盘可完成关键路径（UI16） |
+| ⑤ 产品前门（World Adapter） | §11、§11b；[WORLD_ADAPTER_PLAN](WORLD_ADAPTER_PLAN.md) M0～M2 | 由 WA-01～08 / E2E-WA-* / UI01～16 承接；原 E2E-DES-02（三尺寸无横溢、键盘关键路径）并入 UI16 与 E2E-WA-08。⑤a-1～③ 已完成，不再阻塞本阶段 |
 
 每个阶段都要运行 `AGENTS.md` 中"完成的定义"列出的命令，并在 PR 中贴出实际输出。
 

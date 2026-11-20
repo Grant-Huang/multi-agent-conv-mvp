@@ -2,6 +2,8 @@
 
 依据 [WA-01～08](WORLD_ADAPTER.md#9-交付与验收)、[UI01～16](UI_UX_PRINCIPLES.md#14-场景验收基线) 和 [MOM 三入口原型](prototype/README.md)。采用 Lauren Tan 分享中的可操作 Feature Map，将入口、定位、操作、业务断言和证据绑定到同一用例。
 
+本计划承接原 DES 阶段⑤「车间视图」、WP1 GS1 产品前门与运营桌面 D3（DES-31，助手建议）。DES 内核与⑤a 远程工厂基线不变，见 [DES_CLOSED_LOOP.md](DES_CLOSED_LOOP.md) §11b；系统打通总表见 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md)。
+
 ## 1. 目标 UI/UE
 
 | 页面 | 用户操作与反馈 |

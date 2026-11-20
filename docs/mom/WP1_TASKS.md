@@ -1,21 +1,22 @@
 # WP1（DES-MOM-会话闭环）执行任务卡
 
-本文件是 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md) 第三节的执行版。运营桌面/运营频道（D0–D3a）单独见 [OPS_DESK_TASKS.md](OPS_DESK_TASKS.md)，**通用流程、完成的定义、命令和环境坑都在那个文件的第 2 节，本文件不重复**，每张卡开工前先读它。  
+本文件是 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md) 第三节的执行版。运营桌面/运营频道（D0–D3）单独见 [OPS_DESK_TASKS.md](OPS_DESK_TASKS.md)，**通用流程、完成的定义、命令和环境坑都在那个文件的第 2 节，本文件不重复**，每张卡开工前先读它。  
 产品壳主轴见 [AI Desktop V1.7](../ai-desktop/DESIGN.md)；与 WP1 的挂靠见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md) 与 INTEGRATION_PLAN §0。  
-已确认的设计决定：[DECISIONS.md](../DECISIONS.md) 第 56 条（DES–MOM–会话闭环取方案 A：会话只读工具 + 案例卡；MOM 数据来自 DES 事件，暂不用 MOM 界面）、57（案例卡只在需要时推送，桌面最小化）、58（专属运营频道）、60（频道卡批准）。
+已确认的设计决定：[DECISIONS.md](../DECISIONS.md) 第 56 条（DES–MOM–会话闭环取方案 A：会话只读工具 + 案例卡）、57（案例卡只在需要时推送）、58（专属运营频道）、60（OpsCase 批准）、61（World Adapter）。计划对齐见 DES-31（助手建议）：产品前门与 GS1 按 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md) M0～M2 验收。
 
 ## 0. 进度总表
 
 | 卡片 | 内容 | 状态 | 依赖 |
 |---|---|---|---|
 | L0 | `case_id` 关联与日志字段 | 未开始 | — |
-| L1-0 | **先出方案**：引擎句柄如何注入会话工具（见 L1） | 未开始，需用户确认 | L0 |
+| L1-0 | **先出方案**：引擎句柄如何注入会话工具；是否直接暴露 World Adapter Observe | 未开始，需用户确认 | L0 |
 | L1-1 | 只读工具 `mom_cases`、`mom_factory_status` | 未开始 | L1-0 |
 | L1-2 | `mom_forecast`、`mom_whatif` | 未开始 | L1-1 |
-| L2 | 案例卡 + 在卡片上批准 | **已并入 D2**（OPS_DESK_TASKS §7 / #136）；会话内按需发卡留待 L1 之后 | D1 |
-| L3 | 闭环回写与审核报告卡 | 未开始 | D2 |
-| L4 | 经 `an-des-mcp` 替换进程内 DES 调用 | 未开始；**与 D3a 解耦，先出方案** | L3 可并行准备 |
-| GS1 | 黄金场景 E2E 总装 | 未开始；UI 入口逐步迁 Desktop 运营区 | L1–L3 |
+| L2 | 案例卡 + 在卡片上批准 | **已完成（D2 / #136）**；会话内按需发卡留待 L1 之后 | D1 |
+| L3 | 闭环回写与审核报告卡 | 未开始；与 WA M2 Confirm/核验对齐 | D2 |
+| L4 | 远程工厂连接器 | **基线已完成**（⑤a-2/③，RT-DESC-01～12） | — |
+| WA M0～M2 | 工作台 + 协议 → 远程 DES 读/写 | 设计已确认，实施未开始；挂入 Desktop 运营区 | 决定 61；DES-31 |
+| GS1 | 黄金场景 E2E 总装 | 未开始；最终走 WA-08 / E2E-WA-* | L1、L3、WA M2 |
 
 ## 1. 开工前必读的现状
 
@@ -66,14 +67,20 @@
 - L2：批准在卡片上，见 [OPS_DESK_TASKS.md](OPS_DESK_TASKS.md) §7（D2）。会话里“按需发卡”（用户在普通会话里问到某案例时，`mom_cases` 的结果附一张 `OpsCase` 卡）作为 L1 之后的可选卡片，先与用户确认。
 - L3：案例关闭后卡片更新并附审核摘要。**开工前先读**：`rg -n "review\|audit" crates/runtime/src/mom` 与 `docs/mom/` 里审核层设计，确认审核结果在引擎里是否可读；不可读则先出方案。用例沿用 E2E-COMPLAINT 的精神：缺核验证据不能关闭且卡片显示原因；审核报告不含标准答案。
 
-## 5. L4：连接器替换
+## 5. L4：连接器（基线已完成）与 World Adapter 余量
 
-经 `an-des-mcp` 的 `FactoryService::call` 替换进程内 DES 调用（⑤a-2/⑤a-3）。基线是已有的 `RT-DESM-02`（同种子下进程内与 MCP 结果一致）。动手前先读 `crates/server/tests/mom_des_connector.rs`、`mom_des_http_mcp.rs`。写操作要带幂等键与审批引用；工厂离线时卡片显示明确错误。这张卡涉及对外调用，**先出方案**。
+⑤a-2/⑤a-3 已转绿（`mom_des_connector.rs`、`mom_des_http_mcp.rs`，RT-DESC-01～12）。本卡**不再要求重做连接器**。剩余产品工作：
+
+1. 主应用进程内 MOM 按 [WORLD_ADAPTER.md](WORLD_ADAPTER.md) §6.1 复用 `with_des` / `DesConnector`（与 `an-mom` 共享案例状态）。
+2. 世界绑定、公开事件发布边界、执行登记 / Confirm、答案同步补偿（协议层）。
+3. 实施顺序与准出见 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md) M1～M2；契约测试先于 UI 替换。
+
+涉及对外调用与公开接口时仍须**先出方案**。
 
 ## 6. GS1 总装 E2E
 
-`E2E-MOMLOOPALL`：DES 报警 → 运营频道出卡 → 会话里追问（L1 工具）→ 卡片上批准（D2）→ 执行回写 DES → 复检核验 → 案例关闭、卡片更新（L3）。每一步断言都要跨两个模块（例如：卡片批准后，`/mom/` 页面与 DES 世界状态同时变化）。
+目标场景与 [WORLD_ADAPTER.md](WORLD_ADAPTER.md) WA-08 / Feature Map `E2E-WA-*` 对齐：选定世界 → DES 报警经 MOM 投递 → 运营频道出卡 → 会话追问（L1 或 Observe）→ 卡片批准（D2）→ Execute/Confirm 回写 DES → 复检核验 → 案例关闭与卡片更新（L3）。每一步断言跨至少两个模块；历史不变、未来事件随干预改变由 WA-05 / RT-DES-08～11 覆盖。
 
 ## 7. 不做
 
-沿用 INTEGRATION_PLAN §3.7：不做真实设备写入、不做 MOM 界面改造、不改引擎状态机。
+沿用 INTEGRATION_PLAN §3.7 修订版：会话模型不直接审批/执行；不改引擎状态机（除非另批方案）。完整工作台由 World Adapter M0 做，不在本文件的 L0～L3 卡内顺手改 `/mom/` 沙盘页。真实 MES 写动作属 WA M4。

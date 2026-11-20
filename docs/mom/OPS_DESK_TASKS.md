@@ -1,7 +1,7 @@
 # 运营桌面 D1–D3 执行任务卡（给接手的 agent）
 
 本文件是 [OPS_DESK.md](OPS_DESK.md)（设计）的**执行版**：每张任务卡写清要改哪些文件、接口长什么样、先写哪个测试、跑哪些命令、哪里容易踩坑。照卡片顺序做，不要跳步，不要自己扩范围。
-设计取舍见 [DECISIONS.md](../DECISIONS.md) 第 56–58 条；通用规则见根目录 `AGENTS.md`。
+设计取舍见 [DECISIONS.md](../DECISIONS.md) 第 56–58、60、61 条；通用规则见根目录 `AGENTS.md`。D3 与完整三入口工作台并入 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md)（DES-31）。
 
 ## 0. 进度总表（每做完一张卡就改这里，并同步 `docs/PLAN.md` 的“运营桌面与运营频道进度”）
 
@@ -13,8 +13,7 @@
 | **D1-2** | 服务端：`GET /api/mom/desk`、`GET /api/mom/desk/cases/{id}`、`POST …/open-in-channel` | 已完成 | 本 PR |
 | **D1-3** | 前端：“运营桌面”页签、看板、筛选、详情抽屉（E2E-OPSDESK/OPSDRAWER/OPSNOISE 转绿） | 已完成 | 本 PR |
 | **D2** | 卡片上批准（决定 60） | 已完成 | #136 |
-| **D3a** | 任务/资源子入口（OpsDesk 二级 Tab；不含连接器） | 未开始 | — |
-| D3b / WP1-L4 | MCP 连接器替换（单独方案） | 未开始 | — |
+| D3 | 任务/资源入口 → **改走 World Adapter M0**；连接器回归已由⑤a-2/③覆盖；挂入 AI Desktop 运营区 | 改派 WA M0（DES-31 待确认） | — |
 
 一张卡 = 一个 PR。做完先在 PR 里贴“完成的定义”命令的真实输出，等用户确认合并，再开下一张。
 
@@ -233,33 +232,12 @@ plan_revision: Option<u64>,  // 发卡时的 case.plan_revision
 
 与第 2 节相同，另加：`PLAYWRIGHT_BROWSERS_PATH=… npx playwright test ops.spec.ts` 含新 E2E-OPSAPPROVE 共 6 个全绿。
 
-## 8. D3a：任务/资源子入口（对齐 AI Desktop；连接器外置）
+## 8. D3：改派 World Adapter M0（先确认 DES-31，再拆卡）
 
-依据 [UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md) 的“三入口（看板/任务/资源）”与 [AI Desktop V1.7](../ai-desktop/DESIGN.md)（运营入口复用 MOM 三入口）。D1 只做了“看板”。缺口与计划调整见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md) §5.2。
+依据 [UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md) 的“三入口（看板/任务/资源）”与 [AI Desktop V1.7](../ai-desktop/DESIGN.md)（运营入口复用 MOM 三入口），D1 只做了“看板”。缺口见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md) §5.2。  
+**不再在本文件单独拆 D3 实现卡**：任务/资源入口、事项页、方案与执行详情按 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md) M0（完整前端 + 协议 Mock）交付，验收对齐 WA/UI 与 Feature Map `world-adapter.md`；Desktop A1 落地后作为壳内「运营」模块挂载，**不**再增加与「会话」并列的第三套一级运营导航。
 
-### 8.1 口径（2026-11-20 用户确认）
-
-| 入口 | 展示什么 | 不做 |
-|---|---|---|
-| **任务** | 只读列表：待批准 / 执行中（含核验中）/ 受阻；行点击 → 现有详情抽屉或「在频道中处理」 | 不创建平台 `TaskRecord`；桌面不放批准按钮 |
-| **资源** | 只读：从案例 `world` / 已有 DES 只读视图投影设备与约束缺口（缺刀具、联锁、占用），标「模拟」 | 全厂台账、人机料法环测完整 Tab、预留写入 |
-| **连接器 L4** | **不在本卡**；见 [WP1_TASKS.md](WP1_TASKS.md) §5，先出方案 | — |
-
-### 8.2 与 Desktop 壳的关系
-
-D3a 先做在现有 `OpsDesk` 内（二级 Tab：看板 | 任务 | 资源），保证 E2E-OPSDESK 类用例可扩展。Desktop A1 落地后，整个 OpsDesk 作为壳内「运营」模块挂载，**不**再增加与「会话」并列的第三套一级运营导航。
-
-### 8.3 用例方向（确认口径后再冻结）
-
-| 用例 | 断言方向 |
-|---|---|
-| E2E-OPSTASK（名待 check-map 合规化） | 运营桌面可见「任务」Tab；列表含待批准/受阻；无「批准」按钮；打开抽屉或跳转频道 |
-| E2E-OPSRES | 「资源」Tab 显示缺口摘要与「模拟」标识；空/未知有明确状态 |
-| RT-OPSDESK-1x | desk 读模型或新子资源接口返回任务分组与资源摘要字段 |
-
-### 8.4 完成定义
-
-与第 2 节相同；另加：新 E2E 全绿；不改 `engine.rs`；L4 不得混进本 PR。
+连接器（原「D3 另一条线 / WP1-L4」）基线已由⑤a-2/③完成；产品侧远程 DES 读/写见 WA M1～M2，任务卡见 [WP1_TASKS.md](WP1_TASKS.md)。用户确认 DES-31 前，不要在运营桌面线另开任务/资源 PR。
 
 ## 9. 已知局限（做的时候别“顺手修”，在 PR 里如实写）
 

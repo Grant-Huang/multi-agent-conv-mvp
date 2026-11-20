@@ -789,6 +789,18 @@
   - M14 让 `ai_version` 可选（不带时仍绑当前版本）：不用改旧测试，但问题对不带版本的调用方依然存在。
   - M13 只改模拟工厂：进程内仿真和 MCP 模式会在多次执行重叠时不一致（RT-DESC-01 的前提）。
 - 验证：见 `docs/testing/evidence/review-2026-11-19-des.md`。
+
+**DES-31 原阶段⑤「车间视图」并入 World Adapter 产品前门（2026-11-20，助手建议，待用户确认）**
+- 问题：DES 闭环设计把⑤定为 `web/mom/` 车间 SVG 标签页；同时决定 61 已确认 World Adapter（Observe/Subscribe/Propose/Execute/Confirm）与前端先行 M0～M4。两套产品路径若并行会重复做工作台与验收。
+- 定了什么（助手建议）：
+  1. ⑤a-1～⑤a-3（独立工厂、连接器、`an-mom --des-mcp`）保持已完成基线，不再改口。
+  2. 原⑤车间视图与 WP1 的 GS1 产品前门，统一按 [WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md) M0→M1→M2 推进；车间可视化作为工作台内视图，不单开 SVG 标签页里程碑。
+  3. 运营频道批准与运营桌面看板（决定 56～60）继续复用，不另造批准链。
+  4. WP1 的 L4「连接器替换」中⑤a-2/③ 已落地；剩余工作改为 World Adapter 契约、世界绑定、发布边界与执行确认（见 INTEGRATION_PLAN / WP1_TASKS 修订）。
+- 为什么：决定 61 要求同一契约覆盖 DES 与生产；前端先行可先验收 WA/UI，再替换真实 DES，避免先做夹具车间页再推倒。
+- 没选什么：继续单独做⑤ SVG 车间页；把 World Adapter 整包推迟到 WP1 L1～L3 全部做完。
+- 出问题先看：`docs/mom/DES_CLOSED_LOOP.md` §11 / §11b；`docs/mom/WORLD_ADAPTER.md`；`docs/INTEGRATION_PLAN.md` WP1。
+
 ### 56. DES–MOM–会话闭环：工具式前门 + 案例卡；MOM 数据来自 mock MCP 的 DES 事件，暂不用 MOM 界面（2026-11-18 用户确认）
 
 - **问题**：MOM（案例、审批、执行）与会话平台互相独立，运营人员无法在会话里看到并处置 DES 事件，整体场景串不起来。详见 `docs/INTEGRATION_PLAN.md` 第 3 节。
@@ -882,10 +894,11 @@
 - **定了什么**：以 Observe、Subscribe、Propose、Execute、Confirm 定义共同契约，经 MOM 访问当前世界；首版复用已有 DES MCP，随后接入生产观测和一个可查证的写动作。
 - **为什么**：统一调用面，同时保留现有 MOM 审批、远程 DES 重推演和现场系统各自的权威职责。
 - **出问题先看**：见 [World Adapter 协议](mom/WORLD_ADAPTER.md)。按源码修订的发布边界、回执语义及实例恢复限制集中写在设计文档中。
+- **计划对齐**：现行 DES 阶段⑤、WP1 GS1、运营桌面 D3 的排期按 DES-31 并入 [WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)（助手建议，待确认）。
 
 ### 待决定
 
-- 暂无（第 61 条已确认）。
+- DES-31：原阶段⑤车间视图是否确认并入 World Adapter M0～M2（助手建议已写入文档，待用户表态）。
 
 ### 排查提示（踩过的坑）
 
