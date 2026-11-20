@@ -725,6 +725,10 @@
       "web/src/desktop/ApprovalMockPanel.tsx",
       "web/src/desktop/runResumeMock.ts",
       "web/src/desktop/ResumeMockPanel.tsx",
+      "web/src/desktop/voiceMock.ts",
+      "web/src/desktop/VoiceMockPanel.tsx",
+      "web/src/desktop/handoffMock.ts",
+      "web/src/desktop/HandoffMockPanel.tsx",
       "web/src/desktop/evidenceMock.ts",
       "web/src/desktop/mockData.ts",
       "web/src/components/ChatView.tsx",
@@ -734,7 +738,8 @@
       "docs/ai-desktop/TRACEABILITY.md",
       "docs/testing/evidence/ai-desktop-a2.1.md",
       "docs/testing/evidence/ai-desktop-a5.1.md",
-      "docs/testing/evidence/ai-desktop-a5.2.md"
+      "docs/testing/evidence/ai-desktop-a5.2.md",
+      "docs/testing/evidence/ai-desktop-a5.3.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -750,7 +755,9 @@
       "E2E-ADASK",
       "E2E-ADATTN",
       "E2E-ADAPPR",
-      "E2E-ADRESUME"
+      "E2E-ADRESUME",
+      "E2E-ADVOICE",
+      "E2E-ADHAND"
     ]
   },
   {
