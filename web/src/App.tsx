@@ -179,17 +179,19 @@ export default function App() {
     writeCurrentConv(current);
   }, [current]);
 
-  const refreshConversation = useCallback(async (cid: string) => {
-    const [m, t] = await Promise.all([api.messages(cid), api.tasks(cid)]);
-    setMessages(m);
-    setTasks(t);
-  }, []);
-
   const sideRef = useRef(sideTab);
   sideRef.current = sideTab;
   const currentRef = useRef(current);
   currentRef.current = current;
   const streamRef = useRef("");
+
+  const refreshConversation = useCallback(async (cid: string) => {
+    const [m, t] = await Promise.all([api.messages(cid), api.tasks(cid)]);
+    // 迟到响应不得覆盖当前会话视图（A2 / DESIGN §3）
+    if (currentRef.current !== cid) return;
+    setMessages(m);
+    setTasks(t);
+  }, []);
 
   // 切换会话：加载数据 + 订阅 SSE 事件
   useEffect(() => {

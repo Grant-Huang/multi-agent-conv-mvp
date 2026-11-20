@@ -9,7 +9,7 @@
 | 清单章节 | Feature | Case（首批） | 覆盖层 | 状态 |
 |---|---|---|---|---|
 | 1 产品定位、2 S1/S2/S3 | AD-NAV、AD-LAYOUT、AD-S1 | E2E-ADNAV、E2E-ADLAYOUT | browser / Mock | E2E-ADNAV/ADLAYOUT **已登记**（A1） |
-| 3 数据、4 上下文 | AD-DRAFT、AD-SCOPE、AD-ACCEPT | E2E-ADDRAFT、E2E-ADSCOPE、E2E-ADACCEPT | browser+HTTP | 草案（A2/B1） |
+| 3 数据、4 上下文 | AD-DRAFT、AD-SCOPE、AD-ACCEPT | E2E-ADDRAFT、E2E-ADSCOPE、E2E-ADACCEPT | browser+HTTP | E2E-ADDRAFT/ADSCOPE **已登记**（A2）；ACCEPT 待 B1 |
 | 5 历史协作、6 布局 | AD-HISTORY、AD-SOURCES、AD-INPUT | E2E-ADHISTORY、E2E-ADSOURCES、E2E-ADINPUT | browser | 草案（A3/A4） |
 | 7–9 刷新/分工/风控 | AD-RESUME、AD-ATTENTION、AD-EVIDENCE、AD-APPROVE | E2E-ADRESUME、E2E-ADATTN、E2E-ADEVID、E2E-ADAPPR | browser+RT | 草案（A3/A5/C） |
 | 10–13 阶段/开放/指南/参考 | 里程碑与决议 | — | docs | 见 PLAN / DECISIONS 61 |

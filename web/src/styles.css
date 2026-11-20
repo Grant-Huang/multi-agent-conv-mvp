@@ -527,4 +527,11 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
 .workspace-exec { margin-top: 8px; padding: 8px; background: rgba(127,127,127,.08); border-radius: 6px; font-size: 13px; }
 .workspace-hint { font-size: 12px; color: #888; margin-top: 12px; }
 .workspace-layout-toggle .btn.active { outline: 2px solid #4a7; }
-.layout-s3 .workspace-body { }
+.workspace-composer { margin-top: 12px; border-top: 1px solid var(--border, #ddd); padding-top: 10px; }
+.scope-controls { margin-bottom: 8px; }
+.scope-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.scope-reason, .scope-task { font-size: 12px; color: #666; margin: 4px 0; }
+.scope-actions { display: flex; gap: 6px; margin: 4px 0 8px; }
+.scope-audit { font-size: 12px; color: #666; padding-left: 18px; margin: 6px 0 0; }
+.workspace-reply, .workspace-late { font-size: 12px; margin: 6px 0 0; }
+.btn.small.active { outline: 2px solid #4a7; }

@@ -5,6 +5,7 @@ import {
   type WorkspaceLayout,
   SMT03_TASK_ID,
 } from "./mockData";
+import { WorkspaceComposer } from "./WorkspaceComposer";
 
 type Props = {
   taskId: string;
@@ -80,7 +81,8 @@ export function WorkspaceView({ taskId, onBack }: Props) {
               <p>O-Agent 执行摘要（模拟）：已采集质量记录，等待核验。</p>
             </div>
           )}
-          <p className="workspace-hint">会话输入仍在底部主输入框；本区为工作区外壳（A1）。</p>
+          <p className="workspace-hint">草稿与作用域按 Task 隔离（A2）。</p>
+          <WorkspaceComposer taskId={taskId} />
         </section>
       </div>
     </div>
