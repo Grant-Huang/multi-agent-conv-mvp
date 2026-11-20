@@ -937,9 +937,20 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 10. DLP 审计日志落盘：由 AgentNexus 拉起时 DLP 的 stderr 不保存，DLP 侧 `dlp.evaluate` 日志目前看不到
 9. 重识别风险：稀有指标组合、跨请求关联的评估与缓解（设计文档第 11 节第 8 项）
 
-## 系统打通与整体场景 E2E（草案，待用户确认）
+## 系统打通与整体场景 E2E
 
-目标、工作包顺序与首个工作包“DES-MOM-会话闭环”的方案选项见 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)；缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)。方案经用户确认前不改代码。
+目标、工作包顺序与首个工作包“DES-MOM-会话闭环”见 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)；缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)。  
+**产品主轴**（2026-11-20 确认）：直接做组织级 [AI Desktop V1.7](ai-desktop/DESIGN.md)；A1 一次换壳；缺口见 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)；Mock 开发与取代见 [ai-desktop/MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md)。原 WP1/运营为桌面内能力（INTEGRATION_PLAN §0），不做双轨。
+
+### AI Desktop 进度（A→B→C→D）
+
+- [ ] **A0 追溯与用例登记**：特性清单 → Feature/Case；登记 AD-*；填 Mock 负责人
+- [ ] **A1 一次换壳**：首页三区、S1/S2/S3；移除旧一级页签，入口重定向
+- [ ] **A2 草稿、阅读锚点、上下文作用域**（SMT-03 可纯 Mock）
+- [ ] **A3 证据与历史面板**
+- [ ] **A4 助理、设置、键盘与响应式**
+- [ ] **A5 异步/协作/审批/移动 Mock 流程**（M1–M6 贯通）
+- [ ] **B/C/D** 按 MOCK_REGISTRY 替换 Mock（全量 Feature Map 回归）
 
 ---
 
@@ -970,4 +981,5 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **D1-2 服务端接口**（2026-11-19）：`GET /api/mom/desk`、`GET /api/mom/desk/cases/{id}`、`POST …/open-in-channel`；RT-OPSDESK-10 转绿。证据见 `testing/evidence/ops-desk-d1-2-red.md`。
 - [x] **D1-3 前端桌面**（2026-11-19）：运营桌面页签、看板、筛选、详情抽屉；E2E-OPSDESK、OPSDRAWER、OPSNOISE、OPSCHANNEL、OPSOFF 全绿。证据见 `testing/evidence/ops-desk-d1-3.md`。
 - [x] **D2 卡片批准**（2026-11-20）：决定 60；`OpsCase` 携带 scope/plan_revision；`POST …/approve`；E2E-OPSAPPROVE、RT-OPSDESK-11 转绿。证据见 `testing/evidence/ops-desk-d2.md`。
-- [ ] **D3 任务/资源入口与 MCP 连接器回归**（先确认范围，见 OPS_DESK_TASKS §8）。
+- [ ] **D3a 任务/资源子入口**（OpsDesk 二级 Tab；默认口径见 OPS_DESK_TASKS §8；对齐 Desktop A）
+- [ ] **D3b / WP1-L4 连接器替换**（单独方案，不堵 D3a）

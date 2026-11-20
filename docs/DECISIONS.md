@@ -862,6 +862,19 @@
 - **没选什么**：会话里另做 `MomCase`；点批准时再读引擎取版本；本期做驳回。
 - **出问题先看**：`POST /api/mom/desk/cases/{id}/approve`；卡片字段 `scope`/`plan_revision`；引擎错误 `stale plan approval` / `evidence snapshot stale`。
 
+### 61. 直接做组织级 AI 桌面；A1 一次换壳；Mock 注册表替换（2026-11-20 用户确认）
+
+- **问题**：V1.7 与旧 MVP 壳、WP1/运营计划如何排期；是否双轨。
+- **定了什么**（用户确认）：
+  1. **不采用双轨**，直接做组织级 AI 桌面（A 快速完整前端 → 每里程碑全前端可用，缺后端用 Mock → B/C/D 替换）。
+  2. E2E 用 Feature Map + Playwright；回归严格覆盖设计特性清单。
+  3. **A1 一次换壳**；SMT-03 **A 阶段允许纯 Mock**。
+  4. D3a：任务=案例工作项投影，资源=只读缺口；L4 外置。
+  5. Mock 开发与取代计划落在 `docs/ai-desktop/PLAN.md` §2 与 **`docs/ai-desktop/MOCK_REGISTRY.md`**（M1–M6 → B1/B2/B3/C1/C2/D）。
+- **为什么**：一套导航、一套 Feature Map；初期即可做完善 E2E/集成，再按能力换真服务。
+- **没选什么**：Desktop 与旧壳双轨并行；A1 兼容开关长期并存。
+- **依据**：`docs/ai-desktop/GAPS.md` §5–§6；`MOCK_REGISTRY.md`。
+- **出问题先看**：生产是否静默回退 Mock；是否又出现第二套一级导航；D3 PR 是否夹带 L4。
 
 ### 61. World Adapter 统一世界访问（2026-11-20，设计方向获用户确认）
 
@@ -872,7 +885,7 @@
 
 ### 待决定
 
-- 暂无。
+- 暂无（第 61 条已确认）。
 
 ### 排查提示（踩过的坑）
 

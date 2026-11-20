@@ -1,8 +1,9 @@
 # 制造运营桌面与运营频道（设计草案）
 
-状态：草案（助手建议），待用户确认。依据：`docs/DECISIONS.md` 第 56、57、58 条，`docs/mom/UI_UX_PRINCIPLES.md`（下称“原则”），`docs/INTEGRATION_PLAN.md` 的 WP1。
+状态：实施中（D0–D2 已完成；D3a 待做）。依据：`docs/DECISIONS.md` 第 56、57、58、60 条，`docs/mom/UI_UX_PRINCIPLES.md`（下称“原则”），`docs/INTEGRATION_PLAN.md` 的 WP1。  
+产品壳：运营入口将挂入 [AI Desktop V1.7](../ai-desktop/DESIGN.md)（看板/任务/资源）；缺口与计划调整见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md)。执行卡见 [OPS_DESK_TASKS.md](OPS_DESK_TASKS.md)。
 
-本文只设计，不含实现。运营桌面是**接 DES 事件、供运营人员日常盯盘的投影**，不是新的业务系统。
+运营桌面是**接 DES 事件、供运营人员日常盯盘的投影**，不是新的业务系统。
 
 ## 1. 定位
 

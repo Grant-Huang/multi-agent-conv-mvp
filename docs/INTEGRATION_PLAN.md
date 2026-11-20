@@ -1,7 +1,25 @@
 # 系统打通计划：从“三块各自完整”到“完整系统 + 整体场景 E2E”
 
-状态：**WP1 方案已确认并在实施中**（决定见 [DECISIONS.md](DECISIONS.md) 第 56–58 条）；其余工作包仍是助手建议，开工前需用户确认。**执行级任务卡**：运营桌面 [mom/OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md)，WP1 其余部分 [mom/WP1_TASKS.md](mom/WP1_TASKS.md)，其余工作包见本文第五节。缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)，场景清单见 [SCENARIOS.md](feature-map/SCENARIOS.md)。
+状态：**WP1 方案已确认并在实施中**（决定见 [DECISIONS.md](DECISIONS.md) 第 56–58、60 条）；**产品壳主轴**见已确认的 [AI Desktop V1.7](ai-desktop/DESIGN.md)（交付顺序 A→B→C→D）。其余工作包仍是助手建议，开工前需用户确认。  
+**执行级任务卡**：Desktop [ai-desktop/PLAN.md](ai-desktop/PLAN.md) + [ai-desktop/FEATURE_MAP.md](ai-desktop/FEATURE_MAP.md)；运营桌面 [mom/OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md)；WP1 其余部分 [mom/WP1_TASKS.md](mom/WP1_TASKS.md)；其余工作包见本文第五节。  
+缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md) 与 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)，场景清单见 [SCENARIOS.md](feature-map/SCENARIOS.md)。  
 按 AGENTS.md：涉及 `orchestrator.rs` / `store.rs` / `registry.rs` / `acp.rs` / `util.rs` 的工作包，动手前先单独出方案并等你批准；每个工作包新增行为先在 `docs/testing/CASES.md` 定稿用例并见到业务断言 Red。
+
+## 0. 与 AI Desktop 的关系（2026-11-20 用户确认：不做双轨）
+
+**产品主轴只有一条：组织级 AI 桌面（V1.7）。** A1 一次换壳；本文 WP0–WP8 / WP1 / 运营 D* 是桌面内的能力与真实替换项，不再维护第二套前端导航。
+
+| 层级 | 职责 | 完成看什么 |
+|---|---|---|
+| **AI Desktop A–D** | 完整前端、Feature Map+Playwright、Mock→真实（见 [ai-desktop/MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md)） | 每里程碑 AD-* 全绿；已替换能力有真实集成证据 |
+| **本文 WP*** | 模块协议、黄金场景 GS1–GS6、高风险后端 | 跨模块断言；接入桌面后仍从桌面入口操作 |
+
+约束：
+
+1. A1 **移除**旧「会话 | 运营桌面」一级页签模型，入口重定向进桌面模块。  
+2. 运营「看板 / 任务 / 资源」= 桌面内运营模块；**D3a** 补任务+资源；**L4** 单独方案。  
+3. GS1 断言链不变；操作路径只认桌面入口。  
+4. A 阶段 SMT-03 **允许纯 Mock**；L1–L3 等真实 MOM 能力在 B/C 与 M4/M5 替换时汇合。
 
 ## 一、目标与“完成”的定义
 
@@ -128,15 +146,17 @@ sequenceDiagram
 
 真实 MES/EAM 连接；让会话模型直接审批/执行；把 MOM 重写进 Task 模型（除非选 B）；多用户权限体系；DES 参数标定。
 
-### 3.8 进度（与 PLAN.md 同步）
+### 3.8 进度（与 PLAN.md / OPS_DESK_TASKS 同步）
 
 | 阶段 | 状态 | 说明 |
 |---|---|---|
 | 运营桌面/频道 D0a、D0b | 已完成（#118、#121） | 发布器、频道卡、未读 |
-| D1 桌面看板 | 未开始 | 任务卡见 OPS_DESK_TASKS §3–§5 |
+| D1 桌面看板（D1-1～D1-3） | 已完成 | desk_view、desk API、OpsDesk 前端 |
+| D2 / L2 卡片批准 | 已完成（#136，决定 60） | OpsCase 批准；驳回本期不做 |
+| D3a 任务/资源子入口 | 未开始 | 拆出连接器；口径见 OPS_DESK_TASKS §8、ai-desktop/GAPS §5.2 |
 | L0、L1 | 未开始 | 任务卡见 WP1_TASKS |
-| L2 | 并入 D2 | 批准在运营卡上，需先确认 4 个问题 |
-| L3、L4 | 未开始 | L4 先出方案 |
+| L3 | 未开始 | 闭环回写与审核报告卡 |
+| L4 连接器 | 未开始 | **单独方案**；不堵 D3a |
 
 ## 四、风险与回滚
 
