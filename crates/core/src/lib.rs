@@ -865,6 +865,8 @@ pub mod codes {
     pub const ACP_RUNTIME: &str = "E_ACP_RUNTIME";
     pub const ACP_STOP: &str = "E_ACP_STOP";
     pub const REVIEW_FAILED: &str = "E_REVIEW_FAILED";
+    /// 人工审核结论针对的 AI 审核版本已过期（R-20261119-M14）
+    pub const REVIEW_STALE: &str = "E_REVIEW_STALE";
     pub const TASK_TIMEOUT: &str = "E_TASK_TIMEOUT";
     // agent 准入（E3）
     /// 准入协议步骤顺序不对（例如未澄清就打分）

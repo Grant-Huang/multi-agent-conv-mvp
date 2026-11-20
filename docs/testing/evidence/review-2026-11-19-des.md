@@ -1,40 +1,45 @@
 # 审查修复 2026-11-19（R-20261119-M2、M13、M14）Red → Green 证据
 
-分支：`claude/relaxed-fermi-u38fye`（master dea0e2a 之上）。问题来自 `docs/review/2026-11-19.md`（分支 `review/2026-11-19`）。决策见 [DECISIONS.md](../../DECISIONS.md) DES-29、DES-30。用例见 [CASES.md](../CASES.md)「审查修复 2026-11-19」。
-
-范围：本提交只包含以下内容，行为尚未修复：
-- 用例 RT-DESF-09、RT-DESF-10、RT-DESM-04、RT-DES-34、RT-DES-35；
-- 决策 DES-30（助手建议）；
-- 骨架 `Engine::des_human_review_for`：暂时忽略版本，等同原方法；
-- 失败测试。
-
-已有测试与断言没有改动。
+分支：`claude/relaxed-fermi-u38fye`（含冲突解决与 Green 实现）。问题来自 `docs/review/2026-11-19.md`（分支 `review/2026-11-19`）。决策见 [DECISIONS.md](../../DECISIONS.md) DES-29、DES-30。用例见 [CASES.md](../CASES.md)「审查修复 2026-11-19」。
 
 ## Red
 
 ```text
-CARGO_TARGET_DIR=target cargo test --locked -p an-des --test factory -p an-des-mcp --test stdio \
-  -p an-runtime --test mom_des -p an-server --test mom_des --no-fail-fast
+CARGO_TARGET_DIR=target cargo test --locked -p an-des --test factory
 
 an-des factory：8 passed; 2 failed
   rt_desf_09  panicked at crates/des/src/scenario.rs:585:30: attempt to multiply with overflow
               → simulation_create panicked on {... "start_minute":18446744073709551605 ...}
   rt_desf_10  one crew: the second machine waits for the first repair   left: 497（应为 737）
-an-des-mcp stdio：3 passed; 1 failed
-  rt_desm_04  McpError(-32603 "simulated factory worker failed")（应为工具错误）
-an-runtime mom_des：30 passed; 1 failed
-  rt_des_34   a decision on a superseded AI review is rejected: ()（旧版本仍被接受）
-an-server mom_des：5 passed; 1 failed
-  rt_des_35   ai_version is required: 200 OK
 ```
 
-失败原因与审查报告描述的问题一一对应：
-- 溢出导致 panic；
-- 维修单不排队；
-- 人工结论绑定当前版本。
+CI job 135934074231 同样在这两条失败（Rust exit 101）。另有：
+- `rt_desm_04`：溢出经 MCP 变成 `-32603`（应为工具错误）
+- `rt_des_34`：过期 `ai_version` 仍被接受
+- `rt_des_35`：缺少 `ai_version` 仍返回 200
 
-都不是环境问题，同一测试目标中的其他用例都通过。
+失败原因与审查报告一致，不是环境问题。
 
 ## Green
 
-待用户确认用例与 DES-30 后实现。
+实现要点：
+- M2：`scenario` / 资源耗时上限；MCP `catch_unwind` + 锁中毒恢复
+- M13：`an_des::schedule` 共享排班；模拟工厂与进程内累计已接受维修；同设备重叠拒绝
+- M14：`des_human_review_for` 校验版本（`E_REVIEW_STALE` → HTTP 409）；请求体 `ai_version` 必填；HTTP-DES-04 请求体补版本号（断言未改）
+
+```text
+CARGO_TARGET_DIR=target cargo test --locked -p an-des --test factory
+  ok. 10 passed; 0 failed
+
+CARGO_TARGET_DIR=target cargo test --locked -p an-des-mcp --test stdio
+  ok. 4 passed; 0 failed（含 rt_desm_04）
+
+CARGO_TARGET_DIR=target cargo test --locked -p an-runtime --test mom_des
+  ok. 31 passed; 0 failed（含 rt_des_34）
+
+CARGO_TARGET_DIR=target cargo test --locked -p an-server --test mom_des -- rt_des_35 http_des_04 http_des_05
+  ok. 3 passed; 0 failed
+
+CARGO_TARGET_DIR=target cargo test --locked -p an-server --test mom_des_connector --test mom_des_http_mcp
+  ok. 6 + 6 passed; 0 failed
+```

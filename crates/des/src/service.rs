@@ -112,6 +112,9 @@ fn write_fields() -> [(&'static str, Value, bool); 2] {
 
 /// `simulation_create.factory` 的 schema（与 `FactoryConfig` 的反序列化规则一致；null 使用默认 Line-B）。
 fn factory_schema() -> Value {
+    let duration = |desc: &str| {
+        json!({"type": "integer", "minimum": 0, "maximum": crate::MAX_DURATION_MINUTES, "description": desc})
+    };
     let count = |desc: &str| json!({"type": "integer", "minimum": 0, "description": desc});
     json!({
         "type": ["object", "null"],
@@ -139,11 +142,11 @@ fn factory_schema() -> Value {
                     "uncertified": {"type": "array", "items": {"type": "string"}},
                     "missing_tool": {"type": "array", "items": {"type": "string"}},
                     "tool_spares": count("Spare tools in the store"),
-                    "tool_transfer_minutes": count("Tool transfer lead time (minutes)"),
-                    "maintenance_minutes": count("Repair time (minutes)"),
+                    "tool_transfer_minutes": duration("Tool transfer lead time (minutes)"),
+                    "maintenance_minutes": duration("Repair time (minutes)"),
                     "maintenance_crews": count("Maintenance crews"),
-                    "finish_batch_minutes": count("Time to finish the current batch (minutes)"),
-                    "inspection_minutes": count("Release inspection time (minutes)"),
+                    "finish_batch_minutes": duration("Time to finish the current batch (minutes)"),
+                    "inspection_minutes": duration("Release inspection time (minutes)"),
                     "urgent_capacity_share": {"type": "number", "minimum": 0, "maximum": 1}
                 },
                 "additionalProperties": false
@@ -191,7 +194,7 @@ fn scenario_schema() -> Value {
                     simple("unconstrained")
                 ]
             },
-            "start_minute": {"type": "integer", "minimum": 0, "description": "Virtual minute the simulation starts"},
+            "start_minute": {"type": "integer", "minimum": 0, "maximum": crate::MAX_START_MINUTE, "description": "Virtual minute the simulation starts"},
             "horizon_minutes": {"type": "integer", "minimum": 1, "maximum": crate::scenario::MAX_HORIZON_MINUTES, "description": "Simulated duration (minutes)"},
             "mechanisms": {
                 "type": ["object", "null"],
@@ -751,18 +754,50 @@ impl FactoryService {
                     "unknown machine {}",
                     a.machine
                 );
+                let ahead = sim.now.saturating_add(MAX_SCHEDULE_AHEAD_MINUTES);
                 ensure!(
-                    a.start_minute >= sim.now
-                        && a.start_minute <= sim.now + MAX_SCHEDULE_AHEAD_MINUTES,
+                    a.start_minute >= sim.now && a.start_minute <= ahead,
                     "start_minute must be between now ({}) and {} minutes ahead",
                     sim.now,
                     MAX_SCHEDULE_AHEAD_MINUTES
                 );
                 ensure!(sim.orders.len() < MAX_ORDERS, "work order capacity reached");
-                let end = a.start_minute + sim.factory.resources.maintenance_minutes;
+                // 同一设备维修未结束时拒绝再下单（R-20261119-M13）。
+                let busy = sim.interventions.iter().any(|iv| match iv {
+                    Intervention::Maintenance {
+                        machine,
+                        end_minute,
+                        ..
+                    } => machine == &a.machine && *end_minute > a.start_minute,
+                    _ => false,
+                });
+                ensure!(
+                    !busy,
+                    "machine {} already has an overlapping maintenance order",
+                    a.machine
+                );
+                let prior: Vec<(u64, u64)> = sim
+                    .interventions
+                    .iter()
+                    .filter_map(|iv| match iv {
+                        Intervention::Maintenance {
+                            start_minute,
+                            end_minute,
+                            ..
+                        } => Some((*start_minute, *end_minute)),
+                        _ => None,
+                    })
+                    .collect();
+                let crews = sim.factory.resources.maintenance_crews.max(1) as usize;
+                let mut free = crate::crew_free_after(crews, &prior);
+                let (begin, end) = crate::schedule_next_maintenance(
+                    a.start_minute,
+                    sim.factory.resources.maintenance_minutes,
+                    &mut free,
+                )?;
                 sim.intervene(Intervention::Maintenance {
                     machine: a.machine.clone(),
-                    start_minute: a.start_minute,
+                    start_minute: begin,
                     end_minute: end,
                 });
                 Ok(record(
@@ -772,7 +807,7 @@ impl FactoryService {
                     json!({
                         "kind": "maintenance",
                         "machine": a.machine,
-                        "start_minute": a.start_minute,
+                        "start_minute": begin,
                         "complete_minute": end,
                         "status": "accepted",
                     }),

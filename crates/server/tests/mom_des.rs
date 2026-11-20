@@ -341,9 +341,10 @@ async fn http_des_04_review_flow_over_http() {
     assert_eq!(r.status(), 200, "AI review runs");
     let report: Value = r.json().await.unwrap();
     assert_eq!(report["ai"]["status"], "completed", "{report}");
+    let ai_version = report["ai"]["version"].as_u64().expect("AI version");
     let r = client
         .post(format!("{url}/api/mom/reviews/{id}/decision"))
-        .json(&json!({"decision":"override","reason":"needs a second look","actor":"supervisor"}))
+        .json(&json!({"decision":"override","reason":"needs a second look","actor":"supervisor","ai_version": ai_version}))
         .send()
         .await
         .unwrap();

@@ -517,9 +517,9 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-32 | mom-des | P0 案例已执行方案 C | 先在没有 AI 审核时"同意"；再在 AI 审核降级（模型报错）后"同意"；然后 AI 审核得结论 A 并"同意"；再运行 AI 审核得结论 B | 前两次"同意"被拒绝。对 A 的"同意"记录 AI 审核版本。得到 B 后，AI 审核版本号增加，报告的 `human` 为空（还没有人对 B 下结论），历史记录中原来的"同意"标明针对的版本、`applies_to_current_ai = false` |
 | HTTP-DES-05 | mom-des | 只有一个异步工作线程的服务，配置了脚本审核替身，P0 DES 案例 | 先在没有 AI 审核时 POST 同意；再让另一线程持引擎锁 2 秒，同时 POST AI 审核，并在请求期间每 50 ms 打一次心跳 | 同意返回 400。心跳的最大间隔小于 1 秒（处理函数不在异步工作线程上同步等锁）；AI 审核最终返回 200，状态 completed |
 
-## 审查修复 2026-11-19：R-20261119-M2、M13、M14（草案，待用户确认）
+## 审查修复 2026-11-19：R-20261119-M2、M13、M14
 
-问题与验收来自审查报告 `docs/review/2026-11-19.md`（分支 `review/2026-11-19`）。决策见 [DECISIONS.md](../DECISIONS.md) DES-29（由本线修）、DES-30（做法，助手建议）。
+问题与验收来自审查报告 `docs/review/2026-11-19.md`（分支 `review/2026-11-19`）。决策见 [DECISIONS.md](../DECISIONS.md) DES-29（由本线修）、DES-30（修法）。已转绿，证据见 [review-2026-11-19-des.md](evidence/review-2026-11-19-des.md)。
 
 测试位置：
 - `crates/des/tests/factory.rs`：RT-DESF-09、10；
