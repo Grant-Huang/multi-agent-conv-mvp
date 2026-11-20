@@ -194,6 +194,8 @@ export function ChatView(props: {
   notes?: Record<string, string[]>;
   /** 批准 / 取消任务；由 App 调用接口并刷新 */
   onTaskAction?: (kind: TaskActionKind, taskId: string) => Promise<void>;
+  /** 输入区焦点变化（A5.1 Attention：输入中不抢焦点） */
+  onComposerFocusChange?: (focused: boolean) => void;
 }) {
   const { messages, onSend, conversationId } = props;
   const tasks = props.tasks ?? [];
@@ -368,6 +370,8 @@ export function ChatView(props: {
           aria-label="输入消息"
           placeholder="输入消息，Enter 发送，Shift+Enter 换行"
           onChange={(e) => setText(e.target.value)}
+          onFocus={() => props.onComposerFocusChange?.(true)}
+          onBlur={() => props.onComposerFocusChange?.(false)}
           onKeyDown={(e) => {
             // 输入法组字过程中按 Enter 不发送
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

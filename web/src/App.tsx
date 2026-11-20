@@ -22,6 +22,9 @@ import { EvidencePanel, type EvidenceLayer } from "./desktop/EvidencePanel";
 import { HistoryPanel } from "./desktop/HistoryPanel";
 import { SettingsPanel, type SettingsLayer } from "./desktop/SettingsPanel";
 import { loadProfile, type AssistantProfile, type SettingsCategoryId } from "./desktop/profileStore";
+import { AttentionToast } from "./desktop/AttentionToast";
+import { loadAttentionQueue, loadMuteOrdinary, clearAttentionQueue } from "./desktop/attentionStore";
+import type { S1BgJob } from "./desktop/S1AskBar";
 import {
   SMT03_TASK_ID,
   readDesktopView,
@@ -370,6 +373,11 @@ export default function App() {
 
   const [desktopSide, setDesktopSide] = useState<DesktopSide>(null);
   const [assistantProfile, setAssistantProfile] = useState<AssistantProfile>(() => loadProfile());
+  const [s1BgJob, setS1BgJob] = useState<S1BgJob | null>(null);
+  const [s1Reply, setS1Reply] = useState<string | null>(null);
+  const [composingInput, setComposingInput] = useState(false);
+  const [attnItems, setAttnItems] = useState(() => loadAttentionQueue());
+  const [attnMuted, setAttnMuted] = useState(() => loadMuteOrdinary());
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -377,6 +385,11 @@ export default function App() {
     apply();
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    clearAttentionQueue();
+    setAttnItems([]);
   }, []);
 
   const openWorkspace = (taskId: string) => {
@@ -602,6 +615,30 @@ export default function App() {
             onOpenDesExperiment={() => setMainView("des-experiment")}
             opsEnabled={opsUnread !== null}
             assistantName={assistantProfile.name}
+            s1BgJob={s1BgJob}
+            s1Reply={s1Reply}
+            onS1Ask={(text) => {
+              setS1Reply(`问答（模拟，留在桌面）：${text.slice(0, 80)}`);
+            }}
+            onS1Delegate={(text) => {
+              setS1Reply(null);
+              setS1BgJob({ taskId: SMT03_TASK_ID, label: text, status: "submitting" });
+              window.setTimeout(() => {
+                setS1BgJob({ taskId: SMT03_TASK_ID, label: text, status: "accepted" });
+              }, 400);
+            }}
+            onOpenBgTask={(id) => openWorkspace(id)}
+          />
+        )}
+        {(mainView === "home" || mainView === "chat") && (
+          <AttentionToast
+            items={attnItems}
+            muted={attnMuted}
+            composing={composingInput}
+            onChange={({ items, muted }) => {
+              setAttnItems(items);
+              setAttnMuted(muted);
+            }}
           />
         )}
         {mainView === "workspace" && workspaceTaskId && (
@@ -634,6 +671,7 @@ export default function App() {
             onSend={send}
             onTaskAction={taskAction}
             streaming={streaming}
+            onComposerFocusChange={setComposingInput}
           />
         )}
       </main>
