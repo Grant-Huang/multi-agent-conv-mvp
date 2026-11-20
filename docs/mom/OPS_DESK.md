@@ -1,9 +1,9 @@
 # 制造运营桌面与运营频道（设计草案）
 
-状态：实施中（D0–D2 已完成；D3a 待做）。依据：`docs/DECISIONS.md` 第 56、57、58、60 条，`docs/mom/UI_UX_PRINCIPLES.md`（下称“原则”），`docs/INTEGRATION_PLAN.md` 的 WP1。  
-产品壳：运营入口将挂入 [AI Desktop V1.7](../ai-desktop/DESIGN.md)（看板/任务/资源）；缺口与计划调整见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md)。执行卡见 [OPS_DESK_TASKS.md](OPS_DESK_TASKS.md)。
+状态：D0～D2 已实现；D3 与完整三入口工作台改由 World Adapter M0 承接（决定 61、62；DES-31/32）。依据：`docs/DECISIONS.md` 第 56–58、60–62 条，`docs/mom/UI_UX_PRINCIPLES.md`（下称“原则”），`docs/INTEGRATION_PLAN.md` 的 WP1，[WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md)，[DES_EXPERIMENT_OPS_SPLIT.md](DES_EXPERIMENT_OPS_SPLIT.md)。  
+产品壳：运营入口挂入 [AI Desktop V1.7](../ai-desktop/DESIGN.md)；缺口见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md)。执行卡见 [OPS_DESK_TASKS.md](OPS_DESK_TASKS.md)、[WA_M0_TASKS.md](WA_M0_TASKS.md)。
 
-运营桌面是**接 DES 事件、供运营人员日常盯盘的投影**，不是新的业务系统。
+运营桌面/运营频道是**正式运行事项的盯盘与批准入口**，不是实验配置台。场景配置、试跑与时钟控制在「DES 仿真实验」；正式运行事项发到「AI 桌面 → 运营频道」。看板/任务/资源完整工作台见 World Adapter M0。
 
 ## 1. 定位
 
@@ -146,7 +146,7 @@ flowchart LR
 | D0 | 固定频道 + 发布器 + 对应表；分级函数；开关 | 第 56、57、58 条已定。**已完成**（D0a #118、D0b #121） |
 | D1 | 桌面看板：厂况条、事项行、抽屉、筛选、未读角标 | D0 |
 | D2 | “在频道中处理”和卡片批准的联动（依赖 WP1 的 L2 案例卡） | WP1 L2 |
-| D3 | 任务、资源两个入口；DES 换成 MCP 连接器后的接入回归 | WP1 L4 |
+| D3 | 任务、资源两个入口 → **改走 World Adapter M0**（同一工作台三入口）；MCP 连接器回归已由⑤a-2/③覆盖，产品读/写见 WA M1～M2 | 决定 61；DES-31 |
 
 ## 9. 待用户确认（以下四项已在对话中确认，结论见决定 57、58；保留作历史）
 
