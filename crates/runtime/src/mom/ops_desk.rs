@@ -380,13 +380,26 @@ pub(crate) fn case_title(case: &Case) -> String {
     format!("{what}：{}", case.asset)
 }
 
+/// 卡片携带的审批范围（决定 60）：与引擎 `approve` 的 scope 一致。
+fn card_scope(case: &Case) -> Option<String> {
+    match case.scenario.as_str() {
+        "s1" => Some("production".into()),
+        "s2" => Some("initial_response".into()),
+        _ => None,
+    }
+}
+
 fn card_for(case: &Case, level: OpsLevel) -> an_core::ChatCard {
     let level = if needs_human(&case.stage) {
         OpsLevel::P0
     } else {
         level
     };
-    let approver = case.approvals.values().next().map(|a| a.approver.clone());
+    let scope = card_scope(case);
+    let approver = scope
+        .as_ref()
+        .and_then(|s| case.approvals.get(s).map(|a| a.approver.clone()))
+        .or_else(|| case.approvals.values().next().map(|a| a.approver.clone()));
     an_core::ChatCard::OpsCase {
         case_id: case.id.clone(),
         title: case_title(case),
@@ -399,12 +412,35 @@ fn card_for(case: &Case, level: OpsLevel) -> an_core::ChatCard {
         ),
         owner: "调度".into(),
         approver,
+        scope,
+        plan_revision: Some(case.plan_revision),
         provenance: "simulation".into(),
         updated_at: case.updated_at,
     }
 }
 
 impl OpsPublisher {
+    /// 若频道里已有该案例卡，按引擎当前状态刷新卡片内容；没有卡则什么都不做。
+    pub fn refresh_case(&self, engine: &Engine, case_id: &str) -> Result<()> {
+        let case = engine
+            .case(case_id)
+            .map_err(|_| anyhow::anyhow!("E_CASE_NOT_FOUND: case {case_id} does not exist"))?;
+        let mid: Option<String> = self
+            .db
+            .query_row(
+                "SELECT message_id FROM ops_cases WHERE case_id=?1",
+                [case_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        if let Some(mid) = mid {
+            self.store
+                .update_message_card(&mid, &card_for(case, OpsLevel::P0))?;
+        }
+        Ok(())
+    }
+
     /// 把案例卡发到运营频道（用户在桌面点“在频道中处理”）。已有卡就返回已有消息 id，不重复发。
     /// 绕过小时上限与合并窗口（是用户主动动作），但仍写入 ops_cases 记录，之后的 tick 照常就地更新这张卡。
     /// 案例不存在返回 Err，错误信息以 "E_CASE_NOT_FOUND" 开头。

@@ -1,5 +1,6 @@
-// 运营频道里的卡片（docs/mom/OPS_DESK.md）：引擎状态的快照，只读；批准不在这里做，沿用已有的批准链路。
-// 数据都来自模拟，卡片上必须标明。
+// 运营频道里的卡片（docs/mom/OPS_DESK.md，决定 60）：引擎状态快照；批准只在 OpsCase 卡上。
+import { useState } from "react";
+import { api } from "../api";
 import type { ChatCard } from "../bindings/ChatCard";
 
 const STAGE_LABEL: Record<string, string> = {
@@ -16,10 +17,46 @@ const STAGE_LABEL: Record<string, string> = {
 type OpsCase = Extract<ChatCard, { type: "ops_case" }>;
 type OpsSummary = Extract<ChatCard, { type: "ops_summary" }>;
 
-export function OpsCaseCard({ card }: { card: OpsCase }) {
+export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: () => void }) {
   const stage = STAGE_LABEL[card.stage] ?? card.stage;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [localApprover, setLocalApprover] = useState<string | null>(null);
+  const approver = localApprover ?? card.approver;
+  const planRevision =
+    card.plan_revision == null ? null : Number(card.plan_revision);
+  const canApprove =
+    card.stage === "WAITING_HUMAN" && !approver && !!card.scope && planRevision != null && !Number.isNaN(planRevision);
+
+  const approve = async () => {
+    if (!card.scope || planRevision == null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.opsApprove(card.case_id, {
+        scope: card.scope,
+        plan_revision: planRevision,
+      });
+      setLocalApprover(r.approver);
+      onChanged?.();
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes("stale") || msg.includes("expired") || msg.includes("409") || msg.includes("HTTP 409")) {
+        setError("方案已更新，请刷新");
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <section className={`agent-card ops-card level-${card.level.toLowerCase()}`} role="region" aria-label={`运营案例 ${card.case_id}`}>
+    <section
+      className={`agent-card ops-card level-${card.level.toLowerCase()}`}
+      role="region"
+      aria-label={`运营案例 ${card.case_id}`}
+    >
       <h3>
         <span className="badge">{card.level}</span> {card.title} <span className="badge sim">模拟</span>
       </h3>
@@ -29,8 +66,18 @@ export function OpsCaseCard({ card }: { card: OpsCase }) {
       <p className="hint">{card.summary}</p>
       <p className="hint">
         责任：{card.owner}
-        {card.approver ? ` · 批准人：${card.approver}` : ""}
+        {approver ? ` · 批准人：${approver}` : ""}
       </p>
+      {canApprove && (
+        <button type="button" className="btn small" disabled={busy} onClick={approve}>
+          批准
+        </button>
+      )}
+      {error && (
+        <p className="hint" role="alert">
+          {error}
+        </p>
+      )}
     </section>
   );
 }

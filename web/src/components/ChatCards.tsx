@@ -111,7 +111,7 @@ export function ChatCardView(props: { card: ChatCard; conversationId: string; on
       );
       break;
     case "ops_case":
-      body = <OpsCaseCard card={card} />;
+      body = <OpsCaseCard card={card} onChanged={onChanged} />;
       break;
     case "ops_summary":
       body = <OpsSummaryCard card={card} />;

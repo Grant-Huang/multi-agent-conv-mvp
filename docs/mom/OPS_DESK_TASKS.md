@@ -12,7 +12,7 @@
 | **D1-1** | 运行时：桌面读模型 `desk_view` + `OpsPublisher::open_case`（RT-OPSDESK-06/07） | 已完成 | 本 PR |
 | **D1-2** | 服务端：`GET /api/mom/desk`、`GET /api/mom/desk/cases/{id}`、`POST …/open-in-channel` | 已完成 | 本 PR |
 | **D1-3** | 前端：“运营桌面”页签、看板、筛选、详情抽屉（E2E-OPSDESK/OPSDRAWER/OPSNOISE 转绿） | 已完成 | 本 PR |
-| D2 | 卡片上批准（需先与用户确认 §D2 的待确认项） | 未开始 | — |
+| **D2** | 卡片上批准（决定 60） | 已完成 | 本 PR |
 | D3 | 任务/资源入口、MCP 连接器回归（需先与用户确认范围） | 未开始 | — |
 
 一张卡 = 一个 PR。做完先在 PR 里贴“完成的定义”命令的真实输出，等用户确认合并，再开下一张。
@@ -187,21 +187,50 @@ curl -s localhost:18791/mom/api/mom/cases/<id> | python3 -m json.tool
 curl -s localhost:18791/api/mom/desk/unread                         # 运营频道未读
 ```
 
-## 7. D2：卡片上批准（先问用户，再动手）
+## 7. D2：卡片上批准（**已确认**，决定 60）
 
-**设计依据**：决定 57——批准只发生在卡片上，桌面不放批准按钮；操作人用固定身份（fixture identity），卡片上显示批准人。
+用户确认（2026-11-20）：按钮在运营频道 `OpsCase`；卡片携带 `scope`/`plan_revision`；重复点击 `200+already:true`；本期不做驳回。
 
-**开工前必须先向用户确认的 4 件事**（给出推荐项）：
-1. 批准按钮放在**运营频道里的 `OpsCase` 卡**上（推荐），还是另做会话里的 `MomCase` 卡？
-2. 按钮提交 `scope` 和 `plan_revision` 由谁决定：推荐由**卡片携带**（`ChatCard::OpsCase` 加字段 → 需改 `an-core` 并重新生成 bindings，属公开类型变更，要说明），服务端原样交给引擎，过期方案由引擎拒绝并回 409，卡片提示“方案已更新，请刷新”。
-3. 重复点击的语义：推荐“已批准则返回 200 + `already:true`，不重复执行”。
-4. 驳回是否本期做（推荐不做，先只做批准）。
+### 7.1 公开类型（改 `an-core`，必须重生 bindings）
 
-**初步任务拆分（确认后再细化成与 D1 同粒度的卡片）**：
-- D2-1 Red：先把 `E2E-OPSAPPROVE` 与 `RT-OPSDESK-11…`（批准接口：成功、过期 409、重复幂等、未授权身份）写进 CASES.md 并冻结，见到业务断言失败。
-- D2-2 服务端：`POST /api/mom/desk/cases/{id}/approve`，调用 `Engine::approve`，操作人固定 `supervisor`（与现有 E2E 夹具一致），**不得在桌面读接口里偷偷写**。
-- D2-3 前端：`OpsCards.tsx` 的案例卡在 `WAITING_HUMAN` 时显示“批准”按钮，点击后禁用并显示结果；批准后发布器 tick 就地更新同一张卡（消息条数不变，已有 E2E-OPSCHANNEL 的断言）。
-- 风险：写路径。`approve` 前后案例阶段必须与 `/mom/` 页面一致；不改 `engine.rs`。
+`ChatCard::OpsCase` 增加：
+```rust
+scope: Option<String>,         // s1 → Some("production")；s2 待首响 → Some("initial_response")；其它 None
+plan_revision: Option<u64>,  // 发卡时的 case.plan_revision
+```
+改完后跑：`CARGO_TARGET_DIR=target cargo test -p an-core`（生成 `web/src/bindings/`），**一起提交**。
+
+`card_for` / `open_case` 发的卡必须填这两个字段；已批准后 `approver` 有值，前端不再显示批准按钮。
+
+### 7.2 服务端
+
+`POST /api/mom/desk/cases/{id}/approve`，body：`{"scope":"production","plan_revision":1}`（空字段不要）。
+- 成功：`200 {"already":false,"approver":"supervisor"}`，并**立刻**用 `update_message_card` 刷新频道里该案例卡（不要只靠 1 秒 tick）。
+- 已批准（同 scope + 同 plan_revision）：`200 {"already":true,"approver":"…"}`，不调用会重复生效的逻辑（可跳过 `Engine::approve`）。
+- 方案/证据过期（引擎报 `stale plan` / `evidence snapshot stale`）：**409**，正文含原因。
+- 案例不存在：**404**。
+- 操作人固定 `supervisor`，**不要**从请求体读 actor。
+- 锁顺序：先引擎后发布器。不得改 `engine.rs`。
+
+在 `OpsPublisher` 上加 `refresh_case(engine, case_id) -> Result<()>`：有 message_id 则 `update_message_card`，没有则 Ok(())。
+
+### 7.3 前端
+
+`OpsCards.tsx`：`WAITING_HUMAN` 且 `!approver` 且 `scope`/`plan_revision` 齐全时显示「批准」按钮（`exact` 名「批准」）；点击调 `api.opsApprove(caseId,{scope,plan_revision})`，进行中禁用；成功后用返回的 approver 更新本地展示或触发消息刷新；409 时提示「方案已更新，请刷新」。
+`api.ts` 增加 `opsApprove`。桌面（`OpsDesk`）**不得**出现批准按钮（E2E 已有断言）。
+
+### 7.4 用例（冻结后只改业务代码）
+
+| 用例 | 断言 |
+|---|---|
+| RT-OPSDESK-11 | 服务端：待批准案例 approve → 200 already=false；再调一次 already=true；错误 plan_revision → 409；不存在 → 404；批准后频道卡 approver=supervisor |
+| E2E-OPSAPPROVE | 桌面「在频道中处理」→ 卡上点「批准」→ 卡显示 supervisor；桌面无「批准」按钮；`GET /mom/api/mom/cases/{id}` 的 decision_inbox 显示已批 |
+
+写进 `CASES.md` 表格 + `features.json`；证据 `ops-desk-d2-red.md` / `ops-desk-d2.md`。
+
+### 7.5 本卡完成定义
+
+与第 2 节相同，另加：`PLAYWRIGHT_BROWSERS_PATH=… npx playwright test ops.spec.ts` 含新 E2E-OPSAPPROVE 共 6 个全绿。
 
 ## 8. D3：任务/资源入口与连接器回归（先问用户，再动手）
 

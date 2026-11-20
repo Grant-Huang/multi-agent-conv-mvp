@@ -631,6 +631,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-OPSDRAWER | ops-desk | 开关打开；一个待批准案例 | 点击事项行 | 抽屉依次有“发生了什么与影响、责任、方案与前提、缺什么、进展与下次反馈、凭什么算解决”；原始数据默认折叠、展开后可见；抽屉无批准按钮；Esc 关闭后焦点回到触发的事项行 |
 | E2E-OPSCHANNEL | ops-desk | 开关打开；注入一个待批准案例 | 查看页签未读数，打开运营频道，再批准该案例 | 未读数为 1，打开后清零；频道里该案例只有一张带“模拟”的卡；批准后同一张卡更新（含批准人）、频道消息条数不变；频道没有模型回复，也没有任务 |
 | E2E-OPSNOISE | ops-desk | 开关打开，每小时上限 10；一个已有卡片的案例，再来 12 个新案例 | 对已有卡片的案例重复上报 10 次观测；再注入 12 个新案例 | 重复观测不新增频道消息；卡片总数为 10，另有一张“另有 3 条”汇总卡；桌面仍有全部 13 个事项 |
+| E2E-OPSAPPROVE | ops-desk | 开启桥的实例，有待批准案例 | 桌面点「在频道中处理」→ 卡上点「批准」 | 卡显示 supervisor；桌面无「批准」按钮；引擎 decision_inbox 含批准人 |
 | E2E-OPSOFF | ops-desk | 默认 harness，未配置 `[mom]`（基线：现状本来就通过，用于防止回归） | 注入 MOM 案例，打开页面，发一句问候 | 没有“运营桌面”页签、没有运营频道、`/api/mom/desk` 为 404；原有会话回复正常 |
 
 说明：原草案里 E2E-OPSNOISE 的“大量 P2 读数不进频道”改写为“同一案例重复观测只更新原卡”。原因：进程内 MOM 目前没有纯过程读数（每次观测都会让案例的计划失效），纯 P2 要等 DES 事件接入后才有；P2 的分级由 RT-OPSDESK-01 覆盖。这是实现前的改写，不是为迎合实现改断言。
@@ -648,13 +649,14 @@ Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_ops
 | RT-OPSDESK-06 | ops-desk | 一个待批准案例，发布器未 tick | 对同一案例调用 `open_case` 两次，再 tick；对不存在的案例调用 | 两次返回同一非空消息 id；频道里该案例只有一张卡；tick 后消息条数不变；不存在的案例错误以 `E_CASE_NOT_FOUND` 开头 |
 | RT-OPSDESK-07 | ops-desk | 零案例引擎；另造待批准、受阻、已关闭各一 | 调用 `desk_view` | 零案例 `state=no_data`；有案例时 `state=ok`，`rows[0]` 待批准、`rows[1]` 受阻、已完成最后；`strip` 计数一致；每行 `provenance=simulation` 且 case_id 都在引擎里；结果确定 |
 | RT-OPSDESK-09 | ops-desk | 发布器（文件库），先后发出几张卡 | 查看未读、批准已发卡的案例、再发新卡、标记已读、重启 | 无消息时未读为 0；每张新卡、汇总卡各加 1；就地更新原卡不增加；标记已读后为 0；已读位置重启后仍在 |
+| RT-OPSDESK-11 | ops-desk | 服务端挂桌面路由，已发卡的待批准案例 | approve 两次；错误 plan_revision；不存在案例 | 首次 already=false；再次 already=true；卡 approver=supervisor；错误版本 409；不存在 404 |
 | RT-OPSDESK-10 | ops-desk | 服务端同时挂 MOM 与运营桌面路由，已创建 s1 案例 | `GET /api/mom/desk`；`GET …/cases/{id}`；对同一案例 `POST …/open-in-channel` 两次；对不存在案例 GET/POST | desk 200 且 rows 案例集合与 `/mom/api/mom/cases` 相同；详情含 `projection_seq`；两次 open 返回同一 `message_id`；不存在案例 404 |
 
-说明：RT-OPSDESK-06/07 属 D1-1（`crates/runtime/tests/ops_desk.rs`）；RT-OPSDESK-10 属 D1-2（`crates/server/tests/mom_ops.rs`，函数 `rt_opsdesk_10_desk_api_matches_engine_and_open_is_idempotent`）。证据见 `docs/testing/evidence/ops-desk-d1-1-red.md`、`ops-desk-d1-2-red.md`。
+说明：RT-OPSDESK-06/07 属 D1-1；RT-OPSDESK-10/11 属 D1-2/D2（`crates/server/tests/mom_ops.rs`）。证据见 `ops-desk-d1-*.md`、`ops-desk-d2.md`。
 
 说明：原草案 RT-OPSDESK-03 的“不进入记忆抽取”本期无法验证——仓库里还没有个人记忆抽取模块（见 `docs/memory/` 的缺口 G-9）。这里改为断言消息带结构化案例卡，日后的抽取器按卡片类型跳过即可；等记忆模块出现时再补断言。原 RT-OPSDESK-04 的“无桌面接口和发布器”属于服务层，放到 D0b 的服务端测试。
 
-D2（卡片批准联动）的 E2E-OPSAPPROVE 依赖 WP1 L2 的案例卡，待 L2 用例定稿后一并补写。
+D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并转绿；证据见 `docs/testing/evidence/ops-desk-d2.md`。
 
 ## R-20261118-M5 JSON 路径不碰撞
 

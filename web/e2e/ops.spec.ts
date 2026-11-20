@@ -204,6 +204,25 @@ test('E2E-OPSNOISE: 超过小时上限合并成汇总卡，同案例重复观测
   for (const id of ids) await expect(rows(page).filter({ hasText: id })).toHaveCount(1);
 });
 
+test('E2E-OPSAPPROVE: 桌面进频道后在卡上批准，卡与引擎同步，桌面无批准按钮', async ({ page, request }) => {
+  const id = await scenario(request);
+  await openDesk(page);
+  const row = rows(page).filter({ hasText: id }).first();
+  await row.getByRole('button', { name: '在频道中处理' }).click();
+  const card = page.getByTestId('ops-card').filter({ hasText: id });
+  await expect(card).toBeVisible();
+  await expect(card.getByRole('button', { name: '批准', exact: true })).toBeVisible();
+  await card.getByRole('button', { name: '批准', exact: true }).click();
+  await expect(card).toContainText('supervisor');
+  await expect(card.getByRole('button', { name: '批准', exact: true })).toHaveCount(0);
+  const view = unwrap(await (await request.get(mom(`/cases/${id}`))).json());
+  const approved = JSON.stringify(view.decision_inbox ?? view);
+  expect(approved).toContain('supervisor');
+  await page.getByRole('tab', { name: /运营桌面/ }).click();
+  await expect(page.getByRole('button', { name: '批准', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '批准执行' })).toHaveCount(0);
+});
+
 test('E2E-OPSOFF: 关闭开关（默认）时没有桌面页签和运营频道，原有会话行为不变', async ({ page, request }) => {
   // 默认 harness（18787）没有配置 [mom]，chat_bridge 默认关闭；MOM 事件照常可以注入
   const r = await request.post('/mom/api/mom/scenarios/s1');

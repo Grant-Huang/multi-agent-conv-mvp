@@ -226,6 +226,12 @@ export const api = {
       `/api/mom/desk/cases/${encodeURIComponent(id)}/open-in-channel`,
       { method: "POST", body: "{}" },
     ),
+  /** 运营频道卡片批准（决定 60）；过期方案回 409 */
+  opsApprove: (id: string, body: { scope: string; plan_revision: number }) =>
+    request<{ already: boolean; approver: string }>(
+      `/api/mom/desk/cases/${encodeURIComponent(id)}/approve`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
   /** 业务内省未读；403 时由调用方处理 */
   introUnread: () =>
     request<{ unread: number; conversation_id: string | null; title: string }>("/api/introspection/unread"),

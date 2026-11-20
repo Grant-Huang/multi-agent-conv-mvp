@@ -969,4 +969,5 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **D1-1 运行时读模型**（2026-11-19）：`desk_view` + `OpsPublisher::open_case`；RT-OPSDESK-06、07 转绿。证据见 `testing/evidence/ops-desk-d1-1-red.md`。
 - [x] **D1-2 服务端接口**（2026-11-19）：`GET /api/mom/desk`、`GET /api/mom/desk/cases/{id}`、`POST …/open-in-channel`；RT-OPSDESK-10 转绿。证据见 `testing/evidence/ops-desk-d1-2-red.md`。
 - [x] **D1-3 前端桌面**（2026-11-19）：运营桌面页签、看板、筛选、详情抽屉；E2E-OPSDESK、OPSDRAWER、OPSNOISE、OPSCHANNEL、OPSOFF 全绿。证据见 `testing/evidence/ops-desk-d1-3.md`。
-- [ ] **D2 卡片批准联动**、**D3 任务/资源入口与 MCP 连接器回归**。
+- [x] **D2 卡片批准**（2026-11-20）：决定 60；`OpsCase` 携带 scope/plan_revision；`POST …/approve`；E2E-OPSAPPROVE、RT-OPSDESK-11 转绿。证据见 `testing/evidence/ops-desk-d2.md`。
+- [ ] **D3 任务/资源入口与 MCP 连接器回归**（先确认范围，见 OPS_DESK_TASKS §8）。
