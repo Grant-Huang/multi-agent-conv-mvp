@@ -20,6 +20,8 @@ import { DesExperiment } from "./desktop/DesExperiment";
 import { WorkspaceView } from "./desktop/WorkspaceView";
 import { EvidencePanel, type EvidenceLayer } from "./desktop/EvidencePanel";
 import { HistoryPanel } from "./desktop/HistoryPanel";
+import { SettingsPanel, type SettingsLayer } from "./desktop/SettingsPanel";
+import { loadProfile, type AssistantProfile, type SettingsCategoryId } from "./desktop/profileStore";
 import {
   SMT03_TASK_ID,
   readDesktopView,
@@ -34,7 +36,14 @@ type MainView = DesktopMainView;
 type DesktopSide =
   | null
   | { kind: "evidence"; taskId: string; layer: EvidenceLayer; evidenceId: string | null; mode?: "normal" | "empty" }
-  | { kind: "history" };
+  | { kind: "history" }
+  | {
+      kind: "settings";
+      layer: SettingsLayer;
+      categoryId: SettingsCategoryId | null;
+      memoryId: string | null;
+      search: string;
+    };
 
 /** 每个任务保留的进度条目数，超过后丢弃最早的 */
 const MAX_PROGRESS_LINES = 30;
@@ -360,10 +369,23 @@ export default function App() {
   };
 
   const [desktopSide, setDesktopSide] = useState<DesktopSide>(null);
+  const [assistantProfile, setAssistantProfile] = useState<AssistantProfile>(() => loadProfile());
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => document.documentElement.dataset.reducedMotion = mq.matches ? "1" : "0";
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   const openWorkspace = (taskId: string) => {
     setMainView("workspace", taskId);
     setNavOpen(false);
+  };
+
+  const openSettings = (layer: SettingsLayer = "categories", categoryId: SettingsCategoryId | null = null) => {
+    setDesktopSide({ kind: "settings", layer, categoryId, memoryId: null, search: "" });
   };
 
   const openEvidence = (taskId: string, mode: "normal" | "empty" = "normal") => {
@@ -457,6 +479,14 @@ export default function App() {
         <button type="button" className="brand brand-btn" onClick={() => setMainView("home")}>
           AgentNexus <span>Desktop</span>
         </button>
+        <button
+          type="button"
+          className="btn assistant-chip"
+          data-testid="assistant-chip"
+          onClick={() => openSettings("assistant", "assistant")}
+        >
+          {assistantProfile.avatar} {assistantProfile.name}
+        </button>
         <button className="btn primary" onClick={newConversation}>＋ 新会话</button>
         <button
           type="button"
@@ -472,6 +502,14 @@ export default function App() {
           onClick={() => setDesktopSide({ kind: "history" })}
         >
           历史
+        </button>
+        <button
+          type="button"
+          className={`btn ${desktopSide?.kind === "settings" ? "active" : ""}`}
+          data-testid="open-settings"
+          onClick={() => openSettings()}
+        >
+          设置与管理
         </button>
         <a className="btn" href="/mom/">MOM 运营沙盘</a>
         <p className="sidebar-label">最近</p>
@@ -563,6 +601,7 @@ export default function App() {
             onOpenEvidence={(id) => openEvidence(id)}
             onOpenDesExperiment={() => setMainView("des-experiment")}
             opsEnabled={opsUnread !== null}
+            assistantName={assistantProfile.name}
           />
         )}
         {mainView === "workspace" && workspaceTaskId && (
@@ -573,6 +612,7 @@ export default function App() {
               setMainView("home");
             }}
             onOpenEvidence={() => openEvidence(workspaceTaskId)}
+            onOpenSettings={() => openSettings("assistant", "assistant")}
           />
         )}
         {mainView === "des-experiment" && (
@@ -625,6 +665,24 @@ export default function App() {
               setDesktopSide(null);
             }}
             onClose={() => setDesktopSide(null)}
+          />
+        ) : desktopSide?.kind === "settings" ? (
+          <SettingsPanel
+            layer={desktopSide.layer}
+            categoryId={desktopSide.categoryId}
+            memoryId={desktopSide.memoryId}
+            search={desktopSide.search}
+            onNavigate={(next) =>
+              setDesktopSide({
+                kind: "settings",
+                layer: next.layer,
+                categoryId: next.categoryId,
+                memoryId: next.memoryId,
+                search: next.search ?? desktopSide.search,
+              })
+            }
+            onClose={() => setDesktopSide(null)}
+            onProfileSaved={setAssistantProfile}
           />
         ) : (
           <>

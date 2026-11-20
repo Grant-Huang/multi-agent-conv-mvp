@@ -491,7 +491,7 @@ G-6：无「个人」页签 → 角标挂会话列表即可；E2E-INTROUNREAD �
 
 **状态**：✅  
 **用例**：RT-INT-02；第二阶段 RT-INT-02b（已确认根因复发）待根因字段可用  
-**核实结论**（2026-11-20，决策第 62 条）：
+**核实结论**（2026-11-20，决策第 64 条）：
 
 1. `eight_d` / `proposal`：**不能**稳定取出可聚合根因。
 2. `claimed_causes`：在 `des_reviews`，不进 Case，`MomSource` 读不到；且是假设。
@@ -499,6 +499,8 @@ G-6：无「个人」页签 → 角标挂会话列表即可；E2E-INTROUNREAD �
 4. 外发仍经发送闸门（重要性/相关性）。
 
 **落点**：`introspect/cooccur.rs`；`CaseSummary.asset/batch`；`run_once` 串联 `analyze_cooccurrence`。
+
+**推送（决策第 65 条）**：共现默认 `interrupt_eligible=false`（仅内省页）；同案例集合合并；日配额读真实投递。
 
 ---
 

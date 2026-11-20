@@ -1,0 +1,235 @@
+import { useEffect, useState } from "react";
+import {
+  MEMORY_SEED,
+  SETTINGS_CATEGORIES,
+  bumpProfileVersionForConflict,
+  loadProfile,
+  saveProfile,
+  type AssistantProfile,
+  type MemoryEntry,
+  type SettingsCategoryId,
+} from "./profileStore";
+
+export type SettingsLayer = "categories" | "assistant" | "memory";
+
+type Props = {
+  layer: SettingsLayer;
+  categoryId: SettingsCategoryId | null;
+  memoryId: string | null;
+  search: string;
+  onNavigate: (next: { layer: SettingsLayer; categoryId: SettingsCategoryId | null; memoryId: string | null; search?: string }) => void;
+  onClose: () => void;
+  onProfileSaved: (profile: AssistantProfile) => void;
+};
+
+export function SettingsPanel({ layer, categoryId: _categoryId, memoryId, search, onNavigate, onClose, onProfileSaved }: Props) {
+  const [profile, setProfile] = useState(() => loadProfile());
+  const [draft, setDraft] = useState<AssistantProfile>(() => loadProfile());
+  const [baseVersion, setBaseVersion] = useState(() => loadProfile().version);
+  const [error, setError] = useState<string | null>(null);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  useEffect(() => {
+    if (layer !== "assistant") return;
+    const p = loadProfile();
+    setProfile(p);
+    setDraft(p);
+    setBaseVersion(p.version);
+    setError(null);
+  }, [layer]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (layer === "memory") onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null });
+      else if (layer === "assistant") onNavigate({ layer: "categories", categoryId: null, memoryId: null });
+      else onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [layer, onClose, onNavigate]);
+
+  const filtered = SETTINGS_CATEGORIES.filter(
+    (c) => !search.trim() || c.title.includes(search.trim()) || c.id.includes(search.trim().toLowerCase()),
+  );
+
+  const memory = MEMORY_SEED.find((m) => m.id === memoryId) ?? null;
+
+  const save = () => {
+    const result = saveProfile(draft, baseVersion);
+    if (!result.ok) {
+      setError(result.reason);
+      setProfile(result.current);
+      // 冲突不覆盖用户正在编辑的草稿字段（DESIGN A05）
+      return;
+    }
+    setProfile(result.profile);
+    setDraft(result.profile);
+    setBaseVersion(result.profile.version);
+    setError(null);
+    setSavedFlash(true);
+    onProfileSaved(result.profile);
+    window.setTimeout(() => setSavedFlash(false), 1200);
+  };
+
+  return (
+    <div className="desktop-panel settings-panel" data-testid="settings-panel" role="dialog" aria-label="设置与管理">
+      <header className="desktop-panel-head">
+        <button
+          type="button"
+          className="btn small"
+          data-testid="settings-back"
+          onClick={() => {
+            if (layer === "memory") onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null });
+            else if (layer === "assistant") onNavigate({ layer: "categories", categoryId: null, memoryId: null });
+            else onClose();
+          }}
+        >
+          {layer === "categories" ? "关闭设置" : "返回上层"}
+        </button>
+        <h2>设置与管理</h2>
+      </header>
+
+      {layer === "categories" && (
+        <div data-testid="settings-categories">
+          <label className="settings-search">
+            搜索
+            <input
+              data-testid="settings-search"
+              aria-label="设置搜索"
+              value={search}
+              onChange={(e) => onNavigate({ layer: "categories", categoryId: null, memoryId: null, search: e.target.value })}
+              placeholder="助理 / 免打扰 / 记忆…"
+            />
+          </label>
+          {filtered.length === 0 ? (
+            <p className="desktop-panel-empty" data-testid="settings-search-empty">
+              无匹配项，保留查询「{search}」
+            </p>
+          ) : (
+            <ul className="settings-cat-list">
+              {filtered.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    className="settings-cat"
+                    data-testid={`settings-cat-${c.id}`}
+                    onClick={() =>
+                      onNavigate({
+                        layer: c.id === "assistant" ? "assistant" : "categories",
+                        categoryId: c.id,
+                        memoryId: null,
+                      })
+                    }
+                  >
+                    {c.title}
+                    {c.id !== "assistant" && <span className="muted">（占位）</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {layer === "assistant" && (
+        <div data-testid="settings-assistant">
+          <p className="settings-crumb" data-testid="settings-crumb">
+            设置 → 我的 AI 助理
+          </p>
+          <form
+            className="settings-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save();
+            }}
+          >
+            {(
+              [
+                ["name", "名称"],
+                ["avatar", "头像"],
+                ["role", "工作定位"],
+                ["soul", "沟通原则（Soul）"],
+                ["taste", "质量偏好（Taste）"],
+                ["memoryPrinciple", "记忆原则"],
+                ["proactivity", "主动性"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className="settings-field">
+                {label}
+                <input
+                  data-testid={`profile-${key}`}
+                  aria-label={label}
+                  value={draft[key]}
+                  onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+                />
+              </label>
+            ))}
+            <div className="settings-actions">
+              <button type="submit" className="btn primary" data-testid="profile-save">
+                保存
+              </button>
+              <button
+                type="button"
+                className="btn small"
+                data-testid="profile-inject-conflict"
+                onClick={() => bumpProfileVersionForConflict()}
+              >
+                注入冲突（测试）
+              </button>
+              <button
+                type="button"
+                className="btn small"
+                data-testid="profile-open-memory"
+                onClick={() => onNavigate({ layer: "memory", categoryId: "assistant", memoryId: MEMORY_SEED[0].id })}
+              >
+                查看记忆
+              </button>
+            </div>
+            {error && (
+              <p className="evidence-error" data-testid="profile-save-error" role="alert">
+                {error}
+              </p>
+            )}
+            {savedFlash && (
+              <p className="settings-saved" data-testid="profile-saved" role="status">
+                已保存 · 版本 {profile.version}
+              </p>
+            )}
+            <p className="muted" data-testid="profile-version">
+              编辑基线版本 {baseVersion} · 当前存档版本 {loadProfile().version}
+            </p>
+          </form>
+        </div>
+      )}
+
+      {layer === "memory" && memory && (
+        <MemoryDetail
+          entry={memory}
+          onBack={() => onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null })}
+        />
+      )}
+    </div>
+  );
+}
+
+function MemoryDetail({ entry, onBack }: { entry: MemoryEntry; onBack: () => void }) {
+  return (
+    <div data-testid="settings-memory">
+      <p className="settings-crumb" data-testid="memory-crumb">
+        设置 → 我的 AI 助理 → 记忆
+      </p>
+      <h3>{entry.title}</h3>
+      <dl className="evidence-dl">
+        <dt>来源</dt>
+        <dd>{entry.source}</dd>
+        <dt>有效期</dt>
+        <dd>{entry.expires}</dd>
+      </dl>
+      <p data-testid="memory-body">{entry.body}</p>
+      <button type="button" className="btn small" data-testid="memory-back" onClick={onBack}>
+        返回助理分类
+      </button>
+    </div>
+  );
+}

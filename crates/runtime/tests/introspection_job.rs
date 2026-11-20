@@ -226,3 +226,68 @@ async fn rt_int_23_schedule_gate_and_manual_uses_same_gate() {
         "手动触发也必须走闸门并记录原因"
     );
 }
+
+/// 同任务多条均达阈值时，按真实投递累计日配额，不得连推。
+#[tokio::test]
+async fn daily_cap_uses_actual_deliveries_within_one_job() {
+    let store = Store::open(Path::new(":memory:")).unwrap();
+    // 两个模板各 1 条：Supported+下一步+首次 = 4，均可推；daily_cap=1
+    let src = source_two_templates();
+    let c = cfg();
+    let outcome = run(&store, &src, &c, "manual", "{}", "cap-hash", opts()).await;
+    assert!(
+        matches!(outcome, RunOnceOutcome::Done { .. }),
+        "{outcome:?}"
+    );
+    let findings = store.introspection_list_findings(None, 20).unwrap();
+    assert!(findings.len() >= 2, "应写入多条结论");
+    let pushed = findings.iter().filter(|f| f.pushed).count();
+    assert_eq!(pushed, 1, "日上限 1 时同任务只应投递 1 条，实际 {pushed}");
+    assert_eq!(store.introspection_pushes_today().unwrap(), 1);
+    assert_eq!(store.introspection_unread_count().unwrap(), 1);
+}
+
+/// 10 条同设备同批次、无业务影响：共现只上内省页，主窗口 0 推送。
+#[tokio::test]
+async fn cooccur_same_asset_batch_stays_on_page_no_interrupt() {
+    let store = Store::open(Path::new(":memory:")).unwrap();
+    let mut cases = Vec::new();
+    for i in 0..10 {
+        cases.push(CaseSummary {
+            case_id: format!("c{i}"),
+            template: "t".into(),
+            scenario: "s1".into(),
+            asset: "CNC-01".into(),
+            batch: "B-100".into(),
+            approvals: vec![],
+            actions: vec![],
+            event_times: vec![(1, 50)],
+        });
+    }
+    let src = MemorySource {
+        source_id: "mom".into(),
+        cases,
+    };
+    let mut c = cfg();
+    c.min_samples = 10;
+    let outcome = run(&store, &src, &c, "manual", "{}", "cooccur-push", opts()).await;
+    assert!(
+        matches!(outcome, RunOnceOutcome::Done { .. }),
+        "{outcome:?}"
+    );
+    let findings = store.introspection_list_findings(None, 20).unwrap();
+    let cooccur: Vec<_> = findings
+        .iter()
+        .filter(|f| f.topic.starts_with("cooccur"))
+        .collect();
+    assert_eq!(cooccur.len(), 1, "同批案例合并为一条：{cooccur:?}");
+    assert!(!cooccur[0].pushed, "共现默认不打扰");
+    assert!(
+        cooccur[0].gate_reason.contains("仅内省页")
+            || cooccur[0].gate_reason.contains("不主动打扰"),
+        "reason={}",
+        cooccur[0].gate_reason
+    );
+    assert_eq!(store.introspection_pushes_today().unwrap(), 0);
+    assert_eq!(store.introspection_unread_count().unwrap(), 0);
+}
