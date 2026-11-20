@@ -64,6 +64,8 @@ pub struct MomSection {
     pub ops_merge_secs: u64,
     /// 运营频道每小时最多新发几张卡，超出的并入汇总卡
     pub ops_hourly_cap: u32,
+    /// World Adapter M0 协议/实验 Mock（`/api/world/mock`）。默认关闭；测试与前端先行里程碑打开。
+    pub world_mock: bool,
 }
 impl Default for MomSection {
     fn default() -> Self {
@@ -71,6 +73,7 @@ impl Default for MomSection {
             chat_bridge: false,
             ops_merge_secs: 60,
             ops_hourly_cap: 10,
+            world_mock: false,
         }
     }
 }

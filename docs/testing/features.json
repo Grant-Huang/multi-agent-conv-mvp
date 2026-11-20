@@ -736,11 +736,14 @@
     "document": "docs/feature-map/features/world-adapter.md",
     "sources": [
       "web/e2e/des-experiment.spec.ts",
+      "crates/server/src/mom_world_mock.rs",
+      "crates/server/tests/mom_world_mock.rs",
       "docs/mom/WORLD_ADAPTER.md",
       "docs/mom/WORLD_ADAPTER_PLAN.md",
       "docs/mom/DES_EXPERIMENT_OPS_SPLIT.md",
       "docs/mom/WA_M0_TASKS.md",
-      "docs/testing/evidence/wa-m0-0-red.md"
+      "docs/testing/evidence/wa-m0-0-red.md",
+      "docs/testing/evidence/wa-m0-1.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -750,6 +753,16 @@
       "E2E-DESPAUSE",
       "E2E-DESISO",
       "E2E-DESLOOP"
+    ],
+    "runtime_cases": [
+      "RT-WA-01",
+      "RT-WA-02",
+      "RT-WA-03",
+      "RT-WA-04",
+      "RT-WA-05",
+      "RT-WA-06",
+      "RT-WA-07",
+      "RT-WA-08"
     ]
   },
   {

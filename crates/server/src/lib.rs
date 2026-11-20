@@ -27,6 +27,7 @@ pub mod mom_des_connector;
 pub mod mom_ops;
 pub mod mom_relos;
 pub mod mom_sim;
+pub mod mom_world_mock;
 
 use std::convert::Infallible;
 use std::sync::Arc;

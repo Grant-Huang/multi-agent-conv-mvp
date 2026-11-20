@@ -781,3 +781,18 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | E2E-DESLOOP | world-adapter | Mock 双角色就绪（实验员 + 运营员） | 实验员启动正式运行 → 运营员批准维修 → 实验员推进 → 运营员看核验证据 | Mock 下业务路径闭环；两端关联同一执行；标准答案仅审核可见（物理断言随 M2） |
 
 配套 WA-01～08、UI01～16 仍按 Feature Map 在各里程碑登记与回归（正式 `E2E-WA*` 名随对应切片写入）。M0 在 Mock 环境跑通上表；M1/M2 替换适配器后同路径重跑。
+
+### M0-1 服务端 Mock HTTP 合同（`crates/server/tests/mom_world_mock.rs`）
+
+协议见 [WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md) §4；实验控制见 [DES_EXPERIMENT_OPS_SPLIT.md](../mom/DES_EXPERIMENT_OPS_SPLIT.md)。路由前缀 `/api/world/mock`。身份头 `X-WA-Role`：`experimenter` / `operator` / `auditor`。故障注入仅 `allow_test_controls` 开启时可用。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-WA-01 | world-adapter | 实验员；合法配置 | 保存配置（非法时长应失败）并试跑 | 非法参数 `INVALID_ARGUMENT`；试跑返回 `trial_run_id`；该运行 `delivery_count=0`、`mode=trial` |
+| RT-WA-02 | world-adapter | 已有配置版本与 `start_key` | 两次「启动正式运行」同键同载荷；另有一次试跑 | 两次返回同一 `official_run_id`；试跑 ID ≠ 正式 ID；正式运行 `delivery_count=1` 且有 `case_id` |
+| RT-WA-03 | world-adapter | 正式运行世界 | Observe → Subscribe；测试注入游标过期后再 Subscribe | 首读有 `cursor`/`events`；过期后 `CURSOR_EXPIRED`（HTTP 409） |
+| RT-WA-04 | world-adapter | 正式运行；运营员 | Propose → Execute（含 approval_ref 与幂等键）→ 同键再 Execute → Confirm | 返回同一 `execution_id`；Confirm `status` 为 `accepted` 或更高；`protocol_version=1` |
+| RT-WA-05 | world-adapter | 正式运行 A 与 B；运营员 | 运营员调实验控制；用 A 的提案对 B 的 world 执行 | 实验控制 `ACCESS_DENIED`；跨运行 Execute `ACCESS_DENIED`；A/B 的 `action_count` 不变 |
+| RT-WA-06 | world-adapter | 正式运行；测试控件开 | Execute 后注入 `lose_receipt` 再 Confirm；另注入 `partial_fail` | 先 `unknown`；再 `failed` 且含部分成功子动作证据 |
+| RT-WA-07 | world-adapter | 正式运行已暂停 | 实验员 pause → step 1 分钟 | `run_status=paused` 时事项投影为等待而非失败；step 后 `simulation_minute` +1 且执行可 Confirm 前进 |
+| RT-WA-08 | world-adapter | 审核员与运营员 | 审核员读 `ground_truth`；运营员读同一接口 | 审核员可见；运营员 `ACCESS_DENIED` 或字段为空 |
