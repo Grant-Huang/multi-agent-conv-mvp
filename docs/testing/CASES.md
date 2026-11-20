@@ -535,6 +535,17 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-34 | mom-des | P0 案例已执行，AI 审核先后得到结论 A（版本 a）和 B（版本 b）（M14） | 按版本 a 提交"同意"；再按版本 b 提交"同意" | 按 a 提交被拒绝，错误含 `E_REVIEW_STALE`，报告的 `human` 仍为空；按 b 提交成功，记录的 `ai_version` 为 b |
 | RT-DES-35 | mom-des | an-mom 服务配置了脚本审核替身，P0 DES 案例运行了两次 AI 审核（版本 a、b）（M14） | POST 人工结论：不带 `ai_version`；带 a；带 b | 不带时返回 4xx；带 a 返回 409；带 b 返回 200，报告中 `human.ai_version` 为 b |
 
+## 车间视图（阶段⑤，草案，待用户确认后写 Red）
+
+设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11，决策见 [DECISIONS.md](../DECISIONS.md) DES-31（车间视图放在"资源"入口下）。界面按 [UI_UX_PRINCIPLES.md](../mom/UI_UX_PRINCIPLES.md) 评审。浏览器用例放在 `web/e2e/`，与 E2E-OPSDESK 同一套 harness。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| E2E-DES-02 | des-factory | 车间视图已接入一个 DES 仿真，有设备、刀具、订单和一个审核报告 | 在桌面（1440px）、Pad（768px）、手机（390px）三种尺寸下打开资源页的车间视图；用键盘从"资源"入口走到设备详情并返回 | 三种尺寸下页面没有横向滚动条（`scrollWidth <= clientWidth`）；16px 左右边距；关键路径（进入车间视图、选中设备、返回）全部可以只用键盘完成，焦点可见；UI16 |
+| E2E-DES-03 | des-factory | 运营桌面和资源入口可用，车间视图已接入仿真 | 检查主导航；进入"资源"；打开车间视图 | 主导航只有"看板、任务、资源"，没有新增的一级"车间"入口；车间视图位于资源页内；页面上没有批准、执行、调拨、下单之类的写操作按钮；页面文字和接口返回里不出现标准答案字段（`root_causes`、`mechanisms`、`ground_truth`、`spindle_wear`、`wear_to_dimension`） |
+| E2E-DES-04 | des-factory | an-mom 以 `--des-mcp` 启动并接入模拟工厂，已有一个 P0 仿真，播放中 | 打开车间视图，等待 5 秒，停止模拟工厂进程后再刷新 | 设备状态、趋势、订单随播放更新，每个数字旁边标有 `provenance=simulation`；模拟工厂停止后，页面显示"模拟工厂不在线"的明确提示，并保留最后一次的数据和时间，不显示空白或假数据；不自动切换到进程内仿真 |
+| E2E-DES-05 | des-factory | 车间视图打开，审核报告中有一个 AI 审核结论 | 查看审核报告；记录同意或推翻 | 报告显示 AI 结论、规则结果和版本号；人工结论需要写明 AI 版本（与 RT-DES-35 一致），过期版本的操作被界面提示冲突（409）而不是静默覆盖 |
+
 ## 模拟工厂与 MCP 挂载（阶段⑤a-1）
 
 设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a。对外约定：
