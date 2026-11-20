@@ -726,6 +726,27 @@
     ]
   },
   {
+    "id": "world-adapter",
+    "document": "docs/feature-map/features/world-adapter.md",
+    "sources": [
+      "web/e2e/des-experiment.spec.ts",
+      "docs/mom/WORLD_ADAPTER.md",
+      "docs/mom/WORLD_ADAPTER_PLAN.md",
+      "docs/mom/DES_EXPERIMENT_OPS_SPLIT.md",
+      "docs/mom/WA_M0_TASKS.md",
+      "docs/testing/evidence/wa-m0-0-red.md"
+    ],
+    "coverage": "browser",
+    "cases": [
+      "E2E-DESTRIAL",
+      "E2E-DESSTART",
+      "E2E-DESOPS",
+      "E2E-DESPAUSE",
+      "E2E-DESISO",
+      "E2E-DESLOOP"
+    ]
+  },
+  {
     "id": "introspection",
     "document": "docs/memory/INTROSPECTION_PLAN.md",
     "sources": [

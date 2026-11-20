@@ -962,7 +962,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 
 ### World Adapter 里程碑（设计已确认；M0 执行中）
 
-- [ ] **M0-0** 冻结 DES-UI / WA 用例登记（[mom/WA_M0_TASKS.md](mom/WA_M0_TASKS.md)）
+- [x] **M0-0** 冻结 DES-UI 用例登记（`E2E-DESTRIAL`～`E2E-DESLOOP`；[mom/WA_M0_TASKS.md](mom/WA_M0_TASKS.md)；证据 `testing/evidence/wa-m0-0-red.md`）
 - [ ] **M0** 完整前端 + 协议/实验 Mock（实验入口 + 运营频道 + 三入口；挂入 Desktop 运营区；DES-UI 在 Mock 通过）
 - [ ] **M1** 远程 DES 读取与正式投递（写路径仍 Mock）
 - [ ] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环

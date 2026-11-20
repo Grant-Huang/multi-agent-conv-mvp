@@ -39,6 +39,8 @@
 
 消息、看板、任务和资源共享事项标识。返回恢复频道位置或列表筛选。自动更新保持当前草稿和输入焦点。已读只改变消息状态。虚拟时间控制、全量遥测和诊断留在实验界面。
 
+正式 E2E 登记名：`E2E-DESTRIAL` / `E2E-DESSTART` / `E2E-DESOPS` / `E2E-DESPAUSE` / `E2E-DESISO` / `E2E-DESLOOP`（见 CASES 与 `web/e2e/des-experiment.spec.ts`）。
+
 ## 4. 服务边界
 
 - DES 管理配置、运行、时钟和物理推演。创建、暂停和单步是实验控制操作，由服务端核验实验权限。
