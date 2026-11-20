@@ -299,7 +299,9 @@
       "RT-DES-29",
       "RT-DES-31",
       "RT-DES-32",
-      "RT-DES-33"
+      "RT-DES-33",
+      "RT-DES-34",
+      "RT-DES-35"
     ],
     "note": "阶段①～④与③b 已实现；DES 为仿真，参数为建模假设，不代表真实工厂能力（台账 M27、M28）。RT-DES-22/23 为 engine_link.rs 中的单元测试（重放计数与缓存共享），不计入 runtime 集成测试映射。RT-DES-30 属于 des-factory。"
   },
@@ -331,9 +333,12 @@
       "RT-DESF-06",
       "RT-DESF-07",
       "RT-DESF-08",
+      "RT-DESF-09",
+      "RT-DESF-10",
       "RT-DESM-01",
       "RT-DESM-02",
       "RT-DESM-03",
+      "RT-DESM-04",
       "RT-DES-30",
       "RT-DESC-01",
       "RT-DESC-02",

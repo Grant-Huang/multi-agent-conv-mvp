@@ -65,6 +65,6 @@ python3 tools/mom/smoke.py --report .tmp/mom/final-smoke-report.json          # 
 ## Backed by
 
 源码：`crates/runtime/src/mom/`（含 `des/`）、`crates/server/src/mom.rs`、`mom_sim.rs`、`mom_relos.rs`、`bin/an-mom.rs`、`crates/des`、`crates/des-mcp`、`web/mom/`
-用例：E2E-MOM、E2E-COMPLAINT、E2E-MOMDYNAMIC；RT-MOM-01～10、RT-DES-01～33、RT-DESF-01～08、RT-DESM-01～03、HTTP-DES-01～05、RT-BIND-01～10；P-MOM-*（原型）
+用例：E2E-MOM、E2E-COMPLAINT、E2E-MOMDYNAMIC；RT-MOM-01～10、RT-DES-01～35、RT-DESF-01～10、RT-DESM-01～04、HTTP-DES-01～05、RT-BIND-01～10；P-MOM-*（原型）
 文档：`docs/mom/DESIGN.md`、`DES_CLOSED_LOOP.md`、`IMPLEMENTATION.md`、`TEST_PLAN.md`、`RESULTS.md`、`UI_UX_PRINCIPLES.md`
 验证状态：浏览器 + 运行时已覆盖（模拟）；真实系统/模型/权限未验收。

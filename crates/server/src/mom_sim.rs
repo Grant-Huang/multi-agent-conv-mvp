@@ -30,6 +30,18 @@ fn bad_request(e: impl std::fmt::Display) -> (StatusCode, Json<Value>) {
     )
 }
 
+/// 引擎业务错误：过期的 AI 审核版本返回 409（`E_REVIEW_STALE`），其余 400。
+fn engine_err(e: impl std::fmt::Display) -> (StatusCode, Json<Value>) {
+    let message = e.to_string();
+    if message.contains(an_core::codes::REVIEW_STALE) {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": message, "code": an_core::codes::REVIEW_STALE})),
+        );
+    }
+    bad_request(message)
+}
+
 /// 在阻塞线程中等待引擎锁并执行一次调用，不占用 Tokio 异步工作线程（R-20261117-L1，移植自 PR #85）。
 ///
 /// 计算量有确定性上限：创建时的拒绝抽样受设备·分钟预算限制，查询复用遥测缓存。
@@ -43,7 +55,7 @@ async fn with_engine(
             .engine
             .lock()
             .map_err(|_| bad_request("runtime unavailable"))?;
-        f(&mut engine).map(Json).map_err(bad_request)
+        f(&mut engine).map(Json).map_err(engine_err)
     })
     .await
     .map_err(|_| bad_request("runtime unavailable"))?
@@ -102,6 +114,8 @@ struct HumanReviewBody {
     #[serde(default)]
     reason: String,
     actor: String,
+    /// 人看到的 AI 审核版本（必填，R-20261119-M14）。
+    ai_version: Option<u64>,
 }
 
 /// 人工确认或推翻 AI 审核结论（推翻必须写理由）。
@@ -110,8 +124,17 @@ async fn human_review(
     Path(case_id): Path<String>,
     Json(body): Json<HumanReviewBody>,
 ) -> ApiResult {
+    let Some(ai_version) = body.ai_version else {
+        return Err(bad_request("ai_version is required"));
+    };
     with_engine(s, move |e| {
-        e.des_human_review(&case_id, &body.decision, &body.reason, &body.actor)?;
+        e.des_human_review_for(
+            &case_id,
+            ai_version,
+            &body.decision,
+            &body.reason,
+            &body.actor,
+        )?;
         e.des_review_report(&case_id)
     })
     .await

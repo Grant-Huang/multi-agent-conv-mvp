@@ -585,3 +585,89 @@ fn rt_desf_08_simulation_count_is_bounded_and_ids_are_sequential() {
         "a full service says so: {err}"
     );
 }
+
+/// 审查修复 R-20261119-M2：溢出的时刻与时长参数作为业务错误被拒绝，不 panic，服务和已有仿真继续可用。
+#[test]
+fn rt_desf_09_overflowing_minutes_are_rejected_without_panic() {
+    let mut s = service();
+    let sim = p0(&mut s);
+    let before = observe_all(&mut s, &sim);
+    let scenario = |start: u64, horizon: u64| json!({"seed": 1, "pattern": {"kind": "script"}, "start_minute": start, "horizon_minutes": horizon, "mechanisms": null});
+    // 默认工厂只把维修耗时改成 u64::MAX（其余字段合法，确保被拒绝的原因是溢出）。
+    let mut slow = serde_json::to_value(an_des::FactoryConfig::line_b_default()).unwrap();
+    slow["resources"]["maintenance_minutes"] = json!(u64::MAX);
+    let bad_creates = [
+        json!({"name": "late", "factory": null, "scenario": scenario(u64::MAX - 10, 60)}),
+        json!({"name": "long", "factory": null, "scenario": scenario(START, u64::MAX)}),
+        json!({"name": "slow repair", "factory": slow, "scenario": scenario(START, 60)}),
+    ];
+    for args in bad_creates {
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            s.call("simulation_create", args.clone())
+        }));
+        let result = outcome.unwrap_or_else(|_| panic!("simulation_create panicked on {args}"));
+        assert!(
+            result.is_err(),
+            "overflowing input must be rejected: {args}"
+        );
+    }
+    // 写操作：开始时刻接近上限时同样是业务错误。
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        s.call(
+            "maintenance_order_create",
+            write_args(
+                &sim,
+                json!({"machine": "CNC-XX", "start_minute": u64::MAX}),
+                "overflow-1",
+            ),
+        )
+    }));
+    assert!(
+        outcome
+            .expect("maintenance_order_create must not panic")
+            .is_err(),
+        "a start minute near the limit is rejected"
+    );
+    // 被拒绝的调用不改变任何状态，已有仿真照常可用。
+    assert_eq!(observe_all(&mut s, &sim), before, "no state change");
+    let next = p0(&mut s);
+    assert_eq!(next, "DES-2", "rejected creates do not take ids");
+}
+
+/// 审查修复 R-20261119-M13：维修单按维修班组排队（与进程内仿真同一规则），同一设备的重叠维修单被拒绝。
+#[test]
+fn rt_desf_10_maintenance_orders_queue_for_crews() {
+    let mut s = service();
+    let sim = p0(&mut s);
+    let minutes = an_des::ResourceConfig::default().maintenance_minutes;
+    assert_eq!(an_des::ResourceConfig::default().maintenance_crews, 1);
+    let order = |s: &mut FactoryService, machine: &str, key: &str| {
+        s.call(
+            "maintenance_order_create",
+            write_args(
+                &sim,
+                json!({"machine": machine, "start_minute": START}),
+                key,
+            ),
+        )
+    };
+    let first = order(&mut s, "CNC-XX", "crew-1").expect("first order");
+    assert_eq!(first["start_minute"], START);
+    assert_eq!(first["complete_minute"], START + minutes);
+    let second = order(&mut s, "CNC-XY", "crew-2").expect("second order");
+    assert_eq!(
+        second["start_minute"],
+        START + minutes,
+        "one crew: the second machine waits for the first repair"
+    );
+    assert_eq!(second["complete_minute"], START + 2 * minutes);
+    // 同一设备在维修未结束时再下单：拒绝，且不占用编号与班组。
+    assert!(
+        order(&mut s, "CNC-XX", "crew-3").is_err(),
+        "an overlapping order on the same machine is rejected"
+    );
+    let third = order(&mut s, "CNC-XZ", "crew-4").expect("third order");
+    assert_eq!(third["start_minute"], START + 2 * minutes);
+    // 重发仍返回原回执。
+    assert_eq!(order(&mut s, "CNC-XY", "crew-2").unwrap(), second);
+}

@@ -493,15 +493,40 @@ impl Engine {
             "C" => Some(now),
             _ => None,
         };
-        // 维修班组依次排班：每台设备分给最早空闲的班组（只有 1 个班组时依次维修）。
+        // 维修班组依次排班（与模拟工厂共用 an_des::schedule；累计此前已接受的维修）。
         let maintenance_end = maintenance_start.map(|start| {
-            let mut crews = vec![start; r.maintenance_crews.max(1) as usize];
+            let prior: Vec<(u64, u64)> = replay
+                .interventions
+                .iter()
+                .filter_map(|iv| match iv {
+                    Intervention::Maintenance {
+                        start_minute,
+                        end_minute,
+                        ..
+                    } => Some((*start_minute, *end_minute)),
+                    _ => None,
+                })
+                .collect();
+            let mut crews = an_des::crew_free_after(r.maintenance_crews.max(1) as usize, &prior);
             let mut last_end = start;
             for machine in &assets {
-                let crew = (0..crews.len()).min_by_key(|&i| crews[i]).unwrap_or(0);
-                let begin = crews[crew].max(start);
-                let end = begin + r.maintenance_minutes;
-                crews[crew] = end;
+                // 该设备维修尚未结束：不再重复安排。
+                let already = replay.interventions.iter().any(|iv| match iv {
+                    Intervention::Maintenance {
+                        machine: m,
+                        end_minute,
+                        ..
+                    } => m == machine && *end_minute > start,
+                    _ => false,
+                });
+                if already {
+                    continue;
+                }
+                let Ok((begin, end)) =
+                    an_des::schedule_next_maintenance(start, r.maintenance_minutes, &mut crews)
+                else {
+                    continue;
+                };
                 last_end = last_end.max(end);
                 interventions.push(Intervention::Maintenance {
                     machine: machine.clone(),

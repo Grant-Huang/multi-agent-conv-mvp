@@ -16,8 +16,13 @@ pub mod observe;
 pub mod physics;
 pub mod rng;
 pub mod scenario;
+pub mod schedule;
 pub mod service;
 
+pub use schedule::{
+    crew_free_after, schedule_next_maintenance, validate_resource_durations, MAX_DURATION_MINUTES,
+    MAX_START_MINUTE,
+};
 pub use service::{tool_catalog, FactoryService, ServiceConfig, ToolCategory, ToolSpec};
 
 use anyhow::Result;

@@ -517,6 +517,24 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-DES-32 | mom-des | P0 案例已执行方案 C | 先在没有 AI 审核时"同意"；再在 AI 审核降级（模型报错）后"同意"；然后 AI 审核得结论 A 并"同意"；再运行 AI 审核得结论 B | 前两次"同意"被拒绝。对 A 的"同意"记录 AI 审核版本。得到 B 后，AI 审核版本号增加，报告的 `human` 为空（还没有人对 B 下结论），历史记录中原来的"同意"标明针对的版本、`applies_to_current_ai = false` |
 | HTTP-DES-05 | mom-des | 只有一个异步工作线程的服务，配置了脚本审核替身，P0 DES 案例 | 先在没有 AI 审核时 POST 同意；再让另一线程持引擎锁 2 秒，同时 POST AI 审核，并在请求期间每 50 ms 打一次心跳 | 同意返回 400。心跳的最大间隔小于 1 秒（处理函数不在异步工作线程上同步等锁）；AI 审核最终返回 200，状态 completed |
 
+## 审查修复 2026-11-19：R-20261119-M2、M13、M14
+
+问题与验收来自审查报告 `docs/review/2026-11-19.md`（分支 `review/2026-11-19`）。决策见 [DECISIONS.md](../DECISIONS.md) DES-29（由本线修）、DES-30（修法）。已转绿，证据见 [review-2026-11-19-des.md](evidence/review-2026-11-19-des.md)。
+
+测试位置：
+- `crates/des/tests/factory.rs`：RT-DESF-09、10；
+- `crates/des-mcp/tests/stdio.rs`：RT-DESM-04；
+- `crates/runtime/tests/mom_des.rs`：RT-DES-34；
+- `crates/server/tests/mom_des.rs`：RT-DES-35。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-DESF-09 | des-factory | 模拟工厂服务中已有一个 P0 仿真（M2） | 用 `start_minute = u64::MAX-10`、`horizon_minutes = u64::MAX`、维修耗时 `u64::MAX` 的工厂分别创建仿真；用 `start_minute = u64::MAX` 下维修单 | 都作为业务错误返回，不 panic；已有仿真的全部观测不变；下一个新仿真编号仍是 `DES-2`（被拒绝的创建不占编号） |
+| RT-DESM-04 | des-factory | MCP 服务（stdio）已创建 DES-1（M2） | 用 `start_minute = u64::MAX-10` 创建仿真；再读 DES-1 的设备状态 | 创建返回工具错误（`isError`），不是 -32603 内部错误；DES-1 的设备状态与之前相同（服务没有因锁中毒而永久不可用） |
+| RT-DESF-10 | des-factory | 默认工厂（1 个维修班组，维修 240 分钟）的 P0 仿真（M13） | 在当前时刻依次给 CNC-XX、CNC-XY 下维修单；再给 CNC-XX 下一张；再给 CNC-XZ 下一张；重发 CNC-XY 的单 | 第一张 [497, 737)；第二张排到 737 开始、977 完成；CNC-XX 维修未结束时的第二张被拒绝；CNC-XZ 排到 977 开始；重发返回原回执 |
+| RT-DES-34 | mom-des | P0 案例已执行，AI 审核先后得到结论 A（版本 a）和 B（版本 b）（M14） | 按版本 a 提交"同意"；再按版本 b 提交"同意" | 按 a 提交被拒绝，错误含 `E_REVIEW_STALE`，报告的 `human` 仍为空；按 b 提交成功，记录的 `ai_version` 为 b |
+| RT-DES-35 | mom-des | an-mom 服务配置了脚本审核替身，P0 DES 案例运行了两次 AI 审核（版本 a、b）（M14） | POST 人工结论：不带 `ai_version`；带 a；带 b | 不带时返回 4xx；带 a 返回 409；带 b 返回 200，报告中 `human.ai_version` 为 b |
+
 ## 模拟工厂与 MCP 挂载（阶段⑤a-1）
 
 设计见 [DES_CLOSED_LOOP.md](../mom/DES_CLOSED_LOOP.md) §11a。对外约定：

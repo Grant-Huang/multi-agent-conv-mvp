@@ -316,13 +316,15 @@ impl Engine {
         };
         let mut maintenance_end = None;
         if let (Some(start), Some(key)) = (maintenance_start, action_key("eam.maintenance")) {
-            let mut crews = vec![start; r.maintenance_crews.max(1) as usize];
+            // 与进程内同一排班函数；本批内依次占班。模拟工厂端还会按已接受维修再排一次。
+            let mut crews = an_des::crew_free_after(r.maintenance_crews.max(1) as usize, &[]);
             let mut last_end = start;
             for machine in assets {
-                let crew = (0..crews.len()).min_by_key(|&i| crews[i]).unwrap_or(0);
-                let begin = crews[crew].max(start);
-                let end = begin + r.maintenance_minutes;
-                crews[crew] = end;
+                let Ok((begin, end)) =
+                    an_des::schedule_next_maintenance(start, r.maintenance_minutes, &mut crews)
+                else {
+                    continue;
+                };
                 last_end = last_end.max(end);
                 interventions.push(Intervention::Maintenance {
                     machine: machine.clone(),
