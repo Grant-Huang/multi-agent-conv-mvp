@@ -863,6 +863,13 @@
 - **出问题先看**：`POST /api/mom/desk/cases/{id}/approve`；卡片字段 `scope`/`plan_revision`；引擎错误 `stale plan approval` / `evidence snapshot stale`。
 
 
+### 61. World Adapter 统一世界访问（2026-11-20，设计方向获用户确认）
+
+- **问题**：会话的动态 DES 闭环需要复用到生产世界，同时能追踪同一个动作在两类世界中的证据。
+- **定了什么**：以 Observe、Subscribe、Propose、Execute、Confirm 定义共同契约，经 MOM 访问当前世界；首版复用已有 DES MCP，随后接入生产观测和一个可查证的写动作。
+- **为什么**：统一调用面，同时保留现有 MOM 审批、远程 DES 重推演和现场系统各自的权威职责。
+- **出问题先看**：见 [World Adapter 协议](mom/WORLD_ADAPTER.md)。按源码修订的发布边界、回执语义及实例恢复限制集中写在设计文档中。
+
 ### 待决定
 
 - 暂无。
