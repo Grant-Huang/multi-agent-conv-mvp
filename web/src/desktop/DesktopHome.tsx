@@ -6,6 +6,7 @@ type Props = {
   onOpenEvidence: (taskId: string) => void;
   onOpenDesExperiment?: () => void;
   onOpenOpsChannel?: () => void;
+  onOpenMomWorkbench?: () => void;
   opsEnabled: boolean;
   cards?: DesktopCard[];
   assistantName?: string;
@@ -68,6 +69,7 @@ export function DesktopHome({
   onOpenEvidence,
   onOpenDesExperiment,
   onOpenOpsChannel,
+  onOpenMomWorkbench,
   opsEnabled,
   cards = DESKTOP_CARDS,
   assistantName,
@@ -94,6 +96,17 @@ export function DesktopHome({
           </p>
         )}
         <p className="desktop-settings-links">
+          {onOpenMomWorkbench && (
+            <a
+              href="#mom-workbench"
+              onClick={(e) => {
+                e.preventDefault();
+                onOpenMomWorkbench();
+              }}
+            >
+              MOM 工作台
+            </a>
+          )}
           {onOpenDesExperiment && (
             <a
               href="#des-experiment"
@@ -116,7 +129,7 @@ export function DesktopHome({
               运营频道
             </a>
           )}
-          {(onOpenDesExperiment || onOpenOpsChannel) && (
+          {(onOpenMomWorkbench || onOpenDesExperiment || onOpenOpsChannel) && (
             <span className="desktop-settings-hint">设置与管理</span>
           )}
         </p>

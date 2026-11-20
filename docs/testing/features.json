@@ -778,7 +778,11 @@
       "docs/testing/evidence/wa-m0-1.md",
       "docs/testing/evidence/wa-m0-2.md",
       "docs/testing/evidence/wa-m0-3.md",
-      "web/src/components/OpsCards.tsx"
+      "docs/testing/evidence/wa-m0-4.md",
+      "web/src/components/OpsCards.tsx",
+      "web/src/desktop/MomWorkbench.tsx",
+      "web/src/desktop/momWorkbenchData.ts",
+      "web/e2e/mom-workbench.spec.ts"
     ],
     "coverage": "browser",
     "cases": [
@@ -787,7 +791,8 @@
       "E2E-DESOPS",
       "E2E-DESPAUSE",
       "E2E-DESISO",
-      "E2E-DESLOOP"
+      "E2E-DESLOOP",
+      "E2E-WABIND"
     ],
     "runtime_cases": [
       "RT-WA-01",
