@@ -11,9 +11,9 @@
 | M0-0 | 冻结用例草案 → CASES / Feature Map 正式名；同步 features.json 占位 | 已完成（#159） | DES-32、决定 62 |
 | M0-1 | 协议 Mock + 实验控制 Mock（试跑/正式运行/时钟/投递）HTTP 合同 | 已完成（#161） | M0-0 |
 | M0-2 | DES 仿真实验前端（配置、试跑、正式运行、结果） | 已完成（#164） | M0-1 |
-| M0-3 | AI 桌面运营频道联动（正式运行发卡、方案/执行/核验） | 已完成（#168，待合） | M0-1；复用 D0～D2 |
-| M0-4 | 三入口工作台 + 事项页（看板已有部分可复用） | 本 PR：E2E-WABIND Green | M0-1 |
-| M0-5 | Playwright：DES-UI-01～06 + 适用 WA/UI；集成合同套件 | 未开始 | M0-2～M0-4 |
+| M0-3 | AI 桌面运营频道联动（正式运行发卡、方案/执行/核验） | 已完成（#168） | M0-1；复用 D0～D2 |
+| M0-4 | 三入口工作台 + 事项页（看板已有部分可复用） | 已完成（#171） | M0-1 |
+| M0-5 | Playwright：DES-UI-01～06 + 适用 WA/UI；集成合同套件 | 本 PR：套件 + 双上下文 + E2E-WACHANNEL | M0-2～M0-4 |
 | M0-6 | 全量回归与证据；准出检查 H1～H4 | 未开始 | M0-5 |
 
 一张卡 ≈ 一个 PR。每卡先 Red（业务断言失败）再 Green；断言冻结后不得弱化。
@@ -59,6 +59,7 @@ WA/UI 映射沿用 [world-adapter.md](../feature-map/features/world-adapter.md)�
 
 - Playwright：双浏览器上下文（实验员 / 运营员）；Harness 装载种子与时钟。
 - 每条 DES-UI 与适用 WA/UI 有独立可重跑用例；失败留 Trace/截图/关联 ID。
+- 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA + DES* + WABIND + WACHANNEL）。
 - 准出检查表：H1 完整前端；H2 Mock 全流程；H3 Mock 表可演示替换钩子；H4 清单全覆盖。
 - 证据写入 `docs/testing/evidence/wa-m0-*.md`。
 

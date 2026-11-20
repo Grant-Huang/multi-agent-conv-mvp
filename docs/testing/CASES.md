@@ -795,8 +795,9 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
 | E2E-WABIND | world-adapter | 桌面可进「MOM 工作台」；有模拟世界与 DES 世界 | 「选择世界」→「看板」「任务」「资源」分别打开同一事项；返回后再进；再切另一世界 | 同一 world/case；返回保持世界与入口筛选；跨世界列表不泄露上一世界事项 |
+| E2E-WACHANNEL | world-adapter | Mock 实例上工作台有事项 | 打开事项 →「前往运营频道」 | 离开工作台进入运营频道会话；频道入口可见 |
 
-配套 WA-02～10、UI 其余项仍按 Feature Map 在后续切片登记。M0 在 Mock 环境跑通上表；M1/M2 替换适配器后同路径重跑。
+M0-5 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～08 + `des-experiment` + `mom-workbench` + `wa-integration`）。`E2E-DESLOOP` 使用双浏览器上下文（实验员 / 运营员）。配套 WA-02～04、06～10 仍按 Feature Map 后续登记。
 
 ### M0-1 服务端 Mock HTTP 合同（`crates/server/tests/mom_world_mock.rs`）
 

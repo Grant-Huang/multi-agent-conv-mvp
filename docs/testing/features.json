@@ -786,7 +786,11 @@
       "web/src/components/OpsCards.tsx",
       "web/src/desktop/MomWorkbench.tsx",
       "web/src/desktop/momWorkbenchData.ts",
-      "web/e2e/mom-workbench.spec.ts"
+      "web/e2e/mom-workbench.spec.ts",
+      "web/e2e/wa-integration.spec.ts",
+      "web/e2e/helpers/waMockServer.ts",
+      "scripts/wa-m0-suite.sh",
+      "docs/testing/evidence/wa-m0-5.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -796,7 +800,8 @@
       "E2E-DESPAUSE",
       "E2E-DESISO",
       "E2E-DESLOOP",
-      "E2E-WABIND"
+      "E2E-WABIND",
+      "E2E-WACHANNEL"
     ],
     "runtime_cases": [
       "RT-WA-01",
