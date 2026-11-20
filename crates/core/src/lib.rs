@@ -512,6 +512,10 @@ pub enum ChatCard {
         owner: String,
         /// 已批准时的批准人（卡片上显示）
         approver: Option<String>,
+        /// 待批准时提交用的审批范围（s1=production）；决定 60
+        scope: Option<String>,
+        /// 发卡时的方案版本；批准时原样提交，过期由引擎拒绝
+        plan_revision: Option<u64>,
         /// 目前只有 simulation
         provenance: String,
         updated_at: u64,

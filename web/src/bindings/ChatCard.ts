@@ -31,6 +31,14 @@ level: string, stage: string, summary: string, owner: string,
  */
 approver: string | null, 
 /**
+ * 待批准时提交用的审批范围（s1=production）；决定 60
+ */
+scope: string | null, 
+/**
+ * 发卡时的方案版本；批准时原样提交，过期由引擎拒绝
+ */
+plan_revision: bigint | null, 
+/**
  * 目前只有 simulation
  */
 provenance: string, updated_at: bigint, } | { "type": "ops_summary", count: number, case_ids: Array<string>, } | { "type": "introspection", finding_id: string, topic: string, summary: string, gate_reason: string, verification: string, };

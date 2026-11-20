@@ -17,6 +17,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 pub type SharedPublisher = Arc<Mutex<OpsPublisher>>;
@@ -77,6 +78,7 @@ pub fn router(state: OpsState) -> Router {
             "/api/mom/desk/cases/{id}/open-in-channel",
             post(open_in_channel),
         )
+        .route("/api/mom/desk/cases/{id}/approve", post(approve))
         .with_state(state)
 }
 
@@ -89,6 +91,15 @@ fn not_found(id: &str) -> (axum::http::StatusCode, String) {
         axum::http::StatusCode::NOT_FOUND,
         format!("case {id} not found"),
     )
+}
+fn conflict(e: impl std::fmt::Display) -> (axum::http::StatusCode, String) {
+    (axum::http::StatusCode::CONFLICT, e.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+struct ApproveBody {
+    scope: String,
+    plan_revision: u64,
 }
 
 async fn unread(State(s): State<OpsState>) -> ApiResult {
@@ -130,5 +141,43 @@ async fn open_in_channel(State(s): State<OpsState>, Path(id): Path<String>) -> A
         }))),
         Err(e) if e.to_string().starts_with("E_CASE_NOT_FOUND") => Err(not_found(&id)),
         Err(e) => Err(fail(e)),
+    }
+}
+
+/// 运营频道卡片上的批准（决定 60）。操作人固定 supervisor；不从请求体读 actor。
+async fn approve(
+    State(s): State<OpsState>,
+    Path(id): Path<String>,
+    Json(body): Json<ApproveBody>,
+) -> ApiResult {
+    let mut engine = s.engine.lock().map_err(fail)?;
+    let publisher = s.publisher.lock().map_err(fail)?;
+    let already = match engine.case(&id) {
+        Ok(c) => c
+            .approvals
+            .get(&body.scope)
+            .filter(|a| a.plan_revision == body.plan_revision)
+            .map(|a| a.approver.clone()),
+        Err(_) => return Err(not_found(&id)),
+    };
+    if let Some(approver) = already {
+        publisher.refresh_case(&engine, &id).map_err(fail)?;
+        return Ok(Json(json!({"already": true, "approver": approver})));
+    }
+    match engine.approve(&id, body.plan_revision, &body.scope, "supervisor") {
+        Ok(()) => {
+            publisher.refresh_case(&engine, &id).map_err(fail)?;
+            Ok(Json(json!({"already": false, "approver": "supervisor"})))
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("unknown case") {
+                Err(not_found(&id))
+            } else if msg.contains("stale") || msg.contains("expired") {
+                Err(conflict(msg))
+            } else {
+                Err(fail(e))
+            }
+        }
     }
 }

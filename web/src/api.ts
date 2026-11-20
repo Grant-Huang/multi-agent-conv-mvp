@@ -202,6 +202,12 @@ export const api = {
       `/api/mom/desk/cases/${encodeURIComponent(id)}/open-in-channel`,
       { method: "POST", body: "{}" },
     ),
+  /** 运营频道卡片批准（决定 60）；过期方案回 409 */
+  opsApprove: (id: string, body: { scope: string; plan_revision: number }) =>
+    request<{ already: boolean; approver: string }>(
+      `/api/mom/desk/cases/${encodeURIComponent(id)}/approve`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
   tasks: (cid: string) => request<TaskRecord[]>(`/api/tasks?conversation_id=${cid}`),
   task: (id: string, after?: string) => request<TaskDetail>(`/api/tasks/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   cancel: (id: string) => request<{ cancelled: boolean }>(`/api/tasks/${id}/cancel`, { method: "POST" }),
