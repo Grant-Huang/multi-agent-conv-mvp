@@ -721,6 +721,10 @@
       "web/src/desktop/attentionStore.ts",
       "web/src/desktop/S1AskBar.tsx",
       "web/src/desktop/AttentionToast.tsx",
+      "web/src/desktop/approvalMock.ts",
+      "web/src/desktop/ApprovalMockPanel.tsx",
+      "web/src/desktop/runResumeMock.ts",
+      "web/src/desktop/ResumeMockPanel.tsx",
       "web/src/desktop/evidenceMock.ts",
       "web/src/desktop/mockData.ts",
       "web/src/components/ChatView.tsx",
@@ -729,7 +733,8 @@
       "docs/ai-desktop/DESIGN.md",
       "docs/ai-desktop/TRACEABILITY.md",
       "docs/testing/evidence/ai-desktop-a2.1.md",
-      "docs/testing/evidence/ai-desktop-a5.1.md"
+      "docs/testing/evidence/ai-desktop-a5.1.md",
+      "docs/testing/evidence/ai-desktop-a5.2.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -743,7 +748,9 @@
       "E2E-ADINPUT",
       "E2E-ADREAD",
       "E2E-ADASK",
-      "E2E-ADATTN"
+      "E2E-ADATTN",
+      "E2E-ADAPPR",
+      "E2E-ADRESUME"
     ]
   },
   {

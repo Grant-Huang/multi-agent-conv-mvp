@@ -952,8 +952,9 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **A3 证据与历史面板**（2026-11-20）：侧栏证据栈（列表/预览/来源）+ 历史筛选/固定/关注；E2E-ADEVID/ADHISTORY；证据 `testing/evidence/ai-desktop-a3.md`
 - [x] **A4 助理、设置、键盘与响应式**（2026-11-20）：SettingsPanel + profileStore；E2E-ADPROF/ADINPUT；证据 `testing/evidence/ai-desktop-a4.md`
 - [x] **A5.1 S1 + Attention Mock**（2026-11-20）：E2E-ADASK、E2E-ADATTN；证据 `testing/evidence/ai-desktop-a5.1.md`
-- [ ] **A5.2+** 异步恢复 / 审批版本 / 移动语音 Mock（AD-RESUME、AD-APPR、AD-VOICE/HAND）
-- [ ] **A5 整体** 异步/协作/审批/移动 Mock 流程（M1–M6 贯通；A5.1 起分卡）
+- [x] **A5.2 审批版本 + Run 恢复 Mock**（2026-11-20）：E2E-ADAPPR、E2E-ADRESUME；证据 `testing/evidence/ai-desktop-a5.2.md`
+- [ ] **A5.3** 移动语音 / 跨端 Mock（AD-VOICE、AD-HAND）
+- [ ] **A5 整体** 异步/协作/审批/移动 Mock 流程（M1–M6 贯通；分卡完成）
 - [ ] **B/C/D** 按 MOCK_REGISTRY 替换 Mock（全量 Feature Map 回归）
 
 ### World Adapter 交付硬约束（DES-32，用户确认）

@@ -635,6 +635,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-ADINPUT | ai-desktop | 干净浏览器 | 在 360/768/1024/1440 宽检查关键控件可达；设置中 Escape 关闭；会话输入 composition 期间 Enter 不发请求；`prefers-reduced-motion` 时根节点标注 | 各宽度可见「设置与管理」或抽屉入口；Esc 关掉设置；composition 中无 POST /messages；`html[data-reduced-motion]` 为 1 |
 | E2E-ADASK | ai-desktop | 干净浏览器 · 桌面首页 | S1 先问答；再委派复杂任务；后台芯片出现后继续问答；手动打开任务 | 问答后仍在桌面；委派先「提交中」再「已受理」且不强制进工作区；打开任务进入 SMT-03 |
 | E2E-ADATTN | ai-desktop | 干净浏览器 · 会话输入聚焦 | 输入中注入普通建议；静音后再注入普通建议；注入紧急 | 输入框保持焦点；普通建议可见但不抢焦点；静音后普通建议不新增；紧急仍可见 |
+| E2E-ADAPPR | ai-desktop | 打开 SMT-03 工作区 | 批准 → 改参数升版 → 用旧版意图执行失败；再批准并执行两次；拒绝后不可执行；未知回执可查证 | 升版后提示原审批失效；执行次数为 1；拒绝后错误可见；未知回执经查证变为 applied |
+| E2E-ADRESUME | ai-desktop | 打开 SMT-03 工作区 | 种子双任务 Run；对 A 断线重放含重复事件；对 B 补充输入继续 | A/B 状态不串；A 事件去重后进度更新；B 从 waiting_input 变为 running |
 
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 
