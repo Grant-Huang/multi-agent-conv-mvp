@@ -651,6 +651,19 @@ D2（卡片批准联动）的 E2E-OPSAPPROVE 依赖 WP1 L2 的案例卡，待 L2
 | RT-INT-07 | introspection | 样本低于门槛或证据不足 | 校验 | 验真为 inconclusive；不进入可推送集合 |
 | RT-INT-08 | introspection | 一条 Finding 的证据引用指向不存在的记录，或数字被篡改 | 校验 | 该条 Drop 并记原因；完好条目仍可 Accept |
 
+
+## 业务内省 INT（S3：发送闸门）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-INT-16 | introspection | 定时内省结束；没有任何结论通过发送闸门 | 查看闸门结果 | 全部不推送；每条都有未推送原因 |
+| RT-INT-17 | introspection | 一条 Supported+影响面+下一步；一条 Inconclusive | 闸门判定 | 前者推送；后者不推送并写明原因 |
+| RT-INT-18 | introspection | 规则分低于阈值、模型 +1；另一条规则已达阈值、模型无理由 −1；第三条有理由 −1 压到阈下 | 闸门判定 | 模型不能单独越阈；无理由压分忽略仍推；有理由压到阈下则不推且原因含模型理由 |
+| RT-INT-19 | introspection | 已推送且未读 | 再次判定 | 不重复推送 |
+| RT-INT-20 | introspection | 当日已达日上限；另有待处理项 | 判定 | 不外发；原因含「日上限」与「另有 N 项」 |
+| RT-INT-22 | introspection | 运营负责人标注该推/不该推 | 保存标注 | 与结论关联；闸门配置对象不变 |
+
+
 ## 围栏：审查进待人工的人工判定（实现前定义）
 
 设计见 [docs/fencing/REVIEW_VERDICT_DESIGN.md](../fencing/REVIEW_VERDICT_DESIGN.md)。未改 `orchestrator` / `store`，实现前须另批。下列用例冻结后只改业务代码。

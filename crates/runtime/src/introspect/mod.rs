@@ -5,6 +5,7 @@
 
 pub mod analyze;
 pub mod finding;
+pub mod gate;
 pub mod model;
 pub mod source;
 
@@ -13,6 +14,7 @@ pub use finding::{
     input_digest_from_stats, stable_finding_id, validate_draft, EvidenceRef, FindingDraft,
     ValidateOutcome, Verification,
 };
+pub use gate::{decide, GateConfig, GateDecision, GateInput};
 pub use source::{
     ActionSummary, ApprovalSummary, CaseSummary, MemorySource, MomSource, SourceAdapter,
 };
