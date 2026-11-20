@@ -30,6 +30,13 @@ export function filesFromDiff(diff: string): { name: string; content: string }[]
 
 export type ViewFile = { name: string; content: string; label: string };
 
+/** 失败/已取消任务不展示产物下载（避免用 summary 兜底合成「本次输出」） */
+export function shouldShowArtifactList(task: { status: string; result?: { status: string } | null }): boolean {
+  if (task.status === "FAILED" || task.status === "CANCELLED") return false;
+  if (task.status === "COMPLETED") return true;
+  return task.result?.status === "succeeded";
+}
+
 /** 对话里能打开的产物：优先真实文件，否则从 diff 还原，都没有时用执行输出 */
 export function viewFiles(
   artifacts: { kind: string; name: string; content: string }[],

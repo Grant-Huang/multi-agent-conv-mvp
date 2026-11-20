@@ -98,6 +98,30 @@ describe("对话内批准与取消", () => {
     expect(screen.getByText("codex 超时")).toBeTruthy();
     expect(screen.queryByText("批准执行")).toBeNull();
   });
+
+  it("失败的任务即使有 summary 也不显示产物下载按钮", () => {
+    render(
+      <ChatView
+        messages={[reply]}
+        tasks={[task({
+          status: "FAILED",
+          result: {
+            status: "failed",
+            summary: "代理未正常结束时的兜底输出",
+            artifacts: [],
+            evidence: [],
+            errors: ["执行失败"],
+          } as unknown as TaskRecord["result"],
+        })]}
+        onSend={async () => {}}
+        streaming={null}
+        onTaskAction={async () => {}}
+      />,
+    );
+    expect(screen.queryByText("查看")).toBeNull();
+    expect(screen.queryByText("下载")).toBeNull();
+    expect(screen.queryByText("本次输出")).toBeNull();
+  });
 });
 
 describe("两步确认按钮", () => {
