@@ -32,6 +32,7 @@
 | [routing-and-admission.md](features/routing-and-admission.md) | front-thinking, admission | 配置与 HTTP `/api/admission/*`，无界面 | 运行时 |
 | [git-evidence.md](features/git-evidence.md) | git-evidence | 无（执行后的任务证据） | 后端 |
 | [mom.md](features/mom.md) | mom, mom-des, des-factory, mom-workbench-prototype | 左栏“MOM 运营沙盘”→`/mom/` | 浏览器（模拟） |
+| [world-adapter.md](features/world-adapter.md) | World Adapter 与 MOM 工作台 | 会话选择世界 → 看板、任务、资源 | 设计待实施，有原型和后端基线 |
 
 ## 配套文档
 
