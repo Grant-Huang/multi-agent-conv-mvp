@@ -362,3 +362,71 @@ test('E2E-ADRESUME: 双任务断线重放不串写', async ({ page }) => {
   await expect(page.getByTestId('resume-progress-TASK-2026-021')).toContainText('Line-B');
   await expect(page.getByTestId('resume-status-TASK-2026-018')).toHaveText('running');
 });
+
+test('E2E-ADVOICE: 拒麦、部分转写、插话与断线改文字', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-voice').click();
+  await expect(page.getByTestId('voice-mock-panel')).toBeVisible();
+  await page.getByTestId('voice-reset').click();
+
+  await page.getByTestId('voice-deny').click();
+  await expect(page.getByTestId('voice-permission')).toHaveText('denied');
+  await expect(page.getByTestId('voice-fallback')).toContainText('文字');
+  await page.getByTestId('voice-as-text').click();
+  await expect(page.getByTestId('voice-final')).toContainText('改用文字继续');
+
+  await page.getByTestId('voice-reset').click();
+  await page.getByTestId('voice-start').click();
+  await expect(page.getByTestId('voice-permission')).toHaveText('granted');
+  await expect(page.getByTestId('voice-phase')).toHaveText('listening');
+  await page.getByTestId('voice-inject-partial').click();
+  await expect(page.getByTestId('voice-partial')).toContainText('SMT');
+  await expect(page.getByTestId('voice-final')).toHaveText('—');
+  await expect(page.getByTestId('voice-link')).toHaveText('未关联');
+  await page.getByTestId('voice-commit').click();
+  await expect(page.getByTestId('voice-final')).toContainText('SMT-03');
+  await expect(page.getByTestId('voice-link')).toHaveText(SMT03_TASK_ID);
+  await expect(page.getByTestId('voice-partial')).toHaveText('—');
+
+  await page.getByTestId('voice-play').click();
+  await expect(page.getByTestId('voice-playing')).toHaveText('播放中');
+  await expect(page.getByTestId('voice-phase')).toHaveText('speaking');
+  await page.getByTestId('voice-barge').click();
+  await expect(page.getByTestId('voice-playing')).toHaveText('已停');
+  await expect(page.getByTestId('voice-phase')).toHaveText('listening');
+  await expect(page.getByTestId('voice-final')).toContainText('SMT-03');
+
+  await page.getByTestId('voice-offline').click();
+  await expect(page.getByTestId('voice-phase')).toHaveText('offline');
+  await expect(page.getByTestId('voice-fallback')).toBeVisible();
+  await page.getByTestId('voice-as-text').click();
+  await expect(page.getByTestId('voice-final')).toContainText('SMT-03');
+});
+
+test('E2E-ADHAND: 跨端草稿冲突与未授权转写不共享', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-handoff').click();
+  await expect(page.getByTestId('handoff-mock-panel')).toBeVisible();
+  await page.getByTestId('handoff-reset').click();
+
+  await expect(page.getByTestId('handoff-task')).toHaveText(SMT03_TASK_ID);
+  await expect(page.getByTestId('handoff-run')).toHaveText('run-smt-03-1');
+  await expect(page.getByTestId('handoff-anchor')).toHaveText('msg-anchor-1');
+  await expect(page.getByTestId('handoff-voice-shared')).toHaveText('未授权不共享');
+
+  await page.getByTestId('handoff-phone').fill('手机侧草稿 A');
+  await page.getByTestId('handoff-desktop').fill('桌面侧草稿 B');
+  await expect(page.getByTestId('handoff-conflict')).toHaveText('有');
+  await page.getByTestId('handoff-choose-phone').click();
+  await expect(page.getByTestId('handoff-conflict')).toHaveText('无');
+  await expect(page.getByTestId('handoff-chosen')).toHaveText('phone');
+  await expect(page.getByTestId('handoff-phone')).toHaveValue('手机侧草稿 A');
+  await expect(page.getByTestId('handoff-desktop')).toHaveValue('手机侧草稿 A');
+
+  await page.getByTestId('handoff-voice-share').click();
+  await expect(page.getByTestId('handoff-voice-shared')).toHaveText('共享中');
+  await page.getByTestId('handoff-voice-share').click();
+  await expect(page.getByTestId('handoff-voice-shared')).toHaveText('未授权不共享');
+});

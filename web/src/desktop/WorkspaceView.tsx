@@ -9,6 +9,8 @@ import { loadExecOpen, saveExecOpen } from "./readAnchorStore";
 import { WorkspaceComposer } from "./WorkspaceComposer";
 import { ApprovalMockPanel } from "./ApprovalMockPanel";
 import { ResumeMockPanel } from "./ResumeMockPanel";
+import { VoiceMockPanel } from "./VoiceMockPanel";
+import { HandoffMockPanel } from "./HandoffMockPanel";
 
 type Props = {
   taskId: string;
@@ -23,6 +25,8 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
   const [execOpen, setExecOpen] = useState(() => loadExecOpen(taskId));
   const [showAppr, setShowAppr] = useState(false);
   const [showResume, setShowResume] = useState(false);
+  const [showVoice, setShowVoice] = useState(false);
+  const [showHandoff, setShowHandoff] = useState(false);
 
   useEffect(() => {
     setExecOpen(loadExecOpen(taskId));
@@ -131,9 +135,29 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
             >
               {showResume ? "收起 Run 恢复" : "异步 Run 恢复"}
             </button>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="workspace-open-voice"
+              aria-expanded={showVoice}
+              onClick={() => setShowVoice((v) => !v)}
+            >
+              {showVoice ? "收起语音模拟" : "语音模拟"}
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="workspace-open-handoff"
+              aria-expanded={showHandoff}
+              onClick={() => setShowHandoff((v) => !v)}
+            >
+              {showHandoff ? "收起跨端续接" : "跨端续接模拟"}
+            </button>
           </div>
           {showAppr && <ApprovalMockPanel taskId={taskId} />}
           {showResume && <ResumeMockPanel onOpenTask={onOpenTask} />}
+          {showVoice && <VoiceMockPanel />}
+          {showHandoff && <HandoffMockPanel />}
           <p className="workspace-hint">草稿与作用域按 Task 隔离（A2）。</p>
           <WorkspaceComposer taskId={taskId} />
         </section>
