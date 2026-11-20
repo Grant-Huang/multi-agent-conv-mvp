@@ -790,9 +790,9 @@
   - M13 只改模拟工厂：进程内仿真和 MCP 模式会在多次执行重叠时不一致（RT-DESC-01 的前提）。
 - 验证：见 `docs/testing/evidence/review-2026-11-19-des.md`。
 
-**DES-31 原阶段⑤「车间视图」并入 World Adapter 产品前门（2026-11-20，助手建议，待用户确认）**
+**DES-31 原阶段⑤「车间视图」并入 World Adapter 产品前门（2026-11-20 用户确认）**
 - 问题：DES 闭环设计把⑤定为 `web/mom/` 车间 SVG 标签页；同时决定 61 已确认 World Adapter（Observe/Subscribe/Propose/Execute/Confirm）与前端先行 M0～M4。两套产品路径若并行会重复做工作台与验收。
-- 定了什么（助手建议）：
+- 定了什么（用户确认）：
   1. ⑤a-1～⑤a-3（独立工厂、连接器、`an-mom --des-mcp`）保持已完成基线，不再改口。
   2. 原⑤车间视图与 WP1 的 GS1 产品前门，统一按 [WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md) M0→M1→M2 推进；车间可视化作为工作台内视图，不单开 SVG 标签页里程碑。
   3. 运营频道批准与运营桌面看板（决定 56～60）继续复用，不另造批准链。
@@ -800,6 +800,16 @@
 - 为什么：决定 61 要求同一契约覆盖 DES 与生产；前端先行可先验收 WA/UI，再替换真实 DES，避免先做夹具车间页再推倒。
 - 没选什么：继续单独做⑤ SVG 车间页；把 World Adapter 整包推迟到 WP1 L1～L3 全部做完。
 - 出问题先看：`docs/mom/DES_CLOSED_LOOP.md` §11 / §11b；`docs/mom/WORLD_ADAPTER.md`；`docs/INTEGRATION_PLAN.md` WP1。
+
+**DES-32 World Adapter 交付硬约束（2026-11-20 用户确认）**
+- 问题：实施时可能先做半截后端或跳过 Mock/E2E，导致里程碑不可演示、不可自动回归。
+- 定了什么：
+  1. 先快速搭建**完整前端**。
+  2. **每个里程碑**都能用同一前端走完全流程；未就绪后端用 Mock；初期即具备端到端与集成测试；E2E 用 Feature Map + Playwright 自动完成。
+  3. 计划必须含 **Mock 开发计划与取代计划**（见 WORLD_ADAPTER_PLAN §4）。
+  4. 测试与回归严格满足设计特性清单（WA-01～08、UI01～16）；合入前每条有可执行断言。
+- 为什么：用户明确要求前端先行与可测交付，避免“有协议无产品、有页面无闭环”。
+- 出问题先看：`docs/mom/WORLD_ADAPTER_PLAN.md` §0；执行卡 `docs/mom/WA_M0_TASKS.md`。
 
 ### 56. DES–MOM–会话闭环：工具式前门 + 案例卡；MOM 数据来自 mock MCP 的 DES 事件，暂不用 MOM 界面（2026-11-18 用户确认）
 
@@ -894,11 +904,19 @@
 - **定了什么**：以 Observe、Subscribe、Propose、Execute、Confirm 定义共同契约，经 MOM 访问当前世界；首版复用已有 DES MCP，随后接入生产观测和一个可查证的写动作。
 - **为什么**：统一调用面，同时保留现有 MOM 审批、远程 DES 重推演和现场系统各自的权威职责。
 - **出问题先看**：见 [World Adapter 协议](mom/WORLD_ADAPTER.md)。按源码修订的发布边界、回执语义及实例恢复限制集中写在设计文档中。
-- **计划对齐**：现行 DES 阶段⑤、WP1 GS1、运营桌面 D3 的排期按 DES-31 并入 [WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)（助手建议，待确认）。
+- **计划对齐**：现行 DES 阶段⑤、WP1 GS1、运营桌面 D3 的排期按 DES-31 并入 [WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)；交付方式按 DES-32。
+
+### 62. DES 仿真实验与 MOM 运营分设入口（2026-11-20，用户确认）
+
+- **问题**：MOM 运营公告板同时呈现实验配置和业务处置，用户难以识别当前任务。
+- **决定**：配置、试跑、运行控制与结果进入 DES 仿真实验；正式运行的业务事项经消息进入 AI 桌面。
+- **为什么**：让实验人员管理运行，让运营人员在业务上下文完成决定并查到回执。
+- **出问题先看**：[设计增补](mom/DES_EXPERIMENT_OPS_SPLIT.md) 和 [实施计划](mom/WORLD_ADAPTER_PLAN.md)；M0 执行卡 [WA_M0_TASKS.md](mom/WA_M0_TASKS.md)；验收 DES-UI-01～06。
+- **与 DES-32 的关系**：双入口均纳入「完整前端」与每里程碑可测交付；实验控制 Mock 见 WORLD_ADAPTER_PLAN §4「实验控制与消息」。
 
 ### 待决定
 
-- DES-31：原阶段⑤车间视图是否确认并入 World Adapter M0～M2（助手建议已写入文档，待用户表态）。
+- 暂无（DES-31、DES-32、决定 62 已确认）。
 
 ### 排查提示（踩过的坑）
 

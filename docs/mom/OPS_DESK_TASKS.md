@@ -13,7 +13,7 @@
 | **D1-2** | 服务端：`GET /api/mom/desk`、`GET /api/mom/desk/cases/{id}`、`POST …/open-in-channel` | 已完成 | 本 PR |
 | **D1-3** | 前端：“运营桌面”页签、看板、筛选、详情抽屉（E2E-OPSDESK/OPSDRAWER/OPSNOISE 转绿） | 已完成 | 本 PR |
 | **D2** | 卡片上批准（决定 60） | 已完成 | #136 |
-| D3 | 任务/资源入口 → **改走 World Adapter M0**；连接器回归已由⑤a-2/③覆盖；挂入 AI Desktop 运营区 | 改派 WA M0（DES-31 待确认） | — |
+| D3 | 任务/资源入口 → **改走 World Adapter M0**（含 DES 实验入口，决定 62）；挂入 AI Desktop 运营区 | 改派 [WA_M0_TASKS.md](WA_M0_TASKS.md) | — |
 
 一张卡 = 一个 PR。做完先在 PR 里贴“完成的定义”命令的真实输出，等用户确认合并，再开下一张。
 
@@ -232,12 +232,11 @@ plan_revision: Option<u64>,  // 发卡时的 case.plan_revision
 
 与第 2 节相同，另加：`PLAYWRIGHT_BROWSERS_PATH=… npx playwright test ops.spec.ts` 含新 E2E-OPSAPPROVE 共 6 个全绿。
 
-## 8. D3：改派 World Adapter M0（先确认 DES-31，再拆卡）
+## 8. D3：改派 World Adapter M0（DES-31/62 已确认）
 
-依据 [UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md) 的“三入口（看板/任务/资源）”与 [AI Desktop V1.7](../ai-desktop/DESIGN.md)（运营入口复用 MOM 三入口），D1 只做了“看板”。缺口见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md) §5.2。  
-**不再在本文件单独拆 D3 实现卡**：任务/资源入口、事项页、方案与执行详情按 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md) M0（完整前端 + 协议 Mock）交付，验收对齐 WA/UI 与 Feature Map `world-adapter.md`；Desktop A1 落地后作为壳内「运营」模块挂载，**不**再增加与「会话」并列的第三套一级运营导航。
+依据 [UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md) 的“三入口”与 [AI Desktop V1.7](../ai-desktop/DESIGN.md)、[DES_EXPERIMENT_OPS_SPLIT.md](DES_EXPERIMENT_OPS_SPLIT.md)，**不再在本文件单独拆 D3 实现卡**。任务/资源、事项页、DES 实验入口与运营频道双角色链路按 [WA_M0_TASKS.md](WA_M0_TASKS.md) 推进；验收含 DES-UI-01～06 与 WA/UI。Desktop A1 落地后作为壳内「运营」模块挂载，**不**再增加与「会话」并列的第三套一级运营导航。
 
-连接器（原「D3 另一条线 / WP1-L4」）基线已由⑤a-2/③完成；产品侧远程 DES 读/写见 WA M1～M2，任务卡见 [WP1_TASKS.md](WP1_TASKS.md)。用户确认 DES-31 前，不要在运营桌面线另开任务/资源 PR。
+连接器基线已由⑤a-2/③完成；产品侧远程 DES 读/写见 WA M1～M2。
 
 ## 9. 已知局限（做的时候别“顺手修”，在 PR 里如实写）
 

@@ -744,3 +744,17 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | RT-REV-03 | approval | 返工用尽 | reject | FAILED |
 | RT-REV-04 | approval | 已是 COMPLETED | accept 或 reject | 409，状态不变 |
 | E2E-REV-01 | approval | 浏览器任务卡为有 result 的待人工 | 点「判定通过」 | 状态与交付文案为已完成 |
+
+
+## World Adapter / DES 实验与运营（M0 草案，断言待冻结）
+
+设计见 [WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md)、[DES_EXPERIMENT_OPS_SPLIT.md](../mom/DES_EXPERIMENT_OPS_SPLIT.md)、[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) §0；执行卡 [WA_M0_TASKS.md](../mom/WA_M0_TASKS.md)。下列为**草案 bullet**（未写成表格行，避免 check-map 当作已登记缺测试）。用户确认断言后，按 `E2E-[A-Z]+` 正式命名并配 Playwright。
+
+- **DES-UI-01 配置试跑**：实验员保存配置并试跑 → 非法参数有明确提示；预览有试跑 ID；运营频道新增卡为零。
+- **DES-UI-02 正式启动**：核对配置版本与目标频道后启动 → 重试仍只有一个正式运行；试跑与正式 ID 不同；同一事项只发一张正确标注的卡。
+- **DES-UI-03 运营处置**：运营员打开异常卡 → 查看方案 → 批准 → 查看执行 → 完全在 AI 桌面完成；审批匹配方案/事项/世界；执行证据更新原卡。
+- **DES-UI-04 暂停恢复**：实验员暂停 → 运营员见等待状态 → 单步推进 → 重连后回执正确；重复及迟到事件不复制或回退卡片。
+- **DES-UI-05 隔离授权**：运营员无法进入实验控制；用运行 A 的审批提交到 B → 服务端拒绝，无数据泄露，计数不变。
+- **DES-UI-06 双角色闭环**：实验员启动正式运行 → 运营员批准维修 → 实验员推进 → 运营员看核验证据 → Mock 下业务路径闭环；标准答案仅审核可见（物理断言随 M2）。
+
+配套 WA-01～08、UI01～16 仍按 Feature Map 在各里程碑回归。M0 在 Mock 环境跑通适用断言；M1/M2 替换适配器后同路径重跑。

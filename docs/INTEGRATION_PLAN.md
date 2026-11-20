@@ -1,7 +1,7 @@
 # 系统打通计划：从“三块各自完整”到“完整系统 + 整体场景 E2E”
 
-状态：**WP1 方案已确认并在实施中**（决定见 [DECISIONS.md](DECISIONS.md) 第 56–58、60、61 条）；**产品壳主轴**见已确认的 [AI Desktop V1.7](ai-desktop/DESIGN.md)（交付顺序 A→B→C→D）。**产品前门与 DES/生产统一契约按 World Adapter 推进**（决定 61；计划对齐见 DES-31，助手建议待确认）。运营桌面 D0～D2 已完成；D3 与 GS1 的完整工作台改走 [WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md) M0～M2。其余工作包仍是助手建议，开工前需用户确认。  
-**执行级任务卡**：Desktop [ai-desktop/PLAN.md](ai-desktop/PLAN.md) + [ai-desktop/FEATURE_MAP.md](ai-desktop/FEATURE_MAP.md)；运营桌面 [mom/OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md)；WP1 其余部分 [mom/WP1_TASKS.md](mom/WP1_TASKS.md)；World Adapter 见 [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md)；其余工作包见本文第五节。  
+状态：**WP1 方案已确认并在实施中**（决定见 [DECISIONS.md](DECISIONS.md) 第 56–58、60–62 条）；**产品壳主轴**见已确认的 [AI Desktop V1.7](ai-desktop/DESIGN.md)（交付顺序 A→B→C→D）。**产品前门按 World Adapter 推进**（决定 61、62；DES-31/32 已确认）。运营桌面 D0～D2 已完成；D3 与 GS1 改走 [WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md) M0～M2；实验与运营入口拆分见 [mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md)。其余工作包仍是助手建议，开工前需用户确认。  
+**执行级任务卡**：Desktop [ai-desktop/PLAN.md](ai-desktop/PLAN.md) + [ai-desktop/FEATURE_MAP.md](ai-desktop/FEATURE_MAP.md)；运营桌面 [mom/OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md)；WP1 [mom/WP1_TASKS.md](mom/WP1_TASKS.md)；M0 [mom/WA_M0_TASKS.md](mom/WA_M0_TASKS.md)；其余工作包见本文第五节。  
 缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md) 与 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)，场景清单见 [SCENARIOS.md](feature-map/SCENARIOS.md)。
 按 AGENTS.md：涉及 `orchestrator.rs` / `store.rs` / `registry.rs` / `acp.rs` / `util.rs` 的工作包，动手前先单独出方案并等你批准；每个工作包新增行为先在 `docs/testing/CASES.md` 定稿用例并见到业务断言 Red。
 

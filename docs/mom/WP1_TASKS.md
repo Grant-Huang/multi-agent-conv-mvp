@@ -2,7 +2,7 @@
 
 本文件是 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md) 第三节的执行版。运营桌面/运营频道（D0–D3）单独见 [OPS_DESK_TASKS.md](OPS_DESK_TASKS.md)，**通用流程、完成的定义、命令和环境坑都在那个文件的第 2 节，本文件不重复**，每张卡开工前先读它。  
 产品壳主轴见 [AI Desktop V1.7](../ai-desktop/DESIGN.md)；与 WP1 的挂靠见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md) 与 INTEGRATION_PLAN §0。  
-已确认的设计决定：[DECISIONS.md](../DECISIONS.md) 第 56 条（DES–MOM–会话闭环取方案 A：会话只读工具 + 案例卡）、57（案例卡只在需要时推送）、58（专属运营频道）、60（OpsCase 批准）、61（World Adapter）。计划对齐见 DES-31（助手建议）：产品前门与 GS1 按 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md) M0～M2 验收。
+已确认的设计决定：[DECISIONS.md](../DECISIONS.md) 第 56–58、60–62 条；DES-31/32。产品前门与 GS1 按 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md) M0～M2 验收；实验/运营入口拆分见 [DES_EXPERIMENT_OPS_SPLIT.md](DES_EXPERIMENT_OPS_SPLIT.md)；M0 卡见 [WA_M0_TASKS.md](WA_M0_TASKS.md)。
 
 ## 0. 进度总表
 

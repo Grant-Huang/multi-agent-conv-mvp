@@ -378,9 +378,10 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 ## 11. 产品演示与工作台（2026-11-20 修订）
 
 - 沿用现有播放控制和共享时钟。
-- **原「车间视图 = `web/mom/` SVG 新标签页」方案已让位给 World Adapter 前端先行路径**（见 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md)）：同一套 React 工作台（世界/看板/任务/资源/事项/方案与执行/AI）先接协议 Mock（M0），再替换远程 DES 读（M1）与写确认（M2）。设备布局、振动与 Cpk 趋势等车间可视化作为工作台内视图能力落地，不再单独开阶段⑤标签页 PR。
-- 界面改动按 `UI_UX_PRINCIPLES.md`（含 UI01～UI16）与 [world-adapter Feature Map](../feature-map/features/world-adapter.md) 评审。
-- 运营频道批准与运营桌面看板（决定 56～60）继续作为审批与盯盘入口；World Adapter 复用这些入口，不另造第二套批准链。
+- **原「车间视图 = `web/mom/` SVG 新标签页」方案已让位给 World Adapter 前端先行路径**（见 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md)）：先接协议/实验 Mock（M0），再替换远程 DES 读（M1）与写确认（M2）。
+- **入口拆分（决定 62）**：实验配置/试跑/时钟/结果在「DES 仿真实验」；正式运行的业务事项经 MOM 发到「AI 桌面 → 运营频道」。详见 [DES_EXPERIMENT_OPS_SPLIT.md](DES_EXPERIMENT_OPS_SPLIT.md)。旧 `/mom/` 迁移期标为仿真沙盘。
+- 界面改动按 `UI_UX_PRINCIPLES.md`（UI01～UI16）、DES-UI-01～06 与 [world-adapter Feature Map](../feature-map/features/world-adapter.md) 评审。
+- 运营频道批准（决定 56～60）继续作为业务审批入口；实验控制另鉴权，不与运营批准混用。
 
 ## 11a. 阶段⑤a：独立仿真引擎与 MCP 挂载（2026-11-17 用户确认；⑤a-1～⑤a-3 均已实现）
 
@@ -488,9 +489,9 @@ DES 仿真使用独立的配置和入口：`DesSimulationConfig` 与 `Engine::cr
 
 | World Adapter 阶段 | 与 DES 的关系 | 主要验收 |
 |---|---|---|
-| M0 前端 + 协议 Mock | 不依赖真实工厂；合同与 UI 全路径可跑 | WA-01～08、UI01～16 映射到可执行用例 |
-| M1 远程 DES 读取 | 主应用 MOM 复用 `with_des` / `DesConnector`；世界绑定；公开流以 MOM 投递边界为准 | WA-01、02、07 + RT-DESC 回归 |
-| M2 远程 DES 动作 | 复用待发写、子动作回执、干预重推演；补执行登记/确认与答案同步 | WA-03、04、05、08；保留 RT-DES-08～11 |
+| M0 前端 + 协议/实验 Mock | 不依赖真实工厂；实验入口 + AI 桌面运营全路径可跑 | WA-01～08、UI01～16、DES-UI-01～06（Mock） |
+| M1 远程 DES 读取 | 主应用 MOM 复用 `with_des` / `DesConnector`；世界绑定；正式消息投递 | WA-01、02、07 + RT-DESC 回归；试跑隔离 |
+| M2 远程 DES 动作 | 复用待发写、子动作回执、干预重推演；双角色同一正式运行 | WA-03、04、05、08、DES-UI-06；保留 RT-DES-08～11 |
 | M3～M4 生产适配 | 同一契约换站点适配器；先读后写 | WA-06 |
 
 实施细则、发布边界、回执语义与持久化见 [WORLD_ADAPTER.md](WORLD_ADAPTER.md) §6～§9；里程碑与 Mock 替换见 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md)。WP1 会话只读工具与 GS1 黄金场景在 World Adapter 路径上验收（见 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md)）。
