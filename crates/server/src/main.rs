@@ -92,7 +92,10 @@ async fn main() -> Result<()> {
                 state.engine.clone(),
                 publisher.clone(),
             ));
-            app = app.merge(an_server::mom_ops::router(publisher));
+            app = app.merge(an_server::mom_ops::router(an_server::mom_ops::OpsState {
+                engine: state.engine.clone(),
+                publisher,
+            }));
         }
         app = app
             .route(

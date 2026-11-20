@@ -669,7 +669,9 @@
       "web/src/App.tsx",
       "web/e2e/ops.spec.ts",
       "crates/runtime/src/mom/ops_desk.rs",
-      "crates/runtime/src/mom/ops_view.rs"
+      "crates/runtime/src/mom/ops_view.rs",
+      "crates/server/src/mom_ops.rs",
+      "crates/server/tests/mom_ops.rs"
     ],
     "coverage": "browser",
     "cases": [
@@ -688,7 +690,8 @@
       "RT-OPSDESK-06",
       "RT-OPSDESK-07",
       "RT-OPSDESK-08",
-      "RT-OPSDESK-09"
+      "RT-OPSDESK-09",
+      "RT-OPSDESK-10"
     ]
   },
   {

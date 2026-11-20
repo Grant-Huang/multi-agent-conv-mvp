@@ -644,8 +644,9 @@ Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_ops
 | RT-OPSDESK-06 | ops-desk | 一个待批准案例，发布器未 tick | 对同一案例调用 `open_case` 两次，再 tick；对不存在的案例调用 | 两次返回同一非空消息 id；频道里该案例只有一张卡；tick 后消息条数不变；不存在的案例错误以 `E_CASE_NOT_FOUND` 开头 |
 | RT-OPSDESK-07 | ops-desk | 零案例引擎；另造待批准、受阻、已关闭各一 | 调用 `desk_view` | 零案例 `state=no_data`；有案例时 `state=ok`，`rows[0]` 待批准、`rows[1]` 受阻、已完成最后；`strip` 计数一致；每行 `provenance=simulation` 且 case_id 都在引擎里；结果确定 |
 | RT-OPSDESK-09 | ops-desk | 发布器（文件库），先后发出几张卡 | 查看未读、批准已发卡的案例、再发新卡、标记已读、重启 | 无消息时未读为 0；每张新卡、汇总卡各加 1；就地更新原卡不增加；标记已读后为 0；已读位置重启后仍在 |
+| RT-OPSDESK-10 | ops-desk | 服务端同时挂 MOM 与运营桌面路由，已创建 s1 案例 | `GET /api/mom/desk`；`GET …/cases/{id}`；对同一案例 `POST …/open-in-channel` 两次；对不存在案例 GET/POST | desk 200 且 rows 案例集合与 `/mom/api/mom/cases` 相同；详情含 `projection_seq`；两次 open 返回同一 `message_id`；不存在案例 404 |
 
-说明：RT-OPSDESK-06/07 属 D1-1，测试函数 `rt_opsdesk_06_open_in_channel_is_idempotent`、`rt_opsdesk_07_desk_view_matches_engine`；证据见 `docs/testing/evidence/ops-desk-d1-1-red.md`。
+说明：RT-OPSDESK-06/07 属 D1-1（`crates/runtime/tests/ops_desk.rs`）；RT-OPSDESK-10 属 D1-2（`crates/server/tests/mom_ops.rs`，函数 `rt_opsdesk_10_desk_api_matches_engine_and_open_is_idempotent`）。证据见 `docs/testing/evidence/ops-desk-d1-1-red.md`、`ops-desk-d1-2-red.md`。
 
 说明：原草案 RT-OPSDESK-03 的“不进入记忆抽取”本期无法验证——仓库里还没有个人记忆抽取模块（见 `docs/memory/` 的缺口 G-9）。这里改为断言消息带结构化案例卡，日后的抽取器按卡片类型跳过即可；等记忆模块出现时再补断言。原 RT-OPSDESK-04 的“无桌面接口和发布器”属于服务层，放到 D0b 的服务端测试。
 
