@@ -97,10 +97,10 @@ async fn main() -> Result<()> {
                 publisher,
             }));
         }
-        // World Adapter M0 Mock（协议五操作 + 实验控制）；故障注入关闭
+        // World Adapter M0 Mock（协议五操作 + 实验控制 + 运营频道投影）；故障注入关闭
         if config.mom.world_mock {
             app = app.merge(an_server::mom_world_mock::router(
-                an_server::mom_world_mock::WorldMockState::new(false),
+                an_server::mom_world_mock::WorldMockState::with_app_store(false, rt.store.clone()),
             ));
         }
         app = app

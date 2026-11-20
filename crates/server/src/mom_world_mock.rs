@@ -1,12 +1,16 @@
-//! World Adapter M0 协议 / 实验控制 Mock（决定 61、62；WA_M0_TASKS M0-1）。
+//! World Adapter M0 协议 / 实验控制 Mock（决定 61、62；WA_M0_TASKS M0-1 / M0-3）。
 //!
 //! 独立内存实现，不改 `engine.rs`。合同见 `docs/mom/WORLD_ADAPTER.md` §4。
-//! 故障注入仅在 `allow_test_controls=true` 时开放（测试进程）。
+//! 正式运行可向运营频道投影 `OpsCase` 卡（M0-3）；故障注入仅 `allow_test_controls`。
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use an_core::ChatCard;
+use an_runtime::mom::ops_desk::OPS_CHANNEL_ID;
+use an_runtime::store::Store as AppStore;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
@@ -15,11 +19,14 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 const PROTOCOL_VERSION: u32 = 1;
+const OPS_CHANNEL_TITLE: &str = "运营频道";
 
 #[derive(Clone)]
 pub struct WorldMockState {
     inner: Arc<Mutex<Store>>,
     allow_test_controls: bool,
+    /// 正式运行投影到运营频道；合同测试可不挂。
+    app_store: Option<Arc<AppStore>>,
 }
 
 impl WorldMockState {
@@ -27,6 +34,15 @@ impl WorldMockState {
         Self {
             inner: Arc::new(Mutex::new(Store::default())),
             allow_test_controls,
+            app_store: None,
+        }
+    }
+
+    pub fn with_app_store(allow_test_controls: bool, app_store: Arc<AppStore>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Store::default())),
+            allow_test_controls,
+            app_store: Some(app_store),
         }
     }
 }
@@ -44,6 +60,10 @@ struct Store {
     cursors: HashMap<String, CursorRec>,
     cursor_generation: HashMap<String, u64>,
     ground_truth: HashMap<String, Value>,
+    /// case_id → 运营频道消息 id（就地更新）
+    case_messages: HashMap<String, String>,
+    /// case_id → 当前方案版本
+    case_plan_revision: HashMap<String, u64>,
 }
 
 #[derive(Clone)]
@@ -161,6 +181,77 @@ fn run_json(run: &RunRec) -> Value {
     })
 }
 
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn ops_card(
+    run_id: &str,
+    case_id: &str,
+    stage: &str,
+    summary: &str,
+    approver: Option<&str>,
+    plan_revision: u64,
+) -> ChatCard {
+    ChatCard::OpsCase {
+        case_id: case_id.into(),
+        title: format!("仿真 · {run_id}"),
+        level: "P0".into(),
+        stage: stage.into(),
+        summary: summary.into(),
+        owner: "调度".into(),
+        approver: approver.map(|s| s.into()),
+        scope: Some("production".into()),
+        plan_revision: Some(plan_revision),
+        provenance: "world_mock".into(),
+        updated_at: now_secs(),
+    }
+}
+
+fn deliver_ops_card(
+    app: &AppStore,
+    run_id: &str,
+    case_id: &str,
+    stage: &str,
+    summary: &str,
+    approver: Option<&str>,
+    plan_revision: u64,
+) -> Result<String, String> {
+    app.ensure_conversation(OPS_CHANNEL_ID, OPS_CHANNEL_TITLE)
+        .map_err(|e| e.to_string())?;
+    let card = ops_card(run_id, case_id, stage, summary, approver, plan_revision);
+    let content = format!("[模拟] 运营案例 {case_id}（运行 {run_id}）");
+    let msg = app
+        .add_message_with_card(OPS_CHANNEL_ID, "assistant", &content, &card)
+        .map_err(|e| e.to_string())?;
+    Ok(msg.id)
+}
+
+struct OpsCardPatch<'a> {
+    run_id: &'a str,
+    case_id: &'a str,
+    stage: &'a str,
+    summary: &'a str,
+    approver: Option<&'a str>,
+    plan_revision: u64,
+}
+
+fn refresh_ops_card(app: &AppStore, message_id: &str, p: OpsCardPatch<'_>) -> Result<(), String> {
+    let card = ops_card(
+        p.run_id,
+        p.case_id,
+        p.stage,
+        p.summary,
+        p.approver,
+        p.plan_revision,
+    );
+    app.update_message_card(message_id, &card)
+        .map_err(|e| e.to_string())
+}
+
 pub fn router(state: WorldMockState) -> Router {
     Router::new()
         .route("/api/world/mock/experiment/configs", post(save_config))
@@ -177,6 +268,11 @@ pub fn router(state: WorldMockState) -> Router {
         .route("/api/world/mock/confirm", post(confirm))
         .route("/api/world/mock/ground-truth", get(ground_truth))
         .route("/api/world/mock/test/fault", post(inject_fault))
+        .route("/api/world/mock/ops/approve", post(ops_approve))
+        .route("/api/world/mock/ops/ensure-seed", post(ops_ensure_seed))
+        // DESISO：非 mock 前缀的拒绝桩（跨运行 / 无授权）
+        .route("/api/world/approve", post(world_approve_denied))
+        .route("/api/world/runs/{run_id}", get(world_run_denied))
         .with_state(state)
 }
 
@@ -365,6 +461,24 @@ async fn start_official(
             payload: json!({ "case_id": case_id, "channel": body.target_channel }),
         }],
     );
+    store.case_plan_revision.insert(case_id.clone(), 1);
+    drop(store);
+
+    // M0-3：正式运行向运营频道投递一张 OpsCase（试跑不投递）
+    if let Some(app) = &state.app_store {
+        let summary = format!("CNC 振动异常，待主管决定 · 运行 {run_id}");
+        match deliver_ops_card(app, &run_id, &case_id, "WAITING_HUMAN", &summary, None, 1) {
+            Ok(mid) => {
+                if let Ok(mut store) = state.inner.lock() {
+                    store.case_messages.insert(case_id.clone(), mid);
+                }
+            }
+            Err(e) => {
+                tracing::warn!(event = "task.status", task_id = %run_id, error = %e, "运营频道投影失败");
+            }
+        }
+    }
+
     Ok(Json(json!({
         "protocol_version": PROTOCOL_VERSION,
         "request_id": body.request_id,
@@ -457,9 +571,221 @@ async fn control_run(
         }
     }
     let run = store.runs.get(&run_id).unwrap().clone();
+    let case_id = run.case_id.clone();
+    let mid = case_id
+        .as_ref()
+        .and_then(|c| store.case_messages.get(c).cloned());
+    let plan_rev = case_id
+        .as_ref()
+        .and_then(|c| store.case_plan_revision.get(c).copied())
+        .unwrap_or(1);
+    // 读现有卡上的批准人（若有）
+    let approver = mid
+        .as_ref()
+        .and_then(|id| state.app_store.as_ref()?.message_card(id).ok()?)
+        .and_then(|c| match c {
+            ChatCard::OpsCase { approver, .. } => approver,
+            _ => None,
+        });
+    drop(store);
+
+    if let (Some(app), Some(cid), Some(message_id)) = (&state.app_store, &case_id, &mid) {
+        let (stage, summary) = match body.action.as_str() {
+            "pause" => (
+                if approver.is_some() {
+                    "INVESTIGATING"
+                } else {
+                    "WAITING_HUMAN"
+                },
+                format!("已下发，等待仿真推进 · 运行 {run_id}"),
+            ),
+            "step" => ("VERIFYING", format!("执行回执已更新 · 运行 {run_id}")),
+            _ => (
+                if approver.is_some() {
+                    "INVESTIGATING"
+                } else {
+                    "WAITING_HUMAN"
+                },
+                format!("CNC 振动异常，待主管决定 · 运行 {run_id}"),
+            ),
+        };
+        let _ = refresh_ops_card(
+            app,
+            message_id,
+            OpsCardPatch {
+                run_id: &run_id,
+                case_id: cid,
+                stage,
+                summary: &summary,
+                approver: approver.as_deref(),
+                plan_revision: plan_rev,
+            },
+        );
+    }
+
     let mut out = run_json(&run);
     out["request_id"] = json!(body.request_id);
     Ok(Json(out))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OpsApproveBody {
+    case_id: String,
+    plan_revision: u64,
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+async fn ops_approve(
+    State(state): State<WorldMockState>,
+    headers: HeaderMap,
+    Json(body): Json<OpsApproveBody>,
+) -> ApiResult {
+    if role_from(&headers) == Role::Experimenter {
+        // 运营员与实验员在 M0 mock 下均可批（双角色同浏览器）；真实环境按身份隔离。
+    }
+    let Some(app) = &state.app_store else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "BACKEND_UNAVAILABLE",
+            "未挂载运营投影",
+            body.request_id.as_deref(),
+        );
+    };
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    let Some(message_id) = store.case_messages.get(&body.case_id).cloned() else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "INVALID_ARGUMENT",
+            "未知事项",
+            body.request_id.as_deref(),
+        );
+    };
+    let run_id = store
+        .runs
+        .values()
+        .find(|r| r.case_id.as_deref() == Some(body.case_id.as_str()))
+        .map(|r| r.run_id.clone())
+        .unwrap_or_else(|| {
+            if body.case_id == "case-seed" {
+                "official-seed".into()
+            } else {
+                "official".into()
+            }
+        });
+    store
+        .case_plan_revision
+        .insert(body.case_id.clone(), body.plan_revision);
+    // 批准后预置一条 accepted 执行，便于单步后出回执
+    let world_id = store
+        .runs
+        .values()
+        .find(|r| r.run_id == run_id)
+        .map(|r| r.world_id.clone())
+        .unwrap_or_default();
+    if !world_id.is_empty() {
+        let exec_id = next_id(&mut store, "exec");
+        store.executions.insert(
+            exec_id.clone(),
+            ExecRec {
+                execution_id: exec_id,
+                world_id,
+                proposal_id: format!("prop-{}", body.case_id),
+                approval_ref: format!("approval-{}", body.case_id),
+                status: "accepted".into(),
+                subactions: vec![],
+                confirmation_policy: "confirm".into(),
+            },
+        );
+    }
+    drop(store);
+    let summary = format!("已批准 · 运行 {run_id}");
+    refresh_ops_card(
+        app,
+        &message_id,
+        OpsCardPatch {
+            run_id: &run_id,
+            case_id: &body.case_id,
+            stage: "INVESTIGATING",
+            summary: &summary,
+            approver: Some("supervisor"),
+            plan_revision: body.plan_revision,
+        },
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"code":"BACKEND_UNAVAILABLE","message":e})),
+        )
+    })?;
+    Ok(Json(json!({
+        "already": false,
+        "approver": "supervisor",
+        "protocol_version": PROTOCOL_VERSION,
+    })))
+}
+
+/// DESOPS 前置：若尚无 world_mock 事项卡则投递一张种子卡。
+async fn ops_ensure_seed(State(state): State<WorldMockState>) -> ApiResult {
+    let Some(app) = &state.app_store else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "BACKEND_UNAVAILABLE",
+            "未挂载运营投影",
+            None,
+        );
+    };
+    {
+        let store = state.inner.lock().map_err(|_| lock_err())?;
+        if store.case_messages.contains_key("case-seed") || !store.case_messages.is_empty() {
+            return Ok(Json(json!({
+                "protocol_version": PROTOCOL_VERSION,
+                "seeded": false,
+                "case_id": store.case_messages.keys().next(),
+            })));
+        }
+    }
+    match deliver_ops_card(
+        app,
+        "official-seed",
+        "case-seed",
+        "WAITING_HUMAN",
+        "CNC 振动异常，待主管决定 · 运行 official-seed",
+        None,
+        1,
+    ) {
+        Ok(mid) => {
+            if let Ok(mut store) = state.inner.lock() {
+                store.case_messages.insert("case-seed".into(), mid);
+                store.case_plan_revision.insert("case-seed".into(), 1);
+            }
+            Ok(Json(json!({
+                "protocol_version": PROTOCOL_VERSION,
+                "seeded": true,
+                "case_id": "case-seed",
+            })))
+        }
+        Err(e) => err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "BACKEND_UNAVAILABLE",
+            &e,
+            None,
+        ),
+    }
+}
+
+async fn world_approve_denied() -> ApiResult {
+    err(
+        StatusCode::FORBIDDEN,
+        "ACCESS_DENIED",
+        "跨运行审批被拒绝",
+        None,
+    )
+}
+
+async fn world_run_denied() -> ApiResult {
+    err(StatusCode::NOT_FOUND, "ACCESS_DENIED", "运行不可见", None)
 }
 
 #[derive(Debug, Deserialize)]

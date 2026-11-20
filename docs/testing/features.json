@@ -756,7 +756,9 @@
       "docs/mom/WA_M0_TASKS.md",
       "docs/testing/evidence/wa-m0-0-red.md",
       "docs/testing/evidence/wa-m0-1.md",
-      "docs/testing/evidence/wa-m0-2.md"
+      "docs/testing/evidence/wa-m0-2.md",
+      "docs/testing/evidence/wa-m0-3.md",
+      "web/src/components/OpsCards.tsx"
     ],
     "coverage": "browser",
     "cases": [

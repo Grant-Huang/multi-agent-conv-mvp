@@ -383,6 +383,18 @@ export const api = {
         headers: WA_ROLE,
         body: JSON.stringify(body),
       }),
+    approveOps: (body: { case_id: string; plan_revision: number; request_id?: string }) =>
+      request<{ already: boolean; approver: string }>("/api/world/mock/ops/approve", {
+        method: "POST",
+        headers: { "X-WA-Role": "operator" },
+        body: JSON.stringify(body),
+      }),
+    ensureOpsSeed: () =>
+      request<{ seeded: boolean; case_id?: string }>("/api/world/mock/ops/ensure-seed", {
+        method: "POST",
+        headers: { "X-WA-Role": "operator" },
+        body: "{}",
+      }),
   },
 };
 
