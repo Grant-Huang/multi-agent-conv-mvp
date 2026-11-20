@@ -51,6 +51,8 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
   const [audits, setAudits] = useState(() => listTaskLinkAudits());
   const [late, setLate] = useState<string[]>([]);
   const [localReply, setLocalReply] = useState<string | null>(null);
+  const composingRef = useRef(false);
+  const [, bumpComposing] = useState(0);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -147,6 +149,21 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
           value={text}
           rows={3}
           onChange={(e) => writeText(e.target.value)}
+          data-composing={composingRef.current ? "1" : "0"}
+          onCompositionStart={() => {
+            composingRef.current = true;
+            bumpComposing((n) => n + 1);
+          }}
+          onCompositionEnd={() => {
+            composingRef.current = false;
+            bumpComposing((n) => n + 1);
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.shiftKey) return;
+            if (composingRef.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
+            e.preventDefault();
+            void mockSend();
+          }}
           placeholder="在此任务下写草稿；切换任务后仍保留"
         />
         <button

@@ -155,3 +155,102 @@ test('E2E-ADHISTORY: 历史筛选固定与打开任务后恢复筛选', async ({
   await expect(page.getByTestId('history-filter')).toHaveValue('SMT');
   await expect(page.getByTestId('history-item-hist-smt')).toBeVisible();
 });
+
+test('E2E-ADPROF: 助理设置保存、记忆返回与冲突不覆盖草稿', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-input').fill('设置中应保留的草稿');
+  await page.getByTestId('workspace-open-settings').click();
+  await expect(page.getByTestId('settings-panel')).toBeVisible();
+  await expect(page.getByTestId('settings-assistant')).toBeVisible();
+
+  await page.getByTestId('profile-name').fill('桌面测试助理');
+  await page.getByTestId('profile-save').click();
+  await expect(page.getByTestId('profile-saved')).toBeVisible();
+  await expect(page.getByTestId('assistant-chip')).toContainText('桌面测试助理');
+
+  await page.getByTestId('profile-open-memory').click();
+  await expect(page.getByTestId('settings-memory')).toBeVisible();
+  await expect(page.getByTestId('memory-crumb')).toContainText('记忆');
+  await page.getByTestId('memory-back').click();
+  await expect(page.getByTestId('settings-assistant')).toBeVisible();
+  await expect(page.getByTestId('settings-crumb')).toContainText('我的 AI 助理');
+
+  await page.getByTestId('profile-name').fill('冲突中的名称');
+  await page.getByTestId('profile-inject-conflict').click();
+  await page.getByTestId('profile-save').click();
+  await expect(page.getByTestId('profile-save-error')).toContainText('版本冲突');
+  await expect(page.getByTestId('profile-name')).toHaveValue('冲突中的名称');
+
+  await page.getByTestId('settings-back').click();
+  await page.getByTestId('settings-back').click();
+  await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+  await expect(page.getByTestId('workspace-input')).toHaveValue('设置中应保留的草稿');
+
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await expect(page.getByTestId('home-assistant-name')).toContainText('桌面测试助理');
+});
+
+test('E2E-ADINPUT: 响应式设置入口、Escape、IME 与减少动态效果', async ({ page }) => {
+  const widths = [360, 768, 1024, 1440] as const;
+  for (const w of widths) {
+    await page.setViewportSize({ width: w, height: 800 });
+    await page.goto('/');
+    const settingsBtn = page.getByTestId('open-settings');
+    if (!(await settingsBtn.isVisible())) {
+      await page.getByRole('button', { name: /会话/ }).first().click();
+    }
+    await expect(settingsBtn).toBeVisible();
+  }
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+  await page.getByTestId('open-settings').click();
+  await expect(page.getByTestId('settings-panel')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+
+  await page.getByTestId('card-smt-03').click();
+  const input = page.getByTestId('workspace-input');
+  await input.fill('选词中勿发送');
+  await input.focus();
+  await input.evaluate((el) => {
+    el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+  });
+  await expect(input).toHaveAttribute('data-composing', '1');
+  await input.evaluate((el) => {
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'isComposing', { get: () => true });
+    el.dispatchEvent(ev);
+  });
+  await expect(page.getByTestId('workspace-reply')).toHaveCount(0);
+  await expect(page.getByTestId('workspace-send')).toHaveText('发送');
+  await input.evaluate((el) => {
+    el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+  });
+  await expect(input).toHaveAttribute('data-composing', '0');
+
+  const posts: string[] = [];
+  page.on('request', (req) => {
+    if (req.method() === 'POST' && req.url().includes('/messages')) posts.push(req.url());
+  });
+  await page.getByRole('button', { name: '＋ 新会话' }).click();
+  const chatInput = page.getByRole('textbox').last();
+  await chatInput.fill('ime');
+  await chatInput.evaluate((el) => {
+    el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+  });
+  await chatInput.evaluate((el) => {
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'isComposing', { get: () => true });
+    el.dispatchEvent(ev);
+  });
+  await expect.poll(() => posts.length).toBe(0);
+  await chatInput.evaluate((el) => {
+    el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+  });
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', '1');
+});
