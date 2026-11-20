@@ -129,6 +129,7 @@ enum Wait {
     Until(Duration),
 }
 
+#[derive(Clone)]
 pub struct Scheduler {
     inner: Arc<Inner>,
 }

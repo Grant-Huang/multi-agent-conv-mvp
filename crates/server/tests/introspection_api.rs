@@ -304,6 +304,7 @@ async fn rt_int_10_rerun_insert_idempotent_after_reject() {
         analysis_now: 1000,
         opts: opts.clone(),
         bus: None,
+        explainer: None,
     })
     .await
     .unwrap();
@@ -323,6 +324,7 @@ async fn rt_int_10_rerun_insert_idempotent_after_reject() {
         analysis_now: 1000,
         opts,
         bus: None,
+        explainer: None,
     })
     .await
     .unwrap();

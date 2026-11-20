@@ -1,11 +1,13 @@
-//! 内省调度：租约、超时、取消、清理。S4 不推送消息。
+//! 内省调度：租约、超时、取消、清理；S7 可选模型解释（默认关）。
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tokio::sync::watch;
 
 use super::analyze::analyze_adoption;
+use super::explain::{ExplainOutcome, ModelExplainer};
 use super::finding::{
     input_digest_from_stats, stable_finding_id, validate_draft, ValidateOutcome, Verification,
 };
@@ -96,6 +98,8 @@ pub struct RunOnceRequest<'a> {
     pub opts: RunOnceOptions,
     /// 闸门通过后推送到主窗口时可选广播；测试可传 None。
     pub bus: Option<&'a Bus>,
+    /// 模型解释（S7）；`cfg.model_explain=false` 时忽略。
+    pub explainer: Option<Arc<dyn ModelExplainer>>,
 }
 
 /// 跑一轮内省（定时或手动）。闸门通过时写入主窗口（S5），不走 handle_message。
@@ -110,6 +114,7 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
         analysis_now,
         opts,
         bus,
+        explainer,
     } = req;
     let stale = store.introspection_fail_stale_jobs()?;
     if stale > 0 {
@@ -193,6 +198,50 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                     if draft.verification != Verification::Supported {
                         continue;
                     }
+                    // S7：可选模型解释；禁止改 stats 数字（只动 hypothesis / 闸门 ±1）
+                    let stats_snapshot = draft.stats.clone();
+                    let mut hypothesis = draft.hypothesis.clone();
+                    let mut model_delta: i8 = 0;
+                    let mut model_reason = String::new();
+                    if cfg.model_explain {
+                        if let Some(ex) = explainer.as_ref() {
+                            match ex.explain(&draft).await {
+                                ExplainOutcome::Skipped { reason } => {
+                                    tracing::info!(
+                                        event = "introspection.job_skipped",
+                                        task_id = %job_id,
+                                        reason = %reason,
+                                        "模型解释跳过（确定性结论保留）"
+                                    );
+                                }
+                                ExplainOutcome::Applied {
+                                    hypothesis: h,
+                                    model_delta: d,
+                                    model_reason: r,
+                                } => {
+                                    debug_assert_eq!(
+                                        draft.stats, stats_snapshot,
+                                        "模型解释不得改 AdoptionStats"
+                                    );
+                                    hypothesis = h;
+                                    model_delta = d;
+                                    model_reason = r;
+                                }
+                            }
+                        } else {
+                            tracing::info!(
+                                event = "introspection.job_skipped",
+                                task_id = %job_id,
+                                reason = "无槽位",
+                                "模型解释已开启但无可用解释器/槽位"
+                            );
+                        }
+                    }
+                    // 再次确认数字未被改写
+                    if draft.stats != stats_snapshot {
+                        anyhow::bail!("模型解释路径改写了 AdoptionStats，已中止本条");
+                    }
+
                     let digest = input_digest_from_stats(&draft.stats);
                     let fid = stable_finding_id(draft.topic, &draft.scope, &digest);
                     let at = now();
@@ -203,7 +252,7 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                         "action_failed": draft.stats.action_failed,
                         "approval_expired_unused": draft.stats.approval_expired_unused,
                         "latency_secs": draft.stats.latency_secs,
-                        "hypothesis": draft.hypothesis,
+                        "hypothesis": hypothesis,
                         "next_step": draft.next_step,
                     }))?;
                     let row = IntrospectionFinding {
@@ -240,8 +289,8 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                         time_sensitive: false,
                         already_pushed_unread,
                         pushed_today: 0,
-                        model_delta: 0,
-                        model_reason: String::new(),
+                        model_delta,
+                        model_reason,
                         extra_pending: 0,
                     };
                     let decision = decide(&gin, &gcfg);
@@ -262,10 +311,10 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                     );
 
                     if decision.should_push {
-                        let summary = if draft.hypothesis.is_empty() {
+                        let summary = if hypothesis.is_empty() {
                             format!("内省结论（{}）", draft.scope)
                         } else {
-                            draft.hypothesis.clone()
+                            hypothesis.clone()
                         };
                         super::push::push_finding(
                             store,

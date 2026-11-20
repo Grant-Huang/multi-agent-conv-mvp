@@ -496,6 +496,7 @@ impl Runtime {
             introspect::operator::log_operator_role_status(&self.config.introspection);
             let store = self.store.clone();
             let bus = self.bus.clone();
+            let backends = self.backends.clone();
             let cfg = self.config.introspection.clone();
             tokio::spawn(async move {
                 let interval = Duration::from_secs(cfg.schedule_hours.max(1) * 3600);
@@ -512,6 +513,11 @@ impl Runtime {
                         .ok()
                         .flatten()
                         .unwrap_or_else(|| "{}".into());
+                    let explainer = if cfg.model_explain {
+                        introspect::slot_explainer_from_backends(&backends)
+                    } else {
+                        None
+                    };
                     if let Err(e) = introspect::run_once(introspect::RunOnceRequest {
                         store: &store,
                         source: &src,
@@ -522,6 +528,7 @@ impl Runtime {
                         analysis_now: 0,
                         opts,
                         bus: Some(bus.as_ref()),
+                        explainer,
                     })
                     .await
                     {

@@ -715,7 +715,10 @@
       "crates/core/src/lib.rs",
       "crates/server/src/introspection_api.rs",
       "web/src/components/IntrospectionPanel.tsx",
-      "web/e2e/intro.spec.ts"
+      "web/e2e/intro.spec.ts",
+      "crates/runtime/src/introspect/explain.rs",
+      "crates/runtime/src/introspect/eval.rs",
+      "docs/memory/eval.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -746,7 +749,8 @@
       "RT-INT-27",
       "RT-INT-28",
       "RT-INT-29",
-      "RT-INT-10"
+      "RT-INT-10",
+      "RT-INT-15"
     ]
   }
 ]
