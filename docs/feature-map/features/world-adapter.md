@@ -1,6 +1,6 @@
 # World Adapter 与 MOM 工作台 Feature Map
 
-Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`docs/mom/DES_EXPERIMENT_OPS_SPLIT.md`、`web/e2e/des-experiment.spec.ts`、`web/e2e/mom-workbench.spec.ts`、`web/e2e/wa-integration.spec.ts`、`tools/wa-m0-suite.sh`、`web/src/desktop/DesExperiment.tsx`、`web/src/desktop/MomWorkbench.tsx`、`web/src/components/OpsCards.tsx`；用例 `E2E-DESTRIAL`～`E2E-DESLOOP`（M0-3/M0-5 双上下文）、`E2E-WABIND`（WA-01）、`E2E-WACHANNEL`（WA-05 适用切片）。  
+Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`docs/mom/DES_EXPERIMENT_OPS_SPLIT.md`、`web/e2e/des-experiment.spec.ts`、`web/e2e/mom-workbench.spec.ts`、`web/e2e/wa-integration.spec.ts`、`scripts/wa-m0-suite.sh`、`web/src/desktop/DesExperiment.tsx`、`web/src/desktop/MomWorkbench.tsx`、`web/src/components/OpsCards.tsx`；用例 `E2E-DESTRIAL`～`E2E-DESLOOP`（M0-3/M0-5 双上下文）、`E2E-WABIND`（WA-01）、`E2E-WACHANNEL`（WA-05 适用切片）。  
 现有路径见 [MOM Feature Map](mom.md)。表中其余 `E2E-WA-*` 为设计编号，登记进 CASES/`features.json` 前须换成 `E2E-[A-Z]+`；控件名是 Playwright 定位契约。
 
 | 拟用例 | 正式 E2E id | 操作路径与定位 | UI 和业务断言 | 追溯 |

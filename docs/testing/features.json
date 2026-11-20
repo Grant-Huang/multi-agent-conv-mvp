@@ -785,7 +785,7 @@
       "web/e2e/mom-workbench.spec.ts",
       "web/e2e/wa-integration.spec.ts",
       "web/e2e/helpers/waMockServer.ts",
-      "tools/wa-m0-suite.sh",
+      "scripts/wa-m0-suite.sh",
       "docs/testing/evidence/wa-m0-5.md"
     ],
     "coverage": "browser",

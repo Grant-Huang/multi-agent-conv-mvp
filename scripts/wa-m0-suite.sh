@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # World Adapter M0-5 集成合同套件：RT-WA HTTP + DES-UI/WABIND/WACHANNEL 浏览器。
-# 用法：在仓库根目录执行 ./tools/wa-m0-suite.sh
+# 用法：在仓库根目录执行 ./scripts/wa-m0-suite.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

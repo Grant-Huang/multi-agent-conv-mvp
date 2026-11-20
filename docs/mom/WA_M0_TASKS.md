@@ -59,6 +59,7 @@ WA/UI 映射沿用 [world-adapter.md](../feature-map/features/world-adapter.md)�
 
 - Playwright：双浏览器上下文（实验员 / 运营员）；Harness 装载种子与时钟。
 - 每条 DES-UI 与适用 WA/UI 有独立可重跑用例；失败留 Trace/截图/关联 ID。
+- 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA + DES* + WABIND + WACHANNEL）。
 - 准出检查表：H1 完整前端；H2 Mock 全流程；H3 Mock 表可演示替换钩子；H4 清单全覆盖。
 - 证据写入 `docs/testing/evidence/wa-m0-*.md`。
 
