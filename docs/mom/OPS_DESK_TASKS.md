@@ -9,7 +9,7 @@
 |---|---|---|---|
 | D0a | 事件分级、发布器、`[mom]` 配置、`ensure_conversation`、`ChatCard::OpsCase/OpsSummary` | 已完成 | #118 |
 | D0b | 发布器接线、未读接口、频道卡片与角标 | 已完成 | #121 |
-| **D1-1** | 运行时：桌面读模型 `desk_view` + `OpsPublisher::open_case`（RT-OPSDESK-06/07） | 未开始 | — |
+| **D1-1** | 运行时：桌面读模型 `desk_view` + `OpsPublisher::open_case`（RT-OPSDESK-06/07） | 已完成 | 本 PR |
 | **D1-2** | 服务端：`GET /api/mom/desk`、`GET /api/mom/desk/cases/{id}`、`POST …/open-in-channel` | 未开始 | — |
 | **D1-3** | 前端：“运营桌面”页签、看板、筛选、详情抽屉（E2E-OPSDESK/OPSDRAWER/OPSNOISE 转绿） | 未开始 | — |
 | D2 | 卡片上批准（需先与用户确认 §D2 的待确认项） | 未开始 | — |

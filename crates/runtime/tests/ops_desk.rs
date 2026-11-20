@@ -257,6 +257,119 @@ fn rt_opsdesk_08_ensure_conversation_uses_fixed_id_and_is_idempotent() {
 }
 
 #[test]
+fn rt_opsdesk_06_open_in_channel_is_idempotent() {
+    let store = store();
+    let mut e = Engine::memory().unwrap();
+    let id = pending_case(&mut e, "RT06");
+    let p = OpsPublisher::memory(store.clone(), cfg(0, 10)).unwrap();
+    // 不调用 tick：用户主动“在频道中处理”也能发卡
+    let first = p.open_case(&e, &id, 1000).unwrap();
+    let second = p.open_case(&e, &id, 1001).unwrap();
+    assert_eq!(first, second, "重复调用返回同一消息 id");
+    assert!(!first.is_empty(), "消息 id 非空");
+    let cards: Vec<_> = ops_cards(&store)
+        .into_iter()
+        .filter(|c| matches!(c, an_core::ChatCard::OpsCase { case_id, .. } if case_id == &id))
+        .collect();
+    assert_eq!(cards.len(), 1, "频道里该案例只有一张卡");
+    let before = channel(&store).len();
+    // 之后 tick 只就地更新，不新增消息
+    let mut p = p;
+    p.tick(&mut e, 1002).unwrap();
+    assert_eq!(channel(&store).len(), before);
+    let err = p
+        .open_case(&e, "no-such-case", 1003)
+        .expect_err("案例不存在应报错");
+    assert!(
+        err.to_string().starts_with("E_CASE_NOT_FOUND"),
+        "错误应以 E_CASE_NOT_FOUND 开头：{err}"
+    );
+}
+
+fn blocked_case(e: &mut Engine, batch: &str) -> String {
+    let input = EventInput {
+        id: format!("{batch}-trip-0"),
+        scenario: "s1".into(),
+        kind: "vibration".into(),
+        source: "EAM".into(),
+        occurred_at: e.now().max(900),
+        batch: batch.into(),
+        customer: "A".into(),
+        asset: "CNC-XX".into(),
+        payload: serde_json::json!({"line":"Line-B","safety_trip":true}),
+    };
+    let id = e.ingest(input).unwrap();
+    assert_eq!(e.case(&id).unwrap().stage, "BLOCKED");
+    id
+}
+
+fn closed_case(e: &mut Engine, batch: &str) -> String {
+    let id = pending_case(e, batch);
+    approve(e, &id);
+    e.execute(&id, "production").unwrap();
+    e.advance(e.now() + 5).unwrap();
+    e.close(&id).unwrap();
+    assert_eq!(e.case(&id).unwrap().stage, "CLOSED");
+    id
+}
+
+#[test]
+fn rt_opsdesk_07_desk_view_matches_engine() {
+    use an_runtime::mom::ops_view::desk_view;
+
+    let empty = Engine::memory().unwrap();
+    let v = desk_view(&empty).unwrap();
+    assert_eq!(v.state, "no_data");
+    assert!(v.rows.is_empty());
+    assert_eq!(v.mode, "simulation");
+
+    let mut e = Engine::memory().unwrap();
+    let pending = pending_case(&mut e, "RT07P");
+    let blocked = blocked_case(&mut e, "RT07B");
+    let closed = closed_case(&mut e, "RT07C");
+    let v = desk_view(&e).unwrap();
+    assert_eq!(v.state, "ok");
+    assert_eq!(v.strip.pending, 1);
+    assert_eq!(v.strip.blocked, 1);
+    assert_eq!(v.strip.completed, 1);
+    assert!(
+        v.rows.len() >= 3,
+        "应包含待批准、受阻、已关闭：{}",
+        v.rows.len()
+    );
+    assert_eq!(v.rows[0].case_id, pending);
+    assert_eq!(v.rows[0].group, "pending");
+    assert!(v.rows[0].stage_label.contains("待批准"));
+    assert_eq!(v.rows[1].case_id, blocked);
+    assert_eq!(v.rows[1].group, "blocked");
+    assert!(
+        v.rows[1].stage_label.contains("受阻"),
+        "{}",
+        v.rows[1].stage_label
+    );
+    assert_eq!(v.rows.last().unwrap().case_id, closed);
+    assert_eq!(v.rows.last().unwrap().group, "completed");
+    for row in &v.rows {
+        assert_eq!(row.provenance, "simulation");
+        assert!(
+            e.case_ids().contains(&row.case_id),
+            "桌面行 {} 不在引擎里",
+            row.case_id
+        );
+    }
+    // 同组排序稳定：再调一次结果一致
+    assert_eq!(
+        desk_view(&e)
+            .unwrap()
+            .rows
+            .iter()
+            .map(|r| r.case_id.clone())
+            .collect::<Vec<_>>(),
+        v.rows.iter().map(|r| r.case_id.clone()).collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn rt_opsdesk_09_unread_counts_new_messages_until_read() {
     let dir = std::env::temp_dir().join(format!("ops-rt09-{}", an_core::new_id("t")));
     std::fs::create_dir_all(&dir).unwrap();
