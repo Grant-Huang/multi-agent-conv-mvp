@@ -954,7 +954,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **S1 新表与 `Store` 读写方法**（`store.rs`，高风险，已批准）：存储层单元测试（`store.rs` 内，覆盖 RT-INT-09/26/27 的存储部分；RT 用例随 S4/S5 并入 `CASES.md`）（2026-11-19：11 个 `int_store_*` 单元测试先 Red（10 个业务断言失败）后 Green；新增 5 张表，不改已有表；水位只随 done 任务推进；租约、幂等、未读、主窗口会话唯一均在存储层事务内保证；主窗口会话的“不能删除”随 S5 实现）
 - [x] **S2 `SourceAdapter` + `MomSource` + 方案采纳模式统计 + 校验器**（`introspect/`）：RT-INT-03、06、07、08（2026-11-19：`rt_int_03/06/07/08` 先 Red（空桩返回 0 条）后 Green；状态约定 ACCEPTED/FAILED；MomSource 只读，events limit≤1000）
 - [x] **S3 发送闸门**：RT-INT-16、17、18、19、20、22（2026-11-19：`rt_int_16`～`22` 先 Red 后 Green；规则分主、模型 ±1 不能单独越阈；日上限原因含「另有 N 项」）
-- [ ] **S4 定时调度、租约、超时、取消、清理**：RT-INT-09、13、14、23
+- [x] **S4 定时调度、租约、超时、取消、清理**：RT-INT-09、13、14、23（2026-11-19：`run_once` + `[introspection]` 默认关；先 Red 后 Green）
 - [ ] **S5 主窗口会话、推送、未读、权限、`ChatCard::Introspection`、`context_text` 标记**：RT-INT-21、24、25、26、27、28、29
 - [ ] **S6 HTTP 接口与前端**：E2E-INTROVIEW、INTROLABEL、INTROPUSH、INTROUNREAD、RT-INT-10
 - [ ] **S7 DES“植入真值”评测；模型解释层（默认关闭）**：RT-INT-15

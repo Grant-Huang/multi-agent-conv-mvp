@@ -18,7 +18,8 @@
 | S1 | ✅（PR #122） | 5 张新表 + `Store` 读写；11 个 `int_store_*` 单元测试 |
 | S2 | ✅ | SourceAdapter / 采纳模式 / 校验器 |
 | S3 | ✅ | 发送闸门 |
-| S4–S8 | ⏳ | 见 [INTROSPECTION_PLAYBOOK.md](INTROSPECTION_PLAYBOOK.md) |
+| S4 | ✅ | 调度 / 租约 / 超时 / 取消 |
+| S5–S8 | ⏳ | 见 [INTROSPECTION_PLAYBOOK.md](INTROSPECTION_PLAYBOOK.md) |
 
 ## 接手规则（弱 agent 也必须遵守）
 

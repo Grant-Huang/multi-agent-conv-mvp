@@ -6,6 +6,7 @@
 pub mod analyze;
 pub mod finding;
 pub mod gate;
+pub mod job;
 pub mod model;
 pub mod source;
 
@@ -15,6 +16,7 @@ pub use finding::{
     ValidateOutcome, Verification,
 };
 pub use gate::{decide, GateConfig, GateDecision, GateInput};
+pub use job::{run_once, should_run_schedule, RunOnceOptions, RunOnceOutcome, RunOnceRequest};
 pub use source::{
     ActionSummary, ApprovalSummary, CaseSummary, MemorySource, MomSource, SourceAdapter,
 };
