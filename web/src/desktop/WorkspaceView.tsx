@@ -11,9 +11,10 @@ type Props = {
   taskId: string;
   onBack: () => void;
   onOpenEvidence?: () => void;
+  onOpenSettings?: () => void;
 };
 
-export function WorkspaceView({ taskId, onBack, onOpenEvidence }: Props) {
+export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings }: Props) {
   const [layout, setLayout] = useState<WorkspaceLayout>(() => readWorkspaceLayout());
   const [execOpen, setExecOpen] = useState(true);
 
@@ -40,6 +41,11 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence }: Props) {
           {onOpenEvidence && (
             <button type="button" className="btn small" data-testid="workspace-open-evidence" onClick={onOpenEvidence}>
               证据
+            </button>
+          )}
+          {onOpenSettings && (
+            <button type="button" className="btn small" data-testid="workspace-open-settings" onClick={onOpenSettings}>
+              调整助理
             </button>
           )}
           <button

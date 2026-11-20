@@ -715,6 +715,8 @@
       "web/src/desktop/WorkspaceComposer.tsx",
       "web/src/desktop/EvidencePanel.tsx",
       "web/src/desktop/HistoryPanel.tsx",
+      "web/src/desktop/SettingsPanel.tsx",
+      "web/src/desktop/profileStore.ts",
       "web/src/desktop/evidenceMock.ts",
       "web/src/desktop/mockData.ts",
       "web/e2e/desktop.spec.ts",
@@ -728,7 +730,9 @@
       "E2E-ADDRAFT",
       "E2E-ADSCOPE",
       "E2E-ADEVID",
-      "E2E-ADHISTORY"
+      "E2E-ADHISTORY",
+      "E2E-ADPROF",
+      "E2E-ADINPUT"
     ]
   },
   {
