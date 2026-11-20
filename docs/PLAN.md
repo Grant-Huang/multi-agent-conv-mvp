@@ -964,6 +964,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 
 - [x] **M0-0** 冻结 DES-UI 用例登记（`E2E-DESTRIAL`～`E2E-DESLOOP`；[mom/WA_M0_TASKS.md](mom/WA_M0_TASKS.md)；证据 `testing/evidence/wa-m0-0-red.md`）
 - [x] **M0-1** 协议/实验 Mock HTTP（`/api/world/mock`；RT-WA-01～08；证据 `testing/evidence/wa-m0-1.md`）
+- [x] **M0-2** DES 仿真实验前端（配置/试跑/正式运行/结果；`E2E-DESTRIAL` Green；证据 `testing/evidence/wa-m0-2.md`）
 - [ ] **M0** 完整前端 + 协议/实验 Mock（实验入口 + 运营频道 + 三入口；挂入 Desktop 运营区；DES-UI 在 Mock 通过）
 - [ ] **M1** 远程 DES 读取与正式投递（写路径仍 Mock）
 - [ ] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环

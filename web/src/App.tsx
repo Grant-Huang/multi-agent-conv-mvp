@@ -16,6 +16,7 @@ import { DiscoveryCard } from "./components/AgentCards";
 import { OpsDesk } from "./components/OpsDesk";
 import { IntrospectionPanel } from "./components/IntrospectionPanel";
 import { DesktopHome } from "./desktop/DesktopHome";
+import { DesExperiment } from "./desktop/DesExperiment";
 import { WorkspaceView } from "./desktop/WorkspaceView";
 import { EvidencePanel, type EvidenceLayer } from "./desktop/EvidencePanel";
 import { HistoryPanel } from "./desktop/HistoryPanel";
@@ -560,6 +561,7 @@ export default function App() {
           <DesktopHome
             onOpenTask={(id) => openWorkspace(id)}
             onOpenEvidence={(id) => openEvidence(id)}
+            onOpenDesExperiment={() => setMainView("des-experiment")}
             opsEnabled={opsUnread !== null}
           />
         )}
@@ -571,6 +573,12 @@ export default function App() {
               setMainView("home");
             }}
             onOpenEvidence={() => openEvidence(workspaceTaskId)}
+          />
+        )}
+        {mainView === "des-experiment" && (
+          <DesExperiment
+            onBack={() => setMainView("home")}
+            onOpenOpsChannel={() => openOpsChannel(OPS_CHANNEL_ID)}
           />
         )}
         {mainView === "desk" && opsUnread !== null && (

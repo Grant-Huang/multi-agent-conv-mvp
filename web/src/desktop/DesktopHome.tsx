@@ -3,6 +3,7 @@ import { DESKTOP_CARDS, SMT03_TASK_ID, type DesktopCard } from "./mockData";
 type Props = {
   onOpenTask: (taskId: string, source: string) => void;
   onOpenEvidence: (taskId: string) => void;
+  onOpenDesExperiment?: () => void;
   opsEnabled: boolean;
   cards?: DesktopCard[];
 };
@@ -54,7 +55,13 @@ function Zone({
   );
 }
 
-export function DesktopHome({ onOpenTask, onOpenEvidence, opsEnabled, cards = DESKTOP_CARDS }: Props) {
+export function DesktopHome({
+  onOpenTask,
+  onOpenEvidence,
+  onOpenDesExperiment,
+  opsEnabled,
+  cards = DESKTOP_CARDS,
+}: Props) {
   const open = (c: DesktopCard) => onOpenTask(c.entityId, "home-card");
   return (
     <div className="desktop-home" data-testid="desktop-home">
@@ -64,6 +71,20 @@ export function DesktopHome({ onOpenTask, onOpenEvidence, opsEnabled, cards = DE
         {!opsEnabled && (
           <p className="desktop-ops-off" data-testid="ops-module-off" role="status">
             运营模块未启用
+          </p>
+        )}
+        {onOpenDesExperiment && (
+          <p className="desktop-settings-links">
+            <a
+              href="#des-experiment"
+              onClick={(e) => {
+                e.preventDefault();
+                onOpenDesExperiment();
+              }}
+            >
+              DES 仿真实验
+            </a>
+            <span className="desktop-settings-hint">设置与管理</span>
           </p>
         )}
       </header>

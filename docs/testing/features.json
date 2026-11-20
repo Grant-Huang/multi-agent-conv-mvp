@@ -736,6 +736,9 @@
     "document": "docs/feature-map/features/world-adapter.md",
     "sources": [
       "web/e2e/des-experiment.spec.ts",
+      "web/src/desktop/DesExperiment.tsx",
+      "web/src/desktop/DesktopHome.tsx",
+      "web/src/api.ts",
       "crates/server/src/mom_world_mock.rs",
       "crates/server/tests/mom_world_mock.rs",
       "docs/mom/WORLD_ADAPTER.md",
@@ -743,7 +746,8 @@
       "docs/mom/DES_EXPERIMENT_OPS_SPLIT.md",
       "docs/mom/WA_M0_TASKS.md",
       "docs/testing/evidence/wa-m0-0-red.md",
-      "docs/testing/evidence/wa-m0-1.md"
+      "docs/testing/evidence/wa-m0-1.md",
+      "docs/testing/evidence/wa-m0-2.md"
     ],
     "coverage": "browser",
     "cases": [

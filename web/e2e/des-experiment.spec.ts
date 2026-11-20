@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 
 /**
  * DES 实验 / 运营入口拆分（DES-UI-01～06 → E2E-DES*）。
- * 断言已冻结（M0-0）；控件与 Mock 尚未落地，期望业务 Red，直到 M0-1～M0-5。
+ * 断言已冻结（M0-0）。M0-2：E2E-DESTRIAL Green（实验页 + world_mock）。
+ * E2E-DESSTART 及后续仍依赖 M0-3 运营频道投影等；不得弱化断言。
  * 定位契约见 docs/feature-map/features/world-adapter.md。
  */
 test.afterEach(async ({ page }, info) => {
