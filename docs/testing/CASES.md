@@ -755,15 +755,18 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | E2E-REV-01 | approval | 浏览器任务卡为有 result 的待人工 | 点「判定通过」 | 状态与交付文案为已完成 |
 
 
-## World Adapter / DES 实验与运营（M0 草案，断言待冻结）
+## World Adapter / DES 实验与运营（M0；DES-UI 已冻结）
 
-设计见 [WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md)、[DES_EXPERIMENT_OPS_SPLIT.md](../mom/DES_EXPERIMENT_OPS_SPLIT.md)、[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) §0；执行卡 [WA_M0_TASKS.md](../mom/WA_M0_TASKS.md)。下列为**草案 bullet**（未写成表格行，避免 check-map 当作已登记缺测试）。用户确认断言后，按 `E2E-[A-Z]+` 正式命名并配 Playwright。
+设计见 [WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md)、[DES_EXPERIMENT_OPS_SPLIT.md](../mom/DES_EXPERIMENT_OPS_SPLIT.md)、[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) §0；执行卡 [WA_M0_TASKS.md](../mom/WA_M0_TASKS.md)。  
+浏览器用例（`web/e2e/des-experiment.spec.ts`）：**断言已冻结（M0-0）**；实现前业务 Red，等 M0-1～M0-5 转绿。命名：`DES-UI-01～06` → `E2E-DES*`（`check-map` 允许的 `E2E-[A-Z]+`）。
 
-- **DES-UI-01 配置试跑**：实验员保存配置并试跑 → 非法参数有明确提示；预览有试跑 ID；运营频道新增卡为零。
-- **DES-UI-02 正式启动**：核对配置版本与目标频道后启动 → 重试仍只有一个正式运行；试跑与正式 ID 不同；同一事项只发一张正确标注的卡。
-- **DES-UI-03 运营处置**：运营员打开异常卡 → 查看方案 → 批准 → 查看执行 → 完全在 AI 桌面完成；审批匹配方案/事项/世界；执行证据更新原卡。
-- **DES-UI-04 暂停恢复**：实验员暂停 → 运营员见等待状态 → 单步推进 → 重连后回执正确；重复及迟到事件不复制或回退卡片。
-- **DES-UI-05 隔离授权**：运营员无法进入实验控制；用运行 A 的审批提交到 B → 服务端拒绝，无数据泄露，计数不变。
-- **DES-UI-06 双角色闭环**：实验员启动正式运行 → 运营员批准维修 → 实验员推进 → 运营员看核验证据 → Mock 下业务路径闭环；标准答案仅审核可见（物理断言随 M2）。
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| E2E-DESTRIAL | world-adapter | 实验员可进「DES 仿真实验」；有一份可保存配置 | 保存配置（含一次非法参数）并点「试跑」 | 非法参数有明确提示；预览有试跑 ID；运营频道新增卡为零 |
+| E2E-DESSTART | world-adapter | 已有合法配置版本与目标运营频道 | 核对后「启动正式运行」并重试同键请求；运营员打开频道 | 仍只有一个正式运行；试跑与正式 ID 不同；同一事项只发一张正确标注的卡 |
+| E2E-DESOPS | world-adapter | 正式运行已向运营频道投递异常卡 | 运营员打开卡 →「查看方案」→「批准」→「查看执行」 | 全程在 AI 桌面/运营频道完成；审批匹配方案、事项与世界；执行证据更新原卡；桌面无「批准」 |
+| E2E-DESPAUSE | world-adapter | 正式运行中；已有下发等待仿真推进的动作 | 实验员「暂停」→ 运营员见等待 →「单步推进」→ 运营员重连 | 等待状态区别于失败；推进后回执正确；重复及迟到事件不复制或回退卡片 |
+| E2E-DESISO | world-adapter | 运行 A 与运行 B 并存；运营员身份 | 运营员尝试进入实验控制；用运行 A 的审批提交到 B | 服务端拒绝；列表/详情无跨运行泄露；启动或业务动作计数不变 |
+| E2E-DESLOOP | world-adapter | Mock 双角色就绪（实验员 + 运营员） | 实验员启动正式运行 → 运营员批准维修 → 实验员推进 → 运营员看核验证据 | Mock 下业务路径闭环；两端关联同一执行；标准答案仅审核可见（物理断言随 M2） |
 
-配套 WA-01～08、UI01～16 仍按 Feature Map 在各里程碑回归。M0 在 Mock 环境跑通适用断言；M1/M2 替换适配器后同路径重跑。
+配套 WA-01～08、UI01～16 仍按 Feature Map 在各里程碑登记与回归（正式 `E2E-WA*` 名随对应切片写入）。M0 在 Mock 环境跑通上表；M1/M2 替换适配器后同路径重跑。
