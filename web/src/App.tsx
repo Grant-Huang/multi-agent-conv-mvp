@@ -13,8 +13,11 @@ import { NodesPanel } from "./components/NodesPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { AgentsPanel } from "./components/AgentsPanel";
 import { DiscoveryCard } from "./components/AgentCards";
+import { OpsDesk } from "./components/OpsDesk";
 import type { CatalogItem } from "./bindings/CatalogItem";
 import { roleLabel } from "./labels";
+
+type MainView = "chat" | "desk";
 
 /** 每个任务保留的进度条目数，超过后丢弃最早的 */
 const MAX_PROGRESS_LINES = 30;
@@ -93,6 +96,8 @@ export default function App() {
   const [current, setCurrent] = useState<string | null>(null);
   // 运营频道未读数；null 表示没有开启运营频道（[mom] chat_bridge 关闭，接口 404）
   const [opsUnread, setOpsUnread] = useState<number | null>(null);
+  // 中间栏：会话 / 运营桌面（仅 chat_bridge 开启时出现桌面页签）
+  const [mainView, setMainView] = useState<MainView>("chat");
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [sideTab, setSideTab] = useState<SideTab>("tasks");
@@ -282,6 +287,7 @@ export default function App() {
   const newConversation = async () => {
     const c = await api.createConversation();
     await loadConversations();
+    setMainView("chat");
     setCurrent(c.id);
     setNavOpen(false);
   };
@@ -289,12 +295,18 @@ export default function App() {
   // 只有用户点开运营频道才算已读；页面刷新时自动回到该会话不清未读
   const opsViewed = useRef(false);
   const selectConversation = (id: string) => {
+    setMainView("chat");
     setCurrent(id);
     setNavOpen(false);
     opsViewed.current = id === OPS_CHANNEL_ID;
     if (opsViewed.current && opsUnread !== null) {
       api.opsRead().then(() => setOpsUnread(0)).catch(() => {});
     }
+  };
+
+  const openOpsChannel = (_caseId: string) => {
+    setMainView("chat");
+    selectConversation(OPS_CHANNEL_ID);
   };
 
   /** 发送消息：先乐观地显示用户消息，等后端返回后再整体刷新 */
@@ -392,7 +404,29 @@ export default function App() {
             {error}（点击关闭）
           </div>
         )}
-        {introCatalog && (
+        {opsUnread !== null && (
+          <div className="main-tabs" role="tablist" aria-label="主视图">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mainView === "chat"}
+              className={mainView === "chat" ? "active" : ""}
+              onClick={() => setMainView("chat")}
+            >
+              会话
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mainView === "desk"}
+              className={mainView === "desk" ? "active" : ""}
+              onClick={() => setMainView("desk")}
+            >
+              运营桌面
+            </button>
+          </div>
+        )}
+        {introCatalog && mainView === "chat" && (
           <DiscoveryCard
             catalog={introCatalog}
             onDismiss={dismissIntro}
@@ -402,15 +436,19 @@ export default function App() {
             }}
           />
         )}
-        <ChatView
-          messages={messages}
-          onRefresh={() => current && refreshConversation(current).catch(() => {})}
-          tasks={tasks}
-          notes={notes}
-          onSend={send}
-          onTaskAction={taskAction}
-          streaming={streaming}
-        />
+        {mainView === "desk" && opsUnread !== null ? (
+          <OpsDesk onOpenChannel={openOpsChannel} />
+        ) : (
+          <ChatView
+            messages={messages}
+            onRefresh={() => current && refreshConversation(current).catch(() => {})}
+            tasks={tasks}
+            notes={notes}
+            onSend={send}
+            onTaskAction={taskAction}
+            streaming={streaming}
+          />
+        )}
       </main>
 
       <aside className="side" aria-label="任务与状态">

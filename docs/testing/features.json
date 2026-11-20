@@ -671,7 +671,9 @@
       "crates/runtime/src/mom/ops_desk.rs",
       "crates/runtime/src/mom/ops_view.rs",
       "crates/server/src/mom_ops.rs",
-      "crates/server/tests/mom_ops.rs"
+      "crates/server/tests/mom_ops.rs",
+      "web/src/components/OpsDesk.tsx",
+      "web/src/api.ts"
     ],
     "coverage": "browser",
     "cases": [

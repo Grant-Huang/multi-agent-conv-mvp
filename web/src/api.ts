@@ -140,6 +140,35 @@ export interface TaskDetail {
   events: TaskEvent[];
 }
 
+/** 运营桌面读模型（与后端 `ops_view::DeskView` 对齐，手写，不进 bindings） */
+export interface OpsDeskStrip {
+  pending: number;
+  blocked: number;
+  overdue: number;
+  risk: number;
+  completed: number;
+}
+export interface OpsDeskRow {
+  case_id: string;
+  title: string;
+  stage: string;
+  stage_label: string;
+  group: string;
+  owner: string;
+  deadline_minutes_left: number | null;
+  stale: boolean;
+  provenance: string;
+}
+export interface OpsDeskView {
+  mode: string;
+  now: number;
+  state: string;
+  strip: OpsDeskStrip;
+  rows: OpsDeskRow[];
+}
+/** 抽屉详情：复用 human_view 的 JSON，字段按需读取 */
+export type OpsDeskCaseDetail = Record<string, unknown>;
+
 /** 统一的请求函数：非 2xx 时抛出后端返回的错误信息 */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -165,6 +194,14 @@ export const api = {
   /** 运营频道未读数；开关关闭时接口不存在（404），调用方当作没有运营频道 */
   opsUnread: () => request<{ unread: number }>("/api/mom/desk/unread"),
   opsRead: () => request<{ unread: number }>("/api/mom/desk/read", { method: "POST" }),
+  /** 运营桌面读模型（D1-2）；开关关闭时 404 */
+  opsDesk: () => request<OpsDeskView>("/api/mom/desk"),
+  opsDeskCase: (id: string) => request<OpsDeskCaseDetail>(`/api/mom/desk/cases/${encodeURIComponent(id)}`),
+  opsOpenInChannel: (id: string) =>
+    request<{ message_id: string; conversation_id: string }>(
+      `/api/mom/desk/cases/${encodeURIComponent(id)}/open-in-channel`,
+      { method: "POST", body: "{}" },
+    ),
   tasks: (cid: string) => request<TaskRecord[]>(`/api/tasks?conversation_id=${cid}`),
   task: (id: string, after?: string) => request<TaskDetail>(`/api/tasks/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   cancel: (id: string) => request<{ cancelled: boolean }>(`/api/tasks/${id}/cancel`, { method: "POST" }),
