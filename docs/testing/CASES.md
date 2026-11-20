@@ -787,7 +787,13 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | E2E-DESISO | world-adapter | 运行 A 与运行 B 并存；运营员身份 | 运营员尝试进入实验控制；用运行 A 的审批提交到 B | 服务端拒绝；列表/详情无跨运行泄露；启动或业务动作计数不变 |
 | E2E-DESLOOP | world-adapter | Mock 双角色就绪（实验员 + 运营员） | 实验员启动正式运行 → 运营员批准维修 → 实验员推进 → 运营员看核验证据 | Mock 下业务路径闭环；两端关联同一执行；标准答案仅审核可见（物理断言随 M2） |
 
-配套 WA-01～08、UI01～16 仍按 Feature Map 在各里程碑登记与回归（正式 `E2E-WA*` 名随对应切片写入）。M0 在 Mock 环境跑通上表；M1/M2 替换适配器后同路径重跑。
+浏览器用例（`web/e2e/mom-workbench.spec.ts`）：M0-4 冻结 `E2E-WA-01` → `E2E-WABIND`。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| E2E-WABIND | world-adapter | 桌面可进「MOM 工作台」；有模拟世界与 DES 世界 | 「选择世界」→「看板」「任务」「资源」分别打开同一事项；返回后再进；再切另一世界 | 同一 world/case；返回保持世界与入口筛选；跨世界列表不泄露上一世界事项 |
+
+配套 WA-02～10、UI 其余项仍按 Feature Map 在后续切片登记。M0 在 Mock 环境跑通上表；M1/M2 替换适配器后同路径重跑。
 
 ### M0-1 服务端 Mock HTTP 合同（`crates/server/tests/mom_world_mock.rs`）
 

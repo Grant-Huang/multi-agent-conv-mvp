@@ -17,6 +17,7 @@ import { OpsDesk } from "./components/OpsDesk";
 import { IntrospectionPanel } from "./components/IntrospectionPanel";
 import { DesktopHome } from "./desktop/DesktopHome";
 import { DesExperiment } from "./desktop/DesExperiment";
+import { MomWorkbench } from "./desktop/MomWorkbench";
 import { WorkspaceView } from "./desktop/WorkspaceView";
 import { EvidencePanel, type EvidenceLayer } from "./desktop/EvidencePanel";
 import { HistoryPanel } from "./desktop/HistoryPanel";
@@ -628,6 +629,7 @@ export default function App() {
             onOpenEvidence={(id) => openEvidence(id)}
             onOpenDesExperiment={() => setMainView("des-experiment")}
             onOpenOpsChannel={() => openOpsChannel(OPS_CHANNEL_ID, false)}
+            onOpenMomWorkbench={() => setMainView("mom-workbench")}
             opsEnabled={opsUnread !== null}
             assistantName={assistantProfile.name}
             s1BgJob={s1BgJob}
@@ -654,6 +656,13 @@ export default function App() {
               setAttnItems(items);
               setAttnMuted(muted);
             }}
+          />
+        )}
+        {mainView === "mom-workbench" && (
+          <MomWorkbench
+            onBack={() => setMainView("home")}
+            onOpenOpsChannel={() => openOpsChannel(OPS_CHANNEL_ID, false)}
+            onOpenDesExperiment={() => setMainView("des-experiment")}
           />
         )}
         {mainView === "workspace" && workspaceTaskId && (
