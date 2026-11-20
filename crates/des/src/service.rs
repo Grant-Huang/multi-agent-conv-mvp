@@ -112,9 +112,7 @@ fn write_fields() -> [(&'static str, Value, bool); 2] {
 
 /// `simulation_create.factory` 的 schema（与 `FactoryConfig` 的反序列化规则一致；null 使用默认 Line-B）。
 fn factory_schema() -> Value {
-    let duration = |desc: &str| {
-        json!({"type": "integer", "minimum": 0, "maximum": crate::MAX_DURATION_MINUTES, "description": desc})
-    };
+    let duration = |desc: &str| json!({"type": "integer", "minimum": 0, "maximum": crate::MAX_DURATION_MINUTES, "description": desc});
     let count = |desc: &str| json!({"type": "integer", "minimum": 0, "description": desc});
     json!({
         "type": ["object", "null"],

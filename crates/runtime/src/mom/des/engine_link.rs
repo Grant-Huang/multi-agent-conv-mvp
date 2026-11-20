@@ -507,8 +507,7 @@ impl Engine {
                     _ => None,
                 })
                 .collect();
-            let mut crews =
-                an_des::crew_free_after(r.maintenance_crews.max(1) as usize, &prior);
+            let mut crews = an_des::crew_free_after(r.maintenance_crews.max(1) as usize, &prior);
             let mut last_end = start;
             for machine in &assets {
                 // 该设备维修尚未结束：不再重复安排。
