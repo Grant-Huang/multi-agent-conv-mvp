@@ -535,3 +535,27 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
 .scope-audit { font-size: 12px; color: #666; padding-left: 18px; margin: 6px 0 0; }
 .workspace-reply, .workspace-late { font-size: 12px; margin: 6px 0 0; }
 .btn.small.active { outline: 2px solid #4a7; }
+
+/* A3 证据 / 历史面板 */
+.desktop-card-wrap { display: flex; flex-direction: column; gap: 4px; }
+.desktop-evidence-btn { align-self: flex-start; }
+.desktop-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 8px; overflow: auto; }
+.desktop-panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.desktop-panel-head h2 { margin: 0; font-size: 14px; flex: 1; }
+.desktop-panel-empty { font-size: 13px; color: #666; }
+.evidence-list, .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.evidence-item, .history-open {
+  width: 100%; text-align: left; border: 1px solid var(--border, #ddd); border-radius: 6px;
+  padding: 8px; background: transparent; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+}
+.evidence-title, .history-title { font-weight: 600; font-size: 13px; }
+.evidence-meta, .history-meta, .history-reason { font-size: 11px; color: #666; }
+.evidence-dl { font-size: 12px; margin: 8px 0; }
+.evidence-dl dt { color: #888; margin-top: 6px; }
+.evidence-dl dd { margin: 0; }
+.evidence-error { color: #a33; font-size: 13px; }
+.evidence-source-body { font-size: 11px; white-space: pre-wrap; background: rgba(127,127,127,.08); padding: 8px; border-radius: 4px; }
+.history-filter { display: flex; flex-direction: column; gap: 4px; font-size: 12px; margin-bottom: 8px; }
+.history-filter input { padding: 6px 8px; border: 1px solid var(--border, #ddd); border-radius: 4px; }
+.history-row { border: 1px solid var(--border, #ddd); border-radius: 6px; padding: 6px; }
+.history-prefs { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }

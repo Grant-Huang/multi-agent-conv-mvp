@@ -95,3 +95,63 @@ test('E2E-ADSCOPE: 独立话题与继续任务及关联纠正', async ({ page })
   await expect(page.getByTestId('scope-task-id')).toContainText(SMT03_TASK_ID);
   await expect(page.getByTestId('scope-audit')).toContainText('建立关联');
 });
+
+test('E2E-ADEVID: 首页查看证据并逐层返回含失败过期与空夹具', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('home-view-evidence').click();
+  await expect(page.getByTestId('workspace')).toBeVisible();
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await expect(page.getByTestId('evidence-panel')).toBeVisible();
+
+  await page.getByTestId('evidence-item-ev-smt-qc-1').click();
+  await expect(page.getByTestId('evidence-preview')).toBeVisible();
+  await expect(page.getByTestId('evidence-object')).toContainText('质量批次 SMT-03');
+  await expect(page.getByTestId('evidence-time')).toBeVisible();
+  await expect(page.getByTestId('evidence-version')).toHaveText('v3');
+  await expect(page.getByTestId('evidence-task')).toHaveText(SMT03_TASK_ID);
+  await page.getByTestId('evidence-open-source').click();
+  await expect(page.getByTestId('evidence-source')).toContainText('模拟原文');
+  await page.getByTestId('evidence-back').click();
+  await expect(page.getByTestId('evidence-preview')).toBeVisible();
+  await page.getByTestId('evidence-back').click();
+  await expect(page.getByTestId('evidence-list')).toBeVisible();
+
+  await page.getByTestId('evidence-item-ev-smt-fail').click();
+  await expect(page.getByTestId('evidence-error')).toContainText('不可用');
+  await page.getByTestId('evidence-back').click();
+  await page.getByTestId('evidence-item-ev-smt-exp').click();
+  await expect(page.getByTestId('evidence-expired')).toContainText('过期');
+  await page.getByTestId('evidence-back').click();
+
+  await page.getByTestId('evidence-demo-empty').click();
+  await expect(page.getByTestId('evidence-empty')).toContainText('暂无证据');
+  await page.getByTestId('evidence-back').click();
+  await expect(page.getByTestId('evidence-panel')).toHaveCount(0);
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
+});
+
+test('E2E-ADHISTORY: 历史筛选固定与打开任务后恢复筛选', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('open-history').click();
+  await expect(page.getByTestId('history-panel')).toBeVisible();
+  await expect(page.getByTestId('history-reason-hist-smt')).toContainText('推荐');
+
+  await page.getByTestId('history-filter').fill('产品改进');
+  await expect(page.getByTestId('history-item-hist-prod')).toBeVisible();
+  await expect(page.getByTestId('history-item-hist-smt')).toHaveCount(0);
+
+  await page.getByTestId('history-filter').fill('');
+  const smt = page.getByTestId('history-item-hist-smt');
+  await smt.getByRole('button', { name: '固定', exact: true }).click();
+  await expect(smt.getByRole('button', { name: '固定' })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByTestId('history-filter').fill('SMT');
+  await smt.getByRole('button', { name: /SMT-03/ }).click();
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await expect(page.getByTestId('history-panel')).toHaveCount(0);
+
+  await page.getByTestId('open-history').click();
+  await expect(page.getByTestId('history-filter')).toHaveValue('SMT');
+  await expect(page.getByTestId('history-item-hist-smt')).toBeVisible();
+});

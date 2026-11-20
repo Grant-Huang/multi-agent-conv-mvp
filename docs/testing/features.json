@@ -712,6 +712,10 @@
       "web/src/App.tsx",
       "web/src/desktop/DesktopHome.tsx",
       "web/src/desktop/WorkspaceView.tsx",
+      "web/src/desktop/WorkspaceComposer.tsx",
+      "web/src/desktop/EvidencePanel.tsx",
+      "web/src/desktop/HistoryPanel.tsx",
+      "web/src/desktop/evidenceMock.ts",
       "web/src/desktop/mockData.ts",
       "web/e2e/desktop.spec.ts",
       "docs/ai-desktop/DESIGN.md",
@@ -722,7 +726,9 @@
       "E2E-ADNAV",
       "E2E-ADLAYOUT",
       "E2E-ADDRAFT",
-      "E2E-ADSCOPE"
+      "E2E-ADSCOPE",
+      "E2E-ADEVID",
+      "E2E-ADHISTORY"
     ]
   },
   {
