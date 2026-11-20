@@ -1,6 +1,6 @@
 # World Adapter 与 MOM 工作台 Feature Map
 
-Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`docs/mom/DES_EXPERIMENT_OPS_SPLIT.md`、`web/e2e/des-experiment.spec.ts`、`web/e2e/mom-workbench.spec.ts`、`web/src/desktop/DesExperiment.tsx`、`web/src/desktop/MomWorkbench.tsx`、`web/src/components/OpsCards.tsx`；用例 `E2E-DESTRIAL`～`E2E-DESLOOP`（M0-3 Green）、`E2E-WABIND`（M0-4，设计编号 E2E-WA-01）。  
+Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`docs/mom/DES_EXPERIMENT_OPS_SPLIT.md`、`web/e2e/des-experiment.spec.ts`、`web/e2e/mom-workbench.spec.ts`、`web/e2e/wa-integration.spec.ts`、`tools/wa-m0-suite.sh`、`web/src/desktop/DesExperiment.tsx`、`web/src/desktop/MomWorkbench.tsx`、`web/src/components/OpsCards.tsx`；用例 `E2E-DESTRIAL`～`E2E-DESLOOP`（M0-3/M0-5 双上下文）、`E2E-WABIND`（WA-01）、`E2E-WACHANNEL`（WA-05 适用切片）。  
 现有路径见 [MOM Feature Map](mom.md)。表中其余 `E2E-WA-*` 为设计编号，登记进 CASES/`features.json` 前须换成 `E2E-[A-Z]+`；控件名是 Playwright 定位契约。
 
 | 拟用例 | 正式 E2E id | 操作路径与定位 | UI 和业务断言 | 追溯 |
@@ -9,7 +9,7 @@ Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`do
 | E2E-WA-02 续读 | （待登记） | 「看板」断线，重连或点「重新读取」 | 从提交边界补事件，同 ID 只应用一次；过期和水位单独显示 | WA-02、07 / UI03、15 |
 | E2E-WA-03 条件 | （待登记） | 「任务」→「受阻」→「刀具调拨」，从「资源」→「料」再次定位 | 受理后待实物交接，首件未通过不能放行；冲突引用同一资源并无重复预留 | WA-08 / UI03、05、06、11 / P-MOM-STATE、VIEWS |
 | E2E-WA-04 节点和来源 | （待登记） | 「处理进展」→「维护初筛」→「证据与记录」「通俗解释」，打开「流程选择依据」 | 一次点击可见结论，候选假设仍待验证，草稿流程不可执行，证据来源可查 | WA-07、08 / UI04、07、08、15 |
-| E2E-WA-05 审批 | （待登记） | 「方案与决定」→「前往运营频道」→同案例卡「批准」；模拟同时修改版本 | 展示冲突，旧授权零写入。对象、范围、前置条件与修订可核对 | WA-03 / UI07、09 |
+| E2E-WA-05 审批 | `E2E-WACHANNEL`（入口切片；冲突/旧授权见后续） | 「方案与决定」→「前往运营频道」→同案例卡「批准」；模拟同时修改版本 | 工作台可进运营频道；完整冲突断言随 M1+ | WA-03 / UI07、09 |
 | E2E-WA-06 恢复 | （待登记） | 「执行已批准动作」→「查看执行」→「查证结果」 | 重试只执行一次；部分成功可区分；取消后无额外写，迟到回执不改变终态 | WA-04 / UI10、15 |
 | E2E-WA-07 动态 DES | （待登记） | 会话进入动态 DES → 批准维修 → 推进 →「核验证据」 | 已投递历史不变，未来事件因干预改变，评测答案匹配；普通用户无答案；失联可诊断 | WA-05、07、08 / UI07、14、15 / RT-DES-08～11、RT-DESC |
 | E2E-WA-08 会话和小屏 | （待登记） | 「与 AI 讨论」写 A 草稿 → 切 C → 回 A；节点证据页按 Escape | 草稿和上下文隔离，焦点恢复，小屏无横溢，模型离线时已有证据可查 | WA-07、08 / UI12、16 / P-MOM-CONTEXT |

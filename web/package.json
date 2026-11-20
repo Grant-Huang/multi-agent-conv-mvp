@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:map": "node --test verification/check-map.test.mjs && node verification/check-map.mjs",
     "test:e2e": "tsc --noEmit -p e2e/tsconfig.json && playwright test",
+    "test:wa-m0": "bash ../tools/wa-m0-suite.sh",
     "verify": "node verification/run.mjs"
   },
   "dependencies": {
