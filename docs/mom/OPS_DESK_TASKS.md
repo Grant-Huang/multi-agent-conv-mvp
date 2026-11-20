@@ -12,8 +12,9 @@
 | **D1-1** | 运行时：桌面读模型 `desk_view` + `OpsPublisher::open_case`（RT-OPSDESK-06/07） | 已完成 | 本 PR |
 | **D1-2** | 服务端：`GET /api/mom/desk`、`GET /api/mom/desk/cases/{id}`、`POST …/open-in-channel` | 已完成 | 本 PR |
 | **D1-3** | 前端：“运营桌面”页签、看板、筛选、详情抽屉（E2E-OPSDESK/OPSDRAWER/OPSNOISE 转绿） | 已完成 | 本 PR |
-| **D2** | 卡片上批准（决定 60） | 已完成 | 本 PR |
-| D3 | 任务/资源入口、MCP 连接器回归（需先与用户确认范围） | 未开始 | — |
+| **D2** | 卡片上批准（决定 60） | 已完成 | #136 |
+| **D3a** | 任务/资源子入口（OpsDesk 二级 Tab；不含连接器） | 未开始 | — |
+| D3b / WP1-L4 | MCP 连接器替换（单独方案） | 未开始 | — |
 
 一张卡 = 一个 PR。做完先在 PR 里贴“完成的定义”命令的真实输出，等用户确认合并，再开下一张。
 
@@ -232,9 +233,33 @@ plan_revision: Option<u64>,  // 发卡时的 case.plan_revision
 
 与第 2 节相同，另加：`PLAYWRIGHT_BROWSERS_PATH=… npx playwright test ops.spec.ts` 含新 E2E-OPSAPPROVE 共 6 个全绿。
 
-## 8. D3：任务/资源入口与连接器回归（先问用户，再动手）
+## 8. D3a：任务/资源子入口（对齐 AI Desktop；连接器外置）
 
-依据 [UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md) 的“三入口（看板/任务/资源）”，D1 只做了“看板”。D3 需要用户先确认：任务入口展示什么（执行中的案例步骤？待我处理的人工任务？）、资源入口展示什么（DES 设备/物料状态，来源 `FactoryService`）。确认后拆卡。另一条线是 WP1-L4（经 `an-des-mcp` 替换进程内 DES 调用），见 [WP1_TASKS.md](../mom/WP1_TASKS.md)。
+依据 [UI_UX_PRINCIPLES.md](UI_UX_PRINCIPLES.md) 的“三入口（看板/任务/资源）”与 [AI Desktop V1.7](../ai-desktop/DESIGN.md)（运营入口复用 MOM 三入口）。D1 只做了“看板”。缺口与计划调整见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md) §5.2。
+
+### 8.1 默认口径（助手建议；用户未改口前按此拆卡）
+
+| 入口 | 展示什么 | 不做 |
+|---|---|---|
+| **任务** | 只读列表：待批准 / 执行中（含核验中）/ 受阻；行点击 → 现有详情抽屉或「在频道中处理」 | 不创建平台 `TaskRecord`；桌面不放批准按钮 |
+| **资源** | 只读：从案例 `world` / 已有 DES 只读视图投影设备与约束缺口（缺刀具、联锁、占用），标「模拟」 | 全厂台账、人机料法环测完整 Tab、预留写入 |
+| **连接器 L4** | **不在本卡**；见 [WP1_TASKS.md](WP1_TASKS.md) §5，先出方案 | — |
+
+### 8.2 与 Desktop 壳的关系
+
+D3a 先做在现有 `OpsDesk` 内（二级 Tab：看板 | 任务 | 资源），保证 E2E-OPSDESK 类用例可扩展。Desktop A1 落地后，整个 OpsDesk 作为壳内「运营」模块挂载，**不**再增加与「会话」并列的第三套一级运营导航。
+
+### 8.3 用例方向（确认口径后再冻结）
+
+| 用例 | 断言方向 |
+|---|---|
+| E2E-OPSTASK（名待 check-map 合规化） | 运营桌面可见「任务」Tab；列表含待批准/受阻；无「批准」按钮；打开抽屉或跳转频道 |
+| E2E-OPSRES | 「资源」Tab 显示缺口摘要与「模拟」标识；空/未知有明确状态 |
+| RT-OPSDESK-1x | desk 读模型或新子资源接口返回任务分组与资源摘要字段 |
+
+### 8.4 完成定义
+
+与第 2 节相同；另加：新 E2E 全绿；不改 `engine.rs`；L4 不得混进本 PR。
 
 ## 9. 已知局限（做的时候别“顺手修”，在 PR 里如实写）
 

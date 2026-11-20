@@ -1,7 +1,8 @@
 # WP1（DES-MOM-会话闭环）执行任务卡
 
-本文件是 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md) 第三节的执行版。运营桌面/运营频道（D0–D3）单独见 [OPS_DESK_TASKS.md](OPS_DESK_TASKS.md)，**通用流程、完成的定义、命令和环境坑都在那个文件的第 2 节，本文件不重复**，每张卡开工前先读它。
-已确认的设计决定：[DECISIONS.md](../DECISIONS.md) 第 56 条（DES–MOM–会话闭环取方案 A：会话只读工具 + 案例卡；MOM 数据来自 DES 事件，暂不用 MOM 界面）、57（案例卡只在需要时推送，桌面最小化）、58（专属运营频道）。
+本文件是 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md) 第三节的执行版。运营桌面/运营频道（D0–D3a）单独见 [OPS_DESK_TASKS.md](OPS_DESK_TASKS.md)，**通用流程、完成的定义、命令和环境坑都在那个文件的第 2 节，本文件不重复**，每张卡开工前先读它。  
+产品壳主轴见 [AI Desktop V1.7](../ai-desktop/DESIGN.md)；与 WP1 的挂靠见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md) 与 INTEGRATION_PLAN §0。  
+已确认的设计决定：[DECISIONS.md](../DECISIONS.md) 第 56 条（DES–MOM–会话闭环取方案 A：会话只读工具 + 案例卡；MOM 数据来自 DES 事件，暂不用 MOM 界面）、57（案例卡只在需要时推送，桌面最小化）、58（专属运营频道）、60（频道卡批准）。
 
 ## 0. 进度总表
 
@@ -11,10 +12,10 @@
 | L1-0 | **先出方案**：引擎句柄如何注入会话工具（见 L1） | 未开始，需用户确认 | L0 |
 | L1-1 | 只读工具 `mom_cases`、`mom_factory_status` | 未开始 | L1-0 |
 | L1-2 | `mom_forecast`、`mom_whatif` | 未开始 | L1-1 |
-| L2 | 案例卡 + 在卡片上批准 | **已并入 D2**（见 OPS_DESK_TASKS §7）；会话内按需发卡留待 L1 之后 | D1 |
+| L2 | 案例卡 + 在卡片上批准 | **已并入 D2**（OPS_DESK_TASKS §7 / #136）；会话内按需发卡留待 L1 之后 | D1 |
 | L3 | 闭环回写与审核报告卡 | 未开始 | D2 |
-| L4 | 经 `an-des-mcp` 替换进程内 DES 调用 | 未开始 | L3 |
-| GS1 | 黄金场景 E2E 总装 | 未开始 | L1–L3 |
+| L4 | 经 `an-des-mcp` 替换进程内 DES 调用 | 未开始；**与 D3a 解耦，先出方案** | L3 可并行准备 |
+| GS1 | 黄金场景 E2E 总装 | 未开始；UI 入口逐步迁 Desktop 运营区 | L1–L3 |
 
 ## 1. 开工前必读的现状
 

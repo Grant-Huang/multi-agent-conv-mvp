@@ -862,10 +862,21 @@
 - **没选什么**：会话里另做 `MomCase`；点批准时再读引擎取版本；本期做驳回。
 - **出问题先看**：`POST /api/mom/desk/cases/{id}/approve`；卡片字段 `scope`/`plan_revision`；引擎错误 `stale plan approval` / `evidence snapshot stale`。
 
+### 61. AI Desktop V1.7 为产品壳主轴；运营 D3 拆分；与 WP1 双轨汇合（2026-11-20，助手建议）
+
+- **问题**：#150 落地了已确认的 AI Desktop V1.7（完整前端优先、Mock 替换门禁），与现行「会话|运营桌面」MVP 壳及 INTEGRATION_PLAN（WP0–WP8 / 运营 D0–D3）如何排期、避免两套导航。
+- **建议定什么**（待用户确认）：
+  1. **Desktop A→B→C→D** 为前端壳主轴；WP1/运营/内省作为壳内模块，新入口不平行堆一级页签。
+  2. 原 D3 拆成 **D3a**（OpsDesk 内看板|任务|资源；任务=案例工作项投影，资源=只读缺口）与 **D3b/L4**（连接器，单独方案）。
+  3. A1 推荐一次替换壳、旧路径重定向（兼容开关为备选）。
+- **为什么**：V1.7 已规定运营入口复用 MOM 三入口；若不挂壳，AD-* 回归与 GS1 会对着两套 UI。
+- **没选什么**：暂停 WP1 只做 Desktop；或把 case 强行改成平台 Task（方案 B）。
+- **依据**：`docs/ai-desktop/GAPS.md`；进度同步 `PLAN.md`、`INTEGRATION_PLAN.md` §0、`OPS_DESK_TASKS.md` §8。
+- **出问题先看**：是否又在 App 顶栏加了与 Desktop 重复的一级入口；D3 PR 是否夹带了 L4。
 
 ### 待决定
 
-- 暂无。
+- 第 61 条双轨与 D3a 口径、A1 是否一次换壳（见该条）。
 
 ### 排查提示（踩过的坑）
 

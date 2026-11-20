@@ -82,3 +82,9 @@ flowchart LR
 | 6 | G02 / G06 / G07 | 属于路线图级别，需要排期 |
 
 > 涉及 `orchestrator.rs`、`store.rs`、`registry.rs`、`acp.rs`、`util.rs` 的改动按 AGENTS.md 先给方案、经你批准再动；本文不含任何代码改动。
+
+## 五、与 AI Desktop V1.7 的叠加缺口（2026-11-20）
+
+已确认的 UE/交付规格见 [ai-desktop/DESIGN.md](../ai-desktop/DESIGN.md)。对照现状的 Desktop 专属缺口（AD-G1–AD-G12）、与 G01–G10 的挂靠关系、以及对 WP1/运营桌面计划的调整建议，见 [ai-desktop/GAPS.md](../ai-desktop/GAPS.md)。
+
+一句话：G01–G10 描述的是**模块间打通**；AD-G* 描述的是**产品壳尚未建成**。两者都要做；推荐以 Desktop A（完整前端 + Mock）为壳主轴，把运营三入口（原 D3）与 WP1 闭环嵌进该壳，而不是在现有「会话|运营桌面」页签上继续平行堆叠。

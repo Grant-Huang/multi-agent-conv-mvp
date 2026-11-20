@@ -937,9 +937,20 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 10. DLP 审计日志落盘：由 AgentNexus 拉起时 DLP 的 stderr 不保存，DLP 侧 `dlp.evaluate` 日志目前看不到
 9. 重识别风险：稀有指标组合、跨请求关联的评估与缓解（设计文档第 11 节第 8 项）
 
-## 系统打通与整体场景 E2E（草案，待用户确认）
+## 系统打通与整体场景 E2E
 
-目标、工作包顺序与首个工作包“DES-MOM-会话闭环”的方案选项见 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)；缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)。方案经用户确认前不改代码。
+目标、工作包顺序与首个工作包“DES-MOM-会话闭环”见 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)；缺口依据见 [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)。  
+**产品壳主轴**（已确认 UE）：[AI Desktop V1.7](ai-desktop/DESIGN.md)；对照现状缺口与计划调整见 [ai-desktop/GAPS.md](ai-desktop/GAPS.md)。WP1/运营能力嵌进 Desktop 壳，双轨关系见 INTEGRATION_PLAN §0。
+
+### AI Desktop 进度（A→B→C→D）
+
+- [ ] **A0 追溯与用例登记**：原始清单 → Feature/Case；登记 AD-*（见 FEATURE_MAP）
+- [ ] **A1 壳层与导航**：首页三区、S1/S2/S3；现有会话/运营/内省迁入壳内
+- [ ] **A2 草稿、阅读锚点、上下文作用域**
+- [ ] **A3 证据与历史面板**
+- [ ] **A4 助理、设置、键盘与响应式**
+- [ ] **A5 异步/协作/审批/移动 Mock 流程**
+- [ ] **B/C/D** 按能力替换 Mock（见 ai-desktop/PLAN.md）
 
 ---
 
@@ -970,4 +981,5 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **D1-2 服务端接口**（2026-11-19）：`GET /api/mom/desk`、`GET /api/mom/desk/cases/{id}`、`POST …/open-in-channel`；RT-OPSDESK-10 转绿。证据见 `testing/evidence/ops-desk-d1-2-red.md`。
 - [x] **D1-3 前端桌面**（2026-11-19）：运营桌面页签、看板、筛选、详情抽屉；E2E-OPSDESK、OPSDRAWER、OPSNOISE、OPSCHANNEL、OPSOFF 全绿。证据见 `testing/evidence/ops-desk-d1-3.md`。
 - [x] **D2 卡片批准**（2026-11-20）：决定 60；`OpsCase` 携带 scope/plan_revision；`POST …/approve`；E2E-OPSAPPROVE、RT-OPSDESK-11 转绿。证据见 `testing/evidence/ops-desk-d2.md`。
-- [ ] **D3 任务/资源入口与 MCP 连接器回归**（先确认范围，见 OPS_DESK_TASKS §8）。
+- [ ] **D3a 任务/资源子入口**（OpsDesk 二级 Tab；默认口径见 OPS_DESK_TASKS §8；对齐 Desktop A）
+- [ ] **D3b / WP1-L4 连接器替换**（单独方案，不堵 D3a）

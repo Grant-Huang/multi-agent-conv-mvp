@@ -1,6 +1,7 @@
 # AgentNexus AI Desktop V1.7 实施计划
 
-适用输入为 [设计规格](DESIGN.md)、[原始特性清单](agentnexus_ai_desktop_design_checklist-2.md)和 [HTML 参考原型](agentnexus_ai_desktop-5.html)。交互路径和断言使用 [目标 Feature Map](FEATURE_MAP.md)，实现按 [仓库测试约定](../testing/README.md)执行。
+适用输入为 [设计规格](DESIGN.md)、[原始特性清单](agentnexus_ai_desktop_design_checklist-2.md)和 [HTML 参考原型](agentnexus_ai_desktop-5.html)。交互路径和断言使用 [目标 Feature Map](FEATURE_MAP.md)，实现按 [仓库测试约定](../testing/README.md)执行。  
+对照现状的缺口与和 WP1/运营桌面的挂靠见 [GAPS.md](GAPS.md)；系统打通工作包见 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md) §0。
 
 ## 1. 交付顺序
 
