@@ -23,4 +23,4 @@ await page.getByTestId('card-smt-03').click();
 await expect(page.getByTestId('workspace')).toContainText('TASK-2026-018');
 ```
 
-用例：`E2E-ADNAV`、`E2E-ADLAYOUT`（A1）；`E2E-ADDRAFT`、`E2E-ADSCOPE`（A2）；`E2E-ADEVID`、`E2E-ADHISTORY`（A3）；`E2E-ADPROF`、`E2E-ADINPUT`（A4）。其余 AD-* 见 FEATURE_MAP，随里程碑登记。
+用例：`E2E-ADNAV`、`E2E-ADLAYOUT`（A1）；`E2E-ADDRAFT`、`E2E-ADSCOPE`（A2）；`E2E-ADREAD`（A2.1，含运营频道）；`E2E-ADEVID`、`E2E-ADHISTORY`（A3）；`E2E-ADPROF`、`E2E-ADINPUT`（A4）。其余 AD-* 见 FEATURE_MAP，随里程碑登记。

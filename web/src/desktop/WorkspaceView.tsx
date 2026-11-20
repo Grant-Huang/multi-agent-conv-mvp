@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   readWorkspaceLayout,
   writeWorkspaceLayout,
   type WorkspaceLayout,
   SMT03_TASK_ID,
 } from "./mockData";
+import { loadExecOpen, saveExecOpen } from "./readAnchorStore";
 import { WorkspaceComposer } from "./WorkspaceComposer";
 
 type Props = {
@@ -16,7 +17,19 @@ type Props = {
 
 export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings }: Props) {
   const [layout, setLayout] = useState<WorkspaceLayout>(() => readWorkspaceLayout());
-  const [execOpen, setExecOpen] = useState(true);
+  const [execOpen, setExecOpen] = useState(() => loadExecOpen(taskId));
+
+  useEffect(() => {
+    setExecOpen(loadExecOpen(taskId));
+  }, [taskId]);
+
+  const toggleExec = () => {
+    setExecOpen((v) => {
+      const next = !v;
+      saveExecOpen(taskId, next);
+      return next;
+    });
+  };
 
   const setAndPersist = (next: WorkspaceLayout) => {
     setLayout(next);
@@ -83,8 +96,9 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings }
           <button
             type="button"
             className="btn small"
+            data-testid="workspace-exec-toggle"
             aria-expanded={execOpen}
-            onClick={() => setExecOpen((v) => !v)}
+            onClick={toggleExec}
           >
             {execOpen ? "收起执行" : "展开执行"}
           </button>

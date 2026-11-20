@@ -15,6 +15,7 @@ import { ArtifactList } from "./ArtifactList";
 import { ConfirmButton } from "./ConfirmButton";
 import { TaskTicker } from "./TaskTicker";
 import { ChatCardView } from "./ChatCards";
+import { loadReadAnchor, saveReadAnchor } from "../desktop/readAnchorStore";
 
 /** 对话里可以直接对任务做的操作（批准 / 取消），由 App 执行并负责刷新 */
 export type TaskActionKind = "approve" | "cancel";
@@ -50,6 +51,7 @@ const MessageRow = memo(function MessageRow(props: {
   return (
     <div
       className={`msg ${m.role}`}
+      data-message-id={m.id}
       data-testid={
         m.card?.type === "ops_case"
           ? "ops-card"
@@ -180,6 +182,8 @@ function Thinking() {
 
 export function ChatView(props: {
   messages: ChatMessageItem[];
+  /** 当前会话；用于阅读锚点按 Conversation 隔离（A2.1） */
+  conversationId?: string | null;
   /** 卡片上的操作完成后重新读取消息（AG.4） */
   onRefresh?: () => void;
   onSend: (text: string) => Promise<void>;
@@ -191,7 +195,7 @@ export function ChatView(props: {
   /** 批准 / 取消任务；由 App 调用接口并刷新 */
   onTaskAction?: (kind: TaskActionKind, taskId: string) => Promise<void>;
 }) {
-  const { messages, onSend } = props;
+  const { messages, onSend, conversationId } = props;
   const tasks = props.tasks ?? [];
   const notes = props.notes ?? {};
   const streaming = props.streaming && !messages.some((m) => m.id === props.streaming!.id) ? props.streaming : null;
@@ -200,11 +204,72 @@ export function ChatView(props: {
   const [busyTask, setBusyTask] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const restoredFor = useRef<string | null>(null);
+  const stickBottom = useRef(true);
+  const saveTimer = useRef(0);
 
-  // 有新消息时滚动到底部
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, sending, streaming?.text.length]);
+    restoredFor.current = null;
+    stickBottom.current = true;
+  }, [conversationId]);
+
+  // 恢复锚点；无锚点或消息已失效则滚到最新（DESIGN §3）
+  useEffect(() => {
+    const root = listRef.current;
+    if (!root || !conversationId || messages.length === 0) return;
+    if (restoredFor.current === conversationId) {
+      if (stickBottom.current) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+    const anchor = loadReadAnchor(conversationId);
+    const apply = () => {
+      restoredFor.current = conversationId;
+      if (anchor) {
+        const el = root.querySelector(`[data-message-id="${CSS.escape(anchor.messageId)}"]`) as HTMLElement | null;
+        if (el) {
+          stickBottom.current = false;
+          const rel = el.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
+          root.scrollTop = Math.max(0, rel - anchor.offsetPx);
+          return;
+        }
+      }
+      stickBottom.current = true;
+      bottomRef.current?.scrollIntoView({ behavior: "auto" });
+    };
+    // 等布局完成再恢复，避免首帧位置为 0
+    requestAnimationFrame(() => requestAnimationFrame(apply));
+  }, [conversationId, messages.length, sending, streaming?.text.length]);
+
+  const persistAnchor = useCallback(() => {
+    const root = listRef.current;
+    if (!root || !conversationId) return;
+    const rootTop = root.getBoundingClientRect().top;
+    const nodes = Array.from(root.querySelectorAll<HTMLElement>("[data-message-id]"));
+    for (const el of nodes) {
+      const rel = el.getBoundingClientRect().top - rootTop + root.scrollTop;
+      if (rel + el.offsetHeight > root.scrollTop + 1) {
+        const id = el.getAttribute("data-message-id") || "";
+        if (id) saveReadAnchor(conversationId, { messageId: id, offsetPx: rel - root.scrollTop });
+        break;
+      }
+    }
+    stickBottom.current = root.scrollHeight - root.scrollTop - root.clientHeight < 80;
+  }, [conversationId]);
+
+  useEffect(() => {
+    const root = listRef.current;
+    if (!root) return;
+    const onScroll = () => {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = window.setTimeout(persistAnchor, 50);
+    };
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      root.removeEventListener("scroll", onScroll);
+      window.clearTimeout(saveTimer.current);
+    };
+  }, [persistAnchor]);
 
   const submit = async () => {
     const t = text.trim();
@@ -240,7 +305,7 @@ export function ChatView(props: {
 
   return (
     <div className="chat">
-      <div className="messages">
+      <div className="messages" ref={listRef} data-testid="chat-messages">
         {messages.length === 0 && (
           <div className="empty">
             <h2>试试这些</h2>
