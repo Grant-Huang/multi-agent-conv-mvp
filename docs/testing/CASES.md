@@ -709,6 +709,17 @@ D2（卡片批准联动）的 E2E-OPSAPPROVE 依赖 WP1 L2 的案例卡，待 L2
 | RT-INT-29 | introspection | 另有普通会话 | 推送后 list 其他会话 | 其他会话无内省消息 / 内省卡 |
 
 
+## 业务内省 INT（S6：HTTP + 前端）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-INT-10 | introspection | 一条 Finding；运营负责人 | 否决并写原因；再跑分析 | verdict=rejected；稳定 ID 仍在；不重复生成；闸门配置不变 |
+| E2E-INTROVIEW | introspection | 内省已产出 Finding | 打开内省页，查看并否决 | 可见证据/原因；否决后默认列表不再出现；规则未变 |
+| E2E-INTROLABEL | introspection | 一条被压下的结论 | 查看未推送原因并标「该推」 | 显示原因；标注保存；未立即推送 |
+| E2E-INTROPUSH | introspection | 一条通过闸门的结论 | 推送后进主窗口 | 主窗口有内省消息与卡；无任务；其他会话无此消息 |
+| E2E-INTROUNREAD | introspection | 主窗口有未读内省 | 看角标、进入主窗口、刷新、再推 | 进入前角标>0；进入后清零；刷新仍 0；再推后回升 |
+
+
 ## 围栏：审查进待人工的人工判定（实现前定义）
 
 设计见 [docs/fencing/REVIEW_VERDICT_DESIGN.md](../fencing/REVIEW_VERDICT_DESIGN.md)。未改 `orchestrator` / `store`，实现前须另批。下列用例冻结后只改业务代码。

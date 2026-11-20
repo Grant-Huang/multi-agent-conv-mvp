@@ -50,7 +50,15 @@ const MessageRow = memo(function MessageRow(props: {
   return (
     <div
       className={`msg ${m.role}`}
-      data-testid={m.card?.type === "ops_case" ? "ops-card" : m.card?.type === "ops_summary" ? "ops-summary" : undefined}
+      data-testid={
+        m.card?.type === "ops_case"
+          ? "ops-card"
+          : m.card?.type === "ops_summary"
+            ? "ops-summary"
+            : m.card?.type === "introspection"
+              ? "intro-msg"
+              : undefined
+      }
     >
       <div className={m.role === "user" ? "bubble" : "bubble md"}>
         {/* 运营频道的卡片消息：正文只是给人和模型的一句说明，界面只显示卡片 */}

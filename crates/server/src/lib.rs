@@ -17,9 +17,11 @@
 //! | DELETE | /api/nodes/{id} | 解除配对 |
 //! | GET  | /api/diagnostics | 诊断：最近的问题、按错误码统计、agent 与节点状态 |
 //! | GET/POST | /api/admission/... | agent 准入（E3，开启 `[admission]` 时才有，见 `admission_api`） |
+//! | GET/POST | /api/introspection/... | 业务内省（见 `introspection_api`） |
 
 pub mod admission_api;
 pub mod host_guard;
+pub mod introspection_api;
 pub mod mom;
 pub mod mom_des_connector;
 pub mod mom_ops;
@@ -108,6 +110,7 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/nodes/{id}", axum::routing::delete(unpair_node))
         .route("/api/diagnostics", get(diagnostics))
         .merge(admission_api::routes())
+        .merge(introspection_api::routes())
         .with_state(rt)
 }
 

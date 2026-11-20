@@ -2,8 +2,10 @@
 //!
 //! 见 `docs/memory/INTROSPECTION_PLAN.md` 第 4 节。
 
+use serde::Serialize;
+
 /// 一次内省运行（定时或手动）。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IntrospectionJob {
     pub id: String,
     /// `schedule` / `manual`
@@ -21,7 +23,7 @@ pub struct IntrospectionJob {
 }
 
 /// 一条内省结论。`id` 是稳定 ID（由主题、范围、输入摘要算出），重复写入不会产生第二行。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IntrospectionFinding {
     pub id: String,
     pub job_id: String,
@@ -42,7 +44,7 @@ pub struct IntrospectionFinding {
 }
 
 /// 运营负责人在运行时给结论打的标注（如“该推 / 不该推”）。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IntrospectionLabel {
     pub id: String,
     pub finding_id: String,
