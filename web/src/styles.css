@@ -361,3 +361,91 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
 .badge.unread { margin-left: 6px; background: #d33; color: #fff; }
 .badge.sim { background: #eee; color: #666; }
 .ops-card.level-p0 { border-left: 3px solid #d33; }
+
+/* 运营桌面（D1-3） */
+.main-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.main-tabs button {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 14px;
+  cursor: pointer;
+  color: var(--muted, #666);
+}
+.main-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.ops-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+}
+.ops-strip {
+  font-size: 13px;
+  color: var(--muted, #555);
+}
+.ops-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.ops-filters button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ops-rows { display: flex; flex-direction: column; gap: 8px; }
+.ops-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  outline: none;
+}
+.ops-row:focus { border-color: var(--accent); }
+.ops-row.level-p0 { border-left: 3px solid #d33; }
+.ops-row-main { flex: 1; min-width: 0; }
+.ops-row-title { font-weight: 600; }
+.ops-row-meta { font-size: 12px; color: var(--muted, #666); margin-top: 2px; }
+.ops-row > .btn { flex-shrink: 0; margin-left: auto; }
+.ops-completed-toggle { align-self: flex-start; }
+.ops-empty { color: var(--muted, #666); }
+.ops-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(420px, 100vw);
+  height: 100vh;
+  background: var(--bg, #fff);
+  border-left: 1px solid var(--border);
+  padding: 16px;
+  overflow: auto;
+  z-index: 40;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.06);
+}
+.ops-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ops-drawer-head .btn { margin-left: auto; }
+.ops-drawer h3 { font-size: 14px; margin: 14px 0 6px; }
+.ops-drawer p { font-size: 13px; margin: 0; line-height: 1.45; }
+.ops-drawer details { margin-top: 16px; font-size: 12px; }
+.ops-drawer pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 40vh;
+  overflow: auto;
+  background: var(--panel, #f6f6f6);
+  padding: 8px;
+}
