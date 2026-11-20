@@ -15,9 +15,20 @@
 | 10–13 阶段/开放/指南/参考 | 里程碑与决议 | — | docs | 见 PLAN / DECISIONS 61 |
 | 14–15 助理/语音跨端 | AD-PROFILE、AD-VOICE、AD-HANDOFF | E2E-ADPROF、E2E-ADVOICE、E2E-ADHAND | browser / Mock→D | E2E-ADPROF **已登记**（A4）；E2E-ADVOICE/ADHAND **已登记**（A5.3）；真实媒体待 D |
 | 16–18 异步/主动/设置 | AD-S1、AD-ACCEPT、AD-ATTENTION、AD-PROFILE | E2E-ADASK、E2E-ADATTN、E2E-ADACCEPT | browser | E2E-ADASK/ADATTN **已登记**（A5.1）；E2E-ADACCEPT **已登记**（A5.4 Mock）；真实可靠受理待 B1 |
-| 19–21 连续性/导航/回归 | AD-NAV、AD-LAYOUT、AD-DRAFT、AD-EVIDENCE、AD-INPUT | （同上） | browser | 随 A 增量 |
+| 19–21 连续性/导航/回归 | AD-NAV、AD-LAYOUT、AD-DRAFT、AD-EVIDENCE、AD-INPUT | （同上） | browser | 随 A 增量；**A5 整体** `desktop.spec` 15/15（证据 `testing/evidence/ai-desktop-a5.md`） |
 
 开放问题（清单 §11）决议前不写死 Case 断言；落地条款确认后补行。
+
+## A5 出口核对（2026-11-20）
+
+| Mock | Case（浏览器） | 证据 |
+|---|---|---|
+| M1 受理 | E2E-ADACCEPT | a5.4 + a5 整体 |
+| M2 Run 恢复 | E2E-ADRESUME | a5.2 + a5 整体 |
+| M3 助理/设置 | E2E-ADPROF、E2E-ADINPUT | a4；a5 整体复跑 |
+| M4 频道/权限 | E2E-OPS* / E2E-WA*（混合真实）；RelOS 撤权待 C1 | 见 MOCK_REGISTRY M4 |
+| M5 审批/提醒 | E2E-ADAPPR、E2E-ADATTN、E2E-ADASK | a5.1/a5.2 + a5 整体 |
+| M6 语音/跨端 | E2E-ADVOICE、E2E-ADHAND | a5.3 + a5 整体 |
 
 ## A1 必验条款（本里程碑）
 

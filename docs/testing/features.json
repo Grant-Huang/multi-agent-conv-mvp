@@ -742,7 +742,9 @@
       "docs/testing/evidence/ai-desktop-a5.1.md",
       "docs/testing/evidence/ai-desktop-a5.2.md",
       "docs/testing/evidence/ai-desktop-a5.3.md",
-      "docs/testing/evidence/ai-desktop-a5.4.md"
+      "docs/testing/evidence/ai-desktop-a5.4.md",
+      "docs/testing/evidence/ai-desktop-a5.md",
+      "docs/ai-desktop/MOCK_REGISTRY.md"
     ],
     "coverage": "browser",
     "cases": [
