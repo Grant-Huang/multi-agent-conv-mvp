@@ -9,6 +9,7 @@
 //! 特殊指令（便于测试）：含"稍慢"时执行约 1.5 秒；含"慢"时先睡 30 秒；含"拒绝"时以 refusal 结束。
 //! 环境变量 `AN_MOCK_ACP_AUTH=required`：新建会话时返回 ACP 的 auth_required 错误（-32000），模拟"需要先登录"。
 //! 环境变量 `AN_MOCK_ACP_RECORD=<文件>`：收到任务时把提示词全文、工作目录和进程号写进这个文件（JSON），用于核对"发出去的内容"。
+//! 环境变量 `AN_MOCK_ACP_PROBE_CWD=<文件>`：`session/new` 握手时把收到的工作目录写入该文件（纯文本），用于探测路径回归测试。
 //! 环境变量 `AN_MOCK_ACP_REPLY=<文字>`：在回复末尾另起一行追加这段文字。
 //!
 //! 体验方式（config.toml）：
@@ -170,6 +171,9 @@ async fn main() -> acp::Result<()> {
                 // 模拟未登录：协议规定用 -32000（auth_required）拒绝新建会话
                 if std::env::var("AN_MOCK_ACP_AUTH").as_deref() == Ok("required") {
                     return responder.respond_with_error(acp::Error::auth_required());
+                }
+                if let Ok(path) = std::env::var("AN_MOCK_ACP_PROBE_CWD") {
+                    let _ = std::fs::write(&path, req.cwd.display().to_string());
                 }
                 let id = format!("mock-{}", std::process::id());
                 s_new.lock().unwrap().insert(id.clone(), req.cwd.clone());
