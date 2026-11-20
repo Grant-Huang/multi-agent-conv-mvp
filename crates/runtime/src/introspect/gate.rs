@@ -18,6 +18,8 @@ pub struct GateInput {
     pub model_reason: String,
     /// 因日上限压下时，提示「另有 N 项」的 N（由调用方传入）。
     pub extra_pending: u32,
+    /// 是否允许主动打扰用户。false = 仅内省页（值得调查 ≠ 值得推送）。
+    pub interrupt_eligible: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -97,6 +99,16 @@ pub fn decide(input: &GateInput, cfg: &GateConfig) -> GateDecision {
             reason: format!(
                 "不推送：验真不是 supported（{:?}）。{}",
                 input.verification,
+                notes.join("；")
+            ),
+        };
+    }
+    if !input.interrupt_eligible {
+        return GateDecision {
+            score,
+            should_push: false,
+            reason: format!(
+                "不推送：仅内省页（值得调查，不主动打扰）。{}",
                 notes.join("；")
             ),
         };

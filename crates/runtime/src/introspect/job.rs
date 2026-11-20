@@ -174,6 +174,8 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
         };
 
         let mut written = 0usize;
+        // 本轮内也累计投递，避免同任务多条同时越过日上限。
+        let mut pushed_today = store.introspection_pushes_today().unwrap_or(0);
         for d in drafts {
             if cancelled(&cancel) {
                 return Ok(WorkEnd::Cancelled);
@@ -249,11 +251,12 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                     let digest = input_digest_from_draft_stats(&draft.stats);
                     let fid = stable_finding_id(draft.topic, &draft.scope, &digest);
                     let at = now();
-                    let impact_cases = match &draft.stats {
+                    // 共现的案例数是样本量，不是业务影响面；主动推送需 interrupt_eligible。
+                    let (impact_cases, interrupt_eligible) = match &draft.stats {
                         DraftStats::Adoption(s) => {
-                            s.approvals_total.max(draft.evidence.len() as u32)
+                            (s.approvals_total.max(draft.evidence.len() as u32), true)
                         }
-                        DraftStats::Cooccur(s) => s.case_count.max(draft.evidence.len() as u32),
+                        DraftStats::Cooccur(_) => (0, false),
                     };
                     let json = match &draft.stats {
                         DraftStats::Adoption(s) => serde_json::to_string(&serde_json::json!({
@@ -301,18 +304,21 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
 
                     let already_pushed_unread =
                         store.introspection_has_unread_push(&fid).unwrap_or(false);
+                    let remaining_cap = gcfg.daily_cap.saturating_sub(pushed_today);
                     let gin = GateInput {
                         finding_id: fid.clone(),
                         verification: draft.verification.clone(),
                         impact_cases,
-                        has_next_step: !draft.next_step.is_empty(),
+                        // 共现的固定下一步只服务内省页，不计入「值得打扰」加分。
+                        has_next_step: interrupt_eligible && !draft.next_step.is_empty(),
                         first_or_worsened: inserted,
                         time_sensitive: false,
                         already_pushed_unread,
-                        pushed_today: 0,
+                        pushed_today,
                         model_delta,
                         model_reason,
                         extra_pending: 0,
+                        interrupt_eligible,
                     };
                     let decision = decide(&gin, &gcfg);
                     store.introspection_set_gate(
@@ -328,6 +334,8 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                         should_push = decision.should_push,
                         score = decision.score,
                         reason = %decision.reason,
+                        pushed_today,
+                        remaining_cap,
                         "闸门判定"
                     );
 
@@ -346,6 +354,7 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                             &decision.reason,
                             draft.verification.as_str(),
                         )?;
+                        pushed_today = pushed_today.saturating_add(1);
                     }
 
                     written += 1;

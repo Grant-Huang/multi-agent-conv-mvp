@@ -17,8 +17,8 @@ pub mod source;
 
 pub use analyze::{analyze_adoption, stats_for_template, AdoptionStats, TOPIC_ADOPTION};
 pub use cooccur::{
-    analyze_cooccurrence, stats_for_cooccur_key, CooccurStats, NON_ROOT_CAUSE_LABEL,
-    TOPIC_COOCCUR_ASSET, TOPIC_COOCCUR_BATCH,
+    analyze_cooccurrence, merge_cooccur_by_case_ids, stats_for_cooccur_key, CooccurStats,
+    NON_ROOT_CAUSE_LABEL, TOPIC_COOCCUR_ASSET, TOPIC_COOCCUR_BATCH,
 };
 pub use eval::{assert_adoption_stats, coverage_against_truth, truth_alarm_assets, DesEvalReport};
 pub use explain::{
