@@ -776,7 +776,7 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 ## World Adapter / DES 实验与运营（M0；DES-UI 已冻结）
 
 设计见 [WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md)、[DES_EXPERIMENT_OPS_SPLIT.md](../mom/DES_EXPERIMENT_OPS_SPLIT.md)、[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) §0；执行卡 [WA_M0_TASKS.md](../mom/WA_M0_TASKS.md)。  
-浏览器用例（`web/e2e/des-experiment.spec.ts`）：**断言已冻结（M0-0）**；实现前业务 Red，等 M0-1～M0-5 转绿。命名：`DES-UI-01～06` → `E2E-DES*`（`check-map` 允许的 `E2E-[A-Z]+`）。
+浏览器用例（`web/e2e/des-experiment.spec.ts`）：**断言已冻结（M0-0）**；M0-3 起六条在 Mock 独立实例上 Green。命名：`DES-UI-01～06` → `E2E-DES*`（`check-map` 允许的 `E2E-[A-Z]+`）。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|

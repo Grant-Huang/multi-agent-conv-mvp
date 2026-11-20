@@ -5,6 +5,7 @@ type Props = {
   onOpenTask: (taskId: string, source: string) => void;
   onOpenEvidence: (taskId: string) => void;
   onOpenDesExperiment?: () => void;
+  onOpenOpsChannel?: () => void;
   opsEnabled: boolean;
   cards?: DesktopCard[];
   assistantName?: string;
@@ -66,6 +67,7 @@ export function DesktopHome({
   onOpenTask,
   onOpenEvidence,
   onOpenDesExperiment,
+  onOpenOpsChannel,
   opsEnabled,
   cards = DESKTOP_CARDS,
   assistantName,
@@ -91,8 +93,8 @@ export function DesktopHome({
             运营模块未启用
           </p>
         )}
-        {onOpenDesExperiment && (
-          <p className="desktop-settings-links">
+        <p className="desktop-settings-links">
+          {onOpenDesExperiment && (
             <a
               href="#des-experiment"
               onClick={(e) => {
@@ -102,9 +104,22 @@ export function DesktopHome({
             >
               DES 仿真实验
             </a>
+          )}
+          {onOpenOpsChannel && (
+            <a
+              href="#ops-channel"
+              onClick={(e) => {
+                e.preventDefault();
+                onOpenOpsChannel();
+              }}
+            >
+              运营频道
+            </a>
+          )}
+          {(onOpenDesExperiment || onOpenOpsChannel) && (
             <span className="desktop-settings-hint">设置与管理</span>
-          </p>
-        )}
+          )}
+        </p>
       </header>
       {onS1Ask && onS1Delegate && onOpenBgTask && (
         <>

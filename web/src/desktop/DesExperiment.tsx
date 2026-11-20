@@ -16,22 +16,75 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "results", label: "结果" },
 ];
 
+const DES_STATE_KEY = "an.des.experiment";
+
+type Persisted = {
+  configVersion: string | null;
+  trialRunId: string | null;
+  trialDelivery: number;
+  officialRunId: string | null;
+  officialCaseId: string | null;
+  targetChannel: string;
+  startKey: string;
+  tab: Tab;
+};
+
+function readPersisted(): Partial<Persisted> {
+  try {
+    const raw = sessionStorage.getItem(DES_STATE_KEY);
+    return raw ? (JSON.parse(raw) as Persisted) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePersisted(p: Persisted) {
+  try {
+    sessionStorage.setItem(DES_STATE_KEY, JSON.stringify(p));
+  } catch {
+    /* 偏好 */
+  }
+}
+
 export function DesExperiment({ onOpenOpsChannel, onBack }: Props) {
-  const [tab, setTab] = useState<Tab>("config");
+  const saved = readPersisted();
+  const [tab, setTab] = useState<Tab>(saved.tab ?? "config");
   const [factory, setFactory] = useState("demo-factory");
   const [scenario, setScenario] = useState("tool-wear");
   const [seed, setSeed] = useState("42");
   const [duration, setDuration] = useState("480");
-  const [configVersion, setConfigVersion] = useState<string | null>(null);
-  const [targetChannel, setTargetChannel] = useState("ops-channel");
-  const [startKey, setStartKey] = useState("default");
-  const [trialRunId, setTrialRunId] = useState<string | null>(null);
-  const [trialDelivery, setTrialDelivery] = useState(0);
-  const [officialRunId, setOfficialRunId] = useState<string | null>(null);
-  const [officialCaseId, setOfficialCaseId] = useState<string | null>(null);
+  const [configVersion, setConfigVersion] = useState<string | null>(saved.configVersion ?? null);
+  const [targetChannel, setTargetChannel] = useState(saved.targetChannel ?? "ops-channel");
+  const [startKey, setStartKey] = useState(saved.startKey ?? "default");
+  const [trialRunId, setTrialRunId] = useState<string | null>(saved.trialRunId ?? null);
+  const [trialDelivery, setTrialDelivery] = useState(saved.trialDelivery ?? 0);
+  const [officialRunId, setOfficialRunId] = useState<string | null>(saved.officialRunId ?? null);
+  const [officialCaseId, setOfficialCaseId] = useState<string | null>(saved.officialCaseId ?? null);
   const [run, setRun] = useState<WorldMockRun | null>(null);
   const [alert, setAlert] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    writePersisted({
+      configVersion,
+      trialRunId,
+      trialDelivery,
+      officialRunId,
+      officialCaseId,
+      targetChannel,
+      startKey,
+      tab,
+    });
+  }, [
+    configVersion,
+    trialRunId,
+    trialDelivery,
+    officialRunId,
+    officialCaseId,
+    targetChannel,
+    startKey,
+    tab,
+  ]);
 
   const activeRunId = officialRunId ?? trialRunId;
 
@@ -130,14 +183,21 @@ export function DesExperiment({ onOpenOpsChannel, onBack }: Props) {
   };
 
   const control = async (action: "pause" | "resume" | "step") => {
-    const id = officialRunId ?? trialRunId;
-    if (!id) {
-      setAlert("非法参数：尚无运行可控制");
-      return;
-    }
     setBusy(true);
     setAlert(null);
     try {
+      let id = officialRunId ?? trialRunId;
+      if (!id) {
+        const version = await ensureConfig();
+        const r = await api.worldMock.startOfficial({
+          config_version: version,
+          target_channel: targetChannel,
+          start_key: startKey,
+        });
+        setOfficialRunId(r.official_run_id);
+        setOfficialCaseId(r.case_id);
+        id = r.official_run_id;
+      }
       const r = await api.worldMock.controlRun(id, {
         action,
         minutes: action === "step" ? 1 : undefined,
@@ -193,6 +253,24 @@ export function DesExperiment({ onOpenOpsChannel, onBack }: Props) {
         </div>
       )}
 
+      <div className="des-clock-bar" aria-label="实验时钟">
+        <button type="button" className="btn" disabled={busy} onClick={() => control("pause")}>
+          暂停
+        </button>
+        <button type="button" className="btn" disabled={busy} onClick={() => control("step")}>
+          单步推进
+        </button>
+        {officialRunId && (
+          <span
+            data-testid="run-status"
+            data-status={run?.run_status ?? "running"}
+            className="hint"
+          >
+            {run?.wait_label || run?.run_status || officialRunId}
+          </span>
+        )}
+      </div>
+
       {tab === "config" && (
         <section className="des-panel" aria-label="配置">
           <label className="des-field">
@@ -222,6 +300,9 @@ export function DesExperiment({ onOpenOpsChannel, onBack }: Props) {
             </button>
             <button type="button" className="btn" disabled={busy} onClick={startTrial}>
               试跑
+            </button>
+            <button type="button" className="btn" disabled={busy} onClick={startOfficial}>
+              启动正式运行
             </button>
           </div>
           {configVersion && (
@@ -285,12 +366,6 @@ export function DesExperiment({ onOpenOpsChannel, onBack }: Props) {
             <button type="button" className="btn primary" disabled={busy} onClick={startOfficial}>
               启动正式运行
             </button>
-            <button type="button" className="btn" disabled={busy || !officialRunId} onClick={() => control("pause")}>
-              暂停
-            </button>
-            <button type="button" className="btn" disabled={busy || !officialRunId} onClick={() => control("step")}>
-              单步推进
-            </button>
           </div>
           {officialRunId && (
             <>
@@ -301,13 +376,6 @@ export function DesExperiment({ onOpenOpsChannel, onBack }: Props) {
                 上次试跑 ID：<span data-testid="last-trial-run-id">{trialRunId ?? ""}</span>
               </p>
               {officialCaseId && <p className="hint">事项 {officialCaseId}</p>}
-              <p
-                data-testid="run-status"
-                data-status={run?.run_status ?? "running"}
-                className="hint"
-              >
-                {run?.wait_label || run?.run_status || "running"}
-              </p>
             </>
           )}
         </section>

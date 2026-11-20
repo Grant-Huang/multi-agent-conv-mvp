@@ -423,9 +423,23 @@ export default function App() {
     }
   };
 
-  const openOpsChannel = (_caseId: string) => {
+  /** 从实验页进入运营频道时保留返回「DES 仿真实验」；从桌面进入则按运营员视图隐藏实验入口（DESISO）。 */
+  const [opsFromExperiment, setOpsFromExperiment] = useState(false);
+  const openOpsChannel = (_caseId: string, fromExperiment = false) => {
+    setOpsFromExperiment(fromExperiment);
+    // 先同步切入频道，避免 click 后立刻 reload 时仍停在实验页（DESPAUSE）
     setMainView("chat");
-    selectConversation(OPS_CHANNEL_ID);
+    setCurrent(OPS_CHANNEL_ID);
+    writeCurrentConv(OPS_CHANNEL_ID);
+    api.worldMock
+      .ensureOpsSeed()
+      .catch(() => {})
+      .then(() => api.conversations())
+      .then((list) => {
+        setConversations(list);
+        return refreshConversation(OPS_CHANNEL_ID);
+      })
+      .catch(() => {});
   };
 
   /** 发送消息：先乐观地显示用户消息，等后端返回后再整体刷新 */
@@ -613,6 +627,7 @@ export default function App() {
             onOpenTask={(id) => openWorkspace(id)}
             onOpenEvidence={(id) => openEvidence(id)}
             onOpenDesExperiment={() => setMainView("des-experiment")}
+            onOpenOpsChannel={() => openOpsChannel(OPS_CHANNEL_ID, false)}
             opsEnabled={opsUnread !== null}
             assistantName={assistantProfile.name}
             s1BgJob={s1BgJob}
@@ -656,11 +671,24 @@ export default function App() {
         {mainView === "des-experiment" && (
           <DesExperiment
             onBack={() => setMainView("home")}
-            onOpenOpsChannel={() => openOpsChannel(OPS_CHANNEL_ID)}
+            onOpenOpsChannel={() => openOpsChannel(OPS_CHANNEL_ID, true)}
           />
         )}
         {mainView === "desk" && opsUnread !== null && (
-          <OpsDesk onOpenChannel={openOpsChannel} />
+          <OpsDesk onOpenChannel={(id) => openOpsChannel(id, false)} />
+        )}
+        {mainView === "chat" && opsFromExperiment && current === OPS_CHANNEL_ID && (
+          <div className="des-ops-return">
+            <a
+              href="#des-experiment"
+              onClick={(e) => {
+                e.preventDefault();
+                setMainView("des-experiment");
+              }}
+            >
+              DES 仿真实验
+            </a>
+          </div>
         )}
         {mainView === "chat" && (
           <ChatView
