@@ -17,6 +17,8 @@ import { OpsDesk } from "./components/OpsDesk";
 import { IntrospectionPanel } from "./components/IntrospectionPanel";
 import { DesktopHome } from "./desktop/DesktopHome";
 import { WorkspaceView } from "./desktop/WorkspaceView";
+import { EvidencePanel, type EvidenceLayer } from "./desktop/EvidencePanel";
+import { HistoryPanel } from "./desktop/HistoryPanel";
 import {
   SMT03_TASK_ID,
   readDesktopView,
@@ -27,6 +29,11 @@ import type { CatalogItem } from "./bindings/CatalogItem";
 import { roleLabel } from "./labels";
 
 type MainView = DesktopMainView;
+
+type DesktopSide =
+  | null
+  | { kind: "evidence"; taskId: string; layer: EvidenceLayer; evidenceId: string | null; mode?: "normal" | "empty" }
+  | { kind: "history" };
 
 /** 每个任务保留的进度条目数，超过后丢弃最早的 */
 const MAX_PROGRESS_LINES = 30;
@@ -351,9 +358,17 @@ export default function App() {
     setNavOpen(false);
   };
 
+  const [desktopSide, setDesktopSide] = useState<DesktopSide>(null);
+
   const openWorkspace = (taskId: string) => {
     setMainView("workspace", taskId);
     setNavOpen(false);
+  };
+
+  const openEvidence = (taskId: string, mode: "normal" | "empty" = "normal") => {
+    openWorkspace(taskId);
+    setDesktopSide({ kind: "evidence", taskId, layer: "list", evidenceId: null, mode });
+    setSideTab("tasks");
   };
 
   // 只有用户点开运营频道才算已读；页面刷新时自动回到该会话不清未读
@@ -449,6 +464,14 @@ export default function App() {
         >
           我的桌面
         </button>
+        <button
+          type="button"
+          className={`btn ${desktopSide?.kind === "history" ? "active" : ""}`}
+          data-testid="open-history"
+          onClick={() => setDesktopSide({ kind: "history" })}
+        >
+          历史
+        </button>
         <a className="btn" href="/mom/">MOM 运营沙盘</a>
         <p className="sidebar-label">最近</p>
         <nav className="conv-list" aria-label="最近工作">
@@ -534,10 +557,21 @@ export default function App() {
           />
         )}
         {mainView === "home" && (
-          <DesktopHome onOpenTask={(id) => openWorkspace(id)} opsEnabled={opsUnread !== null} />
+          <DesktopHome
+            onOpenTask={(id) => openWorkspace(id)}
+            onOpenEvidence={(id) => openEvidence(id)}
+            opsEnabled={opsUnread !== null}
+          />
         )}
         {mainView === "workspace" && workspaceTaskId && (
-          <WorkspaceView taskId={workspaceTaskId} onBack={() => setMainView("home")} />
+          <WorkspaceView
+            taskId={workspaceTaskId}
+            onBack={() => {
+              setDesktopSide(null);
+              setMainView("home");
+            }}
+            onOpenEvidence={() => openEvidence(workspaceTaskId)}
+          />
         )}
         {mainView === "desk" && opsUnread !== null && (
           <OpsDesk onOpenChannel={openOpsChannel} />
@@ -556,37 +590,69 @@ export default function App() {
       </main>
 
       <aside className="side" aria-label="任务与状态">
-        <div className="tabs" role="tablist">
-          <TabButton id="tasks" label="任务" active={activeTab} onSelect={setSideTab}>
-            {tasks.length > 0 && <span className="count">{tasks.length}</span>}
-          </TabButton>
-          <TabButton id="intro" label="内省" active={activeTab} onSelect={setSideTab}>
-            {introUnread !== null && introUnread > 0 && <span className="count" data-testid="intro-tab-unread">{introUnread}</span>}
-          </TabButton>
-          <TabButton id="agents" label="助手" active={activeTab} onSelect={setSideTab} />
-          <TabButton id="nodes" label="节点" active={activeTab} onSelect={setSideTab} />
-          {devMode && <TabButton id="diag" label="诊断" active={activeTab} onSelect={setSideTab} />}
-          {devMode && <TabButton id="logs" label="路由日志" active={activeTab} onSelect={setSideTab} />}
-        </div>
-        {activeTab === "tasks" && (
-          <TaskPanel
-            tasks={tasks}
-            incoming={incoming}
-            onChanged={() => current && refreshConversation(current)}
-            onTaskAction={taskAction}
-            messageIds={Object.fromEntries(messages.filter((m) => m.role === "user" && m.task_id).map((m) => [m.task_id as string, m.id]))}
+        {desktopSide?.kind === "evidence" ? (
+          <EvidencePanel
+            taskId={desktopSide.taskId}
+            layer={desktopSide.layer}
+            evidenceId={desktopSide.evidenceId}
+            mode={desktopSide.mode}
+            onLayer={(layer, evidenceId) =>
+              setDesktopSide({ ...desktopSide, layer, evidenceId })
+            }
+            onClose={() => setDesktopSide(null)}
+            onDemoEmpty={() =>
+              setDesktopSide({
+                kind: "evidence",
+                taskId: desktopSide.taskId,
+                layer: "list",
+                evidenceId: null,
+                mode: "empty",
+              })
+            }
           />
+        ) : desktopSide?.kind === "history" ? (
+          <HistoryPanel
+            onOpenTask={(id) => {
+              openWorkspace(id);
+              setDesktopSide(null);
+            }}
+            onClose={() => setDesktopSide(null)}
+          />
+        ) : (
+          <>
+            <div className="tabs" role="tablist">
+              <TabButton id="tasks" label="任务" active={activeTab} onSelect={setSideTab}>
+                {tasks.length > 0 && <span className="count">{tasks.length}</span>}
+              </TabButton>
+              <TabButton id="intro" label="内省" active={activeTab} onSelect={setSideTab}>
+                {introUnread !== null && introUnread > 0 && <span className="count" data-testid="intro-tab-unread">{introUnread}</span>}
+              </TabButton>
+              <TabButton id="agents" label="助手" active={activeTab} onSelect={setSideTab} />
+              <TabButton id="nodes" label="节点" active={activeTab} onSelect={setSideTab} />
+              {devMode && <TabButton id="diag" label="诊断" active={activeTab} onSelect={setSideTab} />}
+              {devMode && <TabButton id="logs" label="路由日志" active={activeTab} onSelect={setSideTab} />}
+            </div>
+            {activeTab === "tasks" && (
+              <TaskPanel
+                tasks={tasks}
+                incoming={incoming}
+                onChanged={() => current && refreshConversation(current)}
+                onTaskAction={taskAction}
+                messageIds={Object.fromEntries(messages.filter((m) => m.role === "user" && m.task_id).map((m) => [m.task_id as string, m.id]))}
+              />
+            )}
+            {activeTab === "intro" && <IntrospectionPanel />}
+            {activeTab === "agents" && <AgentsPanel />}
+            {activeTab === "nodes" && <NodesPanel />}
+            {activeTab === "diag" && <DiagnosticsPanel refreshTick={panelTick} />}
+            {activeTab === "logs" && <RouteLogPanel refreshTick={panelTick} />}
+            <div className="side-footer">
+              <button type="button" className="dev-toggle" aria-pressed={devMode} onClick={toggleDevMode}>
+                开发者模式：{devMode ? "开" : "关"}
+              </button>
+            </div>
+          </>
         )}
-        {activeTab === "intro" && <IntrospectionPanel />}
-        {activeTab === "agents" && <AgentsPanel />}
-        {activeTab === "nodes" && <NodesPanel />}
-        {activeTab === "diag" && <DiagnosticsPanel refreshTick={panelTick} />}
-        {activeTab === "logs" && <RouteLogPanel refreshTick={panelTick} />}
-        <div className="side-footer">
-          <button type="button" className="dev-toggle" aria-pressed={devMode} onClick={toggleDevMode}>
-            开发者模式：{devMode ? "开" : "关"}
-          </button>
-        </div>
       </aside>
     </div>
   );

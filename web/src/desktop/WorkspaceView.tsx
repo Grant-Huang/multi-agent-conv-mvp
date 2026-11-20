@@ -10,9 +10,10 @@ import { WorkspaceComposer } from "./WorkspaceComposer";
 type Props = {
   taskId: string;
   onBack: () => void;
+  onOpenEvidence?: () => void;
 };
 
-export function WorkspaceView({ taskId, onBack }: Props) {
+export function WorkspaceView({ taskId, onBack, onOpenEvidence }: Props) {
   const [layout, setLayout] = useState<WorkspaceLayout>(() => readWorkspaceLayout());
   const [execOpen, setExecOpen] = useState(true);
 
@@ -36,6 +37,11 @@ export function WorkspaceView({ taskId, onBack }: Props) {
           <span data-testid="workspace-task-id">{taskId}</span>
         </h2>
         <div className="workspace-layout-toggle" role="group" aria-label="工作区布局">
+          {onOpenEvidence && (
+            <button type="button" className="btn small" data-testid="workspace-open-evidence" onClick={onOpenEvidence}>
+              证据
+            </button>
+          )}
           <button
             type="button"
             className={layout === "s2" ? "btn small active" : "btn small"}

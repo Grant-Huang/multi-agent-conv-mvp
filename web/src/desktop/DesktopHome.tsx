@@ -1,18 +1,22 @@
-import { DESKTOP_CARDS, type DesktopCard } from "./mockData";
+import { DESKTOP_CARDS, SMT03_TASK_ID, type DesktopCard } from "./mockData";
 
 type Props = {
   onOpenTask: (taskId: string, source: string) => void;
+  onOpenEvidence: (taskId: string) => void;
   opsEnabled: boolean;
+  cards?: DesktopCard[];
 };
 
 function Zone({
   title,
   cards,
   onOpen,
+  onEvidence,
 }: {
   title: string;
   cards: DesktopCard[];
   onOpen: (c: DesktopCard) => void;
+  onEvidence: (taskId: string) => void;
 }) {
   return (
     <section className="desktop-zone" aria-label={title}>
@@ -20,17 +24,29 @@ function Zone({
       <ul className="desktop-card-list">
         {cards.map((c) => (
           <li key={c.id}>
-            <button
-              type="button"
-              className="desktop-card"
-              data-testid={c.id}
-              onClick={() => onOpen(c)}
-            >
-              <span className="desktop-card-title">{c.title}</span>
-              <span className="desktop-card-sub">{c.subtitle}</span>
-              <span className="desktop-card-id">{c.entityId}</span>
-              {c.simulated && <span className="desktop-sim">模拟</span>}
-            </button>
+            <div className="desktop-card-wrap">
+              <button
+                type="button"
+                className="desktop-card"
+                data-testid={c.id}
+                onClick={() => onOpen(c)}
+              >
+                <span className="desktop-card-title">{c.title}</span>
+                <span className="desktop-card-sub">{c.subtitle}</span>
+                <span className="desktop-card-id">{c.entityId}</span>
+                {c.simulated && <span className="desktop-sim">模拟</span>}
+              </button>
+              {c.entityId === SMT03_TASK_ID && (
+                <button
+                  type="button"
+                  className="btn small desktop-evidence-btn"
+                  data-testid="home-view-evidence"
+                  onClick={() => onEvidence(c.entityId)}
+                >
+                  查看证据
+                </button>
+              )}
+            </div>
           </li>
         ))}
       </ul>
@@ -38,7 +54,7 @@ function Zone({
   );
 }
 
-export function DesktopHome({ onOpenTask, opsEnabled }: Props) {
+export function DesktopHome({ onOpenTask, onOpenEvidence, opsEnabled, cards = DESKTOP_CARDS }: Props) {
   const open = (c: DesktopCard) => onOpenTask(c.entityId, "home-card");
   return (
     <div className="desktop-home" data-testid="desktop-home">
@@ -52,9 +68,9 @@ export function DesktopHome({ onOpenTask, opsEnabled }: Props) {
         )}
       </header>
       <div className="desktop-zones">
-        <Zone title="我的工作" cards={DESKTOP_CARDS.filter((c) => c.zone === "mine")} onOpen={open} />
-        <Zone title="Agent 工作" cards={DESKTOP_CARDS.filter((c) => c.zone === "agent")} onOpen={open} />
-        <Zone title="为你关注" cards={DESKTOP_CARDS.filter((c) => c.zone === "watch")} onOpen={open} />
+        <Zone title="我的工作" cards={cards.filter((c) => c.zone === "mine")} onOpen={open} onEvidence={onOpenEvidence} />
+        <Zone title="Agent 工作" cards={cards.filter((c) => c.zone === "agent")} onOpen={open} onEvidence={onOpenEvidence} />
+        <Zone title="为你关注" cards={cards.filter((c) => c.zone === "watch")} onOpen={open} onEvidence={onOpenEvidence} />
       </div>
     </div>
   );
