@@ -596,6 +596,9 @@
     "document": "docs/feature-map/features/agents.md",
     "sources": [
       "crates/runtime/src/conversation.rs",
+      "crates/runtime/src/agent_chat.rs",
+      "crates/runtime/src/router.rs",
+      "crates/runtime/tests/agmgmt_route.rs",
       "crates/runtime/src/store.rs",
       "crates/runtime/src/agent_config.rs",
       "crates/core/src/lib.rs",
@@ -614,7 +617,11 @@
       "RT-AGCHAT-08",
       "RT-AGCHAT-09",
       "RT-AGCHAT-10",
-      "RT-AGCHAT-11"
+      "RT-AGCHAT-11",
+      "RT-AGCHAT-12",
+      "RT-AGCHAT-13",
+      "RT-AGCHAT-14",
+      "RT-AGMGMT-01"
     ]
   },
   {

@@ -449,7 +449,19 @@ impl ConversationRuntime {
             created_at: an_core::now(),
         };
 
-        // 3. Turn Controller
+        // 3. 管理助手意图：HowTo 与开关关闭时的引导不调用前台模型（RT-AGCHAT-13/14）
+        // 开关打开时仍先让模型判断（保留 agent_id 等细节）；若误判为 delegate，见下方覆盖。
+        match crate::agent_chat::mgmt_hint(text) {
+            Some(crate::agent_chat::MgmtHint::HowTo) => {
+                return self.handle_mgmt_hint(log, started, crate::agent_chat::MgmtHint::HowTo);
+            }
+            Some(hint @ crate::agent_chat::MgmtHint::Action(_)) if self.agents.is_none() => {
+                return self.handle_mgmt_hint(log, started, hint);
+            }
+            _ => {}
+        }
+
+        // 4. Turn Controller
         let decision = match self.decide_turn(&history, &active).await {
             Ok(d) => {
                 log.raw_outputs.extend(d.raw_outputs);
@@ -472,9 +484,22 @@ impl ConversationRuntime {
                 );
             }
         };
+        // RT-AGCHAT-12：模型误判为 delegate（去读配置）时，覆盖为 manage_agents
+        let decision = match (&decision, crate::agent_chat::mgmt_hint(text)) {
+            (TurnDecision::Delegate { .. }, Some(crate::agent_chat::MgmtHint::Action(op)))
+                if self.agents.is_some() =>
+            {
+                TurnDecision::ManageAgents {
+                    op,
+                    agent_id: String::new(),
+                    role: None,
+                }
+            }
+            _ => decision,
+        };
         log.turn_decision = Some(decision.clone());
 
-        // 4. 按决策执行
+        // 5. 按决策执行
         let ctx = Self::context_text(&history_views);
         match &decision {
             TurnDecision::Respond { .. } => {
@@ -534,6 +559,44 @@ impl ConversationRuntime {
         }
     }
 
+    /// 管理助手意图的确定性处理（不调用前台判断模型）
+    fn handle_mgmt_hint(
+        &self,
+        mut log: RouteLog,
+        started: Instant,
+        hint: crate::agent_chat::MgmtHint,
+    ) -> Result<TurnOutcome> {
+        match hint {
+            crate::agent_chat::MgmtHint::HowTo => {
+                let reply = crate::agent_chat::executor_howto().to_string();
+                let decision = TurnDecision::Respond {
+                    reply: reply.clone(),
+                };
+                log.turn_decision = Some(decision.clone());
+                self.finish(log, started, Some(decision), None, &reply)
+            }
+            crate::agent_chat::MgmtHint::Action(op) => {
+                if let Some(a) = &self.agents {
+                    let (content, card) = a.wizard(op, "", None);
+                    let decision = TurnDecision::ManageAgents {
+                        op,
+                        agent_id: String::new(),
+                        role: None,
+                    };
+                    log.turn_decision = Some(decision.clone());
+                    self.finish_with_card(log, started, decision, &content, card)
+                } else {
+                    let reply = crate::agent_chat::management_disabled_guidance();
+                    let decision = TurnDecision::Respond {
+                        reply: reply.clone(),
+                    };
+                    log.turn_decision = Some(decision.clone());
+                    self.finish(log, started, Some(decision), None, &reply)
+                }
+            }
+        }
+    }
+
     /// 委派：Router 路由 + Policy 校验 + Orchestrator 派发
     async fn delegate(
         &self,
@@ -582,8 +645,21 @@ impl ConversationRuntime {
                 log.route_decision = f.decision.map(|d| *d);
                 log.error = Some(f.message.clone());
                 // 没有可用的执行者：不改派给别的角色，由前台模型用大白话说明并给出替代办法（AG.2）
+                // 管理助手类目标被 Router 拒绝时，直接给引导话术（第二道安全网）
                 let reply = if f.message.contains(an_core::codes::ROUTE_NO_AGENT) {
                     self.no_agent_reply(goal, role, &f.message).await
+                } else if crate::agent_chat::mgmt_hint(goal).is_some()
+                    || f.message.contains("管理本机助手")
+                {
+                    if self.agents.is_some() {
+                        format!(
+                            "{}\n\n{}",
+                            f.message.trim_end_matches('。'),
+                            crate::agent_chat::executor_howto()
+                        )
+                    } else {
+                        crate::agent_chat::management_disabled_guidance()
+                    }
                 } else {
                     format!("这个任务暂时无法派发：{}", f.message)
                 };
