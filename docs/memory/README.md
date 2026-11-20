@@ -19,7 +19,7 @@
 | S2 | ✅ | SourceAdapter / 采纳模式 / 校验器 |
 | S3 | ✅ | 发送闸门 |
 | S4 | ✅ | 调度 / 租约 / 超时 / 取消 |
-| S5–S8 | ⏳ | 见 [INTROSPECTION_PLAYBOOK.md](INTROSPECTION_PLAYBOOK.md) |
+| S5–S8 | ✅ | 见 [INTROSPECTION_PLAYBOOK.md](INTROSPECTION_PLAYBOOK.md)；S8 第二阶段 RT-INT-02b 待根因字段 |
 
 ## 接手规则（弱 agent 也必须遵守）
 

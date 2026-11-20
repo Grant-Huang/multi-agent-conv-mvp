@@ -229,6 +229,8 @@ async fn rt_int_10_rerun_insert_idempotent_after_reject() {
                 case_id: "a".into(),
                 template: "t".into(),
                 scenario: "s1".into(),
+                asset: String::new(),
+                batch: String::new(),
                 approvals: vec![ApprovalSummary {
                     id: "p".into(),
                     scope: "production".into(),
@@ -249,6 +251,8 @@ async fn rt_int_10_rerun_insert_idempotent_after_reject() {
                 case_id: "b".into(),
                 template: "t".into(),
                 scenario: "s1".into(),
+                asset: String::new(),
+                batch: String::new(),
                 approvals: vec![ApprovalSummary {
                     id: "p".into(),
                     scope: "production".into(),
@@ -269,6 +273,8 @@ async fn rt_int_10_rerun_insert_idempotent_after_reject() {
                 case_id: "c".into(),
                 template: "t".into(),
                 scenario: "s1".into(),
+                asset: String::new(),
+                batch: String::new(),
                 approvals: vec![ApprovalSummary {
                     id: "p".into(),
                     scope: "production".into(),

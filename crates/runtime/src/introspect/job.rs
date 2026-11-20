@@ -7,9 +7,11 @@ use anyhow::{Context, Result};
 use tokio::sync::watch;
 
 use super::analyze::analyze_adoption;
+use super::cooccur::analyze_cooccurrence;
 use super::explain::{ExplainOutcome, ModelExplainer};
 use super::finding::{
-    input_digest_from_stats, stable_finding_id, validate_draft, ValidateOutcome, Verification,
+    input_digest_from_draft_stats, stable_finding_id, validate_draft, DraftStats, ValidateOutcome,
+    Verification,
 };
 use super::gate::{decide, GateConfig, GateInput};
 use super::model::IntrospectionFinding;
@@ -163,7 +165,9 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
             let cases = source.list_case_summaries()?;
             tokio::task::spawn_blocking(move || {
                 let mem = super::source::MemorySource { source_id, cases };
-                analyze_adoption(&mem, analysis_now, min_samples)
+                let mut drafts = analyze_adoption(&mem, analysis_now, min_samples)?;
+                drafts.extend(analyze_cooccurrence(&mem, analysis_now, min_samples)?);
+                Ok::<_, anyhow::Error>(drafts)
             })
             .await
             .context("分析任务 join 失败")??
@@ -221,7 +225,7 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                                 } => {
                                     debug_assert_eq!(
                                         draft.stats, stats_snapshot,
-                                        "模型解释不得改 AdoptionStats"
+                                        "模型解释不得改 DraftStats"
                                     );
                                     hypothesis = h;
                                     model_delta = d;
@@ -239,22 +243,39 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                     }
                     // 再次确认数字未被改写
                     if draft.stats != stats_snapshot {
-                        anyhow::bail!("模型解释路径改写了 AdoptionStats，已中止本条");
+                        anyhow::bail!("模型解释路径改写了 DraftStats，已中止本条");
                     }
 
-                    let digest = input_digest_from_stats(&draft.stats);
+                    let digest = input_digest_from_draft_stats(&draft.stats);
                     let fid = stable_finding_id(draft.topic, &draft.scope, &digest);
                     let at = now();
-                    let json = serde_json::to_string(&serde_json::json!({
-                        "template": draft.stats.template,
-                        "approvals_total": draft.stats.approvals_total,
-                        "succeeded_verified": draft.stats.succeeded_verified,
-                        "action_failed": draft.stats.action_failed,
-                        "approval_expired_unused": draft.stats.approval_expired_unused,
-                        "latency_secs": draft.stats.latency_secs,
-                        "hypothesis": hypothesis,
-                        "next_step": draft.next_step,
-                    }))?;
+                    let impact_cases = match &draft.stats {
+                        DraftStats::Adoption(s) => {
+                            s.approvals_total.max(draft.evidence.len() as u32)
+                        }
+                        DraftStats::Cooccur(s) => s.case_count.max(draft.evidence.len() as u32),
+                    };
+                    let json = match &draft.stats {
+                        DraftStats::Adoption(s) => serde_json::to_string(&serde_json::json!({
+                            "template": s.template,
+                            "approvals_total": s.approvals_total,
+                            "succeeded_verified": s.succeeded_verified,
+                            "action_failed": s.action_failed,
+                            "approval_expired_unused": s.approval_expired_unused,
+                            "latency_secs": s.latency_secs,
+                            "hypothesis": hypothesis,
+                            "next_step": draft.next_step,
+                        }))?,
+                        DraftStats::Cooccur(s) => serde_json::to_string(&serde_json::json!({
+                            "key_kind": s.key_kind,
+                            "key": s.key,
+                            "case_count": s.case_count,
+                            "case_ids": s.case_ids,
+                            "non_root_cause": true,
+                            "hypothesis": hypothesis,
+                            "next_step": draft.next_step,
+                        }))?,
+                    };
                     let row = IntrospectionFinding {
                         id: fid.clone(),
                         job_id: job_id.clone(),
@@ -283,7 +304,7 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                     let gin = GateInput {
                         finding_id: fid.clone(),
                         verification: draft.verification.clone(),
-                        impact_cases: draft.stats.approvals_total.max(draft.evidence.len() as u32),
+                        impact_cases,
                         has_next_step: !draft.next_step.is_empty(),
                         first_or_worsened: inserted,
                         time_sensitive: false,

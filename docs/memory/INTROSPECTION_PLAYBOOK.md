@@ -487,16 +487,18 @@ G-6：无「个人」页签 → 角标挂会话列表即可；E2E-INTROUNREAD �
 
 ---
 
-## 8. S8 — 同因复发（先核实）
+## 8. S8 — 同设备/同批次描述性共现（第一阶段）
 
-**状态**：⏳  
-**用例**：RT-INT-02（核实后可能重写，**重写前必须用户确认**）
+**状态**：✅  
+**用例**：RT-INT-02；第二阶段 RT-INT-02b（已确认根因复发）待根因字段可用  
+**核实结论**（2026-11-20，决策第 62 条）：
 
-核实清单（写进 PR，先于代码）：
+1. `eight_d` / `proposal`：**不能**稳定取出可聚合根因。
+2. `claimed_causes`：在 `des_reviews`，不进 Case，`MomSource` 读不到；且是假设。
+3. **无** `regressed` → 第一阶段做同 `asset` / 同 `batch` 描述性共现，结论标明「非根因」。
+4. 外发仍经发送闸门（重要性/相关性）。
 
-1. `Case.eight_d` / `proposal` / `des_reviews.claimed_causes` 能否稳定取出根因？
-2. 有没有 `regressed`？没有则只做「同 `asset` / 同 `batch` 反复出现」描述性统计，并在结论标明「非根因」。
-3. 更新 G-10 与 ACCEPTANCE 中 RT-INT-02 行，再实现。
+**落点**：`introspect/cooccur.rs`；`CaseSummary.asset/batch`；`run_once` 串联 `analyze_cooccurrence`。
 
 ---
 
@@ -549,7 +551,7 @@ cd web && npm run test:map
 | G-6 | 角标挂会话列表 |
 | G-7/G-8 | 主题暂缓 |
 | G-9 | 测试跳过记忆断言 |
-| G-10 | S8 核实 |
+| G-10 | S8 第一阶段已落地描述性共现；02b 待根因字段 |
 
 ---
 
@@ -579,4 +581,4 @@ cd web && npm run test:map
 | S5 | ✅ | #132 |
 | S6 | ✅ | #135 |
 | S7 | ✅ | （本 PR） |
-| S8 | ⏳ | — |
+| S8 | ✅ | （本 PR） |

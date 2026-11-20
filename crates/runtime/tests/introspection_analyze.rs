@@ -45,6 +45,8 @@ fn adoption_fixture_13() -> MemorySource {
             case_id: format!("ok-{i}"),
             template: "line_incident".into(),
             scenario: "s1".into(),
+            asset: String::new(),
+            batch: String::new(),
             approvals: vec![approval("production", 10_000)],
             actions: vec![ok_action(&format!("ok-{i}:a"))],
             event_times: vec![(1, 50)],
@@ -55,6 +57,8 @@ fn adoption_fixture_13() -> MemorySource {
             case_id: format!("fail-{i}"),
             template: "line_incident".into(),
             scenario: "s1".into(),
+            asset: String::new(),
+            batch: String::new(),
             approvals: vec![approval("production", 10_000)],
             actions: vec![failed_action(&format!("fail-{i}:a"))],
             event_times: vec![(1, 50)],
@@ -65,6 +69,8 @@ fn adoption_fixture_13() -> MemorySource {
             case_id: format!("exp-{i}"),
             template: "line_incident".into(),
             scenario: "s1".into(),
+            asset: String::new(),
+            batch: String::new(),
             approvals: vec![approval("production", 100)], // < NOW，过期
             actions: vec![],
             event_times: vec![(1, 50)],
@@ -84,22 +90,23 @@ fn rt_int_03_adoption_pattern_matches_recomputed_stats() {
     let d = &drafts[0];
     assert_eq!(d.topic, TOPIC_ADOPTION);
     assert_eq!(d.scope, "line_incident");
-    assert_eq!(d.stats.approvals_total, 13);
-    assert_eq!(d.stats.succeeded_verified, 9);
-    assert_eq!(d.stats.action_failed, 2);
-    assert_eq!(d.stats.approval_expired_unused, 2);
-    assert!(!d.stats.insufficient_sample);
+    let s = d.stats.as_adoption().expect("采纳统计");
+    assert_eq!(s.approvals_total, 13);
+    assert_eq!(s.succeeded_verified, 9);
+    assert_eq!(s.action_failed, 2);
+    assert_eq!(s.approval_expired_unused, 2);
+    assert!(!d.stats.insufficient_sample());
     assert_eq!(d.verification, Verification::Supported);
     assert_eq!(
-        d.stats.latency_secs,
+        s.latency_secs,
         vec![2; 9],
         "耗时 = complete_at - accepted_at"
     );
     // 不含源数据没有的字段
     assert!(!d.hypothesis.contains("驳回"));
 
-    let id1 = stable_finding_id(d.topic, &d.scope, &input_digest_from_stats(&d.stats));
-    let id2 = stable_finding_id(d.topic, &d.scope, &input_digest_from_stats(&d.stats));
+    let id1 = stable_finding_id(d.topic, &d.scope, &input_digest_from_stats(s));
+    let id2 = stable_finding_id(d.topic, &d.scope, &input_digest_from_stats(s));
     assert_eq!(id1, id2);
     assert!(id1.starts_with("intf-"));
 
@@ -115,6 +122,8 @@ fn rt_int_03_adoption_pattern_matches_recomputed_stats() {
             case_id: "s".into(),
             template: "tiny".into(),
             scenario: "s1".into(),
+            asset: String::new(),
+            batch: String::new(),
             approvals: vec![approval("production", 10_000)],
             actions: vec![ok_action("s:a")],
             event_times: vec![],
@@ -122,7 +131,7 @@ fn rt_int_03_adoption_pattern_matches_recomputed_stats() {
     };
     let tiny = analyze_adoption(&small, NOW, MIN_SAMPLES).unwrap();
     assert_eq!(tiny.len(), 1);
-    assert!(tiny[0].stats.insufficient_sample);
+    assert!(tiny[0].stats.insufficient_sample());
     assert_eq!(tiny[0].verification, Verification::Inconclusive);
     assert!(tiny[0].hypothesis.contains("样本不足"));
 }
@@ -177,6 +186,8 @@ fn rt_int_07_insufficient_evidence_is_inconclusive() {
             case_id: "c1".into(),
             template: "t".into(),
             scenario: "s1".into(),
+            asset: String::new(),
+            batch: String::new(),
             approvals: vec![approval("production", 10_000)],
             actions: vec![],
             event_times: vec![(1, 1)],
@@ -206,7 +217,10 @@ fn rt_int_08_unresolvable_evidence_is_dropped() {
     // 篡改数字也应 Drop
     let mut numbers_tampered = bad.clone();
     numbers_tampered.evidence.pop(); // 先恢复引用
-    numbers_tampered.stats.succeeded_verified = 0;
+    match &mut numbers_tampered.stats {
+        DraftStats::Adoption(s) => s.succeeded_verified = 0,
+        other => panic!("期望 Adoption，得到 {other:?}"),
+    }
 
     match validate_draft(&src, &bad).unwrap() {
         ValidateOutcome::Drop { reason } => assert!(reason.contains("不可解析")),

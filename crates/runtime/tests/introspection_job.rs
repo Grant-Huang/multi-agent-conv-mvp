@@ -48,6 +48,8 @@ fn case(id: &str, template: &str) -> CaseSummary {
         case_id: id.into(),
         template: template.into(),
         scenario: "s1".into(),
+        asset: String::new(),
+        batch: String::new(),
         approvals: vec![approval(10_000)],
         actions: vec![ok_action(&format!("{id}:a"))],
         event_times: vec![(1, 50)],

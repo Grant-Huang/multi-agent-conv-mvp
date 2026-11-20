@@ -1,6 +1,6 @@
 //! 方案采纳模式：确定性统计，不调用模型。
 
-use super::finding::{EvidenceRef, FindingDraft, Verification};
+use super::finding::{DraftStats, EvidenceRef, FindingDraft, Verification};
 use super::source::{ActionSummary, CaseSummary, SourceAdapter};
 
 pub const TOPIC_ADOPTION: &str = "adoption_pattern";
@@ -136,7 +136,7 @@ pub fn analyze_adoption(
         out.push(FindingDraft {
             topic: TOPIC_ADOPTION,
             scope: tpl,
-            stats,
+            stats: DraftStats::Adoption(stats),
             evidence,
             verification,
             hypothesis,
