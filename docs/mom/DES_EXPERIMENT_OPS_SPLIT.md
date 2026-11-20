@@ -1,6 +1,6 @@
 # DES 仿真实验与 MOM 运营入口拆分
 
-本设计增补以 [World Adapter 协议](WORLD_ADAPTER.md) 为基础。首版交付和用例见 [实施计划](WORLD_ADAPTER_PLAN.md) 和 [Feature Map](../feature-map/features/world-adapter.md)。
+本设计增补以 [World Adapter 协议](WORLD_ADAPTER.md) 为基础（决定 62）。首版交付和用例见 [实施计划](WORLD_ADAPTER_PLAN.md)、[M0 执行卡](WA_M0_TASKS.md) 和 [Feature Map](../feature-map/features/world-adapter.md)。
 
 ## 1. 产品入口
 

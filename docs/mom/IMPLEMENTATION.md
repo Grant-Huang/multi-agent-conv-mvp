@@ -37,7 +37,9 @@ cargo run --bin an-mom -- --db data/mom.db --bind 127.0.0.1:8790
 
 专家工作流节点绑定（E1-C 方案 B）：`mom::binding` 把 data-collection 中专家确认的工作流图编译为带节点绑定（执行者、领域、工具、技能、闸门）的工作流模板并校验，只做编译和统计，不接入编排器执行。规则、结果与局限见 `docs/mom/EXPERT_BINDING.md`；`cargo run -p an-runtime --example promote_expert` 重新生成结果。
 
-车间 DES 阶段①（开环，台账 M27、M28）：`mom::des` 按规律模型（Gamma 主轴磨损、振动分区、刀具寿命离散、模型 Cpk）和场景模式（并发簇、诱饵、级联、资源竞争、安静对照、固定剧本）生成事件与标准答案；`Engine::create_des_simulation` 把事件按虚拟时钟投递给引擎，标准答案只能经 `Engine::des_review_truth` 读取，不进入任何视图。阶段②起，DES 案例的维护、质量、资源、排产工具读取仿真的可观测快照，排产给出 A/B/C 三个方案；只读 HTTP 接口：`POST /api/mom/des/simulations`、`GET /api/mom/factory?simulation=`、`GET /api/mom/factory/forecast?simulation=`、`POST /api/mom/factory/whatif`（`crates/server/src/mom_sim.rs`）。what-if 与预测只用可观测状态，不读隐状态。阶段③起为闭环：`select_plan` 命令选定方案（选定后需重新批准），执行后维修、刀具调拨记为仿真干预并重新推演，动作完成时刻由仿真决定；执行后同一设备的振动、质量观测记为核验证据；同线报警案例以 `RelatedCaseLinked` 关联。设计见 `docs/mom/DES_CLOSED_LOOP.md`，用例 RT-DES-01～05、16、17。
+车间 DES（台账 M27、M28）：阶段①开环内核与场景生成；阶段②工具读取与 what-if；阶段③起闭环（`select_plan` → 审批 → 执行后维修/刀具调拨为干预并重新推演，动作完成时刻由仿真决定，同源复检为核验证据）；阶段④审核与批量实验；阶段⑤a-1～③ 独立工厂 `an-des` / `an-des-mcp`、连接器与 `an-mom --des-mcp`（RT-DESC-01～12）。只读 HTTP：`POST /api/mom/des/simulations`、`GET /api/mom/factory?simulation=`、`GET /api/mom/factory/forecast?simulation=`、`POST /api/mom/factory/whatif`（`crates/server/src/mom_sim.rs`）。标准答案只能经审核入口读取。设计见 `docs/mom/DES_CLOSED_LOOP.md`。
+
+**下一步（产品）**：原阶段⑤车间视图并入 World Adapter 前端先行路径（M0 协议 Mock → M1 远程 DES 读 → M2 写与确认 → M3/M4 生产）。协议与里程碑见 `docs/mom/WORLD_ADAPTER.md`、`WORLD_ADAPTER_PLAN.md`；计划对齐见决定 61 与 DES-31。
 
 可选主模型入口：`cargo run --bin an-mom -- --llm-config config.toml`，读取现有 `[llm]` 配置。最多一个 Master 请求/案例、全局最多四个；模型 60 秒外层超时，45 秒客户端超时，一次格式修正，上限 512 输出 token。模型结果通过版本检查和受限 intent 校验。当前只开放 wait/delegation，不宣传为完整 LLM 自主排产；真实模型未配置、未验证。
 

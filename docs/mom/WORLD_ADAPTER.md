@@ -9,7 +9,9 @@
 
 采用完整前端先行，各里程碑用同一前端完成全流程。详见 [实施计划与 Mock 替换](WORLD_ADAPTER_PLAN.md) 和 [Playwright Feature Map](../feature-map/features/world-adapter.md)。
 
-[DES 实验与运营入口拆分](DES_EXPERIMENT_OPS_SPLIT.md) 定义实验人员和运营人员的产品路径。实验控制经独立入口授权，正式运行的可处置事项由 MOM 发布到 AI 桌面。
+[DES 实验与运营入口拆分](DES_EXPERIMENT_OPS_SPLIT.md) 定义实验人员和运营人员的产品路径（决定 62）。实验控制经独立入口授权，正式运行的可处置事项由 MOM 发布到 AI 桌面。
+
+与现行计划的关系（2026-11-20）：DES 内核闭环与⑤a 远程工厂基线仍以 [DES_CLOSED_LOOP.md](DES_CLOSED_LOOP.md) 为准；原阶段⑤「车间视图」、WP1 GS1 产品前门与运营桌面 D3 按 DES-31 并入本文 M0～M2；交付硬约束见 DES-32。系统打通总表见 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md)，进度入口见 [PLAN.md](../PLAN.md)。
 
 ## 1. 目标与架构
 

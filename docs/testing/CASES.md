@@ -619,6 +619,15 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | PY-DLP-M3 | 中文密码/口令、token=、DB_PASS=、OpenAI项目key、Google key、同形字AWS/GitHub，共8种合成输入 | evaluate到external_untrusted | 全部BLOCK、不可发送且无原值；其余原文（含℃）不变；正常Unicode和术语不被改写 |
 
 
+## AI Desktop A1（壳层与导航；断言冻结）
+
+设计见 `docs/ai-desktop/DESIGN.md`，追溯 `docs/ai-desktop/TRACEABILITY.md`，决定 61。A 阶段 SMT-03 允许纯 Mock（`TASK-2026-018`）。浏览器用例：`web/e2e/desktop.spec.ts`（默认 harness 18787）。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| E2E-ADNAV | ai-desktop | 干净浏览器；Mock 首页种子含 SMT-03 | 打开 `/`；从首页卡打开任务；返回桌面；再从侧栏「最近」打开同一任务；查看运营入口 | 见「我的 AI 桌面」与三区；工作区 Task ID 为 `TASK-2026-018`；返回后仍在桌面首页；再次打开仍为同一 ID；`[mom]` 未开时无「运营桌面」页签且可见「运营模块未启用」说明 |
+| E2E-ADLAYOUT | ai-desktop | 已从首页打开 SMT-03 工作区 | S2→S3→S2；刷新页面 | 仍在同一 Task；布局偏好恢复为离开前的 S2 或 S3；执行区展开状态可观察 |
+
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 
 设计见 `docs/mom/OPS_DESK.md`，决策见 DECISIONS 第 56–58 条。以下为**草案**：待用户确认断言后，才写成可执行测试并登记到 `features.json`（因此暂不写成表格行，避免被 `check-map` 当作缺测试的已登记用例）。数据全部来自 DES 事件（先进程内），仅替换外部模型。
@@ -744,3 +753,17 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | RT-REV-03 | approval | 返工用尽 | reject | FAILED |
 | RT-REV-04 | approval | 已是 COMPLETED | accept 或 reject | 409，状态不变 |
 | E2E-REV-01 | approval | 浏览器任务卡为有 result 的待人工 | 点「判定通过」 | 状态与交付文案为已完成 |
+
+
+## World Adapter / DES 实验与运营（M0 草案，断言待冻结）
+
+设计见 [WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md)、[DES_EXPERIMENT_OPS_SPLIT.md](../mom/DES_EXPERIMENT_OPS_SPLIT.md)、[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) §0；执行卡 [WA_M0_TASKS.md](../mom/WA_M0_TASKS.md)。下列为**草案 bullet**（未写成表格行，避免 check-map 当作已登记缺测试）。用户确认断言后，按 `E2E-[A-Z]+` 正式命名并配 Playwright。
+
+- **DES-UI-01 配置试跑**：实验员保存配置并试跑 → 非法参数有明确提示；预览有试跑 ID；运营频道新增卡为零。
+- **DES-UI-02 正式启动**：核对配置版本与目标频道后启动 → 重试仍只有一个正式运行；试跑与正式 ID 不同；同一事项只发一张正确标注的卡。
+- **DES-UI-03 运营处置**：运营员打开异常卡 → 查看方案 → 批准 → 查看执行 → 完全在 AI 桌面完成；审批匹配方案/事项/世界；执行证据更新原卡。
+- **DES-UI-04 暂停恢复**：实验员暂停 → 运营员见等待状态 → 单步推进 → 重连后回执正确；重复及迟到事件不复制或回退卡片。
+- **DES-UI-05 隔离授权**：运营员无法进入实验控制；用运行 A 的审批提交到 B → 服务端拒绝，无数据泄露，计数不变。
+- **DES-UI-06 双角色闭环**：实验员启动正式运行 → 运营员批准维修 → 实验员推进 → 运营员看核验证据 → Mock 下业务路径闭环；标准答案仅审核可见（物理断言随 M2）。
+
+配套 WA-01～08、UI01～16 仍按 Feature Map 在各里程碑回归。M0 在 Mock 环境跑通适用断言；M1/M2 替换适配器后同路径重跑。
