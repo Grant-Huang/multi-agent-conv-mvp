@@ -44,3 +44,54 @@ test('E2E-ADLAYOUT: S2与S3切换后刷新仍恢复布局', async ({ page }) => 
   await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
   await expect(page.getByTestId('workspace')).toHaveAttribute('data-layout', 's2');
 });
+
+test('E2E-ADDRAFT: 两任务草稿隔离且延迟发送不覆盖追加输入', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-input').fill('草稿甲-SMT');
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await page.getByTestId('card-product').click();
+  await expect(page.getByTestId('workspace-task-id')).toHaveText('TASK-2026-021');
+  await page.getByTestId('workspace-input').fill('草稿乙-产品');
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await page.getByTestId('card-smt-03').click();
+  await expect(page.getByTestId('workspace-input')).toHaveValue('草稿甲-SMT');
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await page.getByTestId('card-product').click();
+  await expect(page.getByTestId('workspace-input')).toHaveValue('草稿乙-产品');
+
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-input').fill('待发送正文');
+  await page.getByTestId('workspace-send').click();
+  await expect(page.getByTestId('workspace-reply')).toContainText('发送中');
+  await page.getByTestId('workspace-input').fill('追加草稿保留');
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await page.getByTestId('card-product').click();
+  await expect
+    .poll(() => page.evaluate(() => sessionStorage.getItem('an.desktop.late.v1:TASK-2026-018')), { timeout: 5_000 })
+    .toBeTruthy();
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await page.getByTestId('card-smt-03').click();
+  await expect(page.getByTestId('workspace-input')).toHaveValue('追加草稿保留');
+  await expect(page.getByTestId('workspace-late').first()).toContainText('迟到回执');
+});
+
+test('E2E-ADSCOPE: 独立话题与继续任务及关联纠正', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByRole('button', { name: '独立话题', exact: true }).click();
+  await expect(page.getByTestId('scope-reason')).toContainText('独立话题');
+  await expect(page.getByTestId('scope-task-id')).toHaveCount(0);
+
+  await page.getByRole('button', { name: '继续当前任务', exact: true }).click();
+  await expect(page.getByTestId('scope-task-id')).toContainText(SMT03_TASK_ID);
+
+  await page.getByRole('button', { name: '纠正关联', exact: true }).click();
+  await expect(page.getByTestId('scope-reason')).toContainText('独立话题');
+  await expect(page.getByTestId('scope-audit')).toContainText('撤回关联');
+
+  await page.getByRole('button', { name: '转为任务', exact: true }).click();
+  await expect(page.getByTestId('scope-task-id')).toContainText(SMT03_TASK_ID);
+  await expect(page.getByTestId('scope-audit')).toContainText('建立关联');
+});
