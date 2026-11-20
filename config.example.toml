@@ -108,8 +108,12 @@ stream_replies = true             # 直接回答时边生成边显示
 # 由代码算出类别。与是否思考无关。默认不开（本机实验未通过，见 docs/DECISIONS.md 第 42 条）
 # route_class_questions = true
 # 前台提速实验（FT.5b）T：general 任务的类别改由路由列出的工具清单算出
-# （有 write_file 以外的工具 = 要取数；有 write_file 或模型给 L3/L4 = 要文档）。只改结果，不改请求。默认不开
-# route_class_from_tools = true
+# （有 write_file 以外的工具 = 要取数；有 write_file 或模型给 L3/L4 = 要文档）。只改结果，不改请求。
+# 默认打开；与 route_class_questions 同时打开时以两问为准。写 false 关闭
+# route_class_from_tools = false
+# 前台提速实验（FT.6）C：前台写任务描述时只写用户明确提出的要求，补全"那份文件"等指代，
+# 不添加用户没提的要求；用户贴出的内容仍原样放入。只改提示词。默认不开
+# concise_task_goal = true
 
 # ───── Agents ─────
 [agents.general]

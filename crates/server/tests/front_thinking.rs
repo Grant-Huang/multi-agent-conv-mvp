@@ -604,14 +604,16 @@ async fn routed_class(rt: &Runtime, goal: &str) -> TaskClass {
     }
 }
 
-/// RT-FT-17：不写 route_class_from_tools 时，类别保持模型给的值（基线守护）
+/// RT-FT-17：route_class_from_tools = false 时，类别保持模型给的值。
+/// 2026-11-19 需求变更（DECISIONS 第 46 条，用户同意）：默认值改为打开，
+/// 本用例由"不写配置"改为"显式关闭"，断言不变。
 #[tokio::test]
 async fn rt_ft_17_class_from_tools_off_keeps_model_class() {
     let llm = MockLlm::start(Arc::new(|_, _, _| {
         route_ct("general", "L1", &["read_file"])
     }))
     .await;
-    let rt = runtime(&llm.base, 0, "", "");
+    let rt = runtime(&llm.base, 0, "", "route_class_from_tools = false");
     assert_eq!(
         routed_class(&rt, "读一下 notes/todo.md").await,
         TaskClass::L1
@@ -673,4 +675,79 @@ async fn rt_ft_20_class_from_tools_does_not_change_request() {
         reqs.push((req["messages"].clone(), req["response_format"].clone()));
     }
     assert_eq!(reqs[0], reqs[1]);
+}
+
+// ───────────── FT.6：前台不扩写任务描述（RT-FT-21 ~ RT-FT-22） ─────────────
+
+const CONCISE: &str = "concise_task_goal = true";
+const CONCISE_RULE: &str = "不要添加用户没有提出的要求";
+
+/// 跑一次前台判断，返回发给模型的 turn_decision 请求
+async fn turn_request(conv_extra: &str) -> Value {
+    let llm = MockLlm::start(Arc::new(|_, _, _| turn_ok("写一份周报"))).await;
+    let rt = runtime(&llm.base, 0, "", conv_extra);
+    rt.conversation
+        .decide_turn(&user("写一份周报"), &[])
+        .await
+        .map_err(|e| e.to_string())
+        .unwrap();
+    llm.calls("turn_decision")[0].clone()
+}
+
+/// RT-FT-21：不写 concise_task_goal 时，task_goal 规则保持原样（基线守护）
+#[tokio::test]
+async fn rt_ft_21_concise_goal_off_keeps_prompt() {
+    let sys = system_prompt(&turn_request("").await);
+    assert!(sys.contains("写成完整、可独立执行的任务描述"), "{sys}");
+    assert!(!sys.contains(CONCISE_RULE), "{sys}");
+}
+
+/// RT-FT-22：打开后，提示词要求不扩写，但仍补全指代、仍原样放入贴出的内容；schema 不变
+#[tokio::test]
+async fn rt_ft_22_concise_goal_on_changes_prompt_only() {
+    let off = turn_request("").await;
+    let on = turn_request(CONCISE).await;
+    let sys = system_prompt(&on);
+    assert!(sys.contains(CONCISE_RULE), "{sys}");
+    assert!(sys.contains("指代"), "应要求补全指代：{sys}");
+    assert!(
+        sys.contains("原样放进 task_goal"),
+        "贴出的内容仍须原样放入：{sys}"
+    );
+    assert_eq!(
+        on["response_format"], off["response_format"],
+        "schema 不应改变"
+    );
+}
+
+// ───────────── FT.5b 默认打开（RT-FT-23 ~ RT-FT-24） ─────────────
+
+/// RT-FT-23：不写 route_class_from_tools 时默认打开，general 任务按工具清单重算类别
+#[tokio::test]
+async fn rt_ft_23_class_from_tools_on_by_default() {
+    let llm = MockLlm::start(Arc::new(|_, _, _| {
+        route_ct("general", "L1", &["read_file"])
+    }))
+    .await;
+    let rt = runtime(&llm.base, 0, "", "");
+    assert_eq!(
+        routed_class(&rt, "读一下 notes/todo.md").await,
+        TaskClass::L2
+    );
+}
+
+/// RT-FT-24：两问与工具清单规则同时打开时，以两问为准
+#[tokio::test]
+async fn rt_ft_24_class_questions_take_precedence() {
+    let llm = MockLlm::start(Arc::new(|_, _, _| route_q(true, false))).await;
+    let rt = runtime(
+        &llm.base,
+        0,
+        "",
+        "route_class_questions = true\nroute_class_from_tools = true",
+    );
+    assert_eq!(
+        routed_class(&rt, "帮我算一下 3600 * 0.975").await,
+        TaskClass::L2
+    );
 }

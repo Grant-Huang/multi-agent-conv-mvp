@@ -467,7 +467,11 @@ impl Router {
         };
 
         let mut decision = structured.value;
-        if self.class_from_tools && decision.execution_role == Role::General {
+        // 两问打开时以两问的答案为准，工具清单规则不介入（DECISIONS 第 46 条）
+        if self.class_from_tools
+            && !self.class_questions
+            && decision.execution_role == Role::General
+        {
             let before = decision.task_class;
             decision.task_class = class_from_tools(before, &decision.required_tools);
             if decision.task_class != before {

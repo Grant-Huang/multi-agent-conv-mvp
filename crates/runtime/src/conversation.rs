@@ -61,6 +61,8 @@ pub struct ConversationDeps {
     /// General 工具清单（给 Turn Controller 看）
     pub tools: String,
     pub review_mode: ReviewMode,
+    /// FT.6：task_goal 只写用户明确提出的要求
+    pub concise_goal: bool,
     pub stream_replies: bool,
 }
 
@@ -255,6 +257,7 @@ impl ConversationRuntime {
             prompt_info: TurnPromptInfo {
                 tools: d.tools,
                 review_mode: d.review_mode,
+                concise_goal: d.concise_goal,
             },
             stream_replies: d.stream_replies,
             locks: ConvLocks::new(),
