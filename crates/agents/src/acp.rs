@@ -584,7 +584,12 @@ fn enum_str<T: Serialize>(v: &T) -> String {
 }
 
 /// 处理 agent 推送的 session/update
-fn on_update(state: &Mutex<Collected>, events: &EventSink, update: SessionUpdate) {
+fn on_update(
+    state: &Mutex<Collected>,
+    events: &EventSink,
+    watch: &crate::progress_watch::ProgressWatchdog,
+    update: SessionUpdate,
+) {
     let mut st = state.lock().unwrap();
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
@@ -594,7 +599,7 @@ fn on_update(state: &Mutex<Collected>, events: &EventSink, update: SessionUpdate
         }
         SessionUpdate::ToolCall(call) => {
             let (kind, status) = (enum_str(&call.kind), enum_str(&call.status));
-            events.progress(format!("工具调用：{}（{kind}）", call.title));
+            watch.progress(events, format!("工具调用：{}（{kind}）", call.title));
             let id = call.tool_call_id.to_string();
             collect_diffs(&mut st.diffs, &call.content);
             st.tool_order.push(id.clone());
@@ -627,7 +632,7 @@ fn on_update(state: &Mutex<Collected>, events: &EventSink, update: SessionUpdate
                             "失败"
                         }
                     );
-                    events.progress(msg);
+                    watch.progress(events, msg);
                 }
             }
             if !st.tool_order.contains(&id) {
@@ -641,7 +646,7 @@ fn on_update(state: &Mutex<Collected>, events: &EventSink, update: SessionUpdate
                 .map(|e| e.content.clone())
                 .collect::<Vec<_>>()
                 .join(" / ");
-            events.progress(format!("计划：{}", truncate_chars(&steps, 300)));
+            watch.progress(events, format!("计划：{}", truncate_chars(&steps, 300)));
         }
         // 思考片段、模式变化、用量等对用户意义不大，忽略
         _ => {}
@@ -750,11 +755,17 @@ impl AgentAdapter for AcpAgent {
             format!("{}\n\n## 背景信息\n{}", task.goal, task.context)
         };
         let baseline = snapshot_worktree(&workdir).await;
-        events.progress(format!(
-            "启动 ACP agent：{}（工作目录 {}）",
-            self.card.name,
-            workdir.display()
+        let progress_watch = Arc::new(crate::progress_watch::ProgressWatchdog::start(
+            events.clone(),
         ));
+        progress_watch.progress(
+            &events,
+            format!(
+                "启动 ACP agent：{}（工作目录 {}）",
+                self.card.name,
+                workdir.display()
+            ),
+        );
 
         let state = Arc::new(Mutex::new(Collected::default()));
         // 用于区分"握手失败"和"执行中出错"，两者错误码不同，便于排查
@@ -766,8 +777,13 @@ impl AgentAdapter for AcpAgent {
         );
         let mode = self.cfg.permission;
 
-        let (st_n, ev_n) = (state.clone(), events.clone());
-        let (st_p, ev_p, tid_p) = (state.clone(), events.clone(), task_id.clone());
+        let (st_n, ev_n, w_n) = (state.clone(), events.clone(), progress_watch.clone());
+        let (st_p, ev_p, w_p, tid_p) = (
+            state.clone(),
+            events.clone(),
+            progress_watch.clone(),
+            task_id.clone(),
+        );
         let init_flag = initialized.clone();
         let cwd = workdir.clone();
 
@@ -777,7 +793,7 @@ impl AgentAdapter for AcpAgent {
             // agent 推送的进度
             .on_receive_notification(
                 async move |n: SessionNotification, _cx| {
-                    on_update(&st_n, &ev_n, n.update);
+                    on_update(&st_n, &ev_n, &w_n, n.update);
                     Ok(())
                 },
                 acp::on_receive_notification!(),
@@ -787,7 +803,7 @@ impl AgentAdapter for AcpAgent {
                 async move |req: RequestPermissionRequest, responder, _cx| {
                     let (outcome, desc) = decide_permission(mode, &req);
                     tracing::info!(event = "acp.permission", task_id = %tid_p, decision = %desc);
-                    ev_p.progress(format!("权限请求：{desc}"));
+                    w_p.progress(&ev_p, format!("权限请求：{desc}"));
                     st_p.lock().unwrap().permissions.push(desc);
                     responder.respond(RequestPermissionResponse::new(outcome))
                 },

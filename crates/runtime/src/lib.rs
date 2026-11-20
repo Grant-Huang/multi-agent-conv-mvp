@@ -31,6 +31,7 @@ pub mod policy;
 pub mod prompts;
 pub mod registry;
 pub mod router;
+pub mod run_progress;
 pub mod store;
 pub mod template;
 
