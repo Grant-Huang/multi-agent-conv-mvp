@@ -226,7 +226,7 @@ pub enum ValidateOutcome {
 
 ## 3. S3 — 发送闸门
 
-**状态**：⏳  
+**状态**：✅  
 **用例**：RT-INT-16、17、18、19、20、22  
 **落点**：`introspect/gate.rs`；测试 `crates/runtime/tests/introspection_gate.rs`  
 **依赖**：S2 的 `FindingDraft` / `Verification`（可把 S2 输出映射为闸门输入结构）。
@@ -574,7 +574,7 @@ cd web && npm run test:map
 | S0 | ✅ | #107 |
 | S1 | ✅ | #122 |
 | S2 | ✅ | （本 PR） |
-| S3 | ⏳ | — |
+| S3 | ✅ | （本 PR） |
 | S4 | ⏳ | — |
 | S5 | ⏳ | — |
 | S6 | ⏳ | — |
