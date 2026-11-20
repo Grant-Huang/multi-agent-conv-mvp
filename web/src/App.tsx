@@ -311,7 +311,10 @@ export default function App() {
           }
         }
       } catch {
+        // 与运营频道一致：接口不存在（旧后端 / 未挂载）时停止轮询
         if (!stopped) setIntroUnread(null);
+        stopped = true;
+        clearInterval(timer);
       }
     };
     const timer = setInterval(poll, 2000);
