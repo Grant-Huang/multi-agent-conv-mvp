@@ -718,6 +718,9 @@
       "web/src/desktop/SettingsPanel.tsx",
       "web/src/desktop/profileStore.ts",
       "web/src/desktop/readAnchorStore.ts",
+      "web/src/desktop/attentionStore.ts",
+      "web/src/desktop/S1AskBar.tsx",
+      "web/src/desktop/AttentionToast.tsx",
       "web/src/desktop/evidenceMock.ts",
       "web/src/desktop/mockData.ts",
       "web/src/components/ChatView.tsx",
@@ -725,7 +728,8 @@
       "web/e2e/ops.spec.ts",
       "docs/ai-desktop/DESIGN.md",
       "docs/ai-desktop/TRACEABILITY.md",
-      "docs/testing/evidence/ai-desktop-a2.1.md"
+      "docs/testing/evidence/ai-desktop-a2.1.md",
+      "docs/testing/evidence/ai-desktop-a5.1.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -737,7 +741,9 @@
       "E2E-ADHISTORY",
       "E2E-ADPROF",
       "E2E-ADINPUT",
-      "E2E-ADREAD"
+      "E2E-ADREAD",
+      "E2E-ADASK",
+      "E2E-ADATTN"
     ]
   },
   {

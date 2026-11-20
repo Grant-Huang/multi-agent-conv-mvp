@@ -1,4 +1,5 @@
 import { DESKTOP_CARDS, SMT03_TASK_ID, type DesktopCard } from "./mockData";
+import { S1AskBar, type S1BgJob } from "./S1AskBar";
 
 type Props = {
   onOpenTask: (taskId: string, source: string) => void;
@@ -7,6 +8,11 @@ type Props = {
   opsEnabled: boolean;
   cards?: DesktopCard[];
   assistantName?: string;
+  s1BgJob?: S1BgJob | null;
+  onS1Ask?: (text: string) => void;
+  onS1Delegate?: (text: string) => void;
+  onOpenBgTask?: (taskId: string) => void;
+  s1Reply?: string | null;
 };
 
 function Zone({
@@ -63,6 +69,11 @@ export function DesktopHome({
   opsEnabled,
   cards = DESKTOP_CARDS,
   assistantName,
+  s1BgJob = null,
+  onS1Ask,
+  onS1Delegate,
+  onOpenBgTask,
+  s1Reply = null,
 }: Props) {
   const open = (c: DesktopCard) => onOpenTask(c.entityId, "home-card");
   return (
@@ -95,6 +106,16 @@ export function DesktopHome({
           </p>
         )}
       </header>
+      {onS1Ask && onS1Delegate && onOpenBgTask && (
+        <>
+          <S1AskBar bgJob={s1BgJob} onAsk={onS1Ask} onDelegate={onS1Delegate} onOpenBgTask={onOpenBgTask} />
+          {s1Reply && (
+            <p className="s1-reply" data-testid="s1-reply" role="status">
+              {s1Reply}
+            </p>
+          )}
+        </>
+      )}
       <div className="desktop-zones">
         <Zone title="我的工作" cards={cards.filter((c) => c.zone === "mine")} onOpen={open} onEvidence={onOpenEvidence} />
         <Zone title="Agent 工作" cards={cards.filter((c) => c.zone === "agent")} onOpen={open} onEvidence={onOpenEvidence} />

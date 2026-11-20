@@ -254,3 +254,53 @@ test('E2E-ADINPUT: 响应式设置入口、Escape、IME 与减少动态效果', 
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', '1');
 });
+
+test('E2E-ADASK: S1 问答与委派不强制导航', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByTestId('s1-ask-bar')).toBeVisible();
+  await page.getByTestId('s1-ask-input').fill('SMT-03 概况如何');
+  await page.getByTestId('s1-ask-send').click();
+  await expect(page.getByTestId('s1-reply')).toContainText('问答');
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
+  await expect(page.getByTestId('workspace')).toHaveCount(0);
+
+  await page.getByTestId('s1-ask-input').fill('深入调查并整理证据链');
+  await page.getByTestId('s1-delegate').click();
+  await expect(page.getByTestId('s1-bg-chip')).toBeVisible();
+  await expect(page.getByTestId('s1-bg-status')).toContainText(/提交中|已受理/);
+  await expect.poll(async () => page.getByTestId('s1-bg-status').innerText()).toContain('已受理');
+  await expect(page.getByTestId('s1-bg-task')).toHaveText(SMT03_TASK_ID);
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
+
+  await page.getByTestId('s1-ask-input').fill('后台跑着时继续问');
+  await page.getByTestId('s1-ask-send').click();
+  await expect(page.getByTestId('s1-reply')).toContainText('继续问');
+  await expect(page.getByTestId('s1-bg-chip')).toBeVisible();
+
+  await page.getByTestId('s1-bg-open').click();
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+});
+
+test('E2E-ADATTN: 输入中普通建议不抢焦点且可静音', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '＋ 新会话' }).click();
+  const input = page.getByRole('textbox', { name: '输入消息' });
+  await input.focus();
+  await input.fill('正在写草稿');
+  await expect(input).toBeFocused();
+
+  await page.getByTestId('attn-inject-ordinary').click();
+  await expect(page.getByTestId('attn-item-ordinary')).toBeVisible();
+  await expect(page.getByTestId('attn-no-steal')).toBeVisible();
+  await expect(input).toBeFocused();
+
+  await page.getByTestId('attn-mute-toggle').click();
+  await expect(page.getByTestId('attn-mute-toggle')).toHaveAttribute('aria-pressed', 'true');
+  const before = await page.getByTestId('attn-item-ordinary').count();
+  await page.getByTestId('attn-inject-ordinary').click();
+  await expect(page.getByTestId('attn-item-ordinary')).toHaveCount(before);
+
+  await page.getByTestId('attn-inject-urgent').click();
+  await expect(page.getByTestId('attn-item-urgent')).toBeVisible();
+  await expect(input).toBeFocused();
+});
