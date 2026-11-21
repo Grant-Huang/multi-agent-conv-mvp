@@ -807,7 +807,9 @@
       "docs/testing/evidence/wa-m0-6.md",
       "docs/mom/WA_MOCK_REGISTRY.md",
       "docs/mom/WA_M1_TASKS.md",
-      "docs/testing/evidence/wa-m1-0.md"
+      "docs/testing/evidence/wa-m1-0.md",
+      "docs/testing/evidence/wa-m1-1-red.md",
+      "web/e2e/wa-des-remote.spec.ts"
     ],
     "coverage": "browser",
     "cases": [
@@ -818,7 +820,10 @@
       "E2E-DESISO",
       "E2E-DESLOOP",
       "E2E-WABIND",
-      "E2E-WACHANNEL"
+      "E2E-WACHANNEL",
+      "E2E-WADES",
+      "E2E-WAREAD",
+      "E2E-WAOBS"
     ],
     "runtime_cases": [
       "RT-WA-01",

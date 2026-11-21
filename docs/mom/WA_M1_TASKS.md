@@ -8,8 +8,8 @@
 
 | 卡片 | 内容 | 状态 | 依赖 |
 |---|---|---|---|
-| M1-0 | 冻结用例草案与任务卡；勾选 M0 完成；同步 PLAN / Feature Map | 本 PR | M0 准出 |
-| M1-1 | 主应用挂载远程 DES：世界绑定 → `DesConnector` 运行；合同 `RT-WADES*` | 未开始 | M1-0 |
+| M1-0 | 冻结用例草案与任务卡；勾选 M0 完成；同步 PLAN / Feature Map | 已完成（#176） | M0 准出 |
+| M1-1 | 正式 CASES + Red 空壳；随后接线世界绑定 → `DesConnector`（高风险先方案） | 本 PR：E2E Red + RT 表/证据；Green 另卡 | M1-0 |
 | M1-2 | 正式投递水位：tick 后发布快照/公开事件；Observe/Subscribe 续读无漏无重 | 未开始 | M1-1 |
 | M1-3 | 实验控制接远程创建/推进；试跑隔离；正式运行事项投递运营频道 | 未开始 | M1-1 |
 | M1-4 | 浏览器：WA-01/02/07 远程 DES 场景（正式 E2E id）+ M0 全量回归 | 未开始 | M1-2、M1-3 |
@@ -21,7 +21,7 @@
 
 设计项 WA-01、02、07 在远程 DES 上的验收需独立于 M0 Mock 路径。写入 `CASES.md` 表格前用 `E2E-[A-Z]+` / `RT-[A-Z0-9-]+`。建议映射（M1-0 草案，**待用户确认后改表格 + 空壳**）：
 
-| 设计 | 拟正式 id | 要点 |
+| 设计 | 正式 id | 要点 |
 |---|---|---|
 | WA-01（远程绑定） | `E2E-WADES` | 会话/工作台绑定远程 DES 世界；跨世界不泄露；`provenance` 可辨 DES |
 | WA-02（续读） | `E2E-WAREAD` | 断线或过期游标后重连/重新读取；同事件 ID 只应用一次；水位单独显示 |
@@ -32,15 +32,15 @@
 | 合同：试跑隔离 | `RT-WADES-04` | 试跑 `delivery_count=0`；正式运行投递 ≥1 且有 `case_id` |
 | 回归 | 既有 `RT-DESC-*`、`./scripts/wa-m0-suite.sh` | M1 合入前全绿；写路径仍 Mock |
 
-M0 的 `E2E-DES*` / `E2E-WABIND` / `E2E-WACHANNEL` / `RT-WA-01～09` **不得弱化**，作为全量回归基线。
+M0 的 `E2E-DES*` / `E2E-WABIND` / `E2E-WACHANNEL` / `RT-WA-01～09` **不得弱化**，作为全量回归基线。断言已确认并写入 CASES 表格（M1-1 Red）。
 
 ## 2. M1-0：冻结与收尾
 
 1. 本文件落地；`docs/PLAN.md` 勾选 M0-6 / M0，增加 M1 执行卡入口。
 2. `WA_M0_TASKS.md` 将 M0-6 标为已完成（#175）。
-3. 将上表断言写成 CASES **草案 bullet**（勿先写表格行，避免 check-map 报缺测试）。
+3. ~~草案 bullet~~ → **已完成**：正式表格 + 空壳（`wa-des-remote.spec.ts`、`mom_world_des.rs`）。
 4. Feature Map / `WA_MOCK_REGISTRY` 指向本文件与「M1 读路径待替换」。
-5. **用户确认断言后**，M1-1 起：表格行 + 空壳测试（业务 Red）→ 再改实现。
+5. 下一步：接线 `/api/world/des`（改 `engine` / `DesConnector` 前先出方案）→ Green。
 
 ## 3. M1-1～M1-3：服务端（纲要）
 

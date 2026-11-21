@@ -824,16 +824,19 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WA-08 | world-adapter | 审核员与运营员 | 审核员读 `ground_truth`；运营员读同一接口 | 审核员可见；运营员 `ACCESS_DENIED` 或字段为空 |
 | RT-WA-09 | world-adapter | 默认 `AppConfig`；未 merge Mock 路由的服务与已挂载 Mock | 读默认 `mom.world_mock`；对未挂载与已挂载分别 POST configs | 默认 `world_mock=false`；未挂载 → 404；挂载 → `protocol_version=1` 且有 `config_version` |
 
-### M1 远程 DES 读取（草案，待确认后改表格）
+### M1 远程 DES 读取（断言已冻结；M1-1 Red）
 
-执行卡：[WA_M1_TASKS.md](../mom/WA_M1_TASKS.md)。下列为断言草案（**尚未**写入正式表格 / `features.json`，避免 check-map 缺测试）：
+执行卡：[WA_M1_TASKS.md](../mom/WA_M1_TASKS.md)。浏览器用例：`web/e2e/wa-des-remote.spec.ts`（已登记，业务 Red）。合同 `RT-WADES-*` 表格已冻结；HTTP 空壳 Red 证据见 `docs/testing/evidence/wa-m1-1-red.md`，可执行 `mom_world_des.rs` 随 Green 入库。路由前缀约定 `/api/world/des`（相对 M0 `/api/world/mock`）；写路径仍 Mock。M0 套件不得弱化。
 
-- **E2E-WADES**（WA-01）：Given 主应用可挂远程 DES，When 工作台/会话绑定该世界并切换另一世界，Then 同一 world/case 一致、跨世界不泄露、来源可辨 DES。
-- **E2E-WAREAD**（WA-02）：Given 已有正式投递游标，When 断线或游标过期后重连/重新读取，Then 同事件 ID 只应用一次，过期与水位单独显示。
-- **E2E-WAOBS**（WA-07）：Given 远程正式运行，When 推进仿真并打开观测/事项，Then 可见正式投递的设备或质量观测，且不含审核标准答案。
-- **RT-WADES-01**：绑定 `DesConnector` 运行后世界可读；未连接返回明确错误。
-- **RT-WADES-02**：tick 完成 MOM 投递后 Observe 才见新事件；中断后服务最近完整边界。
-- **RT-WADES-03**：Subscribe 续读无漏无重；游标过期 → `CURSOR_EXPIRED`。
-- **RT-WADES-04**：试跑 `delivery_count=0`；正式运行投递 ≥1 且有 `case_id`。
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| E2E-WADES | world-adapter | 主应用可挂远程 DES；工作台可选 DES 世界 | 绑定远程世界 → 看板/任务/资源打开同一事项 → 再切另一世界 | 同一 world/case；跨世界不泄露；`data-provenance` 或来源标签为 DES |
+| E2E-WAREAD | world-adapter | 远程正式运行已有投递游标 | 断线或游标过期后点「重新读取」/重连 | 同事件 ID 只应用一次；过期与水位单独显示（非正常空态） |
+| E2E-WAOBS | world-adapter | 远程正式运行已推进 | 打开观测或事项进展 | 可见正式投递的设备/质量观测；界面不含审核标准答案字段 |
 
-用户确认后：改成表格行 + 空壳测试（业务 Red）再实现（M1-1 起）。写路径仍 Mock；M0 套件不得弱化。
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-WADES-01 | world-adapter | 可启动 `DesConnector` 的测试进程；另测未连接 | 创建远程运行并绑定世界；未连接时再绑 | 绑定返回 `world_id` 且 `provenance=des`、`protocol_version=1`；未连接明确错误（非 200） |
+| RT-WADES-02 | world-adapter | 已绑定远程世界 | tick 完成 MOM 投递前后分别 Observe | 投递前无新业务事件；投递后可见；中断后仍服务最近完整边界 |
+| RT-WADES-03 | world-adapter | 已 Observe 取得游标 | Subscribe 续读；再注入过期游标 | 无漏、无重复事件 ID；过期 → `CURSOR_EXPIRED`（HTTP 409） |
+| RT-WADES-04 | world-adapter | 远程实验控制可用 | 试跑一次；正式启动一次 | 试跑 `delivery_count=0`；正式 `delivery_count≥1` 且有 `case_id`；试跑 ID ≠ 正式 ID |
