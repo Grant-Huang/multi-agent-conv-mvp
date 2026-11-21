@@ -1,6 +1,12 @@
-//! World Adapter M1 远程 DES 读合同：RT-WADES-01～04（见 docs/testing/CASES.md）。
+//! World Adapter M1 远程 DES 读合同：RT-WADES-01～08（见 docs/testing/CASES.md）。
 //! Green：挂载 `/api/world/des`；不改 DesConnector / engine。
 
+use std::path::Path;
+use std::sync::Arc;
+
+use an_core::ChatCard;
+use an_runtime::mom::ops_desk::OPS_CHANNEL_ID;
+use an_runtime::store::Store;
 use an_server::mom_world_des::{router, WorldDesState};
 use serde_json::{json, Value};
 
@@ -24,6 +30,17 @@ async fn des_server_with_controls() -> (String, tokio::task::JoinHandle<()>) {
         axum::serve(listener, app).await.unwrap();
     });
     (url, task)
+}
+
+async fn des_server_with_ops(connected: bool) -> (String, Arc<Store>, tokio::task::JoinHandle<()>) {
+    let store = Arc::new(Store::open(Path::new(":memory:")).unwrap());
+    let app = router(WorldDesState::with_app_store(connected, store.clone()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    (url, store, task)
 }
 
 async fn bind_world(client: &reqwest::Client, url: &str) -> String {
@@ -479,4 +496,102 @@ async fn rt_wades_06_snapshot_aligns_and_event_ids_dedupe() {
         .unwrap();
     assert_eq!(again["events"].as_array().unwrap().len(), ids.len());
     assert_eq!(again["publish_seq"], seq);
+}
+
+/// RT-WADES-07：试跑不向运营频道投递事项卡。
+#[tokio::test]
+async fn rt_wades_07_trial_does_not_deliver_ops_channel() {
+    let (url, store, _task) = des_server_with_ops(true).await;
+    let client = reqwest::Client::new();
+
+    let trial = client
+        .post(format!("{url}{DES_API}/experiment/trials"))
+        .headers(experimenter())
+        .json(&json!({
+            "factory": "plant-a",
+            "scenario": "s1",
+            "seed": 1,
+            "duration_minutes": 60,
+            "request_id": "trial-ops-iso"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(trial.status(), 200);
+    let trial_body: Value = trial.json().await.unwrap();
+    assert_eq!(trial_body["delivery_count"], 0);
+    assert_eq!(trial_body["mode"], "trial");
+
+    let msgs = store
+        .list_message_views(OPS_CHANNEL_ID, None)
+        .unwrap_or_default();
+    assert!(
+        msgs.is_empty(),
+        "试跑不得向运营频道投影，got {} 条",
+        msgs.len()
+    );
+}
+
+/// RT-WADES-08：正式运行向运营频道投递 OpsCase（provenance=des）。
+#[tokio::test]
+async fn rt_wades_08_official_delivers_ops_case_to_channel() {
+    let (url, store, _task) = des_server_with_ops(true).await;
+    let client = reqwest::Client::new();
+
+    let trial: Value = client
+        .post(format!("{url}{DES_API}/experiment/trials"))
+        .headers(experimenter())
+        .json(&json!({
+            "factory": "plant-a",
+            "scenario": "s1",
+            "seed": 2,
+            "duration_minutes": 30,
+            "request_id": "trial-before-official"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let official = client
+        .post(format!("{url}{DES_API}/experiment/official"))
+        .headers(experimenter())
+        .json(&json!({
+            "config_version": trial["config_version"],
+            "target_channel": "ops-channel",
+            "start_key": "official-ops-deliver"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(official.status(), 200);
+    let off: Value = official.json().await.unwrap();
+    assert!(off["delivery_count"].as_u64().unwrap_or(0) >= 1);
+    let case_id = off["case_id"].as_str().unwrap_or("").to_string();
+    assert!(!case_id.is_empty());
+
+    let msgs = store
+        .list_message_views(OPS_CHANNEL_ID, None)
+        .expect("运营频道应已创建");
+    let card = msgs
+        .into_iter()
+        .find_map(|m| m.card)
+        .expect("正式运行须投递 OpsCase");
+    match card {
+        ChatCard::OpsCase {
+            case_id: cid,
+            provenance,
+            stage,
+            ..
+        } => {
+            assert_eq!(cid, case_id);
+            assert_eq!(provenance, "des");
+            assert_eq!(stage, "WAITING_HUMAN");
+        }
+        other => panic!("应是 OpsCase，got {other:?}"),
+    }
 }

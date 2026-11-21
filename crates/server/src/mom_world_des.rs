@@ -3,11 +3,16 @@
 //! 服务层独立实现，对齐 `mom_world_mock` 字段形状，`provenance=des`。
 //! 正式投递水位在本适配器内维护：ingest → commit 后才向 Observe 暴露事件与快照。
 //! M1-2：投递中断仍服务最近完整边界；快照与事件同一 `publish_seq`；事件 ID 去重。
+//! M1-3：试跑零运营投影；正式运行向运营频道投递 `OpsCase`（provenance=des）。
 //! 不改 `engine.rs` / `DesConnector` 内部；写路径仍走 `/api/world/mock`。
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use an_core::ChatCard;
+use an_runtime::mom::ops_desk::OPS_CHANNEL_ID;
+use an_runtime::store::Store as AppStore;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
@@ -16,6 +21,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 const PROTOCOL_VERSION: u32 = 1;
+const OPS_CHANNEL_TITLE: &str = "运营频道";
 
 /// `connector_available=false` 时绑定失败（模拟未挂 DesConnector）。
 #[derive(Clone)]
@@ -23,6 +29,7 @@ pub struct WorldDesState {
     inner: Arc<Mutex<Store>>,
     connector_available: bool,
     allow_test_controls: bool,
+    app_store: Option<Arc<AppStore>>,
 }
 
 impl WorldDesState {
@@ -31,6 +38,7 @@ impl WorldDesState {
             inner: Arc::new(Mutex::new(Store::default())),
             connector_available,
             allow_test_controls: false,
+            app_store: None,
         }
     }
 
@@ -39,6 +47,16 @@ impl WorldDesState {
             inner: Arc::new(Mutex::new(Store::default())),
             connector_available,
             allow_test_controls: true,
+            app_store: None,
+        }
+    }
+
+    pub fn with_app_store(connector_available: bool, app_store: Arc<AppStore>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Store::default())),
+            connector_available,
+            allow_test_controls: false,
+            app_store: Some(app_store),
         }
     }
 }
@@ -61,6 +79,8 @@ struct Store {
     cursor_generation: HashMap<String, u64>,
     /// 下一 tick 只 ingest、不 commit（测试控件）
     abort_before_publish: HashSet<String>,
+    /// case_id → 运营频道消息 id
+    case_messages: HashMap<String, String>,
 }
 
 #[derive(Clone)]
@@ -127,6 +147,52 @@ fn lock_err() -> (StatusCode, Json<Value>) {
 fn next_id(store: &mut Store, prefix: &str) -> String {
     store.next += 1;
     format!("{prefix}-{}", store.next)
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn des_ops_card(
+    run_id: &str,
+    case_id: &str,
+    stage: &str,
+    summary: &str,
+    plan_revision: u64,
+) -> ChatCard {
+    ChatCard::OpsCase {
+        case_id: case_id.into(),
+        title: format!("DES · {run_id}"),
+        level: "P0".into(),
+        stage: stage.into(),
+        summary: summary.into(),
+        owner: "调度".into(),
+        approver: None,
+        scope: Some("production".into()),
+        plan_revision: Some(plan_revision),
+        provenance: "des".into(),
+        updated_at: now_secs(),
+    }
+}
+
+fn deliver_des_ops_card(
+    app: &AppStore,
+    run_id: &str,
+    case_id: &str,
+    stage: &str,
+    summary: &str,
+) -> Result<String, String> {
+    app.ensure_conversation(OPS_CHANNEL_ID, OPS_CHANNEL_TITLE)
+        .map_err(|e| e.to_string())?;
+    let card = des_ops_card(run_id, case_id, stage, summary, 1);
+    let content = format!("[DES] 运营案例 {case_id}（运行 {run_id}）");
+    let msg = app
+        .add_message_with_card(OPS_CHANNEL_ID, "assistant", &content, &card)
+        .map_err(|e| e.to_string())?;
+    Ok(msg.id)
 }
 
 fn role_is_experimenter(headers: &HeaderMap) -> bool {
@@ -786,6 +852,28 @@ async fn start_official(
         },
     );
     let _ = body.start_key;
+    drop(store);
+
+    // M1-3：正式运行向运营频道投递 OpsCase（试跑不投递）；provenance=des
+    if let Some(app) = &state.app_store {
+        let summary = format!("DES 正式运行事项，待主管决定 · 运行 {run_id}");
+        match deliver_des_ops_card(app, &run_id, &case_id, "WAITING_HUMAN", &summary) {
+            Ok(mid) => {
+                if let Ok(mut store) = state.inner.lock() {
+                    store.case_messages.insert(case_id.clone(), mid);
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    event = "task.status",
+                    task_id = %run_id,
+                    error = %e,
+                    "DES 运营频道投影失败"
+                );
+            }
+        }
+    }
+
     Ok(Json(json!({
         "protocol_version": PROTOCOL_VERSION,
         "request_id": body.request_id,

@@ -10,8 +10,8 @@
 |---|---|---|---|
 | M1-0 | 冻结用例草案与任务卡；勾选 M0 完成；同步 PLAN / Feature Map | 已完成（#176） | M0 准出 |
 | M1-1 | 正式 CASES + Red 空壳；随后接线世界绑定 → `DesConnector`（高风险先方案） | 已完成（Red #178 / Green #180） | M0 准出 |
-| M1-2 | 正式投递水位：tick 后发布快照/公开事件；Observe/Subscribe 续读无漏无重 | 进行中（`WA_M1_2_PLAN.md`） | M1-1 |
-| M1-3 | 实验控制接远程创建/推进；试跑隔离；正式运行事项投递运营频道 | 未开始 | M1-1 |
+| M1-2 | 正式投递水位：tick 后发布快照/公开事件；Observe/Subscribe 续读无漏无重 | 已完成（#181） | M1-1 |
+| M1-3 | 实验控制接远程创建/推进；试跑隔离；正式运行事项投递运营频道 | 进行中（`WA_M1_3_PLAN.md`） | M1-1 |
 | M1-4 | 浏览器：WA-01/02/07 远程 DES 场景（正式 E2E id）+ M0 全量回归 | 未开始 | M1-2、M1-3 |
 | M1-5 | 证据、注册表状态（WAM-01～03 读路径）、准出检查 | 未开始 | M1-4 |
 
@@ -30,6 +30,7 @@
 | 合同：投递边界 | `RT-WADES-02` | tick 完成投递后 Observe 才见新事件；中断后服务最近完整边界 |
 | 合同：续读 | `RT-WADES-03` | Subscribe 续读无漏、无重复；游标过期 → `CURSOR_EXPIRED` |
 | 合同：试跑隔离 | `RT-WADES-04` | 试跑 `delivery_count=0`；正式运行投递 ≥1 且有 `case_id` |
+| 合同：运营频道 | `RT-WADES-07` / `08` | 试跑零运营卡；正式 `OpsCase` 且 `provenance=des` |
 | 回归 | 既有 `RT-DESC-*`、`./scripts/wa-m0-suite.sh` | M1 合入前全绿；写路径仍 Mock |
 
 M0 的 `E2E-DES*` / `E2E-WABIND` / `E2E-WACHANNEL` / `RT-WA-01～09` **不得弱化**，作为全量回归基线。断言已确认并写入 CASES 表格（M1-1 Red）。
