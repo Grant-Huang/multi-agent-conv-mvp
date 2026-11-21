@@ -95,3 +95,4 @@
 | [2026-11-21-decision-format.md](2026-11-21-decision-format.md) | 决策一条一个文件，并写清决策依据，必要时附简单设计 | 用户确认 | 有效 |
 | [2026-11-21-industrial-capabilities-in-desktop.md](2026-11-21-industrial-capabilities-in-desktop.md) | 设计意图：MOM、运营桌面、World Adapter 是桌面里的工业业务能力 | 用户确认 | 有效 |
 | [2026-11-21-doc-rules-enforcement.md](2026-11-21-doc-rules-enforcement.md) | 文档规则写进入口文件，CI 文档检查先警告后强制 | 用户确认 | 有效 |
+| [2026-11-21-dev-standard-and-guardrails.md](2026-11-21-dev-standard-and-guardrails.md) | 唯一研发规范 DEV_STANDARD.md 与唯一围栏入口；编号 D0～D3 / L0～L3 / 第一～七层；围栏登记表 | 用户确认 | 有效 |

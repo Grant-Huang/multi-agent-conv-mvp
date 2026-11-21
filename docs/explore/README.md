@@ -21,3 +21,4 @@
 | [mom/human-board-wireframe.html](../mom/human-board-wireframe.html) | 线框图 |
 | [briefs/](../briefs/2026-11-05-ai-architecture.md) | 调研简报 |
 | [DOC_SYSTEM_PLAN.md](../DOC_SYSTEM_PLAN.md) | 文档体系整理计划（完成后归档到这里） |
+| [guardrails-draft-2026-11-21/](guardrails-draft-2026-11-21/README.md) | 用户起草的七层围栏规范与实操指南原文（已并入，存档） |

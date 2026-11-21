@@ -1,6 +1,6 @@
 # 特性档案模板
 
-复制到 `docs/features/<特性 ID>/README.md`，特性 ID 与 `docs/testing/features.json` 的 `id` 一致。写法规则见 [研发对齐规范](README.md) 第 3 节。下面代码块里是模板正文。
+复制到 `docs/features/<特性 ID>/README.md`，特性 ID 与 `docs/testing/features.json` 的 `id` 一致。写法规则见 [DEV_STANDARD.md](../../DEV_STANDARD.md) 第 3、4 节。下面代码块里是模板正文。
 
 ```markdown
 # <特性名称>
