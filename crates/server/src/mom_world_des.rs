@@ -1,10 +1,11 @@
 //! World Adapter M1 远程 DES 读合同（`/api/world/des`）。
 //!
 //! 服务层独立实现，对齐 `mom_world_mock` 字段形状，`provenance=des`。
-//! 正式投递水位在本适配器内维护：step/tick 之后才向 Observe 暴露新事件。
+//! 正式投递水位在本适配器内维护：ingest → commit 后才向 Observe 暴露事件与快照。
+//! M1-2：投递中断仍服务最近完整边界；快照与事件同一 `publish_seq`；事件 ID 去重。
 //! 不改 `engine.rs` / `DesConnector` 内部；写路径仍走 `/api/world/mock`。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use axum::extract::State;
@@ -21,6 +22,7 @@ const PROTOCOL_VERSION: u32 = 1;
 pub struct WorldDesState {
     inner: Arc<Mutex<Store>>,
     connector_available: bool,
+    allow_test_controls: bool,
 }
 
 impl WorldDesState {
@@ -28,6 +30,15 @@ impl WorldDesState {
         Self {
             inner: Arc::new(Mutex::new(Store::default())),
             connector_available,
+            allow_test_controls: false,
+        }
+    }
+
+    pub fn with_test_controls(connector_available: bool) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Store::default())),
+            connector_available,
+            allow_test_controls: true,
         }
     }
 }
@@ -42,8 +53,22 @@ struct Store {
     published: HashMap<String, Vec<EventRec>>,
     /// tick 产生、尚未越过正式投递边界的缓冲
     pending: HashMap<String, Vec<EventRec>>,
+    /// 与 published 同边界的产品快照
+    snapshots: HashMap<String, SnapshotRec>,
+    /// 工厂侧游标（仅连接器内部语义；产品水位用 publish_seq）
+    factory_cursor: HashMap<String, u64>,
     cursors: HashMap<String, CursorRec>,
     cursor_generation: HashMap<String, u64>,
+    /// 下一 tick 只 ingest、不 commit（测试控件）
+    abort_before_publish: HashSet<String>,
+}
+
+#[derive(Clone)]
+struct SnapshotRec {
+    publish_seq: u64,
+    as_of: String,
+    case_id: Option<String>,
+    event_count: usize,
 }
 
 #[derive(Clone)]
@@ -120,6 +145,14 @@ pub fn router(state: WorldDesState) -> Router {
         .route("/api/world/des/experiment/trials", post(start_trial))
         .route("/api/world/des/experiment/official", post(start_official))
         .route("/api/world/des/experiment/step", post(step_world))
+        .route(
+            "/api/world/des/test/abort-before-publish",
+            post(abort_before_publish),
+        )
+        .route(
+            "/api/world/des/test/commit-publish",
+            post(commit_publish_route),
+        )
         .with_state(state)
 }
 
@@ -180,6 +213,16 @@ async fn bind_world(
     );
     store.published.insert(world_id.clone(), Vec::new());
     store.pending.insert(world_id.clone(), Vec::new());
+    store.factory_cursor.insert(world_id.clone(), 0);
+    store.snapshots.insert(
+        world_id.clone(),
+        SnapshotRec {
+            publish_seq: 0,
+            as_of: "sim:0".into(),
+            case_id: None,
+            event_count: 0,
+        },
+    );
     store.cursor_generation.insert(world_id.clone(), 1);
     Ok(Json(json!({
         "protocol_version": PROTOCOL_VERSION,
@@ -206,8 +249,18 @@ async fn observe(State(state): State<WorldDesState>, Json(body): Json<ObserveBod
         .get(&body.world_id)
         .cloned()
         .unwrap_or_default();
+    let snap = store
+        .snapshots
+        .get(&body.world_id)
+        .cloned()
+        .unwrap_or(SnapshotRec {
+            publish_seq: 0,
+            as_of: "sim:0".into(),
+            case_id: None,
+            event_count: 0,
+        });
     let cursor = next_id(&mut store, "cur");
-    // M1：Observe 游标落在已发布末尾；首读返回当前已投递事件快照
+    // M1：Observe 游标落在已发布末尾；快照与事件同一 publish_seq
     store.cursors.insert(
         cursor.clone(),
         CursorRec {
@@ -234,6 +287,17 @@ async fn observe(State(state): State<WorldDesState>, Json(body): Json<ObserveBod
         "provenance": "des",
         "cursor": cursor,
         "events": event_vals,
+        "publish_seq": snap.publish_seq,
+        "as_of": snap.as_of,
+        "objects": [{
+            "ref": { "type": "case", "id": snap.case_id },
+            "source": "des",
+            "state": {
+                "publish_seq": snap.publish_seq,
+                "event_count": snap.event_count,
+            },
+            "observed_at": snap.as_of,
+        }],
         "consistency": "consistent",
     })))
 }
@@ -353,7 +417,12 @@ async fn step_world(
     let minutes = body.minutes.unwrap_or(1).max(1);
     let mut store = state.inner.lock().map_err(|_| lock_err())?;
     ensure_world(&mut store, &body.world_id)?;
-    // 先写入 pending（模拟工厂推进），再一次性越过正式投递边界发布
+    // 工厂游标推进（内部）；产品水位仅在 commit_publish 后前进
+    let factory = store
+        .factory_cursor
+        .entry(body.world_id.clone())
+        .or_insert(0);
+    *factory += minutes as u64;
     let evt_id = next_id(&mut store, "evt");
     let pending_evt = EventRec {
         event_id: evt_id.clone(),
@@ -369,17 +438,6 @@ async fn step_world(
         .entry(body.world_id.clone())
         .or_default()
         .push(pending_evt);
-    // 正式投递边界：pending → published（不把工厂游标当产品水位）
-    let drained = store
-        .pending
-        .get_mut(&body.world_id)
-        .map(std::mem::take)
-        .unwrap_or_default();
-    store
-        .published
-        .entry(body.world_id.clone())
-        .or_default()
-        .extend(drained);
     if let Some(run) = store
         .runs
         .values_mut()
@@ -387,13 +445,142 @@ async fn step_world(
     {
         run.simulation_minute += minutes;
     }
+    let abort = store.abort_before_publish.remove(&body.world_id);
+    if abort {
+        return Ok(Json(json!({
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": body.request_id,
+            "world_id": body.world_id,
+            "provenance": "des",
+            "ingested_event_id": evt_id,
+            "published": false,
+            "minutes": minutes,
+        })));
+    }
+    let seq = commit_publish(&mut store, &body.world_id);
     Ok(Json(json!({
         "protocol_version": PROTOCOL_VERSION,
         "request_id": body.request_id,
         "world_id": body.world_id,
         "provenance": "des",
         "delivered_event_id": evt_id,
+        "published": true,
+        "publish_seq": seq,
         "minutes": minutes,
+    })))
+}
+
+/// pending → published（按 event_id 去重）；仅有新事件时推进 publish_seq 与快照。
+fn commit_publish(store: &mut Store, world_id: &str) -> u64 {
+    let drained = store
+        .pending
+        .get_mut(world_id)
+        .map(std::mem::take)
+        .unwrap_or_default();
+    let published = store.published.entry(world_id.to_string()).or_default();
+    let existing: HashSet<String> = published.iter().map(|e| e.event_id.clone()).collect();
+    let mut added = 0usize;
+    for ev in drained {
+        if existing.contains(&ev.event_id) {
+            continue;
+        }
+        published.push(ev);
+        added += 1;
+    }
+    let prev = store
+        .snapshots
+        .get(world_id)
+        .map(|s| s.publish_seq)
+        .unwrap_or(0);
+    if added == 0 {
+        return prev;
+    }
+    let minute = store
+        .runs
+        .values()
+        .find(|r| r.world_id == world_id)
+        .map(|r| r.simulation_minute)
+        .unwrap_or(0);
+    let case_id = store
+        .runs
+        .values()
+        .find(|r| r.world_id == world_id)
+        .and_then(|r| r.case_id.clone());
+    let seq = prev + 1;
+    let event_count = published.len();
+    store.snapshots.insert(
+        world_id.to_string(),
+        SnapshotRec {
+            publish_seq: seq,
+            as_of: format!("sim:{minute}"),
+            case_id,
+            event_count,
+        },
+    );
+    seq
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorldOnlyBody {
+    world_id: String,
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+async fn abort_before_publish(
+    State(state): State<WorldDesState>,
+    Json(body): Json<WorldOnlyBody>,
+) -> ApiResult {
+    if !state.allow_test_controls {
+        return err(
+            StatusCode::NOT_FOUND,
+            "UNSUPPORTED_CAPABILITY",
+            "测试控件未开启",
+            body.request_id.as_deref(),
+        );
+    }
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    store.abort_before_publish.insert(body.world_id.clone());
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "world_id": body.world_id,
+        "armed": true,
+    })))
+}
+
+async fn commit_publish_route(
+    State(state): State<WorldDesState>,
+    headers: HeaderMap,
+    Json(body): Json<WorldOnlyBody>,
+) -> ApiResult {
+    if !state.allow_test_controls {
+        return err(
+            StatusCode::NOT_FOUND,
+            "UNSUPPORTED_CAPABILITY",
+            "测试控件未开启",
+            body.request_id.as_deref(),
+        );
+    }
+    if !role_is_experimenter(&headers) {
+        return err(
+            StatusCode::FORBIDDEN,
+            "ACCESS_DENIED",
+            "仅实验员可提交发布",
+            body.request_id.as_deref(),
+        );
+    }
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    let seq = commit_publish(&mut store, &body.world_id);
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "world_id": body.world_id,
+        "publish_seq": seq,
+        "provenance": "des",
     })))
 }
 
@@ -481,6 +668,16 @@ async fn start_trial(
     );
     store.published.insert(world_id.clone(), Vec::new());
     store.pending.insert(world_id.clone(), Vec::new());
+    store.factory_cursor.insert(world_id.clone(), 0);
+    store.snapshots.insert(
+        world_id.clone(),
+        SnapshotRec {
+            publish_seq: 0,
+            as_of: "sim:0".into(),
+            case_id: None,
+            event_count: 0,
+        },
+    );
     store.cursor_generation.insert(world_id.clone(), 1);
     Ok(Json(json!({
         "protocol_version": PROTOCOL_VERSION,
@@ -568,6 +765,7 @@ async fn start_official(
         },
     );
     store.cursor_generation.insert(world_id.clone(), 1);
+    store.factory_cursor.insert(world_id.clone(), 0);
     let event_id = next_id(&mut store, "evt");
     store.published.insert(
         world_id.clone(),
@@ -578,6 +776,15 @@ async fn start_official(
         }],
     );
     store.pending.insert(world_id.clone(), Vec::new());
+    store.snapshots.insert(
+        world_id.clone(),
+        SnapshotRec {
+            publish_seq: 1,
+            as_of: "sim:0".into(),
+            case_id: Some(case_id.clone()),
+            event_count: 1,
+        },
+    );
     let _ = body.start_key;
     Ok(Json(json!({
         "protocol_version": PROTOCOL_VERSION,
@@ -588,6 +795,7 @@ async fn start_official(
         "delivery_count": 1,
         "case_id": case_id,
         "provenance": "des",
+        "publish_seq": 1,
     })))
 }
 

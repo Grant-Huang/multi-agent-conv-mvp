@@ -16,6 +16,32 @@ async fn des_server(connected: bool) -> (String, tokio::task::JoinHandle<()>) {
     (url, task)
 }
 
+async fn des_server_with_controls() -> (String, tokio::task::JoinHandle<()>) {
+    let app = router(WorldDesState::with_test_controls(true));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    (url, task)
+}
+
+async fn bind_world(client: &reqwest::Client, url: &str) -> String {
+    let bound: Value = client
+        .post(format!("{url}{DES_API}/bind"))
+        .headers(experimenter())
+        .json(&json!({ "factory": "plant-a", "scenario": "s1", "seed": 1 }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    bound["world_id"].as_str().unwrap().to_string()
+}
+
 fn experimenter() -> reqwest::header::HeaderMap {
     let mut h = reqwest::header::HeaderMap::new();
     h.insert("x-wa-role", "experimenter".parse().unwrap());
@@ -271,4 +297,186 @@ async fn rt_wades_04_trial_zero_delivery_official_delivers() {
     let official_id = off["official_run_id"].as_str().unwrap_or("");
     assert!(!official_id.is_empty());
     assert_ne!(trial_id, official_id);
+}
+
+/// RT-WADES-05：投递中断后仍服务最近完整边界；pending 不可见。
+#[tokio::test]
+async fn rt_wades_05_interrupt_keeps_last_complete_boundary() {
+    let (url, _task) = des_server_with_controls().await;
+    let client = reqwest::Client::new();
+    let world_id = bind_world(&client, &url).await;
+
+    client
+        .post(format!("{url}{DES_API}/experiment/step"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id, "minutes": 1 }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let after_ok: Value = client
+        .post(format!("{url}{DES_API}/observe"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let seq0 = after_ok["publish_seq"].as_u64().unwrap();
+    let n0 = after_ok["events"].as_array().unwrap().len();
+    assert!(n0 >= 1);
+    assert!(seq0 >= 1);
+
+    client
+        .post(format!("{url}{DES_API}/test/abort-before-publish"))
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let aborted: Value = client
+        .post(format!("{url}{DES_API}/experiment/step"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id, "minutes": 1 }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(aborted["published"], false);
+
+    let mid: Value = client
+        .post(format!("{url}{DES_API}/observe"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(mid["publish_seq"], seq0);
+    assert_eq!(mid["events"].as_array().unwrap().len(), n0);
+    assert_eq!(mid["objects"][0]["state"]["publish_seq"], seq0);
+
+    let committed: Value = client
+        .post(format!("{url}{DES_API}/test/commit-publish"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(committed["publish_seq"].as_u64().unwrap() > seq0);
+
+    let after: Value = client
+        .post(format!("{url}{DES_API}/observe"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(after["events"].as_array().unwrap().len() > n0);
+    assert_eq!(after["publish_seq"], committed["publish_seq"]);
+    assert_eq!(
+        after["objects"][0]["state"]["event_count"]
+            .as_u64()
+            .unwrap() as usize,
+        after["events"].as_array().unwrap().len()
+    );
+}
+
+/// RT-WADES-06：快照与事件同一 publish_seq；重复 event_id 不双发。
+#[tokio::test]
+async fn rt_wades_06_snapshot_aligns_and_event_ids_dedupe() {
+    let (url, _task) = des_server_with_controls().await;
+    let client = reqwest::Client::new();
+    let world_id = bind_world(&client, &url).await;
+
+    client
+        .post(format!("{url}{DES_API}/experiment/step"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id, "minutes": 1 }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let obs: Value = client
+        .post(format!("{url}{DES_API}/observe"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(!obs["as_of"].as_str().unwrap_or("").is_empty());
+    assert_eq!(
+        obs["publish_seq"],
+        obs["objects"][0]["state"]["publish_seq"]
+    );
+    let ids: Vec<&str> = obs["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["event_id"].as_str().unwrap())
+        .collect();
+    let mut uniq = ids.clone();
+    uniq.sort();
+    uniq.dedup();
+    assert_eq!(ids.len(), uniq.len(), "Observe 不得含重复 event_id");
+
+    // 空 pending 再 commit：水位与事件集合均不变
+    let seq = obs["publish_seq"].as_u64().unwrap();
+    let empty: Value = client
+        .post(format!("{url}{DES_API}/test/commit-publish"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(empty["publish_seq"], seq);
+    let again: Value = client
+        .post(format!("{url}{DES_API}/observe"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(again["events"].as_array().unwrap().len(), ids.len());
+    assert_eq!(again["publish_seq"], seq);
 }

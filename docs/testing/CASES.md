@@ -831,7 +831,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 
 ### M1 远程 DES 读取（断言已冻结；M1-1 Red）
 
-执行卡：[WA_M1_TASKS.md](../mom/WA_M1_TASKS.md)。浏览器用例：`web/e2e/wa-des-remote.spec.ts`。合同：`crates/server/tests/mom_world_des.rs`。路由前缀 `/api/world/des`（相对 M0 `/api/world/mock`）；写路径仍 Mock。Red→Green 证据：`wa-m1-1-red.md` / `wa-m1-1-green.md`。M0 套件不得弱化。
+执行卡：[WA_M1_TASKS.md](../mom/WA_M1_TASKS.md)。浏览器用例：`web/e2e/wa-des-remote.spec.ts`。合同：`crates/server/tests/mom_world_des.rs`。路由前缀 `/api/world/des`（相对 M0 `/api/world/mock`）；写路径仍 Mock。证据：`wa-m1-1-*.md`、`wa-m1-2.md`。M0 套件不得弱化。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -845,3 +845,5 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WADES-02 | world-adapter | 已绑定远程世界 | tick 完成 MOM 投递前后分别 Observe | 投递前无新业务事件；投递后可见；中断后仍服务最近完整边界 |
 | RT-WADES-03 | world-adapter | 已 Observe 取得游标 | Subscribe 续读；再注入过期游标 | 无漏、无重复事件 ID；过期 → `CURSOR_EXPIRED`（HTTP 409） |
 | RT-WADES-04 | world-adapter | 远程实验控制可用 | 试跑一次；正式启动一次 | 试跑 `delivery_count=0`；正式 `delivery_count≥1` 且有 `case_id`；试跑 ID ≠ 正式 ID |
+| RT-WADES-05 | world-adapter | 已有完整投递边界；测试控件开 | abort-before-publish → step → Observe；再 commit-publish → Observe | 中断期间 `publish_seq`/事件不变；提交后前进且快照对齐 |
+| RT-WADES-06 | world-adapter | 已 step 发布一次 | Observe；空 pending 再 commit | `as_of`/`objects.publish_seq` 与事件水位一致；无重复 `event_id`；空 commit 不抬水位 |

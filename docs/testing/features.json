@@ -817,7 +817,9 @@
       "docs/testing/evidence/wa-m1-0.md",
       "docs/testing/evidence/wa-m1-1-red.md",
       "docs/testing/evidence/wa-m1-1-green.md",
+      "docs/testing/evidence/wa-m1-2.md",
       "docs/mom/WA_M1_1_GREEN_PLAN.md",
+      "docs/mom/WA_M1_2_PLAN.md",
       "web/e2e/wa-des-remote.spec.ts",
       "crates/server/src/mom_world_des.rs",
       "crates/server/tests/mom_world_des.rs"
@@ -849,7 +851,9 @@
       "RT-WADES-01",
       "RT-WADES-02",
       "RT-WADES-03",
-      "RT-WADES-04"
+      "RT-WADES-04",
+      "RT-WADES-05",
+      "RT-WADES-06"
     ]
   },
   {
