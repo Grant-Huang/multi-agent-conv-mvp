@@ -8,8 +8,8 @@
 
 | 卡片 | 内容 | 状态 | 依赖 |
 |---|---|---|---|
-| M2-0 | 冻结用例草案与任务卡；同步 PLAN / Feature Map / 注册表 | **进行中**（本 PR） | M1 准出 + T-50 |
-| M2-1 | 正式 CASES + Red 空壳；Propose/Execute/Confirm 接远程（高风险先方案） | 排队 | M2-0 用户确认断言 |
+| M2-0 | 冻结用例草案与任务卡；同步 PLAN / Feature Map / 注册表 | **完成**（#194） | M1 准出 + T-50 |
+| M2-1 | 正式 CASES + Red 空壳；Propose/Execute/Confirm 接远程（高风险先方案） | **进行中**（本 PR） | M2-0 |
 | M2-2 | 授权/并发/取消：过期批准零写入；同授权只执行一次；取消后待发不发 | 排队 | M2-1 |
 | M2-3 | 恢复与幂等：丢回执同厂恢复；部分回执补齐；工厂重启旧运行可见失败 | 排队 | M2-1 |
 | M2-4 | DES 闭环：干预后未来事件改变；答案与干预一致；RT-DES/DESC 回归 | 排队 | M2-2、M2-3 |
@@ -18,9 +18,9 @@
 
 一张卡 ≈ 一个 PR。每卡先 Red（业务断言失败）再 Green；断言冻结后不得弱化。
 
-## 1. 用例命名（登记前）
+## 1. 用例命名（已登记）
 
-设计项 WA-03、04、05、08 在远程 DES 上的验收需独立于 M0 Mock 写路径。写入 `CASES.md` 表格前用 `E2E-[A-Z]+` / `RT-[A-Z0-9-]+`。建议映射（M2-0 草案，**待用户确认后改表格 + 空壳**）：
+设计项 WA-03、04、05、08 在远程 DES 上的验收独立于 M0 Mock 写路径。正式 id 已写入 `CASES.md` 表格（M2-1）：
 
 | 设计 | 正式 id | 要点 |
 |---|---|---|
@@ -38,16 +38,20 @@
 
 M0/M1 已冻结用例 **不得弱化**。`E2E-DESOPS` / `E2E-DESLOOP` 在 M2 补远程物理断言（设计表已标明）。
 
-## 2. M2-0：冻结与收尾
+## 2. M2-0：冻结与收尾（已完成）
 
-1. 本文件落地；`docs/PLAN.md` 勾选 M1 准出（含 T-50）、增加 M2 执行卡入口。
-2. CASES 增加 M2 **草案 bullet**（勿先写表格行，避免 check-map 报缺测试）。
-3. Feature Map / `WA_MOCK_REGISTRY` 指向本文件与「M2 写路径待替换」。
-4. 用户确认断言后：M2-1 起改表格 + 空壳 Red，再实现。
+见 #194 / `docs/testing/evidence/wa-m2-0.md`。
 
-## 3. M2-1～M2-4：服务端（纲要）
+## 2b. M2-1：正式表格 + Red（本卡）
 
-- 优先服务层：`/api/world/des` Propose/Execute/Confirm 调用既有 MOM `select_des_plan` / `approve` / `execute` + `DesConnector::dispatch_writes`；读路径继续用 T-50 投影边界。
+1. CASES 正式表格 + Playwright 空壳 `web/e2e/wa-des-write.spec.ts` + `features.json` cases。
+2. 高风险 Green 方案：[`WA_M2_1_PLAN.md`](WA_M2_1_PLAN.md)（服务层优先；不改 engine/DesConnector 内部）。
+3. `RT-WADES-09`～`14`：表格已冻结；本地 HTTP Red 证据见 `wa-m2-1-red.md`；**Rust 失败测试不入库**（Green 卡再挂 `mom_world_des_write` + `runtime_cases`）。
+4. **本卡不写 Green。**
+
+## 3. M2-2～M2-4：服务端（纲要）
+
+- 优先服务层：`/api/world/des` Propose/Execute/Confirm 调用既有 MOM `select_des_plan` / `approve` / `execute` + `DesConnector::dispatch_writes`；读路径继续用 T-50 投影边界。详见 [`WA_M2_1_PLAN.md`](WA_M2_1_PLAN.md)。
 - **高风险**：若需改 `engine.rs`（`execute` / `des_after_execute_remote` 提交窗口）、`store`、`orchestrator`、或 `DesConnector` 派发/回执语义，**先出方案等人批准**（`AGENTS.md`）。
 - 持久化：执行 ID、幂等键、子动作关联键、审核同步状态（见 WORLD_ADAPTER.md §8）；新增表须附迁移。
 - 故障与时钟测试控件不得在生产配置默认打开。
