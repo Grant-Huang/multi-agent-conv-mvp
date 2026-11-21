@@ -3,7 +3,7 @@
 承接 [WA_M2_TASKS.md](WA_M2_TASKS.md) M2-1、[WORLD_ADAPTER.md](WORLD_ADAPTER.md) §4.3～4.5 / §6.2～6.3、CASES 已冻结的 `E2E-WAEXEC`/`WARECV`/`WADYN`/`WALOOP` 与 `RT-WADES-09`～`14`。  
 **本文件定 Green 路径；M2-1 Red 卡只冻结表格与空壳，不实现。** 改 `engine` / `DesConnector` 内部 / `store` 表结构 / `orchestrator` 前须再批。
 
-**状态：助手建议（待用户批准后再开 Green 卡）。**
+**状态：用户已确认「服务层接线、不改 engine/DesConnector 内部」为 Green 默认路径（2026-11-21）；偏离该路径须先对照规范说明。M2-1 本卡仍只到 Red，实现另开 Green 卡。**
 
 ## 1. 现状缺口
 

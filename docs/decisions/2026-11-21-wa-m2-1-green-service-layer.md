@@ -1,10 +1,10 @@
-# World Adapter M2-1 Green：服务层接线（待批）
+# World Adapter M2-1 Green：服务层接线
 
 | 项目 | 内容 |
 |---|---|
 | 日期 | 2026-11-21 |
-| 来源 | 助手建议 |
-| 状态 | 待用户确认 |
+| 来源 | 用户确认（「符合规范的改法我就同意」；本方案对齐 AGENTS 高风险先方案 + DEV_STANDARD §5/§7） |
+| 状态 | 有效（Green 默认路径已批；本卡仍只到 Red，实现另开 Green 卡） |
 | 影响范围 | World Adapter（M2 写路径）；`mom_world_des`；相关 CASES / Playwright |
 | 相关设计 | [WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md) §4.3～4.5、§6.2～6.3；[WA_M2_TASKS.md](../mom/WA_M2_TASKS.md)；[WA_M2_1_PLAN.md](../mom/WA_M2_1_PLAN.md)；共享契约草案 [state-and-cancellation.md](../contracts/state-and-cancellation.md) S3/S6、[identity-and-approval.md](../contracts/identity-and-approval.md) A1～A3 |
 
@@ -60,3 +60,4 @@ M1 + T-50 已把远程 DES **读**路径接到 `/api/world/des`（bind/observe/s
 | 日期 | 变化 | 关联 |
 |---|---|---|
 | 2026-11-21 | 新建（按决策模板补齐依据） | T-53 / M2-1 Red |
+| 2026-11-21 | 用户确认合规路径：服务层接线为 Green 默认；偏离须先对照规范说明 | 对话授权原则 |
