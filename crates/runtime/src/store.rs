@@ -62,6 +62,34 @@ pub struct Store {
     writer: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
+/// AI Desktop B1：可靠受理记录
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopRequestRecord {
+    pub request_id: String,
+    pub message_id: String,
+    pub conversation_id: String,
+    pub client_operation_id: String,
+    pub text: String,
+    pub scope: String,
+    pub task_id: Option<String>,
+    pub status: String,
+    pub dispatch_count: u32,
+}
+
+/// `accept_desktop_request` 结果
+#[derive(Debug, Clone)]
+pub enum DesktopAcceptOutcome {
+    /// 首次受理并写入消息
+    Created(DesktopRequestRecord),
+    /// 同操作 ID + 同正文：回放原记录，不二次派发
+    Replay(DesktopRequestRecord),
+    /// 同操作 ID + 改正文
+    Conflict {
+        request_id: String,
+        message_id: String,
+    },
+}
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
@@ -184,6 +212,20 @@ CREATE TABLE IF NOT EXISTS app_state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+-- AI Desktop B1：可靠受理幂等（client_operation_id）；只新建表
+CREATE TABLE IF NOT EXISTS desktop_client_operations (
+    client_operation_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    task_id TEXT,
+    status TEXT NOT NULL,
+    dispatch_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_desktop_ops_request ON desktop_client_operations(request_id);
 "#;
 
 fn tune(conn: &Connection) -> Result<()> {
@@ -626,6 +668,116 @@ impl Store {
         let mut v: Vec<an_core::MessageView> = rows.collect::<rusqlite::Result<_>>()?;
         v.reverse();
         Ok(v)
+    }
+
+    /// AI Desktop B1：可靠受理结果（同 client_operation_id 幂等 / 冲突）
+    pub fn accept_desktop_request(
+        &self,
+        conversation_id: &str,
+        client_operation_id: &str,
+        text: &str,
+        scope: &str,
+        task_id: Option<&str>,
+    ) -> Result<DesktopAcceptOutcome> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(anyhow!("消息不能为空"));
+        }
+        if client_operation_id.trim().is_empty() {
+            return Err(anyhow!("client_operation_id 不能为空"));
+        }
+        let conn = self.write();
+        let tx = conn.unchecked_transaction()?;
+        let existing: Option<(String, String, String, i64, String)> = tx
+            .query_row(
+                "SELECT request_id, message_id, text, dispatch_count, status
+                 FROM desktop_client_operations WHERE client_operation_id = ?1",
+                params![client_operation_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()?;
+        if let Some((request_id, message_id, committed, dispatch_count, status)) = existing {
+            if committed == text {
+                tx.commit()?;
+                return Ok(DesktopAcceptOutcome::Replay(DesktopRequestRecord {
+                    request_id,
+                    message_id,
+                    conversation_id: conversation_id.into(),
+                    client_operation_id: client_operation_id.into(),
+                    text: committed,
+                    scope: scope.into(),
+                    task_id: task_id.map(String::from),
+                    status,
+                    dispatch_count: dispatch_count as u32,
+                }));
+            }
+            tx.commit()?;
+            return Ok(DesktopAcceptOutcome::Conflict {
+                request_id,
+                message_id,
+            });
+        }
+        let request_id = an_core::new_id("dreq");
+        let message_id = an_core::new_id("msg");
+        let created_at = now();
+        tx.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, task_id, created_at)
+             VALUES (?1, ?2, 'user', ?3, ?4, ?5)",
+            params![message_id, conversation_id, text, task_id, created_at],
+        )?;
+        tx.execute(
+            "INSERT INTO desktop_client_operations
+             (client_operation_id, request_id, conversation_id, message_id, text, scope, task_id, status, dispatch_count, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'accepted', 1, ?8)",
+            params![
+                client_operation_id,
+                request_id,
+                conversation_id,
+                message_id,
+                text,
+                scope,
+                task_id,
+                created_at
+            ],
+        )?;
+        tx.commit()?;
+        Ok(DesktopAcceptOutcome::Created(DesktopRequestRecord {
+            request_id,
+            message_id,
+            conversation_id: conversation_id.into(),
+            client_operation_id: client_operation_id.into(),
+            text: text.into(),
+            scope: scope.into(),
+            task_id: task_id.map(String::from),
+            status: "accepted".into(),
+            dispatch_count: 1,
+        }))
+    }
+
+    /// 按 request_id 读取可靠受理记录
+    pub fn get_desktop_request(&self, request_id: &str) -> Result<Option<DesktopRequestRecord>> {
+        let _timer = ReadTimer::new("get_desktop_request");
+        let conn = self.read();
+        conn.query_row(
+            "SELECT request_id, message_id, conversation_id, client_operation_id, text, scope, task_id, status, dispatch_count
+             FROM desktop_client_operations WHERE request_id = ?1",
+            params![request_id],
+            |r| {
+                Ok(DesktopRequestRecord {
+                    request_id: r.get(0)?,
+                    message_id: r.get(1)?,
+                    conversation_id: r.get(2)?,
+                    client_operation_id: r.get(3)?,
+                    text: r.get(4)?,
+                    scope: r.get(5)?,
+                    task_id: r.get(6)?,
+                    status: r.get(7)?,
+                    dispatch_count: r.get::<_, i64>(8)? as u32,
+                })
+            },
+        )
+        .optional()
+        .map_err(Into::into)
     }
 
     /// 按时间顺序返回消息；`last` 为 Some(n) 时只返回最近 n 条

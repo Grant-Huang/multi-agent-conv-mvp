@@ -736,6 +736,10 @@
       "web/src/components/ChatView.tsx",
       "web/e2e/desktop.spec.ts",
       "web/e2e/ops.spec.ts",
+      "crates/server/src/desktop_api.rs",
+      "crates/server/tests/desktop_accept.rs",
+      "crates/runtime/src/store.rs",
+      "crates/runtime/src/conversation.rs",
       "docs/ai-desktop/DESIGN.md",
       "docs/ai-desktop/TRACEABILITY.md",
       "docs/testing/evidence/ai-desktop-a2.1.md",
@@ -744,6 +748,7 @@
       "docs/testing/evidence/ai-desktop-a5.3.md",
       "docs/testing/evidence/ai-desktop-a5.4.md",
       "docs/testing/evidence/ai-desktop-a5.md",
+      "docs/testing/evidence/ai-desktop-b1.md",
       "docs/ai-desktop/MOCK_REGISTRY.md"
     ],
     "coverage": "browser",
@@ -764,6 +769,12 @@
       "E2E-ADVOICE",
       "E2E-ADHAND",
       "E2E-ADACCEPT"
+    ],
+    "runtime_cases": [
+      "RT-ADACCEPT-01",
+      "RT-ADACCEPT-02",
+      "RT-ADACCEPT-03",
+      "RT-ADACCEPT-04"
     ]
   },
   {

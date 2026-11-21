@@ -405,6 +405,24 @@ impl ConversationRuntime {
 
     /// 处理用户的一条消息
     pub async fn handle_message(&self, conversation_id: &str, text: &str) -> Result<TurnOutcome> {
+        self.run_turn(conversation_id, text, true).await
+    }
+
+    /// 可靠受理已写入用户消息后继续分流（不再插入 user 消息）。B1；不改 orchestrator。
+    pub async fn continue_after_accepted(
+        &self,
+        conversation_id: &str,
+        text: &str,
+    ) -> Result<TurnOutcome> {
+        self.run_turn(conversation_id, text, false).await
+    }
+
+    async fn run_turn(
+        &self,
+        conversation_id: &str,
+        text: &str,
+        insert_user: bool,
+    ) -> Result<TurnOutcome> {
         // 同一会话的消息排队处理；排队时间不计入本轮耗时
         let turn_guard = self.locks.lock(conversation_id).await;
         if turn_guard.waited_ms >= 200 {
@@ -416,16 +434,18 @@ impl ConversationRuntime {
             .get_conversation(conversation_id)?
             .context("会话不存在")?;
 
-        // 1. 写入用户消息；第一条消息作为会话标题
-        let is_first = self
-            .store
-            .list_messages(conversation_id, Some(1))?
-            .is_empty();
-        self.store
-            .add_message(conversation_id, "user", text, None)?;
-        if is_first && conv.title == "新会话" {
+        // 1. 写入用户消息；第一条消息作为会话标题（可靠受理路径跳过）
+        if insert_user {
+            let is_first = self
+                .store
+                .list_messages(conversation_id, Some(1))?
+                .is_empty();
             self.store
-                .rename_conversation(conversation_id, &truncate_chars(text, 24))?;
+                .add_message(conversation_id, "user", text, None)?;
+            if is_first && conv.title == "新会话" {
+                self.store
+                    .rename_conversation(conversation_id, &truncate_chars(text, 24))?;
+            }
         }
 
         // 2. 构建上下文（带卡片的视图用于内省前缀；正文列表仍给决策/回复）

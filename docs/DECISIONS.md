@@ -1491,6 +1491,18 @@
 - **没选什么**：让共现靠样本数自动越阈推送；同任务内对配额视而不见。
 - **出问题先看**：`gate_reason` 是否含「仅内省页」；`introspection_pushes_today` 与 `pushed` 是否一致。
 
+### 66. AI Desktop B1 可靠受理：扩展协议 + store 幂等表（2026-11-20 用户确认）
+
+- **问题**：A5.4 仅有前端 `acceptMock`；真实丢回执 / 同操作 ID 重试 / 改正文冲突需服务端契约（DESIGN §5、B01）。
+- **定了什么**（用户确认方案后开工）：
+  - 新增 `POST /api/desktop/v1/conversations/{id}/requests`（202）与 `GET /api/desktop/v1/requests/{id}`。
+  - `store` 兼容新建 `desktop_client_operations`：同 `client_operation_id` 正文一致则回放，不一致则 409；操作记录与用户消息同事务；`dispatch_count` 仅首次为 1。
+  - 既有 `POST .../messages` 不变。本卡硬门禁为 **RT-ADACCEPT-01～04**；保留 `E2E-ADACCEPT` Mock 断言不改。
+  - **尽量不改** `orchestrator.rs`；首次受理后后台用 `conversation::continue_after_accepted` 继续分流（不再插 user 消息）。
+- **为什么**：Mock 不能证明持久幂等；扩展命名空间避免破坏现网发消息。
+- **没选什么**：本卡不删 Mock、不做 B2 SSE、不改 AgentAdapter / 公开 config 字段、不升级 Playwright 断言接真实 HTTP。
+- **出问题先看**：唯一键是否生效；409 后原 `request_id`/`message_id` 是否不变；旧库打开是否只建新表。
+
 ### 待决定
 
 - ~~哪一个算“个人主窗口会话”、如何指定（第 54 条）~~ **（S1 已落地）**：`app_state` 键 `main_conversation_id` + `Store::ensure_main_conversation`；第一次需要时创建并记下，之后复用。仍待：会话删除 API 出现时的不可删守卫；“个人”页签与默认打开（G-6）。
