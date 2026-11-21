@@ -45,7 +45,7 @@
 
 | Feature | 用户目标与真实入口 | 驱动方法/判据 | 测试与边界 |
 |---|---|---|---|
-| world-adapter | Desktop「DES 仿真实验」「运营频道」「MOM 工作台」 | Mock 全流程 + M1 远程 DES 读：试跑零投递、正式发卡、批准执行、暂停推进、隔离、双角色闭环；工作台三入口同 case；前往运营频道；DES 绑定/续读/观测；`world_mock` + `/api/world/des` | `E2E-DES*`、`E2E-WABIND`、`E2E-WACHANNEL`、`E2E-WADES`/`WAREAD`/`WAOBS`、`RT-WA-01～09`、`RT-WADES-01～08`；套件 `wa-m0-suite` / `wa-m1-suite`；台账 [WA_MOCK_REGISTRY.md](../mom/WA_MOCK_REGISTRY.md)；准出 [wa-m0-6.md](../testing/evidence/wa-m0-6.md)、[wa-m1-5.md](../testing/evidence/wa-m1-5.md)；写路径与真连接器属 M2+ |
+| world-adapter | Desktop「DES 仿真实验」「运营频道」「MOM 工作台」 | Mock 全流程 + M1 远程 DES 读（含 T-50 `with_des`）；M2 写路径冻结中（WA-03/04/05/08 草案） | `E2E-DES*`、`E2E-WABIND`、`E2E-WACHANNEL`、`E2E-WADES`/`WAREAD`/`WAOBS`、拟 `E2E-WAEXEC`/`WARECV`/`WADYN`/`WALOOP`、`RT-WA-01～09`、`RT-WADES-01～08`、拟 `09～14`；套件 `wa-m0/m1-suite`；台账 [WA_MOCK_REGISTRY.md](../mom/WA_MOCK_REGISTRY.md)；任务卡 [WA_M2_TASKS.md](../mom/WA_M2_TASKS.md)；准出 [wa-m0-6.md](../testing/evidence/wa-m0-6.md)、[wa-m1-5.md](../testing/evidence/wa-m1-5.md)、[wa-des-connector.md](../testing/evidence/wa-des-connector.md) |
 | mom | 独立 an-mom 人类看板与 Agent 机器视图 | S1 审批后下发、核验再关闭；S2 初复独立，缺证据不能关闭8D | E2E-MOM/E2E-COMPLAINT；业务系统、主模型及审批身份仍为替代件，见 MOM Mock 清单 |
 
 MOM 增量：主界面左侧 **MOM 运营沙盘** → 同源 `/mom/`；配置持续仿真与播放暂停、事件队列和完整 gap 详情由 E2E-MOMDYNAMIC 验证。独立8790服务仍保留。两者均为明确标识的模拟模式。

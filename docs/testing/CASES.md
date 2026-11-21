@@ -862,3 +862,27 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WADES-06 | world-adapter | 已 step 发布一次 | Observe；空 pending 再 commit | `as_of`/`objects.publish_seq` 与事件水位一致；无重复 `event_id`；空 commit 不抬水位 |
 | RT-WADES-07 | world-adapter | 已挂运营投影的远程 DES 适配 | 实验员试跑一次 | `delivery_count=0`；运营频道消息数为 0（不投递事项卡） |
 | RT-WADES-08 | world-adapter | 同上；已有可用 `config_version` | 正式启动一次 | `delivery_count≥1` 且有 `case_id`；运营频道出现 `OpsCase`，`provenance=des` |
+
+### M2 远程 DES 动作（用例草案，实现前定义）
+
+执行卡：[WA_M2_TASKS.md](../mom/WA_M2_TASKS.md)。设计验收：WA-03、04、05、08（[WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md) §9）；里程碑：[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) M2。协议：Propose / Execute / Confirm（§4.3～4.5）与远程写恢复（§6.2～6.3）。
+
+以下为**草案**：待用户确认断言后，才写成表格行 + 空壳测试并登记 `features.json`（因此暂不写成表格行，避免被 `check-map` 当作缺测试的已登记用例）。M0 Mock 写（`RT-WA-04/05/06`）与 M1 读（`RT-WADES-01～08`）不得弱化，作回归基线。
+
+**浏览器用例（拟正式 id）**
+
+- `E2E-WAEXEC`（WA-03）：远程正式运行上，方案/版本变化后执行被拒绝；同审批并发提交只产生一次业务执行；取消后待发子动作不发送，迟到回执只记事实且案例终态不变；跨世界/跨运行执行拒绝。
+- `E2E-WARECV`（WA-04）：同存活工厂中 Execute 后模拟丢响应，按原幂等键/关联键 Confirm 找回原工单；部分回执可补齐；工厂进程重启后旧运行失败可见且不会误投到新实例。
+- `E2E-WADYN`（WA-05）：动态 DES 场景下，已发生事件前缀在干预后保持；批准维修等干预后未来事件改变；界面不含审核标准答案；与 RT-DES-08～11 / RT-DESC 相关覆盖对齐。
+- `E2E-WALOOP`（WA-08）：实验员启动远程正式运行 → 运营员方案/批准/查看执行 → 实验员推进 → 运营员核验证据；两端关联同一 `execution_id`；运营频道/工作台可见同一执行证据。
+
+**合同用例（拟正式 id）**
+
+- `RT-WADES-09`：Propose 绑定远程 case 与 `plan_revision`；修订或前置条件变化后旧批准不可执行（`APPROVAL_INVALID` / `PRECONDITION_FAILED`）。
+- `RT-WADES-10`：同 `(world_id, idempotency_key)` 并发 Execute 只登记一次业务执行；键同载荷异 → `IDEMPOTENCY_CONFLICT`，可找回原 `execution_id`。
+- `RT-WADES-11`：案例取消后待发子动作不发送；已发出子动作的迟到回执只更新证据，案例终态保留（非重新打开执行）。
+- `RT-WADES-12`：丢回执后 Confirm 进入 `unknown` 或查证后回原工单；部分失败返回 `failed` 且含部分成功子动作证据。
+- `RT-WADES-13`：工厂实例变更后对旧运行再提交失败可见（非静默成功）；新实例不接收旧运行的误投。
+- `RT-WADES-14`：干预后已发生前缀事件集合不变、未来事件集合改变；审核侧答案与干预一致；运营员/普通会话读 Confirm/Observe 不含标准答案字段。
+
+确认后：M2-1 起改表格 + 空壳 Red，再实现。生产写属 M4；本里程碑不开放生产站点。
