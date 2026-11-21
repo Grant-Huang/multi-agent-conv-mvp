@@ -2,7 +2,7 @@
 
 本文件是 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md) **M1 远程 DES 读取**的执行版。硬约束仍见该文 §0（DES-32）；协议落地见 [WORLD_ADAPTER.md](WORLD_ADAPTER.md) §6.1；Mock 替换见 [WA_MOCK_REGISTRY.md](WA_MOCK_REGISTRY.md) WAM-01～03。M0 已准出（#175）。
 
-**准出（缺一不可）**：主应用 MOM 复用 `with_des` / `DesConnector`；世界绑定到远程 DES 运行；Observe/Subscribe 读的是 **MOM 正式投递**边界（非裸 `events_poll`）；试跑零投递、正式运行可投递；WA-01、02、07 的真实 DES 场景有可执行断言；**写路径仍走隔离 Mock**；全量 M0 套件回归绿。
+**准出（缺一不可）**：主应用 MOM 可读远程 DES（M1 落地为服务层 `/api/world/des`；真 `DesConnector`/`with_des` 未接，见 `wa-m1-5.md` Q1）；世界绑定到远程 DES 运行；Observe/Subscribe 读的是 **MOM 正式投递**边界（非裸 `events_poll`）；试跑零投递、正式运行可投递；WA-01、02、07 的真实 DES 场景有可执行断言；**写路径仍走隔离 Mock**；全量 M0 套件回归绿。准出证据：[wa-m1-5.md](../testing/evidence/wa-m1-5.md)。
 
 ## 0. 进度总表
 
@@ -12,8 +12,8 @@
 | M1-1 | 正式 CASES + Red 空壳；随后接线世界绑定 → `DesConnector`（高风险先方案） | 已完成（Red #178 / Green #180） | M0 准出 |
 | M1-2 | 正式投递水位：tick 后发布快照/公开事件；Observe/Subscribe 续读无漏无重 | 已完成（#181） | M1-1 |
 | M1-3 | 实验控制接远程创建/推进；试跑隔离；正式运行事项投递运营频道 | 已完成（#183） | M1-1 |
-| M1-4 | 浏览器：WA-01/02/07 远程 DES 场景（正式 E2E id）+ M0 全量回归 | 进行中（`WA_M1_4_PLAN.md`） | M1-2、M1-3 |
-| M1-5 | 证据、注册表状态（WAM-01～03 读路径）、准出检查 | 未开始 | M1-4 |
+| M1-4 | 浏览器：WA-01/02/07 远程 DES 场景（正式 E2E id）+ M0 全量回归 | 已完成（#184） | M1-2、M1-3 |
+| M1-5 | 证据、注册表状态（WAM-01～03 读路径）、准出检查 | 进行中（#185 / `wa-m1-5.md`） | M1-4 |
 
 一张卡 ≈ 一个 PR。每卡先 Red（业务断言失败）再 Green；断言冻结后不得弱化。
 
