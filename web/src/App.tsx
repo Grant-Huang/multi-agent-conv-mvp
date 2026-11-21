@@ -613,7 +613,7 @@ export default function App() {
             </button>
           )}
         </div>
-        {introCatalog && mainView === "chat" && (
+        {introCatalog && (mainView === "home" || mainView === "chat") && (
           <DiscoveryCard
             catalog={introCatalog}
             onDismiss={dismissIntro}

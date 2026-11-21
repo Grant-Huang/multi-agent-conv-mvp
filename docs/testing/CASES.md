@@ -331,7 +331,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 
 | Case | Feature | Given / When | Then |
 |---|---|---|---|
-| E2E-AGFIRST | agent-ui | 新浏览器首次打开 | 对话区顶部出现发现卡，列出可接入的助手；点"知道了"后刷新不再出现 |
+| E2E-AGFIRST | agent-ui | 新浏览器首次打开，默认进入「我的桌面」 | 主视图顶部出现发现卡，列出可接入的助手；点"知道了"后刷新不再出现 |
 | E2E-AGLIST | agent-ui | 打开「助手」页签 | 显示 Claude Code（已安装、未接入）、ZCode（未安装）、hand（在 config.toml 中配置）、内置的通用执行，每项有用途说明 |
 | E2E-AGTOML | agent-ui | 查看 hand 一行 | 显示"在 config.toml 中配置"，没有"停用"按钮 |
 | E2E-AGGUIDE | agent-ui | ZCode 一行点"看安装步骤"，再点"我装好了，重新检测" | 引导卡列出安装步骤，命令带"复制"按钮；检测结果用大白话说明"还没有安装" |
@@ -694,7 +694,7 @@ Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_ops
 | RT-OPSDESK-02 | ops-desk | 文件库里的引擎与发布器，已发出一张卡 | 重启后再 tick；随后批准案例再 tick | 重启后没有新事件时不重复发；重启期间的新事件不漏，更新原卡（带批准人），频道仍只有一条消息 |
 | RT-OPSDESK-03 | ops-desk | 一个待批准案例 | 发布器 tick | 运营频道会话存在且 id 固定；消息正文含案例号和“模拟”；卡片是来源为 simulation 的 P0 案例卡；不关联任务，频道下没有任务 |
 | RT-OPSDESK-04 | ops-desk | 不同的 `[mom]` 配置文本 | 解析配置 | 未配置时开关关闭；打开开关时合并窗口默认 60 秒、每小时上限默认 10；显式配置值被采用；无未知字段 |
-| RT-OPSDESK-05 | ops-desk | 合并窗口 60 秒；另一组每小时上限 2 张、5 个待批准案例 | 窗口内更新案例；一次 tick 处理 5 个案例 | 窗口内不更新，并记录原因 `merge_window`，窗口后才更新原卡；上限内发 2 张卡，其余 3 个并入唯一一张汇总卡，记录原因 `hourly_cap`，没有案例被静默丢弃 |
+| RT-OPSDESK-05 | ops-desk | 合并窗口 60 秒；另一组每小时上限 2 张、5 个待批准案例 | 窗口内更新案例；一次 tick 处理 5 个案例；另测配额用尽后更新已汇总案例并加入新案例 | 窗口内不更新，并记录原因 `merge_window`，窗口后才更新原卡；上限内发 2 张卡，其余 3 个并入唯一一张汇总卡，记录原因 `hourly_cap`，没有案例被静默丢弃；同一案例在汇总卡中只计一次，新案例依次追加 |
 | RT-OPSDESK-08 | ops-desk | 主库 | 用固定 id 创建会话两次，中间写入消息 | id 为固定值；第二次不改标题和创建时间，不清空消息，会话只有一条 |
 | RT-OPSDESK-06 | ops-desk | 一个待批准案例，发布器未 tick | 对同一案例调用 `open_case` 两次，再 tick；对不存在的案例调用 | 两次返回同一非空消息 id；频道里该案例只有一张卡；tick 后消息条数不变；不存在的案例错误以 `E_CASE_NOT_FOUND` 开头 |
 | RT-OPSDESK-07 | ops-desk | 零案例引擎；另造待批准、受阻、已关闭各一 | 调用 `desk_view` | 零案例 `state=no_data`；有案例时 `state=ok`，`rows[0]` 待批准、`rows[1]` 受阻、已完成最后；`strip` 计数一致；每行 `provenance=simulation` 且 case_id 都在引擎里；结果确定 |
