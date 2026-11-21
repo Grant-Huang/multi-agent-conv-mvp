@@ -641,6 +641,15 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-ADHAND | ai-desktop | 打开 SMT-03 工作区 | 手机与桌面各写不同草稿；选手机稿解决冲突；默认未共享转写，授权后再关闭 | 同一 Task/Run/阅读锚点；冲突可选后两端一致；未授权显示不共享 |
 | E2E-ADACCEPT | ai-desktop | 打开 SMT-03 工作区 | 现有模式丢回执→须回读；可靠模式丢回执后原操作 ID 重试；同 ID 改正文 | 待确认可见；派发次数保持 1；改正文得 409 冲突且不二次派发 |
 
+### AI Desktop B1 可靠受理（运行时 / HTTP）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-ADACCEPT-01 | ai-desktop | 已有会话；测试库 | `POST /api/desktop/v1/conversations/{id}/requests` 带 `client_operation_id` 与正文 | **202**；含 `request_id`/`message_id`；用户消息落库；`dispatch_count=1` |
+| RT-ADACCEPT-02 | ai-desktop | 已成功受理一次 | 同 `client_operation_id` + 同正文再 POST | **202**；`request_id`/`message_id` 不变；`dispatch_count` 仍为 1；用户消息仍一条 |
+| RT-ADACCEPT-03 | ai-desktop | 已成功受理一次 | 同 `client_operation_id`、改正文再 POST | **409** `operation_conflict`；原消息与 `dispatch_count` 不变 |
+| RT-ADACCEPT-04 | ai-desktop | POST 已 202（模拟丢回执） | `GET /api/desktop/v1/requests/{request_id}` | **200**；可读 `status=accepted` 与关联 `message_id` |
+
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 
 设计见 `docs/mom/OPS_DESK.md`，决策见 DECISIONS 第 56–58 条。以下为**草案**：待用户确认断言后，才写成可执行测试并登记到 `features.json`（因此暂不写成表格行，避免被 `check-map` 当作缺测试的已登记用例）。数据全部来自 DES 事件（先进程内），仅替换外部模型。

@@ -18,8 +18,10 @@
 //! | GET  | /api/diagnostics | 诊断：最近的问题、按错误码统计、agent 与节点状态 |
 //! | GET/POST | /api/admission/... | agent 准入（E3，开启 `[admission]` 时才有，见 `admission_api`） |
 //! | GET/POST | /api/introspection/... | 业务内省（见 `introspection_api`） |
+//! | POST/GET | /api/desktop/v1/... | AI Desktop 扩展（B1 可靠受理，见 `desktop_api`） |
 
 pub mod admission_api;
+pub mod desktop_api;
 pub mod host_guard;
 pub mod introspection_api;
 pub mod mom;
@@ -112,6 +114,7 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/diagnostics", get(diagnostics))
         .merge(admission_api::routes())
         .merge(introspection_api::routes())
+        .merge(desktop_api::routes())
         .with_state(rt)
 }
 
