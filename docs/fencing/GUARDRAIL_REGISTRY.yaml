@@ -1,0 +1,356 @@
+# 七层围栏登记表：现有围栏的唯一机器可读清单。
+# 规则见 docs/fencing/README.md 第 5 节；证据等级定义见 DEV_STANDARD.md 第 8 节。
+#
+# 字段：
+#   status          proposed | approved | pilot-warning | enforced | monitored | revised | retired
+#   evidence_level  DECLARED | IMPLEMENTED | VERIFIED | ENFORCED | NOT_VERIFIED（是证据等级，不是部署状态）
+#   enforcement     这条围栏靠什么生效；写清是否阻断
+#   evidence        能点开或复现的证据：文件、运行编号、PR 编号
+#   exception       例外与到期日；没有写 null
+#
+# 维护：同一时间只由一个治理 PR 修改本文件。升为 enforced、降低强度、停用高风险规则须用户批准；
+# agent 不得给自己签署 enforced。
+#
+# 说明：本仓库分支保护的实际设置在云会话中读不到（NOT_VERIFIED），所以下面没有任何一条的
+# evidence_level 写成 ENFORCED，即使 docs/fencing/BRANCH_PROTECTION.md 建议把它设为必需检查。
+
+schema_version: 1
+repo: Grant-Huang/multi-agent-conv-mvp
+default_branch: master
+last_audit:
+  baseline_sha: "152ea0db6658720b0a4319f882318a46e324e824"
+  checked_at: "2026-11-21"
+  by: "Claude Code 会话（初次登记）"
+  unknowns:
+    - "分支保护 / Rulesets 的实际设置（必需检查、审批数、是否允许绕过）"
+    - "开发 agent 是否已有独立身份（BOT_IDENTITY 阶段 2）"
+
+guardrails:
+  # ---------- 第一层：需求边界与验收 ----------
+  - id: GR-1-FEATURE-MAP
+    layer: 1
+    objective: "登记表 features.json 中的用例编号必须在 CASES.md 中存在（T1 结构追踪）"
+    enforcement: "CI web 作业运行 npm run test:map；失败即作业失败"
+    schedule: [pr, weekly]
+    owner: "用户（维护）；实现会话（同步登记表）"
+    status: monitored
+    evidence_level: VERIFIED
+    evidence:
+      - ".github/workflows/ci.yml web 作业 `npm run test:map`"
+      - "web/verification/check-map.test.mjs（未知用例被拒的反例测试）"
+      - "PR #193 CI web 作业通过（run 44942724424）"
+    last_verified: "2026-11-21"
+    positive_test: "登记的用例都存在时通过"
+    negative_test: "check-map.test.mjs：unknown cases are rejected"
+    exception: null
+    review_due: "2026-11-28"
+
+  - id: GR-1-PR-TEMPLATE
+    layer: 1
+    objective: "PR 写明关联编号、非目标、风险与回滚、验证证据、设计一致性"
+    enforcement: "PR 模板（提示，不阻断）；change_size_check 对非文档 PR 缺“非目标”/Case ID 给警告；doc_lint 对缺“设计一致性”给警告"
+    schedule: [pr]
+    owner: "用户"
+    status: monitored
+    evidence_level: IMPLEMENTED
+    evidence:
+      - ".github/pull_request_template.md"
+    last_verified: "2026-11-21"
+    positive_test: null
+    negative_test: null
+    exception: null
+    review_due: "2026-11-28"
+
+  # ---------- 第二层：产品知识与架构契约 ----------
+  - id: GR-2-DOC-LINT
+    layer: 2
+    objective: "新增内容中的坏链接与锚点、决策文件格式、往 DECISIONS.md 追加编号、新设计文档未登记、PR 缺设计一致性"
+    enforcement: "CI change-policy 作业“文档检查（只警告）”步骤；脚本默认退出码 0，另加 continue-on-error"
+    schedule: [pr]
+    owner: "用户（批准升级）；实现会话（维护脚本）"
+    status: pilot-warning
+    evidence_level: VERIFIED
+    evidence:
+      - "tools/ci/doc_lint.py；tools/ci/tests/test_doc_lint.py（22 个用例，Red 15 失败 → Green）"
+      - "PR #193 change-policy 输出“文档检查：0 条发现（只警告，不阻断）”（run 44942724424）"
+      - "在 T-50 分支上实测报出决策格式缺字段与缺小节"
+      - "decisions/2026-11-21-doc-rules-enforcement.md"
+    last_verified: "2026-11-21"
+    positive_test: "test_well_formed_decision_passes 等"
+    negative_test: "test_broken_relative_link_in_added_line_warns、test_appending_numbered_entry_to_decisions_md_warns 等"
+    exception:
+      kind: "continue-on-error（试点只警告）"
+      owner: "用户"
+      reason: "让进行中的分支有一周时间改用新写法"
+      mitigation: "警告出现在 CI 日志与 risk-report 构件 doc-lint.json"
+      expires_at: "2026-11-28"
+    review_due: "2026-11-28"
+
+  - id: GR-2-ENTRY-RULES
+    layer: 2
+    objective: "agent 开工按宪章 → DESIGN 第 0 节 → 契约 → 特性设计的顺序读；新决策写到 docs/decisions/"
+    enforcement: "AGENTS.md、CLAUDE.md、REVIEW.md、FIX.md 文字要求（不阻断）；部分由 GR-2-DOC-LINT 检查"
+    schedule: [pr, daily]
+    owner: "用户"
+    status: monitored
+    evidence_level: DECLARED
+    evidence:
+      - "AGENTS.md「开始前」「决策记录」"
+      - "2026-11-21 PR #187 的会话在合并 master 时自行改用 docs/decisions/ 单文件（部分遵守的实例）"
+    last_verified: "2026-11-21"
+    positive_test: null
+    negative_test: null
+    exception: null
+    review_due: "2026-11-28"
+
+  # ---------- 第三层：开发执行与隔离 ----------
+  - id: GR-3-CHANGE-SIZE
+    layer: 3
+    objective: "单个 PR 过大（> 800 行或 > 20 个文件）时要求拆分或写说明"
+    enforcement: "CI change-policy“变更规模”；超阈值警告，缺说明可阻断（见 docs/CI_GATES.md）"
+    schedule: [pr]
+    owner: "用户"
+    status: monitored
+    evidence_level: VERIFIED
+    evidence:
+      - "tools/ci/change_size_check.py；tools/ci/tests/test_change_size_check.py"
+      - "PR #193 本地运行给出 945 行 warn"
+    last_verified: "2026-11-21"
+    positive_test: "小改动 pass"
+    negative_test: "超阈值 warn"
+    exception: null
+    review_due: "2026-11-28"
+
+  - id: GR-3-HIGH-RISK-STOP
+    layer: 3
+    objective: "高风险文件和操作（任务状态机、持久化、子进程、权限、对外发送、部署、治理文件）先出方案再改"
+    enforcement: "AGENTS.md「先停下来问人」（文字要求）；L3 路径由 risk_classify 标出；合并靠人工"
+    schedule: [pre-action, pr]
+    owner: "用户"
+    status: monitored
+    evidence_level: DECLARED
+    evidence:
+      - "AGENTS.md；config/risk-policy.toml"
+    last_verified: "2026-11-21"
+    positive_test: null
+    negative_test: null
+    exception: null
+    review_due: "2026-11-28"
+
+  - id: GR-3-SECRETS-DEPS
+    layer: 3
+    objective: "凭据不进仓库；依赖无已知高危漏洞"
+    enforcement: "CI security 作业：cargo audit、npm audit（生产依赖，high）、gitleaks"
+    schedule: [pr]
+    owner: "用户"
+    status: monitored
+    evidence_level: VERIFIED
+    evidence:
+      - ".github/workflows/ci.yml security 作业"
+      - "PR #193 security 作业通过（run 44942724424）"
+    last_verified: "2026-11-21"
+    positive_test: "无凭据、无高危漏洞时通过"
+    negative_test: "NOT_VERIFIED（未见用含假凭据的提交验证 gitleaks 会拦）"
+    exception: null
+    review_due: "2026-11-28"
+
+  # ---------- 第四层：确定性自动验证 ----------
+  - id: GR-4-RUST
+    layer: 4
+    objective: "Rust 格式、clippy 无警告、全量测试通过；生成的 TS 类型最新"
+    enforcement: "CI rust 作业"
+    schedule: [pr, push-master]
+    owner: "实现会话；用户维护必需检查"
+    status: monitored
+    evidence_level: VERIFIED
+    evidence:
+      - ".github/workflows/ci.yml rust 作业"
+      - "master 上 #187 合并后的 CI 通过（run 44945602914）"
+    last_verified: "2026-11-21"
+    positive_test: "正常提交通过"
+    negative_test: "NOT_VERIFIED（必需检查能否阻止合并取决于分支保护）"
+    exception: null
+    review_due: "2026-11-28"
+
+  - id: GR-4-WEB
+    layer: 4
+    objective: "前端类型检查、单元测试、功能地图、构建通过"
+    enforcement: "CI web 作业"
+    schedule: [pr, push-master]
+    owner: "实现会话"
+    status: monitored
+    evidence_level: VERIFIED
+    evidence:
+      - ".github/workflows/ci.yml web 作业（typecheck、test、test:map、build）"
+      - "run 44945602914、44942724424"
+    last_verified: "2026-11-21"
+    positive_test: "正常提交通过"
+    negative_test: "NOT_VERIFIED"
+    exception: null
+    review_due: "2026-11-28"
+
+  - id: GR-4-PYTHON
+    layer: 4
+    objective: "Python 工具（websearch、dlp-egress、CI 策略脚本）测试与 flake8 通过"
+    enforcement: "CI python-websearch、python-dlp-egress、python-tools 作业"
+    schedule: [pr, push-master]
+    owner: "实现会话"
+    status: monitored
+    evidence_level: VERIFIED
+    evidence:
+      - "run 44942724424 三个作业均通过"
+    last_verified: "2026-11-21"
+    positive_test: "正常提交通过"
+    negative_test: "NOT_VERIFIED"
+    exception: null
+    review_due: "2026-11-28"
+
+  - id: GR-4-INJECTION-SCAN
+    layer: 4
+    objective: "新增行中的隐藏字符、工作流表达式注入、提示注入短语"
+    enforcement: "CI change-policy“提示注入扫描”；隐藏字符与工作流注入阻断，短语视位置阻断或警告"
+    schedule: [pr]
+    owner: "用户"
+    status: monitored
+    evidence_level: VERIFIED
+    evidence:
+      - "tools/ci/injection_scan.py；tools/ci/tests/test_injection_scan.py（正反例）"
+    last_verified: "2026-11-21"
+    positive_test: "test_cli_clean_change_passes"
+    negative_test: "test_cli_blocks_hidden_unicode_and_reports_location"
+    exception: null
+    review_due: "2026-11-28"
+
+  - id: GR-4-NIGHTLY-E2E
+    layer: 4
+    objective: "每晚在 master 上跑浏览器端到端（npm run verify）"
+    enforcement: ".github/workflows/nightly-e2e.yml 定时（UTC 10:30）；不阻断"
+    schedule: [daily]
+    owner: "用户"
+    status: pilot-warning
+    evidence_level: VERIFIED
+    evidence:
+      - "定时运行 2 次均失败：run 44795474606（2026-11-20）、run 44931610796（2026-11-21），原因 NOT_VERIFIED"
+    last_verified: "2026-11-21"
+    positive_test: null
+    negative_test: null
+    exception:
+      kind: "持续失败未处理"
+      owner: "用户"
+      reason: "见 GAP_ANALYSIS.md G15"
+      mitigation: "PR 级的 web 作业与本地 verify 仍在"
+      expires_at: "2026-11-28"
+    review_due: "2026-11-28"
+
+  # ---------- 第五层：独立 AI 审查 ----------
+  - id: GR-5-NIGHTLY-REVIEW
+    layer: 5
+    objective: "每晚由独立会话审查 master 增量，写报告与台账；修复与验收分离"
+    enforcement: "定时 agent 任务按 REVIEW.md 执行；修复 agent 按 FIX.md；事后审查，不阻断合并"
+    schedule: [daily, weekly]
+    owner: "评审 agent / 修复 agent；用户决定"
+    status: monitored
+    evidence_level: VERIFIED
+    evidence:
+      - "docs/review/2026-11-21.md（PR #189）；docs/review/findings.jsonl"
+      - "修复运行 PR #190"
+    last_verified: "2026-11-21"
+    positive_test: null
+    negative_test: null
+    exception: null
+    review_due: "2026-11-28"
+
+  - id: GR-5-SHADOW-REVIEW
+    layer: 5
+    objective: "合并前留下风险等级与审查清单（不是 AI 语义审查）"
+    enforcement: ".github/workflows/pr-shadow-review.yml；非草稿 PR 触发，只评论不阻断"
+    schedule: [pr]
+    owner: "用户"
+    status: pilot-warning
+    evidence_level: VERIFIED
+    evidence:
+      - "PR #188、#187 上的影子审查评论"
+      - "docs/fencing/SHADOW_REVIEW.md"
+    last_verified: "2026-11-21"
+    positive_test: null
+    negative_test: null
+    exception:
+      kind: "影子模式（不阻断）"
+      owner: "用户"
+      reason: "积累误报数据后再决定是否升级（SHADOW_REVIEW.md）"
+      mitigation: "每晚评审事后补审"
+      expires_at: null
+    review_due: "2026-11-28"
+
+  # ---------- 第六层：风险分级与授权审批 ----------
+  - id: GR-6-RISK-CLASSIFY
+    layer: 6
+    objective: "按路径与内容给出 L0～L3 风险等级与审批要求"
+    enforcement: "CI change-policy“风险分级”与影子审查评论；本身不阻断，审批靠人"
+    schedule: [pr]
+    owner: "用户"
+    status: monitored
+    evidence_level: VERIFIED
+    evidence:
+      - "tools/ci/risk_classify.py；config/risk-policy.toml；tools/ci/tests/test_risk_classify.py"
+    last_verified: "2026-11-21"
+    positive_test: "docs 改动判 L0"
+    negative_test: "治理文件改动判 L3"
+    exception: null
+    review_due: "2026-11-28"
+
+  - id: GR-6-CODEOWNERS-APPROVAL
+    layer: 6
+    objective: "L2/L3 改动须有独立于作者的批准"
+    enforcement: ".github/CODEOWNERS（只有 @Grant-Huang）；是否要求批准取决于分支保护"
+    schedule: [pr]
+    owner: "用户"
+    status: proposed
+    evidence_level: IMPLEMENTED
+    evidence:
+      - ".github/CODEOWNERS"
+      - "BRANCH_PROTECTION.md 阶段 0 规定审批数为 0；agent 以 @Grant-Huang 身份提 PR（如 #188、#192、#193），作者无法批准自己的 PR"
+    last_verified: "2026-11-21"
+    positive_test: null
+    negative_test: null
+    exception:
+      kind: "单人仓库，暂不要求批准"
+      owner: "用户"
+      reason: "BOT_IDENTITY 阶段 2 未完成"
+      mitigation: "用户在对话中明确批准 L3 改动后再合并"
+      expires_at: null
+    review_due: "2026-11-28"
+
+  - id: GR-6-BRANCH-PROTECTION
+    layer: 6
+    objective: "禁止直推 master；必需检查未通过不能合并；不允许绕过"
+    enforcement: "GitHub 分支保护或 Rulesets（由用户在 GitHub 设置）"
+    schedule: [pr, weekly]
+    owner: "用户"
+    status: approved
+    evidence_level: NOT_VERIFIED
+    evidence:
+      - "docs/fencing/BRANCH_PROTECTION.md；scripts/enable_branch_protection.sh"
+      - "2026-11-21 本会话推送 tag 被拒（HTTP 403），只能推送指定分支：说明会话侧有推送限制，但不能证明分支保护设置"
+    last_verified: null
+    positive_test: null
+    negative_test: "待做：用一个故意失败的 PR 确认无法合并"
+    exception: null
+    review_due: "2026-11-28"
+
+  # ---------- 第七层：发布、监控与恢复 ----------
+  - id: GR-7-RELEASE-NOTES
+    layer: 7
+    objective: "每个版本有版本说明；里程碑给出 PASS / CONDITIONAL / BLOCKED"
+    enforcement: "DEV_STANDARD.md 第 9 节；模板 docs/spec/release-template.md（尚未用过）"
+    schedule: [milestone]
+    owner: "用户"
+    status: proposed
+    evidence_level: DECLARED
+    evidence:
+      - "tag v1.0.0（0d0133c）存在，但没有对应的版本说明"
+    last_verified: "2026-11-21"
+    positive_test: null
+    negative_test: null
+    exception: null
+    review_due: "2026-12-05"

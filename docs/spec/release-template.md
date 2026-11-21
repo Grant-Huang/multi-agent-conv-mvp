@@ -1,6 +1,6 @@
 # 版本说明模板
 
-每次发版写一份 `docs/releases/vX.Y.Z.md`，与 git tag `vX.Y.Z` 对应。第 2、3 节由登记表 `docs/testing/features.json` 生成（生成脚本在首次按新规范发版时补），其余人工填写。规则见 [研发对齐规范](README.md) 第 6 节。下面代码块里是模板正文。
+每次发版写一份 `docs/releases/vX.Y.Z.md`，与 git tag `vX.Y.Z` 对应。第 2、3 节由登记表 `docs/testing/features.json` 生成（生成脚本在首次按新规范发版时补），其余人工填写。规则见 [DEV_STANDARD.md](../../DEV_STANDARD.md) 第 9 节；里程碑准出时同时填写第 7 节结论。下面代码块里是模板正文。
 
 ```markdown
 # vX.Y.Z
@@ -33,4 +33,19 @@
 
 ## 6. 相关决策
 - decisions/…
+
+## 7. 里程碑准出（里程碑版本必填）
+| 方面 | 结论 | 证据 |
+|---|---|---|
+| 业务验收 | PASS / FAIL / NOT_VERIFIED | …… |
+| 架构与契约 | PASS / FAIL / NOT_VERIFIED | …… |
+| 安全与权限 | PASS / FAIL / NOT_VERIFIED | …… |
+| CI、回归、端到端 | PASS / FAIL / NOT_VERIFIED | …… |
+| 部署与可观测 | PASS / FAIL / NOT_VERIFIED | …… |
+| 恢复演练 | PASS / FAIL / NOT_VERIFIED | …… |
+
+- 未关闭的关键问题：……
+- 非关键剩余风险（负责人、缓解措施、到期日）：……
+- **结论**：PASS / CONDITIONAL / BLOCKED（CONDITIONAL 不适用于安全或不可逆问题）
+- 批准人 / 时间 / 证据链接：……（必须真实）
 ```

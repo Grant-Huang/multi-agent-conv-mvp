@@ -137,11 +137,12 @@ flowchart TB
 | 为什么这样定 | 2026-11-21 起的新决策在 [decisions/](decisions/README.md)（一条一个文件）；更早的在 [DECISIONS.md](DECISIONS.md) |
 | 原型、实验、调研 | [explore/](explore/README.md)（不作为设计依据） |
 | 文档体系怎么整理 | [DOC_SYSTEM_PLAN.md](DOC_SYSTEM_PLAN.md) |
-| 需求、设计、实现、质量、版本怎么对齐（特性档案、登记表、交接、发版） | [spec/README.md](spec/README.md)（草案，待批准） |
+| 研发规范：需求→设计→实现→质量→版本怎么对齐、风险分级、授权、证据等级 | [DEV_STANDARD.md](../DEV_STANDARD.md)（唯一研发规范）；模板在 [spec/](spec/README.md) |
+| 七层围栏、检查节奏、围栏现状与缺口 | [fencing/README.md](fencing/README.md)、[GUARDRAIL_REGISTRY.yaml](fencing/GUARDRAIL_REGISTRY.yaml)、[GAP_ANALYSIS.md](fencing/GAP_ANALYSIS.md) |
 | 怎么测、验收用例、证据 | [testing/README.md](testing/README.md)、[testing/CASES.md](testing/CASES.md)、[feature-map/README.md](feature-map/README.md) |
 | 界面设计原则 | [mom/UI_UX_PRINCIPLES.md](mom/UI_UX_PRINCIPLES.md) |
 | 怎么用 | [manual/README.md](manual/README.md) |
-| 工程规则与自检 | `AGENTS.md`、[fencing/PREFLIGHT.md](fencing/PREFLIGHT.md)、[CI_GATES.md](CI_GATES.md) |
+| 工程规则与自检 | `AGENTS.md`、[DEV_STANDARD.md](../DEV_STANDARD.md)、[fencing/PREFLIGHT.md](fencing/PREFLIGHT.md)、[CI_GATES.md](CI_GATES.md) |
 | 评审与修复 | `REVIEW.md`、`FIX.md`、`docs/review/`、`docs/fix-plans/` |
 
 ### 0.5 文档规则
