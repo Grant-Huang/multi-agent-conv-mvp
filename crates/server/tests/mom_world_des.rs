@@ -1,16 +1,25 @@
-//! World Adapter M1 远程 DES 读合同：RT-WADES-01～08（见 docs/testing/CASES.md）。
-//! Green：挂载 `/api/world/des`；不改 DesConnector / engine。
+//! World Adapter M1/T-50 远程 DES 读合同：RT-WADES-01～08（见 docs/testing/CASES.md）。
+//! 桩模式 + 真 `DesConnector`/`with_des` 补接；不改 DesConnector / engine 内部。
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use an_core::ChatCard;
+use an_runtime::config::MomSection;
 use an_runtime::mom::ops_desk::OPS_CHANNEL_ID;
+use an_runtime::mom::Engine;
 use an_runtime::store::Store;
+use an_server::mom_des_connector::DesConnector;
 use an_server::mom_world_des::{router, WorldDesState};
 use serde_json::{json, Value};
 
+#[path = "support/des_mcp.rs"]
+mod des_mcp;
+use des_mcp::des_mcp_bin;
+
 const DES_API: &str = "/api/world/des";
+const WAIT: Duration = Duration::from_secs(60);
 
 async fn des_server(connected: bool) -> (String, tokio::task::JoinHandle<()>) {
     let app = router(WorldDesState::new(connected));
@@ -530,6 +539,144 @@ async fn rt_wades_07_trial_does_not_deliver_ops_channel() {
         "试跑不得向运营频道投影，got {} 条",
         msgs.len()
     );
+}
+
+/// T-50：默认配置不挂真连接器命令。
+#[test]
+fn rt_wades_des_mcp_default_empty() {
+    assert!(
+        MomSection::default().des_mcp.is_empty(),
+        "生产默认 des_mcp 须为空"
+    );
+}
+
+async fn live_des_server() -> (String, Arc<DesConnector>, tokio::task::JoinHandle<()>) {
+    let connector = Arc::new(
+        tokio::time::timeout(
+            WAIT,
+            DesConnector::spawn(&des_mcp_bin(), &[], "wa-des-test-admin"),
+        )
+        .await
+        .expect("spawn timed out")
+        .expect("an-des-mcp starts"),
+    );
+    let engine = Arc::new(Mutex::new(Engine::memory().unwrap()));
+    let app = router(WorldDesState::with_connector(
+        connector.clone(),
+        engine,
+        None,
+    ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    (url, connector, task)
+}
+
+/// RT-WADES-01（真连接器）：`with_des` 路径 bind 成功；`world_id` 即仿真编号。
+#[tokio::test]
+async fn rt_wades_01_bind_with_live_des_connector() {
+    let (url, _connector, _task) = live_des_server().await;
+    let client = reqwest::Client::builder().timeout(WAIT).build().unwrap();
+    let bound = client
+        .post(format!("{url}{DES_API}/bind"))
+        .headers(experimenter())
+        .json(&json!({
+            "factory": "plant-a",
+            "scenario": "s1",
+            "seed": 1,
+            "request_id": "bind-live"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bound.status(), 200);
+    let body: Value = bound.json().await.unwrap();
+    assert_eq!(body["protocol_version"], 1);
+    assert_eq!(body["provenance"], "des");
+    let world_id = body["world_id"].as_str().unwrap_or("");
+    assert!(
+        world_id.starts_with("DES-"),
+        "真连接器 world_id 应对齐 simulation_id，got {world_id}"
+    );
+}
+
+/// RT-WADES-02（真连接器）：tick 后 Observe 见 Engine 投影事件，`provenance=des`。
+#[tokio::test]
+async fn rt_wades_02_observe_after_live_connector_tick() {
+    let (url, _connector, _task) = live_des_server().await;
+    let client = reqwest::Client::builder().timeout(WAIT).build().unwrap();
+    let world_id = bind_world(&client, &url).await;
+    assert!(world_id.starts_with("DES-"));
+
+    let before: Value = client
+        .post(format!("{url}{DES_API}/observe"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(before["events"]
+        .as_array()
+        .map(|a| a.is_empty())
+        .unwrap_or(true));
+
+    let tick = client
+        .post(format!("{url}{DES_API}/experiment/step"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id, "minutes": 1 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(tick.status(), 200);
+    let tick_body: Value = tick.json().await.unwrap();
+    assert_eq!(tick_body["published"], true);
+    assert_eq!(tick_body["provenance"], "des");
+
+    let after: Value = client
+        .post(format!("{url}{DES_API}/observe"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(after["provenance"], "des");
+    assert!(
+        after["events"]
+            .as_array()
+            .map(|a| !a.is_empty())
+            .unwrap_or(false),
+        "tick 成功后 Observe 须见 Engine 投影事件"
+    );
+    assert!(after["publish_seq"].as_u64().unwrap_or(0) >= 1);
+}
+
+/// 真连接器拒用半提交测试控件。
+#[tokio::test]
+async fn rt_wades_live_rejects_abort_before_publish() {
+    let (url, _connector, _task) = live_des_server().await;
+    let client = reqwest::Client::builder().timeout(WAIT).build().unwrap();
+    let world_id = bind_world(&client, &url).await;
+    let denied = client
+        .post(format!("{url}{DES_API}/test/abort-before-publish"))
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+    let err: Value = denied.json().await.unwrap();
+    assert_eq!(err["code"], "ACCESS_DENIED");
 }
 
 /// RT-WADES-08：正式运行向运营频道投递 OpsCase（provenance=des）。

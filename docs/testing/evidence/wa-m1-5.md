@@ -15,7 +15,7 @@
 
 | # | 准出项 | 结论 | 证据 |
 |---|---|---|---|
-| Q1 | 主应用 MOM 可读远程 DES 世界 | **通过（服务层）** | `mom_world_des` + `MomWorkbench` DES 读水位；真 `with_des`/`DesConnector` **未接**（M1-1～4 明示） |
+| Q1 | 主应用 MOM 可读远程 DES 世界 | **通过（服务层）**；T-50 补真连接器 | `mom_world_des` + `MomWorkbench` DES 读水位；T-50：`des_mcp`/`with_des`（见 `wa-des-connector.md`） |
 | Q2 | 世界绑定到远程 DES 运行 | **通过** | `RT-WADES-01`；`E2E-WADES`（含 `/api/world/des/bind`） |
 | Q3 | Observe/Subscribe = 正式投递边界（非裸 poll） | **通过** | `RT-WADES-02/03/05/06`；ingest→commit 水位 |
 | Q4 | 试跑零投递；正式可投递 | **通过** | `RT-WADES-04/07/08`；正式 `OpsCase provenance=des` |

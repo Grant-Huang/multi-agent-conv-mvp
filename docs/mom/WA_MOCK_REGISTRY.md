@@ -7,7 +7,8 @@
 | 钩子 | 行为 | 演示 / 断言 |
 |---|---|---|
 | `[mom] world_mock`（默认 `false`） | `true` 且 loopback 时 `main` 挂载 `/api/world/mock/*`；关闭则路由不存在（404） | `RT-WA-09`；浏览器套件经 `waMockServer` 写 `world_mock=true` |
-| `/api/world/des`（同门控） | `world_mock=true` 时一并挂载远程 DES **读**适配（服务层；非真 `DesConnector`） | `RT-WADES-*`、`E2E-WADES*`；`wa-m1-suite` |
+| `/api/world/des`（同门控） | `world_mock=true` 时挂载；`[mom] des_mcp` / `AN_MOM_DES_MCP` 非空则真 `DesConnector`+`with_des`，否则内存桩 | `RT-WADES-*`（含 live）、`E2E-WADES*`；`wa-m1-suite` |
+| `[mom] des_mcp`（默认空） | 主应用 MOM `with_des`；与 `/api/world/des` 共用 Engine | T-50 / `WA_DES_CONNECTOR_PLAN`；`rt_wades_*_live_*` |
 | 响应 `protocol_version` | Mock 与未来真实适配器共用合同字段 | `RT-WA-01～08` / `RT-WADES-*` 响应含 `protocol_version=1` |
 | 卡片 `provenance` | Mock 正式运行 `OpsCase.provenance=world_mock`；DES 正式运行 `provenance=des`；工作台种子区分 `mock` / `des` / `production` | `E2E-DES*`、`E2E-WABIND`、`RT-WADES-08`；UI 来源标签 |
 | 测试控件 | `WorldMockState::new(true)` / DES `with_test_controls` 才开放 fault/中断注入；生产挂载关闭 | `RT-WA-06`、`RT-WA-07`、`RT-WADES-05` |
@@ -18,9 +19,9 @@
 
 | ID | Mock | M0 行为 | 替换时机 | 替换验收 | 状态（M0 / M1） |
 |---|---|---|---|---|---|
-| WAM-01 | 实验控制与消息 | 试跑/正式分登记；时钟；幂等启动；事项投递 | **M1** 读与观察；**M2** 真实回执 | `wa-m0-suite` + `wa-m1-suite` | **写：M0 Mock**；**读：M1 服务层 DES**（`/api/world/des`；真连接器随后续） |
-| WAM-02 | 世界与权限 | 两身份、两世界、跨范围拒绝 | **M1** DES 绑定；**M3** 生产权限 | 列表/详情/计数/隔离合同不变 | **M0 Mock** + **M1** `E2E-WADES` / `RT-WADES-01` |
-| WAM-03 | 读与事件 | 快照、有序事件、游标过期 | **M1** MOM 投递；**M3** 多源水位 | 续读无漏、无重复业务应用 | **M0 Mock** + **M1** 正式投递水位（`RT-WADES-02/03/05/06`、`E2E-WAREAD`） |
+| WAM-01 | 实验控制与消息 | 试跑/正式分登记；时钟；幂等启动；事项投递 | **M1** 读与观察；**M2** 真实回执 | `wa-m0-suite` + `wa-m1-suite` | **写：M0 Mock**；**读：M1 + T-50**（`/api/world/des`；主应用可 `with_des`） |
+| WAM-02 | 世界与权限 | 两身份、两世界、跨范围拒绝 | **M1** DES 绑定；**M3** 生产权限 | 列表/详情/计数/隔离合同不变 | **M0 Mock** + **M1** `E2E-WADES` / `RT-WADES-01`（含 live bind） |
+| WAM-03 | 读与事件 | 快照、有序事件、游标过期 | **M1** MOM 投递；**M3** 多源水位 | 续读无漏、无重复业务应用 | **M0 Mock** + **M1/T-50** 正式投递水位（桩 + tick 投影；`RT-WADES-02/03/05/06`、`E2E-WAREAD`） |
 | WAM-04 | 方案与批准 | 版本、角色；审批走运营频道卡 | **M2** 复用 MOM；**M4** 真实审批 | 过期批准零写入 | **M0 Mock**（`E2E-DESOPS`、`E2E-WACHANNEL`） |
 | WAM-05 | 写入、回执、取消 | 稳定 execution_id、丢回执、部分失败 | **M2** DES；**M4** MES | 重复执行、终态保护 | **M0 Mock**（`RT-WA-04`、`RT-WA-06`） |
 | WAM-06 | 审核与诊断 | 标准答案仅审核可见 | **M2** DES 审核源 | 访问边界、刷新失败恢复 | **M0 Mock**（`RT-WA-08`、`E2E-DESLOOP`） |

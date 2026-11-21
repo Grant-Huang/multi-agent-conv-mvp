@@ -66,6 +66,8 @@ pub struct MomSection {
     pub ops_hourly_cap: u32,
     /// World Adapter M0 协议/实验 Mock（`/api/world/mock`）。默认关闭；测试与前端先行里程碑打开。
     pub world_mock: bool,
+    /// 模拟工厂命令（`an-des-mcp`）。空 = 不挂 `DesConnector`；非空则主应用 MOM `with_des`（亦可读环境变量 `AN_MOM_DES_MCP`）。
+    pub des_mcp: String,
 }
 impl Default for MomSection {
     fn default() -> Self {
@@ -74,6 +76,7 @@ impl Default for MomSection {
             ops_merge_secs: 60,
             ops_hourly_cap: 10,
             world_mock: false,
+            des_mcp: String::new(),
         }
     }
 }

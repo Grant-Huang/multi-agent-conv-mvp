@@ -1,7 +1,7 @@
 # T-50 方案：DesConnector / `with_des` 补接（高风险先批）
 
 承接 [WA_M1_TASKS.md](WA_M1_TASKS.md) 准出缺口 Q1、[WORLD_ADAPTER.md](WORLD_ADAPTER.md) §6.1、父项 T-49。  
-**状态：待批准后写业务代码。** 本文件只定方案；未获批准前不改 `engine` / `DesConnector` 内部 / `store` 表结构。
+**状态：已批准（服务层优先）并实施。** 不改 `engine` / `DesConnector` 内部 / `store` 表结构。
 
 ## 1. 现状缺口
 

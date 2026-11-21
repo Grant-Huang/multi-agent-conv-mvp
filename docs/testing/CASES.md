@@ -844,7 +844,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 
 ### M1 远程 DES 读取（断言已冻结；M1-1 Red）
 
-执行卡：[WA_M1_TASKS.md](../mom/WA_M1_TASKS.md)。浏览器用例：`web/e2e/wa-des-remote.spec.ts`。合同：`crates/server/tests/mom_world_des.rs`。路由前缀 `/api/world/des`（相对 M0 `/api/world/mock`）；写路径仍 Mock。证据：`wa-m1-0`～`wa-m1-5.md`（准出见 `wa-m1-5.md`）。套件：`./scripts/wa-m1-suite.sh`。M0 套件不得弱化。
+执行卡：[WA_M1_TASKS.md](../mom/WA_M1_TASKS.md)。浏览器用例：`web/e2e/wa-des-remote.spec.ts`。合同：`crates/server/tests/mom_world_des.rs`。路由前缀 `/api/world/des`（相对 M0 `/api/world/mock`）；写路径仍 Mock。证据：`wa-m1-0`～`wa-m1-5.md`（准出见 `wa-m1-5.md`）；T-50 真连接器：`wa-des-connector.md`。套件：`./scripts/wa-m1-suite.sh`。M0 套件不得弱化。T-50：`[mom] des_mcp` / `with_des`；合同另含 live bind/tick 与半提交拒用（同文件）。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|

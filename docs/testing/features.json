@@ -844,6 +844,8 @@
       "docs/mom/WA_M1_3_PLAN.md",
       "docs/mom/WA_M1_4_PLAN.md",
       "docs/mom/WA_M1_5_PLAN.md",
+      "docs/mom/WA_DES_CONNECTOR_PLAN.md",
+      "docs/testing/evidence/wa-des-connector.md",
       "scripts/wa-m1-suite.sh",
       "web/e2e/wa-des-remote.spec.ts",
       "crates/server/src/mom_world_des.rs",
