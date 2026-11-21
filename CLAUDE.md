@@ -10,7 +10,7 @@
 - 个人偏好写在根目录的 `CLAUDE.local.md`（已加入 `.gitignore`），不要写进本文件。
 
 ## 压缩之后
-- `docs/DESIGN.md`、`docs/PLAN.md`、`docs/testing/README.md` 不会随压缩自动恢复。压缩后再碰架构、里程碑或测试流程时，重新读相关章节，不要凭摘要。
+- `docs/PRODUCT.md`、`docs/DESIGN.md`、`docs/contracts/`、`docs/PLAN.md`、`docs/testing/README.md` 不会随压缩自动恢复。压缩后再碰产品方向、架构、跨特性约定、里程碑或测试流程时，重新读相关章节，不要凭摘要。
 - 压缩前，把当前任务的验收条件、已确认的方案和未完成的步骤写进回复，避免只留在被总结掉的工具输出里。
 
 ## 高风险改动

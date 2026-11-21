@@ -31,7 +31,7 @@
 评审 agent 必须自己读，不接受任何人的总结：
 
 1. 本次范围的 diff（`git diff <上次截止提交>..origin/master`），以及 diff 涉及的上下游代码；
-2. `docs/DESIGN.md`、`docs/PLAN.md`、`docs/feature-map/README.md`、`docs/feature-map/COVERAGE.md`、`docs/testing/features.json`；
+2. `docs/PRODUCT.md`（产品宪章）、`docs/DESIGN.md`（第 0 节系统全景与产品特性设计索引）、`docs/contracts/`（共享契约）、`docs/decisions/`（新决策）、`docs/PLAN.md`、`docs/feature-map/README.md`、`docs/feature-map/COVERAGE.md`、`docs/testing/features.json`；评审时核对改动是否偏离宪章或契约、新特性是否在 DESIGN 第 0.3 节登记、新决策是否写清依据；
 3. 本文与 `docs/review/findings.jsonl`（已知问题，不重复报告）；
 4. 检查命令的实际输出（第 6 节）。
 
