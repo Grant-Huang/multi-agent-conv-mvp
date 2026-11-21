@@ -1,6 +1,6 @@
 # M1-1 Green 方案：`/api/world/des` 接线（待批准）
 
-承接 [WA_M1_TASKS.md](WA_M1_TASKS.md) 与 Red 证据 [wa-m1-1-red.md](../testing/evidence/wa-m1-1-red.md)。**本文件是方案，不是已批准开工令。**
+承接 [WA_M1_TASKS.md](WA_M1_TASKS.md) 与 Red 证据 [wa-m1-1-red.md](../testing/evidence/wa-m1-1-red.md)。**状态：用户「继续」+ #178 合入后已按本方案开工。**
 
 ## 目标
 

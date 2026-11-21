@@ -106,6 +106,13 @@ export function MomWorkbench({
   const [caseId, setCaseId] = useState<string | null>(
     () => initialCaseId ?? null,
   );
+  /** DES 读水位（工作台本地；对应 E2E-WAREAD） */
+  const [appliedEventIds, setAppliedEventIds] = useState<string[]>([
+    "evt-des-seed-1",
+  ]);
+  const [eventWatermark, setEventWatermark] = useState("wm-1");
+  const [cursorExpired, setCursorExpired] = useState(false);
+  const [forceExpiredCursor, setForceExpiredCursor] = useState(false);
 
   const world = MOM_WORLDS.find((w) => w.world_id === worldId) ?? MOM_WORLDS[0];
   const cases = casesForWorld(world.world_id);
@@ -113,6 +120,17 @@ export function MomWorkbench({
     caseId && cases.some((c) => c.case_id === caseId)
       ? findCase(caseId)
       : undefined;
+
+  function rereadEvents() {
+    if (forceExpiredCursor) {
+      setCursorExpired(true);
+      return;
+    }
+    setCursorExpired(false);
+    // 幂等：同事件 ID 只保留一份
+    setAppliedEventIds((prev) => Array.from(new Set(prev)));
+    setEventWatermark((w) => w);
+  }
 
   function selectWorld(id: string) {
     setWorldId(id);
@@ -148,7 +166,11 @@ export function MomWorkbench({
   const resourceCases = cases.filter((c) => c.resource_gaps.length > 0);
 
   return (
-    <div className="mom-workbench" data-testid="mom-workbench">
+    <div
+      className="mom-workbench"
+      data-testid="mom-workbench"
+      data-provenance={world.provenance}
+    >
       <header className="mom-wb-header">
         <button type="button" className="ghost" onClick={onBack}>
           ← 返回桌面
@@ -191,6 +213,29 @@ export function MomWorkbench({
         <span className="mom-wb-ids" aria-label="当前世界标识">
           world_id={world.world_id}
         </span>
+        {world.provenance === "des" && (
+          <div className="mom-des-readout" aria-label="DES 读水位">
+            <span data-testid="event-watermark">水位 {eventWatermark}</span>
+            <span data-testid="applied-event-ids" className="muted small">
+              {appliedEventIds.join(",")}
+            </span>
+            <button type="button" onClick={rereadEvents}>
+              重新读取
+            </button>
+            <button
+              type="button"
+              data-testid="inject-expired-cursor"
+              onClick={() => setForceExpiredCursor(true)}
+            >
+              注入过期游标
+            </button>
+            {cursorExpired && (
+              <div data-testid="cursor-expired-banner" role="alert">
+                游标已过期，请重新 Observe
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mom-wb-body">
@@ -292,6 +337,11 @@ export function MomWorkbench({
                 </div>
               </dl>
               <p>{selected.summary}</p>
+              {world.provenance === "des" && (
+                <p data-testid="formal-observation">
+                  正式观测：设备振动偏高，Cpk 下滑（投递后可见）。
+                </p>
+              )}
               {selected.resource_gaps.length > 0 && (
                 <p>
                   资源缺口：{selected.resource_gaps.join("、")}

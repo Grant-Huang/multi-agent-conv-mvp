@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 /**
  * World Adapter M1 远程 DES 读（WA-01/02/07 → E2E-WADES / WAREAD / WAOBS）。
- * 断言已冻结（M1-1）；远程绑定 / 续读 / 观测尚未接线，期望业务 Red。
+ * 断言已冻结（M1-1）；M1 Green 接线后期望通过。
  * 定位契约见 docs/feature-map/features/world-adapter.md、docs/mom/WA_M1_TASKS.md。
  */
 test.afterEach(async ({ page }, info) => {
@@ -11,10 +11,11 @@ test.afterEach(async ({ page }, info) => {
 
 test('E2E-WADES: 远程 DES 世界绑定与跨世界隔离', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
   await page.getByRole('link', { name: 'MOM 工作台', exact: true }).click();
   await expect(page.getByTestId('mom-workbench')).toBeVisible();
   const worldSelect = page.getByLabel('选择世界');
-  await worldSelect.selectOption({ label: /DES|远程/ });
+  await worldSelect.selectOption({ label: '刀具磨损演练 · DES' });
   await expect(page.getByLabel('数据来源')).toHaveText(/DES/);
   await expect(page.getByTestId('mom-workbench')).toHaveAttribute(
     'data-provenance',
@@ -40,8 +41,9 @@ test('E2E-WADES: 远程 DES 世界绑定与跨世界隔离', async ({ page }) =>
 
 test('E2E-WAREAD: 断线后续读不重复且水位可辨', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
   await page.getByRole('link', { name: 'MOM 工作台', exact: true }).click();
-  await page.getByLabel('选择世界').selectOption({ label: /DES|远程/ });
+  await page.getByLabel('选择世界').selectOption({ label: '刀具磨损演练 · DES' });
   await page.getByRole('button', { name: '看板', exact: true }).click();
   await expect(page.getByTestId('event-watermark')).toBeVisible();
   const before = await page.getByTestId('applied-event-ids').innerText();
@@ -61,12 +63,15 @@ test('E2E-WAREAD: 断线后续读不重复且水位可辨', async ({ page }) => 
 
 test('E2E-WAOBS: 远程推进后可见正式观测且无标准答案', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
   await page.getByRole('link', { name: 'DES 仿真实验' }).click();
   await page.getByRole('tab', { name: '正式运行' }).click();
   await expect(page.getByTestId('adapter-mode')).toHaveAttribute('data-mode', 'des');
   await page.getByRole('button', { name: '单步推进', exact: true }).click();
+  await page.getByRole('button', { name: '← 返回桌面' }).click();
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
   await page.getByRole('link', { name: 'MOM 工作台', exact: true }).click();
-  await page.getByLabel('选择世界').selectOption({ label: /DES|远程/ });
+  await page.getByLabel('选择世界').selectOption({ label: '刀具磨损演练 · DES' });
   await page.getByRole('button', { name: '看板', exact: true }).click();
   await page.getByRole('button', { name: /^事项 / }).first().click();
   const detail = page.getByTestId('mom-case-page');

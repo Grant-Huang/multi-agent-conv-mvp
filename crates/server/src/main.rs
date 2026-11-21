@@ -102,6 +102,10 @@ async fn main() -> Result<()> {
             app = app.merge(an_server::mom_world_mock::router(
                 an_server::mom_world_mock::WorldMockState::with_app_store(false, rt.store.clone()),
             ));
+            // M1 远程 DES 读适配：与 Mock 同门控；不改 DesConnector / engine
+            app = app.merge(an_server::mom_world_des::router(
+                an_server::mom_world_des::WorldDesState::new(true),
+            ));
         }
         app = app
             .route(

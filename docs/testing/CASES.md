@@ -826,7 +826,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 
 ### M1 远程 DES 读取（断言已冻结；M1-1 Red）
 
-执行卡：[WA_M1_TASKS.md](../mom/WA_M1_TASKS.md)。浏览器用例：`web/e2e/wa-des-remote.spec.ts`（已登记，业务 Red）。合同 `RT-WADES-*` 表格已冻结；HTTP 空壳 Red 证据见 `docs/testing/evidence/wa-m1-1-red.md`，可执行 `mom_world_des.rs` 随 Green 入库。路由前缀约定 `/api/world/des`（相对 M0 `/api/world/mock`）；写路径仍 Mock。M0 套件不得弱化。
+执行卡：[WA_M1_TASKS.md](../mom/WA_M1_TASKS.md)。浏览器用例：`web/e2e/wa-des-remote.spec.ts`。合同：`crates/server/tests/mom_world_des.rs`。路由前缀 `/api/world/des`（相对 M0 `/api/world/mock`）；写路径仍 Mock。Red→Green 证据：`wa-m1-1-red.md` / `wa-m1-1-green.md`。M0 套件不得弱化。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
