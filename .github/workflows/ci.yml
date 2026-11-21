@@ -159,6 +159,14 @@ jobs:
           GITHUB_BASE_REF: ${{ github.base_ref }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: python3 tools/ci/injection_scan.py --json-out injection.json
+      # 文档检查（docs/DOC_SYSTEM_PLAN.md 第 4.3 节）。过渡期只警告：脚本默认退出码 0，
+      # 另加 continue-on-error 兜底；约一周后加 --strict 并去掉 continue-on-error。
+      - name: 文档检查（只警告）
+        continue-on-error: true
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 tools/ci/doc_lint.py --json-out doc-lint.json
       # actions/upload-artifact@v7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
@@ -167,6 +175,7 @@ jobs:
           path: |
             risk.json
             injection.json
+            doc-lint.json
           if-no-files-found: ignore
 
   # ---------- 安全 ----------

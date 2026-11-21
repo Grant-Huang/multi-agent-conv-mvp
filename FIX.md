@@ -6,6 +6,7 @@
 - 上位规则：`AGENTS.md`（本文不重复，也不放宽）。与本文冲突时，以更严格的一条为准。
 - 职责划分、台账格式、严重度定义：`REVIEW.md`（第 1、4、5 节）。
 - 测试和证据要求：`docs/testing/README.md`。
+- 设计依据：`docs/PRODUCT.md`（产品宪章）、`docs/DESIGN.md` 第 0 节与所修问题所属特性的权威设计、`docs/contracts/`（共享契约）、`docs/decisions/`。修复不得偏离宪章或契约；需要偏离时只写方案（见第 4 节）。修复中做出的取舍按 `docs/decisions/README.md` 的模板记一条决策。
 
 > 本文是 L3 文件（`config/risk-policy.toml`、`.github/CODEOWNERS`）：修改必须由负责人审批，
 > **修复 agent 不得修改本文**。对本文有意见，写在运行总结里，由人决定是否修改。
