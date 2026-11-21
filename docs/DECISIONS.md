@@ -1503,6 +1503,19 @@
 - **没选什么**：本卡不删 Mock、不做 B2 SSE、不改 AgentAdapter / 公开 config 字段、不升级 Playwright 断言接真实 HTTP。
 - **出问题先看**：唯一键是否生效；409 后原 `request_id`/`message_id` 是否不变；旧库打开是否只建新表。
 
+### 67. AI Desktop B2：桌面游标 SSE 与断线重放（2026-11-20 用户确认）
+
+- **问题**：A5.2 仅有前端 `runResumeMock`；真实断线重连、重复/乱序 `event_id`、游标过期与进程重启对账需服务端契约（DESIGN §5 `GET /events?after=`、MOCK_REGISTRY M2、B02）。
+- **定了什么**（用户确认方案后开工）：
+  - 新增 `GET /api/desktop/v1/events?conversation_id=&after=`：先按游标从 SQLite 回放，再续接 bus live；信封含稳定 `event_id` 与单调 `cursor`（= event id）。
+  - `after` 指向不存在/已淘汰游标 → **HTTP 410** `cursor_expired`（显式重拉快照）；不静默回传全量。
+  - `store` **只读增强**：会话维度 `list_conversation_events_after`；**不新建表**；旧 `GET /api/tasks/{id}?after=` 与 `GET /api/events` 行为保持兼容。
+  - **不改** `orchestrator.rs`；本卡「重启对账」= 落库事件可重读 + 任务快照权威，不含 agent 中途检查点续跑。
+  - 硬门禁 **RT-ADREPLAY-01～04**；保留 `E2E-ADRESUME` Mock；不建独立 `runs` 表（Task+Event 投影）。
+- **为什么**：旧 SSE 落后即丢且无游标；桌面需要可对账的回放而不破坏现网页。
+- **没选什么**：改 orchestrator 续跑；独立 Run/Artifact 表；删除前端 Mock；升级 Playwright 接真实 SSE。
+- **出问题先看**：410 是否在 `after` 缺失时触发；回放与 live 是否按 `event_id` 去重；重启后同库 `after` 是否仍能补齐。
+
 ### 待决定
 
 - ~~哪一个算“个人主窗口会话”、如何指定（第 54 条）~~ **（S1 已落地）**：`app_state` 键 `main_conversation_id` + `Store::ensure_main_conversation`；第一次需要时创建并记下，之后复用。仍待：会话删除 API 出现时的不可删守卫；“个人”页签与默认打开（G-6）。
