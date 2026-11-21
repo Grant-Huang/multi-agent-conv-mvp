@@ -714,6 +714,7 @@
       "web/src/desktop/WorkspaceView.tsx",
       "web/src/desktop/WorkspaceComposer.tsx",
       "web/src/desktop/EvidencePanel.tsx",
+      "web/src/desktop/principalStore.ts",
       "web/src/desktop/HistoryPanel.tsx",
       "web/src/desktop/SettingsPanel.tsx",
       "web/src/desktop/profileStore.ts",
@@ -740,6 +741,7 @@
       "crates/server/tests/desktop_accept.rs",
       "crates/server/tests/desktop_replay.rs",
       "crates/server/tests/desktop_b3.rs",
+      "crates/server/tests/desktop_acl.rs",
       "crates/runtime/src/store.rs",
       "crates/runtime/src/conversation.rs",
       "docs/ai-desktop/DESIGN.md",
@@ -753,6 +755,7 @@
       "docs/testing/evidence/ai-desktop-b1.md",
       "docs/testing/evidence/ai-desktop-b2.md",
       "docs/testing/evidence/ai-desktop-b3.md",
+      "docs/testing/evidence/ai-desktop-c1.md",
       "docs/ai-desktop/MOCK_REGISTRY.md"
     ],
     "coverage": "browser",
@@ -762,6 +765,7 @@
       "E2E-ADDRAFT",
       "E2E-ADSCOPE",
       "E2E-ADEVID",
+      "E2E-ADSOURCES",
       "E2E-ADHISTORY",
       "E2E-ADPROF",
       "E2E-ADINPUT",
@@ -790,7 +794,12 @@
       "RT-ADLINK-04",
       "RT-ADPREF-01",
       "RT-ADPREF-02",
-      "RT-ADPREF-03"
+      "RT-ADPREF-03",
+      "RT-ADACL-01",
+      "RT-ADACL-02",
+      "RT-ADACL-03",
+      "RT-ADACL-04",
+      "RT-ADACL-05"
     ]
   },
   {

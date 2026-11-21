@@ -98,6 +98,7 @@ test('E2E-ADSCOPE: 独立话题与继续任务及关联纠正', async ({ page })
 
 test('E2E-ADEVID: 首页查看证据并逐层返回含失败过期与空夹具', async ({ page }) => {
   await page.goto('/');
+  await page.evaluate(() => localStorage.setItem('an.desktop.principal.v1', 'alice'));
   await page.getByTestId('home-view-evidence').click();
   await expect(page.getByTestId('workspace')).toBeVisible();
   await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
@@ -110,7 +111,7 @@ test('E2E-ADEVID: 首页查看证据并逐层返回含失败过期与空夹具',
   await expect(page.getByTestId('evidence-version')).toHaveText('v3');
   await expect(page.getByTestId('evidence-task')).toHaveText(SMT03_TASK_ID);
   await page.getByTestId('evidence-open-source').click();
-  await expect(page.getByTestId('evidence-source')).toContainText('模拟原文');
+  await expect(page.getByTestId('evidence-source')).toContainText('LOT=SMT-03-Q');
   await page.getByTestId('evidence-back').click();
   await expect(page.getByTestId('evidence-preview')).toBeVisible();
   await page.getByTestId('evidence-back').click();
@@ -129,6 +130,41 @@ test('E2E-ADEVID: 首页查看证据并逐层返回含失败过期与空夹具',
   await expect(page.getByTestId('evidence-panel')).toHaveCount(0);
   await page.getByRole('button', { name: '返回桌面', exact: true }).click();
   await expect(page.getByTestId('desktop-home')).toBeVisible();
+});
+
+test('E2E-ADSOURCES: 两角色证据 ACL 撤权后搜索与原文一致拒绝', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => localStorage.setItem('an.desktop.principal.v1', 'alice'));
+  await page.getByTestId('home-view-evidence').click();
+  await expect(page.getByTestId('evidence-panel')).toBeVisible();
+  await expect(page.getByTestId('evidence-mode-label')).toContainText('真实 ACL');
+
+  await page.getByTestId('evidence-item-ev-smt-qc-1').click();
+  await expect(page.getByTestId('evidence-summary')).toContainText('抽检');
+  await page.getByTestId('evidence-open-source').click();
+  await expect(page.getByTestId('evidence-source')).toContainText('LOT=SMT-03-Q');
+  await page.getByTestId('evidence-back').click();
+
+  await page.getByTestId('evidence-principal-bob').click();
+  await expect(page.getByTestId('evidence-item-ev-smt-qc-1')).toHaveCount(0);
+  await page.getByTestId('evidence-search-acl').click();
+  await expect(page.getByTestId('evidence-search-hits')).toHaveText('none');
+
+  await page.getByTestId('evidence-principal-alice').click();
+  await expect(page.getByTestId('evidence-item-ev-smt-qc-1')).toBeVisible();
+  await page.getByTestId('evidence-item-ev-smt-qc-1').click();
+  await page.getByTestId('evidence-revoke').click();
+  await expect(page.getByTestId('evidence-denied')).toContainText('无权');
+  await page.getByTestId('evidence-back').click();
+  await expect(page.getByTestId('evidence-item-ev-smt-qc-1')).toHaveCount(0);
+  await page.getByTestId('evidence-search-acl').click();
+  await expect(page.getByTestId('evidence-search-hits')).toHaveText('none');
+
+  await page.getByTestId('evidence-principal-carol').click();
+  await expect(page.getByTestId('evidence-item-ev-smt-qc-1')).toBeVisible();
+  await page.getByTestId('evidence-item-ev-smt-qc-1').click();
+  await page.getByTestId('evidence-open-source').click();
+  await expect(page.getByTestId('evidence-source')).toContainText('LOT=SMT-03-Q');
 });
 
 test('E2E-ADHISTORY: 历史筛选固定与打开任务后恢复筛选', async ({ page }) => {

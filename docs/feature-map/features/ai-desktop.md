@@ -23,4 +23,4 @@ await page.getByTestId('card-smt-03').click();
 await expect(page.getByTestId('workspace')).toContainText('TASK-2026-018');
 ```
 
-用例：`E2E-ADNAV`、`E2E-ADLAYOUT`（A1）；`E2E-ADDRAFT`、`E2E-ADSCOPE`（A2）；`E2E-ADREAD`（A2.1，含运营频道）；`E2E-ADEVID`、`E2E-ADHISTORY`（A3）；`E2E-ADPROF`、`E2E-ADINPUT`（A4）；`E2E-ADASK`、`E2E-ADATTN`（A5.1）；`E2E-ADAPPR`、`E2E-ADRESUME`（A5.2）；`E2E-ADVOICE`、`E2E-ADHAND`（A5.3）；`E2E-ADACCEPT`（A5.4）。**A5 整体收口**（2026-11-20）：`desktop.spec.ts` 15/15，证据 `docs/testing/evidence/ai-desktop-a5.md`。其余 AD-* / 真实替换见 FEATURE_MAP 与 MOCK_REGISTRY（B1 起）。
+用例：`E2E-ADNAV`、`E2E-ADLAYOUT`（A1）；`E2E-ADDRAFT`、`E2E-ADSCOPE`（A2）；`E2E-ADREAD`（A2.1，含运营频道）；`E2E-ADEVID`、`E2E-ADHISTORY`（A3）；`E2E-ADPROF`、`E2E-ADINPUT`（A4）；`E2E-ADASK`、`E2E-ADATTN`（A5.1）；`E2E-ADAPPR`、`E2E-ADRESUME`（A5.2）；`E2E-ADVOICE`、`E2E-ADHAND`（A5.3）；`E2E-ADACCEPT`（A5.4）；`E2E-ADSOURCES`（C1 真实 ACL）。**A5 整体收口**（2026-11-20）：证据 `docs/testing/evidence/ai-desktop-a5.md`。**C1**（2026-11-20）：RT-ADACL-01～05 + E2E-ADSOURCES，证据 `docs/testing/evidence/ai-desktop-c1.md`。其余 AD-* / 真实替换见 FEATURE_MAP 与 MOCK_REGISTRY。

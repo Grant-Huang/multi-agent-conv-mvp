@@ -1528,6 +1528,17 @@
 - **没选什么**：记忆建议/Attention（C2）；草稿云同步与 snapshot；删 Mock；改消息派发路径。
 - **出问题先看**：操作 ID 唯一键；撤回后默认列表是否隐藏；PATCH 过期 version 是否未写入。
 
+### 69. AI Desktop C1：证据 ACL 与 E2E-ADSOURCES 真实 HTTP（2026-11-20 用户确认）
+
+- **问题**：M4 RelOS/证据撤权仍缺服务端 ACL；DESIGN C01 / AD-SOURCES 要求撤权后各入口一致拒绝。
+- **定了什么**（用户确认，并要求本卡同时上 E2E-ADSOURCES 真实 HTTP）：
+  - store 兼容新建 `desktop_evidence`、`desktop_evidence_grants`；夹具头 `x-desktop-principal`（缺省 `alice`）；**不改** `orchestrator.rs`；不做 OAuth/IdP。
+  - API：任务证据列表、按视图读（summary/source/download）、搜索、撤权（幂等）；无授权 **403** 不回原文/摘要；来源 `expired`/`revoked` → **410** `source_unavailable`。
+  - 硬门禁 **RT-ADACL-01～05** + 浏览器 **E2E-ADSOURCES**（真实 HTTP）；EvidencePanel 接真实 API；SMT-03 种子证据与授权由服务端 ensure。
+- **为什么**：无身份时用夹具头对齐内省鉴权风格；必须有真实 HTTP 才能证明 ACL 非 Mock。
+- **没选什么**：完整登录；C2 动作网关；改派发路径。
+- **出问题先看**：403 body 是否泄露；撤权后搜索是否仍命中；E2E 默认 principal 是否与种子授权一致。
+
 ### 待决定
 
 - ~~哪一个算“个人主窗口会话”、如何指定（第 54 条）~~ **（S1 已落地）**：`app_state` 键 `main_conversation_id` + `Store::ensure_main_conversation`；第一次需要时创建并记下，之后复用。仍待：会话删除 API 出现时的不可删守卫；“个人”页签与默认打开（G-6）。

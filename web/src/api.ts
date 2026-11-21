@@ -450,8 +450,61 @@ export const api = {
         body: JSON.stringify(body),
       }),
   },
+
+  /** AI Desktop C1：证据 ACL（夹具头 x-desktop-principal） */
+  desktopEvidenceList: (taskId: string, principal: string) =>
+    request<{ principal: string; evidence: DesktopEvidenceDto[] }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/evidence`,
+      { headers: { "x-desktop-principal": principal } },
+    ),
+  desktopEvidenceGet: async (
+    id: string,
+    principal: string,
+    view: "summary" | "source" | "download",
+  ): Promise<
+    | { ok: true; evidence: DesktopEvidenceDto }
+    | { ok: false; status: number; code: string; message: string }
+  > => {
+    const res = await fetch(
+      `/api/desktop/v1/evidence/${encodeURIComponent(id)}?view=${encodeURIComponent(view)}`,
+      { headers: { "Content-Type": "application/json", "x-desktop-principal": principal } },
+    );
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        code: String(body.code ?? "error"),
+        message: String(body.message ?? body.error ?? `HTTP ${res.status}`),
+      };
+    }
+    return { ok: true, evidence: body.evidence as DesktopEvidenceDto };
+  },
+  desktopEvidenceSearch: (q: string, principal: string) =>
+    request<{ principal: string; evidence: DesktopEvidenceDto[] }>(
+      `/api/desktop/v1/evidence/search?q=${encodeURIComponent(q)}`,
+      { headers: { "x-desktop-principal": principal } },
+    ),
+  desktopEvidenceRevoke: (id: string, principalId: string) =>
+    request<{ revoked: boolean }>(`/api/desktop/v1/evidence/${encodeURIComponent(id)}/revoke`, {
+      method: "POST",
+      body: JSON.stringify({ principal_id: principalId }),
+    }),
 };
 
+export type DesktopEvidenceDto = {
+  id: string;
+  task_id: string;
+  title: string;
+  object_label: string;
+  collected_at: string;
+  source_type: string;
+  version: string;
+  status: string;
+  summary: string;
+  source_body: string;
+  error_message: string;
+};
 /** 订阅某个会话的 SSE 事件流，返回取消订阅函数 */
 export function subscribeEvents(cid: string, onEvent: (e: TaskEvent) => void): () => void {
   const es = new EventSource(`/api/events?conversation_id=${cid}`);
