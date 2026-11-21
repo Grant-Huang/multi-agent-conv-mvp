@@ -1,19 +1,19 @@
-# AgentNexus MVP 设计文档
-
-MCP 能力目录与 General 轻量 Harness 的新增设计、协议和阶段边界见 [mcp/DESIGN.md](mcp/DESIGN.md)，实施进度见 [mcp/PLAN.md](mcp/PLAN.md)。该设计保留既有 AgentAdapter、任务状态与执行组；不依赖 MOM 公告板实施。
+# AgentNexus 设计文档
 
 | 项目 | 内容 |
 |---|---|
-| 版本 | v0.4：判断与回答分两步 + 流式回答；提示词按优先级重写；审查模式可配置；路由评测集 v2 |
-| 日期 | 2026-11-05 |
-| 状态 | 已实现，全部自动化测试通过；尚未接真实模型、真实 Codex / opencode / Hermes 验证 |
+| 版本 | v1.0：新增第 0 节"系统全景"（产品定位、分层架构、产品特性设计索引、文档地图）；第 1–17 节为执行引擎层的细节设计，内容沿用 v0.4，并按 2026-11-21 的代码修正过时处 |
+| 日期 | 2026-11-21 |
+| 状态 | 第 0 节对应 2026-11-20 确认的方向（决定 61（AI 桌面）、61（World Adapter）、62）；各特性的实现状态见 [0.3 节](#03-产品特性设计索引) |
+| 核对基线 | 远端 `master` 的 `3e7bdeb` |
 
-这份文档先用大白话讲清楚"系统是什么、怎么用"，再讲"每一块怎么实现"。只想了解全貌的话，读第 1–3 节就够了。
+**怎么读**：先读第 0 节，知道系统由哪几层组成、每个产品特性的设计写在哪里；要改执行引擎（对话、路由、规则、编排、agent、节点、日志）时再读第 1–17 节。第 1–17 节的编号和锚点保持不变，`AGENTS.md` 等文件引用的"第 10 节"仍然有效。
 
 ---
 
 ## 目录
 
+0. [系统全景](#0-系统全景)
 1. [一页看懂](#1-一页看懂)
 2. [设计原则](#2-设计原则)
 3. [怎么用](#3-怎么用)
@@ -34,7 +34,133 @@ MCP 能力目录与 General 轻量 Harness 的新增设计、协议和阶段边�
 
 ---
 
+## 0. 系统全景
+
+### 0.1 产品是什么
+
+AgentNexus 是**面向制造业组织的 AI 工作桌面**。个人、协作团队和运营人员从同一个桌面入口提问、委派、取证、协作和审批；后台 agent 按确定的规则执行；业务动作经统一的 World Adapter 作用到仿真工厂（DES）或真实工厂（MES、ERP、设备），走"观察 → 提方案 → 人批准 → 执行 → 核验"的受控闭环。
+
+- **产品主轴只有一条：AI 桌面**（决定 61（AI 桌面），2026-11-20 用户确认，不做双轨）。MOM 与 World Adapter 是桌面里的工业业务能力，不是另一个产品。
+- 2026-11-04 起实现的多 agent 对话调度 MVP（第 1–17 节）是**执行引擎层**，它的部件（Conversation、Router、Policy、Orchestrator、执行组、ACP 适配器、节点、日志诊断）都是引擎里的构件。
+- 多 agent 执行、业务内省、个人记忆、外发脱敏等都是必要的产品特性，在 0.3 节逐项登记。
+- 分工一句话：频道（Channel）管沟通，任务（Task）管工作，业务对象（Business Object）管业务事实，agent 跨三者协调。
+
+### 0.2 分层架构
+
+```mermaid
+flowchart TB
+    subgraph Shell["产品外壳：AI 桌面"]
+        D["日常桌面 S1 / 分屏工作区 S2 / 专注工作区 S3<br/>频道 · 个人助理 · 证据 · 历史 · 设置"]
+    end
+    subgraph Decide["交互与决策"]
+        C["C-Agent<br/>Conversation 前台"]
+        H["Decision Harness<br/>Router + Policy"]
+    end
+    subgraph Engine["执行引擎（第 1–17 节）"]
+        O["O-Agent<br/>Orchestrator + 执行组"]
+        A["agent 适配器<br/>内置 / Codex / ACP / 节点"]
+        S["S-Agent<br/>Composer 结果整合"]
+    end
+    subgraph Biz["工业业务能力"]
+        M["MOM<br/>案例 · 方案 · 审批 · 动作记录"]
+        OPS["运营桌面 / 运营频道"]
+        W["World Adapter<br/>Observe · Subscribe · Propose · Execute · Confirm"]
+    end
+    subgraph World["世界"]
+        DES["DES 仿真工厂<br/>an-des-mcp"]
+        PRD["生产系统<br/>MES · ERP · 设备（未接）"]
+    end
+    X["横切产品特性<br/>多 agent 接入与准入 · 外发脱敏 · 业务内省 · 个人记忆<br/>组织知识 RelOS · 业务执行网关 NexusOps · 日志诊断"]
+
+    D --> C --> H --> O --> A
+    O --> S --> C
+    D --> OPS --> M --> W
+    W --> DES
+    W --> PRD
+    X -.-> Decide
+    X -.-> Engine
+    X -.-> Biz
+```
+
+| 层 | 职责 | 现有部件 | 权威设计 |
+|---|---|---|---|
+| 产品外壳 | 桌面、工作区、频道、助理、设置；所有用户入口 | `web/src/desktop/`、`crates/server/src/desktop_api.rs` | [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) |
+| 交互与决策 | 每轮对话、意图判断、路由、确定性规则 | Conversation、Router、Policy | 本文第 5、9 节 |
+| 执行引擎 | 编排、执行组、agent 适配、节点、质检返工、结果整合 | Orchestrator、注册表、`crates/agents`、`crates/node`、Composer | 本文第 6–8 节 |
+| 工业业务能力 | 案例、方案版本、审批与动作记录（MOM 是权威来源）；运营投影；统一世界访问 | `crates/runtime/src/mom/`、`crates/server/src/mom*.rs` | [mom/DESIGN.md](mom/DESIGN.md)、[mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) |
+| 世界 | 仿真工厂；生产系统 | `crates/des`、`crates/des-mcp`；生产侧未接 | [mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md) |
+| 横切产品特性 | 见 0.3 节 | 见 0.3 节 | 见 0.3 节 |
+| 工程治理（不是产品特性） | 围栏、CI 门禁、夜间评审与修复 | `tools/ci/`、`.github/` | [fencing/README.md](fencing/README.md)、[CI_GATES.md](CI_GATES.md)、`REVIEW.md`、`FIX.md` |
+
+[ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) 第 6 节把桌面里的 agent 职责对应到现有部件：C-Agent = Conversation 与回合控制器；Decision Harness = 意图、关联与路由；O-Agent = 编排与执行组；S-Agent = 结果整合（首版用任务结果、核验和任务事件呈现）。
+
+### 0.3 产品特性设计索引
+
+每个产品特性只有一个**权威设计**入口。状态口径：**已实现** / **部分实现** / **设计已确认**（未开工）/ **设计中** / **无设计**（还没有设计文档，待补）。状态以 [PLAN.md](PLAN.md) 和各计划文档的勾选为准，本表随之更新。
+
+| 特性 | 层 | 权威设计 | 计划与进度 | 主要代码 | 相关决策 | 状态（2026-11-21） |
+|---|---|---|---|---|---|---|
+| AI 桌面外壳 | 外壳 | [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) | [ai-desktop/PLAN.md](ai-desktop/PLAN.md)、[MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md) | `web/src/desktop/`、`server/src/desktop_api.rs` | 61（AI 桌面）、66–69 | 部分实现：A、B1–B3、C1 完成；C2、D 待做 |
+| 对话前台与派发 | 交互与决策 | 本文第 5、9 节 | [PLAN.md](PLAN.md) M4、FT | `runtime/src/conversation.rs`、`router.rs`、`policy.rs`、`prompts.rs` | 18–43 | 已实现 |
+| 多 agent 执行与执行组 | 执行引擎 | 本文第 7 节 | — | `crates/agents`、`runtime/src/registry.rs`、`orchestrator.rs` | — | 已实现 |
+| 跨机器节点 | 执行引擎 | 本文第 8 节 | — | `crates/node`、`runtime/src/nodes.rs` | — | 已实现（局域网明文 HTTP，见第 13 节） |
+| 质检、返工与人工验收 | 执行引擎 | 本文第 7.6 节；[fencing/REVIEW_VERDICT_DESIGN.md](fencing/REVIEW_VERDICT_DESIGN.md) | [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) WP2 | `runtime/src/orchestrator.rs`、`policy.rs` | 59（围栏） | 部分实现：审查判"需人工"后的验收出口未做（第 15 节 #4） |
+| 任务拆分与模板并行 | 执行引擎 | 本文第 9.6 节 | [PLAN.md](PLAN.md) M4.3、INTEGRATION_PLAN WP4 | `runtime/src/template.rs` | — | 部分实现：只有加载校验，未接入编排 |
+| 研究报告与网页搜索 | 执行引擎 | 本文第 9.5 节；[tools/websearch/DESIGN.md](../tools/websearch/DESIGN.md) | [PLAN.md](PLAN.md) M2、M3 | `agents/src/report.rs`、`tools/websearch/` | — | 已实现 |
+| MCP 能力目录与 General Harness | 执行引擎 | [mcp/DESIGN.md](mcp/DESIGN.md) | [mcp/PLAN.md](mcp/PLAN.md) | `agents/src/mcp.rs`、`agents/src/tools.rs` | — | 已实现首期（`GET /api/capabilities`） |
+| 助手接入与管理（对话式） | 横切 | 无独立设计文档；目前在 [PLAN.md](PLAN.md)「AG」一节 | 同左 | `runtime/src/agent_catalog.rs`、`agent_config.rs`、`agent_diagnose.rs`、`agent_chat.rs` | 1–14、21、44、59（AG.4）、60 | 已实现；对话里管理助手默认关闭 |
+| Agent 准入 | 横切 | 无独立设计文档；本文末尾附节 + 第 10.3、10.4 节 | — | `runtime/src/admission.rs`、`server/src/admission_api.rs` | — | 已实现；调用者身份认证未做 |
+| 外发脱敏（DLP） | 横切 | [dlp/CONTRACT.md](dlp/CONTRACT.md)、[mcp/DLP_EGRESS_DEPLOYMENT.md](mcp/DLP_EGRESS_DEPLOYMENT.md) | [PLAN.md](PLAN.md)「DLP 外发脱敏」、[mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md](mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md) | `tools/dlp-egress/`、`agents/src/egress.rs` | 12、15–17、41、42（R-20261118-M2）、DECISIONS 第八节 D-n | 部分实现：只检查登记过的出口 |
+| 业务内省 | 横切 | [memory/INTROSPECTION_PLAN.md](memory/INTROSPECTION_PLAN.md) | [PLAN.md](PLAN.md)「INT」、[INTROSPECTION_PLAYBOOK.md](memory/INTROSPECTION_PLAYBOOK.md) | `runtime/src/introspect/`、`server/src/introspection_api.rs` | 45、49、51–55、64、65 | 已实现 S0–S8；默认关闭 |
+| 个人记忆、画像与 taste | 横切 | 无设计文档；方向见 DECISIONS 45–48、50 | — | — | 45–48、50 | 设计中，未开工 |
+| 组织知识（RelOS） | 横切 | 无设计文档；散见 [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) 第 6 节 | AI 桌面 C 阶段 | `server/src/mom_relos.rs`（仅 MOM 诊断调用） | — | 无设计 |
+| 业务执行网关（NexusOps） | 横切 | 无设计文档；散见 ai-desktop 设计第 6 节、[mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M4 | — | — | 无设计 |
+| 日志与诊断 | 横切 | 本文第 10 节 | — | `crates/observe` | — | 已实现 |
+| MOM 案例、方案与审批 | 工业业务 | [mom/DESIGN.md](mom/DESIGN.md)、[mom/IMPLEMENTATION.md](mom/IMPLEMENTATION.md) | [mom/MOCK_REGISTER.md](mom/MOCK_REGISTER.md) | `runtime/src/mom/`、`server/src/mom.rs`、`server/src/bin/an-mom.rs` | DES-n | 已实现（模拟沙盘，未接生产） |
+| 运营桌面与运营频道 | 工业业务 | [mom/OPS_DESK.md](mom/OPS_DESK.md) | [PLAN.md](PLAN.md)「D0–D3」、[OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md) | `runtime/src/mom/ops_desk.rs`、`server/src/mom_ops.rs` | 56–58、60 | 已实现 D0–D2；D3 并入 World Adapter M0 |
+| World Adapter | 工业业务 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | [mom/WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)、`mom/WA_M*_TASKS.md` | `server/src/mom_world_des.rs`、`mom_world_mock.rs` | 61（World Adapter）、DES-31、DES-32 | 部分实现：M0 完成，M1 进行中 |
+| DES 仿真工厂与实验入口 | 世界 | [mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md)、[mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md) | 同上 | `crates/des`、`crates/des-mcp`、`server/src/mom_des_connector.rs`、`mom_sim.rs` | DES-n、62 | 已实现；实验入口随 World Adapter M0 交付 |
+| 生产世界接入 | 世界 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M3、M4 | — | 61（World Adapter） | 设计已确认，未开工 |
+
+标"无设计"的四项（助手接入管理、个人记忆、RelOS、NexusOps；准入只有附节）是待补的设计文档，补齐后改这一行的"权威设计"。
+
+### 0.4 文档地图
+
+| 想知道 | 看哪里 |
+|---|---|
+| 系统全貌、某个特性的设计在哪 | 本节 |
+| 执行引擎怎么实现 | 本文第 1–17 节 |
+| 现在做到哪一步 | [PLAN.md](PLAN.md)（总进度）；各特性的计划见 0.3 节"计划与进度"列 |
+| 各模块怎么打通、黄金场景 | [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)；缺口分析 [feature-map/SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md) |
+| 为什么这样定 | [DECISIONS.md](DECISIONS.md) |
+| 怎么测、验收用例、证据 | [testing/README.md](testing/README.md)、[testing/CASES.md](testing/CASES.md)、[feature-map/README.md](feature-map/README.md) |
+| 界面设计原则 | [mom/UI_UX_PRINCIPLES.md](mom/UI_UX_PRINCIPLES.md) |
+| 怎么用 | [manual/README.md](manual/README.md) |
+| 工程规则与自检 | `AGENTS.md`、[fencing/PREFLIGHT.md](fencing/PREFLIGHT.md)、[CI_GATES.md](CI_GATES.md) |
+| 评审与修复 | `REVIEW.md`、`FIX.md`、`docs/review/`、`docs/fix-plans/` |
+
+### 0.5 文档规则
+
+1. **一个特性一个权威设计。** 新特性先在 0.3 节登记一行，再写设计；设计文档开头写明状态和核对基线。
+2. **三类内容各归一处。** 设计写"是什么、怎么做"；进度只勾在 PLAN 或该特性的计划文档里；"为什么这样定"只记在 DECISIONS。
+3. **本文第 1–17 节的编号不改。** 多处文档和 `AGENTS.md` 按编号引用（例如第 10 节的事件名）。新增内容放进 0.3 节对应特性的文档，不在这里加新的大节。
+
+### 0.6 设计演进简史
+
+| 日期 | 变化 | 依据 |
+|---|---|---|
+| 11-04～05 | 多 agent 对话调度 MVP（v0.1→v0.4）：前台、路由、规则、编排、执行组、节点、日志诊断 | 本文第 1–17 节 |
+| 11-06～17 | 加入制造业务场景：MOM 沙盘（插单、客诉）；自研 DES 仿真并做闭环、审核与批量实验 | [mom/DESIGN.md](mom/DESIGN.md)、[mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md) |
+| 11-16～19 | 产品特性扩展：对话式接入助手、前台提速实验、外发脱敏、业务内省、工程围栏 | DECISIONS 1–55 |
+| 11-18 | 发现三块系统互不连通，定打通计划和 6 个黄金场景；会话、MOM 案例卡、运营频道打通第一步 | [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)、[INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)、决定 56–58 |
+| 11-20 | 方向收敛：只做组织级 AI 桌面；World Adapter 统一世界访问；仿真实验与运营入口分开 | 决定 61（AI 桌面）、61（World Adapter）、62 |
+| 11-21 | 本文改为"系统全景 + 执行引擎细节"两部分 | 决定 70 |
+
+---
+
 ## 1. 一页看懂
+
+> 第 1–17 节是**执行引擎层**的细节设计（2026-11-05 的 v0.4 内容，按 2026-11-21 的代码修正过时处）。下面"小团队"的比喻、"MVP 要验证的问题"和"这一版不做"描述的是引擎当初的范围；产品全貌见第 0 节。
 
 把 AgentNexus 想象成一个小团队：
 
@@ -202,23 +328,31 @@ flowchart TB
 crates/
   core/      公共数据结构、错误码、节点协议（不依赖任何具体实现）
   observe/   日志与诊断（AgentNexus 和节点共用）
-  llm/       模型调用：结构化输出、重试
-  agents/    各种 agent：内置 General / Reviewer、Codex、ACP、远程（节点）
-  runtime/   Conversation、Router、Policy、Orchestrator、注册表与执行组、节点管理、数据库
+  llm/       模型调用：结构化输出、重试、后端与槽位调度
+  agents/    各种 agent：内置 General / Reviewer、Codex、ACP、远程（节点）；工具、MCP 客户端、外发检查守卫
+  runtime/   Conversation、Router、Policy、Orchestrator、注册表与执行组、节点管理、数据库；
+             另含 mom/（MOM 引擎、运营桌面、DES 远程连接）、introspect/（业务内省）、admission.rs（准入）、
+             agent_*.rs（助手接入与管理）
+  des/       DES 仿真内核（不依赖其他 crate）
+  des-mcp/   模拟工厂：把 DES 以 MCP（stdio）提供，程序 an-des-mcp
   node/      节点程序 an-node
-  server/    AgentNexus 主程序、HTTP 接口；评测工具 an-eval；模拟 agent an-mock-acp
-web/         网页界面
+  server/    AgentNexus 主程序、HTTP 接口（含 MOM、World Adapter、AI 桌面、内省、准入接口）；
+             独立 MOM 模拟服务 an-mom；评测工具 an-eval；模拟 agent an-mock-acp
+web/         网页界面（AI 桌面外壳在 web/src/desktop/）
 evals/       路由评测集
+tools/       独立工具：websearch（网页搜索）、dlp-egress（外发脱敏）、ci（门禁脚本）
 ```
 
-依赖方向只能从上往下：`server → runtime → agents → llm → core`；`node → agents`；`observe` 被 server 和 node 共用。
+依赖方向只能从上往下：`server → runtime → agents → llm → core`；`node → agents`；`observe` 被 server、runtime 和 node 共用。`des` 是独立的仿真内核，被 `des-mcp`、`runtime`（MOM）和 `server` 使用。`server` 只在测试中依赖 `node` 和 `agents`。
 
-### 4.4 四个程序
+### 4.4 程序
 
 | 程序 | 运行在 | 作用 |
 |---|---|---|
-| `agentnexus` | 你的主电脑 | 主程序：界面、对话、调度、执行 |
+| `agentnexus` | 你的主电脑 | 主程序：界面、对话、调度、执行；在本机监听时同时提供 MOM、运营频道、World Adapter 接口 |
 | `an-node` | 任何想贡献 agent 的电脑 | 节点 |
+| `an-mom` | 开发者 / 演示 | 独立的 MOM 模拟服务（默认 `127.0.0.1:8790`、`data/mom.db`），只做模拟 |
+| `an-des-mcp` | 由 MOM 以子进程启动 | 模拟工厂，通过 MCP（stdio）提供 DES 仿真 |
 | `an-eval` | 开发者 | 批量测试小模型的路由准确率 |
 | `an-mock-acp` | 测试 / 新手体验 | 模拟的 ACP agent，不需要安装任何东西 |
 
@@ -877,14 +1011,25 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 
 ### 11.1 数据库（SQLite）
 
-| 表 | 内容 |
-|---|---|
-| `conversations` | 会话 |
-| `messages` | 消息（可关联任务） |
-| `tasks` | 任务：目标、角色、状态、路由、规则结论、结果、审查意见 |
-| `events` | 任务事件（界面的时间线） |
-| `route_logs` | 每轮对话的决策记录（含模型原始输出），用于调试和积累评测集 |
-| `nodes` | 已配对的节点：地址、令牌、最后一次上报的 agent 列表 |
+主库 `[server] db_path`（默认 `data/agentnexus.db`），建表在 `crates/runtime/src/store.rs`：
+
+| 表 | 内容 | 所属特性 |
+|---|---|---|
+| `conversations` | 会话 | 执行引擎 |
+| `messages` | 消息（可关联任务；`card_json` 存对话卡片） | 执行引擎 |
+| `tasks` | 任务：目标、角色、状态、路由、规则结论、结果、审查意见、背景信息 | 执行引擎 |
+| `events` | 任务事件（界面的时间线） | 执行引擎 |
+| `route_logs` | 每轮对话的决策记录（含模型原始输出），用于调试和积累评测集 | 执行引擎 |
+| `nodes` | 已配对的节点：地址、令牌、最后一次上报的 agent 列表 | 跨机器节点 |
+| `routing_feedback` | 用户对派发结果的纠错反馈 | 对话前台与派发（M1） |
+| `agent_admission`、`admission_events` | 外部 agent 准入记录与审计 | Agent 准入 |
+| `introspection_jobs`、`introspection_findings`、`introspection_pushes`、`introspection_labels` | 内省任务、结论、推送、标注 | 业务内省 |
+| `app_state` | 通用键值状态 | 共用 |
+| `desktop_client_operations` | 桌面受理幂等 | AI 桌面（B1） |
+| `desktop_conversation_task_links`、`desktop_preferences` | 会话与任务关联、基础偏好 | AI 桌面（B3） |
+| `desktop_evidence`、`desktop_evidence_grants` | 证据与访问授权 | AI 桌面（C1） |
+
+MOM 用独立的库，不与主库混用：主程序在本机监听时用主库同目录的 `*.mom.db`（MOM 引擎：`mom_snapshot`、`mom_events`、`mom_cursors`，建表在 `crates/runtime/src/mom/engine.rs`）；开启 `[mom] chat_bridge` 时另用 `*.ops.db`（运营频道发布器：`ops_meta`、`ops_cases`、`ops_posts`、`ops_skips`，建表在 `crates/runtime/src/mom/ops_desk.rs`）。独立的 `an-mom` 默认用 `data/mom.db`。
 
 ### 11.2 AgentNexus 接口
 
@@ -914,6 +1059,18 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | GET | `/api/diagnostics` | 诊断 |
 
 错误统一返回 `{"error": "说明"}`，说明里带错误码。
+
+上表只列执行引擎的接口。其他接口组见各特性的权威设计：
+
+| 路径前缀 | 特性 | 权威设计 |
+|---|---|---|
+| `/api/capabilities` | MCP 能力目录 | [mcp/DESIGN.md](mcp/DESIGN.md) |
+| `/api/feedback` | 派发纠错反馈 | [PLAN.md](PLAN.md) M1 |
+| `/api/admission/*` | Agent 准入 | 本文末尾附节、第 10.4 节错误码 |
+| `/api/introspection/*` | 业务内省 | [memory/INTROSPECTION_PLAN.md](memory/INTROSPECTION_PLAN.md) |
+| `/api/desktop/*` | AI 桌面 | [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) |
+| `/api/mom/*` | MOM、DES 仿真、运营桌面与运营频道 | [mom/IMPLEMENTATION.md](mom/IMPLEMENTATION.md)、[mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md)、[mom/OPS_DESK.md](mom/OPS_DESK.md) |
+| `/api/world/*` | World Adapter | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) |
 
 ### 11.3 界面
 
@@ -1022,7 +1179,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | # | 限制 | 影响 | 计划 |
 |---|---|---|---|
 | 1 | 补充要求 = 先路由并通过 Policy，再取消旧任务并重新派发；路由失败保留旧任务 | 成功重派时已完成的部分仍被丢弃；取消与新任务创建尚非原子事务 | 任务拆分后只重做受影响的部分 |
-| 2 | 任务的背景信息只存在内存里 | 服务重启后，等待审批的任务批准时没有背景信息 | 写入数据库 |
+| 2 | ~~任务的背景信息只存在内存里~~ **已解决**：背景信息存在 `tasks` 表，返工时写回（`orchestrator.rs` 的 `get_task_context` / `set_task_context`） | 服务重启后，等待审批的任务批准时仍有背景信息 | — |
 | 3 | 服务重启时未完成的任务直接失败 | 不能续跑 | 参考 Temporal / LangGraph 的持久化执行 |
 | 4 | 因审查进入"待人工"的任务没有"人工判定通过 / 不通过"的入口 | 只能取消或重发 | 设计见 `docs/fencing/REVIEW_VERDICT_DESIGN.md`；改 orchestrator/store 须另批 |
 | 5 | 上下文只取最近的消息 | 长对话会丢早期内容 | 会话摘要 |
