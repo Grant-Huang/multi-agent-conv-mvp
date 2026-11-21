@@ -975,7 +975,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M0-5** Playwright 套件 + 双上下文 + `E2E-WACHANNEL`（证据 `testing/evidence/wa-m0-5.md`）
 - [x] **M0-6** 全量回归与 H1～H4 准出（注册表 `mom/WA_MOCK_REGISTRY.md`；证据 `testing/evidence/wa-m0-6.md`；#175）
 - [x] **M0** 完整前端 + 协议/实验 Mock（实验入口 + 运营频道 + 三入口；DES-UI 在 Mock 通过；H1～H4 准出）
-- [ ] **M1-0** 冻结远程 DES 读用例与任务卡（[mom/WA_M1_TASKS.md](mom/WA_M1_TASKS.md)；本 PR）
+- [x] **M1-0** 冻结远程 DES 读用例与任务卡（[mom/WA_M1_TASKS.md](mom/WA_M1_TASKS.md)；#176）
+- [ ] **M1-1** 正式 CASES + Red（`E2E-WADES`/`WAREAD`/`WAOBS`、`RT-WADES-01`～`04`；证据 `testing/evidence/wa-m1-1-red.md`；本 PR）
 - [ ] **M1** 远程 DES 读取与正式投递（写路径仍 Mock；执行卡见 WA_M1_TASKS）
 - [ ] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环
 - [ ] **M3** 生产只读（写仍 Mock）

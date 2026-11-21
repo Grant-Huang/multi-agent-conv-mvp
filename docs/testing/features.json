@@ -796,7 +796,10 @@
       "docs/testing/evidence/wa-m0-6.md",
       "docs/mom/WA_MOCK_REGISTRY.md",
       "docs/mom/WA_M1_TASKS.md",
-      "docs/testing/evidence/wa-m1-0.md"
+      "docs/testing/evidence/wa-m1-0.md",
+      "docs/testing/evidence/wa-m1-1-red.md",
+      "web/e2e/wa-des-remote.spec.ts",
+      "crates/server/tests/mom_world_des.rs"
     ],
     "coverage": "browser",
     "cases": [
@@ -807,7 +810,10 @@
       "E2E-DESISO",
       "E2E-DESLOOP",
       "E2E-WABIND",
-      "E2E-WACHANNEL"
+      "E2E-WACHANNEL",
+      "E2E-WADES",
+      "E2E-WAREAD",
+      "E2E-WAOBS"
     ],
     "runtime_cases": [
       "RT-WA-01",
@@ -818,7 +824,11 @@
       "RT-WA-06",
       "RT-WA-07",
       "RT-WA-08",
-      "RT-WA-09"
+      "RT-WA-09",
+      "RT-WADES-01",
+      "RT-WADES-02",
+      "RT-WADES-03",
+      "RT-WADES-04"
     ]
   },
   {
