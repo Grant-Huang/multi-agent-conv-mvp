@@ -543,7 +543,7 @@ async fn rt_wades_07_trial_does_not_deliver_ops_channel() {
 
 /// T-50：默认配置不挂真连接器命令。
 #[test]
-fn rt_wades_des_mcp_default_empty() {
+fn rt_wades_01_des_mcp_default_empty() {
     assert!(
         MomSection::default().des_mcp.is_empty(),
         "生产默认 des_mcp 须为空"
@@ -664,7 +664,7 @@ async fn rt_wades_02_observe_after_live_connector_tick() {
 
 /// 真连接器拒用半提交测试控件。
 #[tokio::test]
-async fn rt_wades_live_rejects_abort_before_publish() {
+async fn rt_wades_05_live_rejects_abort_before_publish() {
     let (url, _connector, _task) = live_des_server().await;
     let client = reqwest::Client::builder().timeout(WAIT).build().unwrap();
     let world_id = bind_world(&client, &url).await;
