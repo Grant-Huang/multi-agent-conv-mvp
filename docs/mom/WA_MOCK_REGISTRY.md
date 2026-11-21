@@ -7,19 +7,20 @@
 | 钩子 | 行为 | 演示 / 断言 |
 |---|---|---|
 | `[mom] world_mock`（默认 `false`） | `true` 且 loopback 时 `main` 挂载 `/api/world/mock/*`；关闭则路由不存在（404） | `RT-WA-09`；浏览器套件经 `waMockServer` 写 `world_mock=true` |
-| 响应 `protocol_version` | Mock 与未来真实适配器共用合同字段 | `RT-WA-01～08` 响应含 `protocol_version=1` |
-| 卡片 `provenance` | 正式运行投影 `OpsCase.provenance=world_mock`；工作台种子区分 `mock` / `des` / `production` | `E2E-DES*`、`E2E-WABIND`；UI 来源标签 |
-| 测试控件 | `WorldMockState::new(true)` 才开放 fault/时钟注入；生产挂载 `with_app_store(false, …)` 关闭测试控件 | `RT-WA-06`、`RT-WA-07` |
+| `/api/world/des`（同门控） | `world_mock=true` 时一并挂载远程 DES **读**适配（服务层；非真 `DesConnector`） | `RT-WADES-*`、`E2E-WADES*`；`wa-m1-suite` |
+| 响应 `protocol_version` | Mock 与未来真实适配器共用合同字段 | `RT-WA-01～08` / `RT-WADES-*` 响应含 `protocol_version=1` |
+| 卡片 `provenance` | Mock 正式运行 `OpsCase.provenance=world_mock`；DES 正式运行 `provenance=des`；工作台种子区分 `mock` / `des` / `production` | `E2E-DES*`、`E2E-WABIND`、`RT-WADES-08`；UI 来源标签 |
+| 测试控件 | `WorldMockState::new(true)` / DES `with_test_controls` 才开放 fault/中断注入；生产挂载关闭 | `RT-WA-06`、`RT-WA-07`、`RT-WADES-05` |
 
 替换五步（与 AI Desktop 注册表一致）：冻结契约 → Mock/真实对测同一套件 → 混合模式全量 Playwright → 验持久性/副作用 → 从真实路径删替身并更新本表。
 
 ## 2. 注册表（PLAN §4）
 
-| ID | Mock | M0 行为 | 替换时机 | 替换验收 | M0 状态 |
+| ID | Mock | M0 行为 | 替换时机 | 替换验收 | 状态（M0 / M1） |
 |---|---|---|---|---|---|
-| WAM-01 | 实验控制与消息 | 试跑/正式分登记；时钟；幂等启动；事项投递 | **M1** 读与观察；**M2** 真实回执 | 同 `scripts/wa-m0-suite.sh` 合同 + DES* | **M0 Mock** 写路径；**M1 读** `/api/world/des` + `RT-WADES-*` / `E2E-WADES*`（`wa-m1-suite`） |
-| WAM-02 | 世界与权限 | 两身份、两世界、跨范围拒绝 | **M1** DES 绑定；**M3** 生产权限 | 列表/详情/计数/隔离合同不变 | **M0 Mock**（`RT-WA-05`、`E2E-DESISO`、`E2E-WABIND`）；**M1** `E2E-WADES` 远程绑定 |
-| WAM-03 | 读与事件 | 快照、有序事件、游标过期 | **M1** MOM 投递；**M3** 多源水位 | 续读无漏、无重复业务应用 | **M0 Mock**（`RT-WA-03`）；**M1** Observe/Subscribe 水位（`RT-WADES-02/03`、`E2E-WAREAD`） |
+| WAM-01 | 实验控制与消息 | 试跑/正式分登记；时钟；幂等启动；事项投递 | **M1** 读与观察；**M2** 真实回执 | `wa-m0-suite` + `wa-m1-suite` | **写：M0 Mock**；**读：M1 服务层 DES**（`/api/world/des`；真连接器随后续） |
+| WAM-02 | 世界与权限 | 两身份、两世界、跨范围拒绝 | **M1** DES 绑定；**M3** 生产权限 | 列表/详情/计数/隔离合同不变 | **M0 Mock** + **M1** `E2E-WADES` / `RT-WADES-01` |
+| WAM-03 | 读与事件 | 快照、有序事件、游标过期 | **M1** MOM 投递；**M3** 多源水位 | 续读无漏、无重复业务应用 | **M0 Mock** + **M1** 正式投递水位（`RT-WADES-02/03/05/06`、`E2E-WAREAD`） |
 | WAM-04 | 方案与批准 | 版本、角色；审批走运营频道卡 | **M2** 复用 MOM；**M4** 真实审批 | 过期批准零写入 | **M0 Mock**（`E2E-DESOPS`、`E2E-WACHANNEL`） |
 | WAM-05 | 写入、回执、取消 | 稳定 execution_id、丢回执、部分失败 | **M2** DES；**M4** MES | 重复执行、终态保护 | **M0 Mock**（`RT-WA-04`、`RT-WA-06`） |
 | WAM-06 | 审核与诊断 | 标准答案仅审核可见 | **M2** DES 审核源 | 访问边界、刷新失败恢复 | **M0 Mock**（`RT-WA-08`、`E2E-DESLOOP`） |
@@ -30,8 +31,8 @@
 ## 3. 证据入口
 
 - 套件：`./scripts/wa-m0-suite.sh` / `cd web && npm run test:wa-m0`；M1：`./scripts/wa-m1-suite.sh` / `npm run test:wa-m1`
-- 准出：`docs/testing/evidence/wa-m0-6.md`（H1～H4；M0 已关闭）；M1 读证据 `wa-m1-*.md`
-- M1 读路径替换任务卡：[WA_M1_TASKS.md](WA_M1_TASKS.md)
+- 准出：`docs/testing/evidence/wa-m0-6.md`（H1～H4；M0 已关闭）；M1：`docs/testing/evidence/wa-m1-5.md`
+- M1 读路径替换任务卡：[WA_M1_TASKS.md](WA_M1_TASKS.md)（M1-0～5 已关闭）
 - 覆盖矩阵：本文 §4 与 [world-adapter Feature Map](../feature-map/features/world-adapter.md)
 
 ## 4. M0 设计清单 → 可执行断言（H4）
