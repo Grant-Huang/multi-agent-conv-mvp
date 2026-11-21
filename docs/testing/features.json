@@ -792,7 +792,9 @@
       "web/e2e/wa-integration.spec.ts",
       "web/e2e/helpers/waMockServer.ts",
       "scripts/wa-m0-suite.sh",
-      "docs/testing/evidence/wa-m0-5.md"
+      "docs/testing/evidence/wa-m0-5.md",
+      "docs/testing/evidence/wa-m0-6.md",
+      "docs/mom/WA_MOCK_REGISTRY.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -813,7 +815,8 @@
       "RT-WA-05",
       "RT-WA-06",
       "RT-WA-07",
-      "RT-WA-08"
+      "RT-WA-08",
+      "RT-WA-09"
     ]
   },
   {

@@ -1,5 +1,7 @@
-//! World Adapter M0-1 Mock HTTP 合同：RT-WA-01～08，见 docs/testing/CASES.md。
+//! World Adapter M0 Mock HTTP 合同：RT-WA-01～09，见 docs/testing/CASES.md。
+use an_runtime::config::MomSection;
 use an_server::mom_world_mock::{router, WorldMockState};
+use axum::Router;
 use serde_json::{json, Value};
 
 async fn mock_server() -> (String, tokio::task::JoinHandle<()>) {
@@ -712,4 +714,62 @@ async fn rt_wa_08_ground_truth_auditor_only() {
         .await
         .unwrap();
     assert!(ok["ground_truth"].is_object());
+}
+
+/// H3 替换钩子：默认关闭 world_mock；未挂载时合同路径 404；挂载后 protocol_version 仍为 1。
+#[tokio::test]
+async fn rt_wa_09_replace_hook_absent_until_mounted() {
+    assert!(
+        !MomSection::default().world_mock,
+        "生产默认不得挂载 world_mock 路由"
+    );
+
+    let bare = Router::new();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let bare_url = format!("http://{}", listener.local_addr().unwrap());
+    let bare_task = tokio::spawn(async move {
+        axum::serve(listener, bare).await.unwrap();
+    });
+    let client = reqwest::Client::new();
+    let absent = client
+        .post(format!("{bare_url}/api/world/mock/experiment/configs"))
+        .headers(experimenter())
+        .json(&json!({
+            "factory": "plant-a",
+            "scenario": "s1",
+            "seed": 1,
+            "duration_minutes": 60,
+            "request_id": "hook-absent"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        absent.status(),
+        404,
+        "未 merge mom_world_mock::router 时合同路径须 404"
+    );
+    bare_task.abort();
+
+    let (url, _task) = mock_server().await;
+    let mounted: Value = client
+        .post(format!("{url}/api/world/mock/experiment/configs"))
+        .headers(experimenter())
+        .json(&json!({
+            "factory": "plant-a",
+            "scenario": "s1",
+            "seed": 1,
+            "duration_minutes": 60,
+            "request_id": "hook-mounted"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(mounted["protocol_version"], 1);
+    assert!(!mounted["config_version"].as_str().unwrap().is_empty());
 }

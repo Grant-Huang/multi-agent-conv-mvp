@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# World Adapter M0-5 集成合同套件：RT-WA HTTP + DES-UI/WABIND/WACHANNEL 浏览器。
+# World Adapter M0 集成合同套件：RT-WA HTTP + DES-UI/WABIND/WACHANNEL 浏览器。
 # 用法：在仓库根目录执行 ./scripts/wa-m0-suite.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo "== RT-WA-01～08 (mom_world_mock) =="
+echo "== RT-WA-01～09 (mom_world_mock) =="
 CARGO_TARGET_DIR=target cargo test --locked -p an-server --test mom_world_mock -- --nocapture
 
 echo "== Playwright：DES* + WABIND + WACHANNEL =="
