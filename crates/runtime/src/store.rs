@@ -152,6 +152,31 @@ pub enum DesktopPrefPatchOutcome {
     Conflict(DesktopPreferences),
 }
 
+/// AI Desktop C1：证据记录
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopEvidence {
+    pub id: String,
+    pub task_id: String,
+    pub title: String,
+    pub object_label: String,
+    pub collected_at: String,
+    pub source_type: String,
+    pub version: String,
+    /// ok | failed | expired | revoked
+    pub status: String,
+    pub summary: String,
+    pub source_body: String,
+    pub error_message: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum DesktopEvidenceAccess {
+    Allowed(DesktopEvidence),
+    Forbidden,
+    SourceUnavailable(DesktopEvidence),
+    NotFound,
+}
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
@@ -307,6 +332,27 @@ CREATE TABLE IF NOT EXISTS desktop_preferences (
     version INTEGER NOT NULL,
     payload_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+-- AI Desktop C1：证据与主体授权（撤权写 revoked_at）
+CREATE TABLE IF NOT EXISTS desktop_evidence (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    object_label TEXT NOT NULL,
+    collected_at TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    version TEXT NOT NULL,
+    status TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    source_body TEXT NOT NULL,
+    error_message TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_desktop_evidence_task ON desktop_evidence(task_id);
+CREATE TABLE IF NOT EXISTS desktop_evidence_grants (
+    evidence_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    revoked_at TEXT,
+    PRIMARY KEY (evidence_id, principal_id)
 );
 "#;
 
@@ -1133,6 +1179,297 @@ impl Store {
         }
         tx.commit()?;
         Ok(DesktopPrefPatchOutcome::Ok(saved))
+    }
+
+    /// 确保 SMT-03 证据种子与 alice/carol 授权（幂等）
+    pub fn ensure_desktop_evidence_fixtures(&self) -> Result<()> {
+        const TASK: &str = "TASK-2026-018";
+        let seeds = [
+            DesktopEvidence {
+                id: "ev-smt-qc-1".into(),
+                task_id: TASK.into(),
+                title: "首件检验记录".into(),
+                object_label: "质量批次 SMT-03".into(),
+                collected_at: "2026-11-20T09:12:00-08:00".into(),
+                source_type: "质检系统".into(),
+                version: "v3".into(),
+                status: "ok".into(),
+                summary:
+                    "事实：尺寸抽检 12/12 合格。推断：工艺窗口稳定。待核实：供应商批次一致性。"
+                        .into(),
+                source_body: "【原文】LOT=SMT-03-Q · Cpk=1.42 · inspector=fixture-qa".into(),
+                error_message: String::new(),
+            },
+            DesktopEvidence {
+                id: "ev-smt-fail".into(),
+                task_id: TASK.into(),
+                title: "影像比对报告".into(),
+                object_label: "质量批次 SMT-03".into(),
+                collected_at: "2026-11-20T08:01:00-08:00".into(),
+                source_type: "视觉检测".into(),
+                version: "v1".into(),
+                status: "failed".into(),
+                summary: "加载失败夹具".into(),
+                source_body: String::new(),
+                error_message: "证据服务暂时不可用".into(),
+            },
+            DesktopEvidence {
+                id: "ev-smt-exp".into(),
+                task_id: TASK.into(),
+                title: "过期工艺参数快照".into(),
+                object_label: "质量批次 SMT-03".into(),
+                collected_at: "2026-10-01T10:00:00-08:00".into(),
+                source_type: "MES 快照".into(),
+                version: "v0".into(),
+                status: "expired".into(),
+                summary: "该快照已过期，不可作为核验依据".into(),
+                source_body: "【过期】请重新采集".into(),
+                error_message: "证据已过期，请刷新采集".into(),
+            },
+            DesktopEvidence {
+                id: "ev-smt-revoked-src".into(),
+                task_id: TASK.into(),
+                title: "已撤权来源样例".into(),
+                object_label: "质量批次 SMT-03".into(),
+                collected_at: "2026-11-19T12:00:00-08:00".into(),
+                source_type: "RelOS".into(),
+                version: "v1".into(),
+                status: "revoked".into(),
+                summary: "来源已失效".into(),
+                source_body: "SECRET-SHOULD-NOT-LEAK".into(),
+                error_message: "来源权限已撤回".into(),
+            },
+        ];
+        let conn = self.write();
+        for e in &seeds {
+            conn.execute(
+                "INSERT OR IGNORE INTO desktop_evidence
+                 (id, task_id, title, object_label, collected_at, source_type, version, status, summary, source_body, error_message)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                params![
+                    e.id,
+                    e.task_id,
+                    e.title,
+                    e.object_label,
+                    e.collected_at,
+                    e.source_type,
+                    e.version,
+                    e.status,
+                    e.summary,
+                    e.source_body,
+                    e.error_message
+                ],
+            )?;
+            for principal in ["alice", "carol", "local"] {
+                conn.execute(
+                    "INSERT OR IGNORE INTO desktop_evidence_grants (evidence_id, principal_id, revoked_at)
+                     VALUES (?1, ?2, NULL)",
+                    params![e.id, principal],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn load_evidence(conn: &Connection, id: &str) -> Result<Option<DesktopEvidence>> {
+        conn.query_row(
+            "SELECT id, task_id, title, object_label, collected_at, source_type, version, status, summary, source_body, error_message
+             FROM desktop_evidence WHERE id = ?1",
+            params![id],
+            |r| {
+                Ok(DesktopEvidence {
+                    id: r.get(0)?,
+                    task_id: r.get(1)?,
+                    title: r.get(2)?,
+                    object_label: r.get(3)?,
+                    collected_at: r.get(4)?,
+                    source_type: r.get(5)?,
+                    version: r.get(6)?,
+                    status: r.get(7)?,
+                    summary: r.get(8)?,
+                    source_body: r.get(9)?,
+                    error_message: r.get(10)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    fn grant_active(conn: &Connection, evidence_id: &str, principal: &str) -> Result<bool> {
+        let row: Option<Option<String>> = conn
+            .query_row(
+                "SELECT revoked_at FROM desktop_evidence_grants WHERE evidence_id = ?1 AND principal_id = ?2",
+                params![evidence_id, principal],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(matches!(row, Some(None)))
+    }
+
+    /// 有权主体可见的任务证据列表（不含正文；摘要仅 ok 且有权时在详情返回）
+    pub fn list_desktop_evidence_for(
+        &self,
+        task_id: &str,
+        principal: &str,
+    ) -> Result<Vec<DesktopEvidence>> {
+        self.ensure_desktop_evidence_fixtures()?;
+        let _timer = ReadTimer::new("list_desktop_evidence");
+        let conn = self.read();
+        let mut st = conn.prepare(
+            "SELECT e.id FROM desktop_evidence e
+             INNER JOIN desktop_evidence_grants g ON g.evidence_id = e.id
+             WHERE e.task_id = ?1 AND g.principal_id = ?2 AND g.revoked_at IS NULL
+             ORDER BY e.collected_at DESC, e.id",
+        )?;
+        let ids: Vec<String> = st
+            .query_map(params![task_id, principal], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(st);
+        let mut out = Vec::new();
+        for id in ids {
+            if let Some(mut e) = Self::load_evidence(&conn, &id)? {
+                e.source_body.clear();
+                e.summary.clear();
+                out.push(e);
+            }
+        }
+        Ok(out)
+    }
+
+    /// 按视图读取；无授权 Forbidden；expired/revoked 对原文类视图 SourceUnavailable
+    pub fn get_desktop_evidence_for(
+        &self,
+        evidence_id: &str,
+        principal: &str,
+        view: &str,
+    ) -> Result<DesktopEvidenceAccess> {
+        self.ensure_desktop_evidence_fixtures()?;
+        let conn = self.read();
+        let Some(ev) = Self::load_evidence(&conn, evidence_id)? else {
+            return Ok(DesktopEvidenceAccess::NotFound);
+        };
+        if !Self::grant_active(&conn, evidence_id, principal)? {
+            return Ok(DesktopEvidenceAccess::Forbidden);
+        }
+        if matches!(view, "source" | "download" | "summary")
+            && matches!(ev.status.as_str(), "expired" | "revoked")
+        {
+            let mut redacted = ev;
+            redacted.source_body.clear();
+            redacted.summary.clear();
+            return Ok(DesktopEvidenceAccess::SourceUnavailable(redacted));
+        }
+        let mut out = ev;
+        if view == "summary" || view == "list" {
+            out.source_body.clear();
+        }
+        if view == "download" || view == "source" {
+            // 保留原文
+        }
+        if out.status == "failed" && matches!(view, "source" | "download") {
+            out.source_body.clear();
+        }
+        Ok(DesktopEvidenceAccess::Allowed(out))
+    }
+
+    /// 撤权（幂等）；返回是否找到授权行
+    pub fn revoke_desktop_evidence_grant(
+        &self,
+        evidence_id: &str,
+        principal: &str,
+    ) -> Result<bool> {
+        let conn = self.write();
+        let exists: Option<Option<String>> = conn
+            .query_row(
+                "SELECT revoked_at FROM desktop_evidence_grants WHERE evidence_id = ?1 AND principal_id = ?2",
+                params![evidence_id, principal],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(revoked_at) = exists else {
+            return Ok(false);
+        };
+        if revoked_at.is_none() {
+            conn.execute(
+                "UPDATE desktop_evidence_grants SET revoked_at = ?3 WHERE evidence_id = ?1 AND principal_id = ?2",
+                params![evidence_id, principal, now()],
+            )?;
+        }
+        Ok(true)
+    }
+
+    /// 授权搜索：仅返回有权且标题/对象匹配的条目（无正文）
+    pub fn search_desktop_evidence_for(
+        &self,
+        principal: &str,
+        query: &str,
+    ) -> Result<Vec<DesktopEvidence>> {
+        self.ensure_desktop_evidence_fixtures()?;
+        let q = query.trim().to_lowercase();
+        let _timer = ReadTimer::new("search_desktop_evidence");
+        let conn = self.read();
+        let mut st = conn.prepare(
+            "SELECT e.id FROM desktop_evidence e
+             INNER JOIN desktop_evidence_grants g ON g.evidence_id = e.id
+             WHERE g.principal_id = ?1 AND g.revoked_at IS NULL
+             ORDER BY e.collected_at DESC",
+        )?;
+        let ids: Vec<String> = st
+            .query_map(params![principal], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(st);
+        let mut out = Vec::new();
+        for id in ids {
+            if let Some(mut e) = Self::load_evidence(&conn, &id)? {
+                let hay =
+                    format!("{} {} {}", e.title, e.object_label, e.source_type).to_lowercase();
+                if q.is_empty() || hay.contains(&q) {
+                    e.source_body.clear();
+                    e.summary.clear();
+                    out.push(e);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// 测试辅助：写入自定义证据与授权
+    pub fn upsert_desktop_evidence_with_grant(
+        &self,
+        evidence: &DesktopEvidence,
+        principal: &str,
+    ) -> Result<()> {
+        let conn = self.write();
+        conn.execute(
+            "INSERT INTO desktop_evidence
+             (id, task_id, title, object_label, collected_at, source_type, version, status, summary, source_body, error_message)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+             ON CONFLICT(id) DO UPDATE SET
+               task_id=excluded.task_id, title=excluded.title, object_label=excluded.object_label,
+               collected_at=excluded.collected_at, source_type=excluded.source_type, version=excluded.version,
+               status=excluded.status, summary=excluded.summary, source_body=excluded.source_body,
+               error_message=excluded.error_message",
+            params![
+                evidence.id,
+                evidence.task_id,
+                evidence.title,
+                evidence.object_label,
+                evidence.collected_at,
+                evidence.source_type,
+                evidence.version,
+                evidence.status,
+                evidence.summary,
+                evidence.source_body,
+                evidence.error_message
+            ],
+        )?;
+        conn.execute(
+            "INSERT INTO desktop_evidence_grants (evidence_id, principal_id, revoked_at) VALUES (?1,?2,NULL)
+             ON CONFLICT(evidence_id, principal_id) DO UPDATE SET revoked_at = NULL",
+            params![evidence.id, principal],
+        )?;
+        Ok(())
     }
 
     /// 按时间顺序返回消息；`last` 为 Some(n) 时只返回最近 n 条

@@ -6,12 +6,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use an_runtime::store::{
-    DesktopAcceptOutcome, DesktopEventCursor, DesktopEventsAfter, DesktopLinkOutcome,
-    DesktopPrefPatchOutcome, DesktopRequestRecord,
+    DesktopAcceptOutcome, DesktopEventCursor, DesktopEventsAfter, DesktopEvidenceAccess,
+    DesktopLinkOutcome, DesktopPrefPatchOutcome, DesktopRequestRecord,
 };
 use an_runtime::Runtime;
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
@@ -90,6 +90,23 @@ pub fn routes() -> Router<AppState> {
             "/api/desktop/v1/preferences",
             get(get_preferences).patch(patch_preferences),
         )
+        .route("/api/desktop/v1/tasks/{id}/evidence", get(list_evidence))
+        .route("/api/desktop/v1/evidence/search", get(search_evidence))
+        .route("/api/desktop/v1/evidence/{id}", get(get_evidence))
+        .route(
+            "/api/desktop/v1/evidence/{id}/revoke",
+            post(revoke_evidence),
+        )
+}
+
+fn principal_from(headers: &HeaderMap) -> String {
+    headers
+        .get("x-desktop-principal")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("alice")
+        .to_string()
 }
 
 async fn create_request(
@@ -554,6 +571,157 @@ async fn patch_preferences(
                 "message": format!("{e:#}"),
                 "retryable": true
             })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct EvidenceViewQuery {
+    view: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EvidenceSearchQuery {
+    q: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RevokeEvidenceBody {
+    principal_id: String,
+}
+
+async fn list_evidence(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let principal = principal_from(&headers);
+    match rt.store.list_desktop_evidence_for(&task_id, &principal) {
+        Ok(items) => (
+            StatusCode::OK,
+            Json(json!({ "principal": principal, "evidence": items })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_evidence(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Query(q): Query<EvidenceViewQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let principal = principal_from(&headers);
+    let view = q.view.as_deref().unwrap_or("summary");
+    match rt.store.get_desktop_evidence_for(&id, &principal, view) {
+        Ok(DesktopEvidenceAccess::Allowed(ev)) => (
+            StatusCode::OK,
+            Json(json!({ "principal": principal, "evidence": ev })),
+        )
+            .into_response(),
+        Ok(DesktopEvidenceAccess::Forbidden) => (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "code": "forbidden",
+                "message": "无权访问该证据",
+                "retryable": false
+            })),
+        )
+            .into_response(),
+        Ok(DesktopEvidenceAccess::SourceUnavailable(meta)) => (
+            StatusCode::GONE,
+            Json(json!({
+                "code": "source_unavailable",
+                "message": meta.error_message,
+                "retryable": false,
+                "evidence_id": meta.id,
+                "status": meta.status
+            })),
+        )
+            .into_response(),
+        Ok(DesktopEvidenceAccess::NotFound) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "证据不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn search_evidence(
+    State(rt): State<AppState>,
+    Query(q): Query<EvidenceSearchQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let principal = principal_from(&headers);
+    match rt
+        .store
+        .search_desktop_evidence_for(&principal, q.q.as_deref().unwrap_or(""))
+    {
+        Ok(items) => (
+            StatusCode::OK,
+            Json(json!({ "principal": principal, "evidence": items })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn revoke_evidence(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<RevokeEvidenceBody>,
+) -> Response {
+    if body.principal_id.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "bad_request",
+                "message": "principal_id 不能为空",
+                "retryable": false
+            })),
+        )
+            .into_response();
+    }
+    match rt
+        .store
+        .revoke_desktop_evidence_grant(&id, body.principal_id.trim())
+    {
+        Ok(true) => (
+            StatusCode::OK,
+            Json(json!({
+                "revoked": true,
+                "evidence_id": id,
+                "principal_id": body.principal_id.trim()
+            })),
+        )
+            .into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "code": "not_found",
+                "message": "授权记录不存在",
+                "retryable": false
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
         )
             .into_response(),
     }

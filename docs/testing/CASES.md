@@ -661,6 +661,12 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADPREF-01 | ai-desktop | 空库 | `GET /api/desktop/v1/preferences` | **200**；默认字段与 `version=1` |
 | RT-ADPREF-02 | ai-desktop | 默认配置 | `PATCH` 带 `expected_version=1` | **200**；`version=2`；持久化 |
 | RT-ADPREF-03 | ai-desktop | 已 PATCH 成功 | 再用过期 `expected_version` PATCH | **409** `version_conflict`；不覆盖已存配置 |
+| RT-ADACL-01 | ai-desktop | 种子证据；alice 有授权 | `GET .../evidence/{id}?view=summary|source` + 头 | **200**；可读摘要/原文 |
+| RT-ADACL-02 | ai-desktop | bob 无授权 | 同上带 bob | **403**；body 不泄露原文/摘要 |
+| RT-ADACL-03 | ai-desktop | 撤权 alice | 读各视图 + 列表 + 搜索 | 全拒或列表/搜索不含该条；撤权幂等 |
+| RT-ADACL-04 | ai-desktop | 已撤权 alice | carol 读原文 | **200**；互不影响 |
+| RT-ADACL-05 | ai-desktop | 证据 status=expired/revoked | 有权主体读 summary/source | **410** `source_unavailable`；不回正文 |
+| E2E-ADSOURCES | ai-desktop | 打开证据面板（真实 ACL） | 切换 bob/alice 撤权/carol；搜索 | 无授权与撤权后列表与搜索拒绝；carol 仍可读原文 |
 
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 
