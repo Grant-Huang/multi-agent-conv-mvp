@@ -958,7 +958,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **A5 整体**（2026-11-20）：M1–M6 Mock 贯通收口；`desktop.spec.ts` 15/15；证据 `testing/evidence/ai-desktop-a5.md`（B1 真实受理等仍按 MOCK_REGISTRY）
 - [x] **B1 可靠受理**（2026-11-20）：`/api/desktop/v1/.../requests` + store 幂等；RT-ADACCEPT-01～04；证据 `testing/evidence/ai-desktop-b1.md`（E2E-ADACCEPT Mock 仍保留；B2/B3 另卡）
 - [x] **B2 Run SSE / 断线重放**（2026-11-20）：`GET /api/desktop/v1/events?after=`；store 会话游标；RT-ADREPLAY-01～05；证据 `testing/evidence/ai-desktop-b2.md`（E2E-ADRESUME Mock 仍保留；不改 orchestrator）
-- [ ] **B3 / C / D** 按 MOCK_REGISTRY 替换 Mock（全量 Feature Map 回归）
+- [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
+- [ ] **C / D** 按 MOCK_REGISTRY 替换 Mock（全量 Feature Map 回归）
 
 ### World Adapter 交付硬约束（DES-32，用户确认）
 

@@ -1516,6 +1516,18 @@
 - **没选什么**：改 orchestrator 续跑；独立 Run/Artifact 表；删除前端 Mock；升级 Playwright 接真实 SSE。
 - **出问题先看**：410 是否在 `after` 缺失时触发；回放与 live 是否按 `event_id` 去重；重启后同库 `after` 是否仍能补齐。
 
+### 68. AI Desktop B3：ConversationTaskLink + 基础 preferences（2026-11-20 用户确认）
+
+- **问题**：M1 关联仍靠 Mock/`TaskRecord.conversation_id` 单归属；M3 设置仅 localStorage；需真实多对多关联与版本化配置（DESIGN §5、MOCK_REGISTRY M1/M3）。
+- **定了什么**（用户确认方案后开工）：
+  - store 兼容新建 `desktop_conversation_task_links`、`desktop_preferences`；不改 `orchestrator.rs`。
+  - `POST/DELETE/GET /api/desktop/v1/tasks/{id}/links`：`client_operation_id` 幂等；改正文式冲突 409；撤回写 `revoked_at` 且幂等；列举合并归属会话投影。
+  - `GET/PATCH /api/desktop/v1/preferences`：`expected_version`；冲突 409 不覆盖。
+  - 硬门禁 **RT-ADLINK-01～04**、**RT-ADPREF-01～03**；保留 E2E-ADSCOPE/ADPROF Mock。
+- **为什么**：纠正关联与配置冲突必须有持久权威源；扩展命名空间避免破坏现网。
+- **没选什么**：记忆建议/Attention（C2）；草稿云同步与 snapshot；删 Mock；改消息派发路径。
+- **出问题先看**：操作 ID 唯一键；撤回后默认列表是否隐藏；PATCH 过期 version 是否未写入。
+
 ### 待决定
 
 - ~~哪一个算“个人主窗口会话”、如何指定（第 54 条）~~ **（S1 已落地）**：`app_state` 键 `main_conversation_id` + `Store::ensure_main_conversation`；第一次需要时创建并记下，之后复用。仍待：会话删除 API 出现时的不可删守卫；“个人”页签与默认打开（G-6）。

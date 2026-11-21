@@ -739,6 +739,7 @@
       "crates/server/src/desktop_api.rs",
       "crates/server/tests/desktop_accept.rs",
       "crates/server/tests/desktop_replay.rs",
+      "crates/server/tests/desktop_b3.rs",
       "crates/runtime/src/store.rs",
       "crates/runtime/src/conversation.rs",
       "docs/ai-desktop/DESIGN.md",
@@ -751,6 +752,7 @@
       "docs/testing/evidence/ai-desktop-a5.md",
       "docs/testing/evidence/ai-desktop-b1.md",
       "docs/testing/evidence/ai-desktop-b2.md",
+      "docs/testing/evidence/ai-desktop-b3.md",
       "docs/ai-desktop/MOCK_REGISTRY.md"
     ],
     "coverage": "browser",
@@ -781,7 +783,14 @@
       "RT-ADREPLAY-02",
       "RT-ADREPLAY-03",
       "RT-ADREPLAY-04",
-      "RT-ADREPLAY-05"
+      "RT-ADREPLAY-05",
+      "RT-ADLINK-01",
+      "RT-ADLINK-02",
+      "RT-ADLINK-03",
+      "RT-ADLINK-04",
+      "RT-ADPREF-01",
+      "RT-ADPREF-02",
+      "RT-ADPREF-03"
     ]
   },
   {

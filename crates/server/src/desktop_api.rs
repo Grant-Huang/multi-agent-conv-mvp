@@ -1,4 +1,4 @@
-//! AI Desktop 扩展协议（B1 可靠受理；B2 游标 SSE）。路径挂在 `/api/desktop/v1`。
+//! AI Desktop 扩展协议（B1 可靠受理；B2 游标 SSE；B3 关联与配置）。路径挂在 `/api/desktop/v1`。
 
 use std::collections::HashSet;
 use std::convert::Infallible;
@@ -6,14 +6,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use an_runtime::store::{
-    DesktopAcceptOutcome, DesktopEventCursor, DesktopEventsAfter, DesktopRequestRecord,
+    DesktopAcceptOutcome, DesktopEventCursor, DesktopEventsAfter, DesktopLinkOutcome,
+    DesktopPrefPatchOutcome, DesktopRequestRecord,
 };
 use an_runtime::Runtime;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use futures::stream::{self, StreamExt as FuturesStreamExt};
 use serde::{Deserialize, Serialize};
@@ -77,6 +78,18 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/desktop/v1/requests/{id}", get(get_request))
         .route("/api/desktop/v1/events", get(desktop_events))
+        .route(
+            "/api/desktop/v1/tasks/{id}/links",
+            get(list_links).post(create_link),
+        )
+        .route(
+            "/api/desktop/v1/tasks/{id}/links/{link_id}",
+            delete(revoke_link),
+        )
+        .route(
+            "/api/desktop/v1/preferences",
+            get(get_preferences).patch(patch_preferences),
+        )
 }
 
 async fn create_request(
@@ -302,6 +315,248 @@ async fn desktop_events(
     Sse::new(stream)
         .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
         .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateLinkBody {
+    pub client_operation_id: String,
+    pub conversation_id: String,
+    #[serde(default)]
+    pub source_message_ids: Vec<String>,
+    #[serde(default = "default_created_by")]
+    pub created_by: String,
+}
+
+fn default_created_by() -> String {
+    "local".into()
+}
+
+#[derive(Debug, Deserialize)]
+struct LinksQuery {
+    include_revoked: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PatchPreferencesBody {
+    pub expected_version: u32,
+    pub name: Option<String>,
+    pub avatar: Option<String>,
+    pub role: Option<String>,
+    pub soul: Option<String>,
+    pub taste: Option<String>,
+    pub memory_principle: Option<String>,
+    pub proactivity: Option<String>,
+}
+
+async fn create_link(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(body): Json<CreateLinkBody>,
+) -> Response {
+    match rt.store.create_desktop_task_link(
+        &task_id,
+        &body.conversation_id,
+        &body.client_operation_id,
+        &body.source_message_ids,
+        &body.created_by,
+    ) {
+        Ok(DesktopLinkOutcome::Created(link)) => (
+            StatusCode::CREATED,
+            Json(json!({ "link": link, "replayed": false })),
+        )
+            .into_response(),
+        Ok(DesktopLinkOutcome::Replay(link)) => (
+            StatusCode::CREATED,
+            Json(json!({ "link": link, "replayed": true })),
+        )
+            .into_response(),
+        Ok(DesktopLinkOutcome::Conflict {
+            link_id,
+            conversation_id,
+        }) => (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "code": "operation_conflict",
+                "message": "相同 client_operation_id 已绑定不同关联",
+                "retryable": false,
+                "link_id": link_id,
+                "conversation_id": conversation_id
+            })),
+        )
+            .into_response(),
+        Err(e) => {
+            let msg = format!("{e:#}");
+            let status = if msg.contains("不存在") {
+                StatusCode::NOT_FOUND
+            } else if msg.contains("不能为空") {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            (
+                status,
+                Json(json!({
+                    "code": if status == StatusCode::NOT_FOUND { "not_found" } else { "bad_request" },
+                    "message": msg,
+                    "retryable": false
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn list_links(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Query(q): Query<LinksQuery>,
+) -> Response {
+    if rt.store.get_task(&task_id).ok().flatten().is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "code": "not_found",
+                "message": "任务不存在",
+                "retryable": false
+            })),
+        )
+            .into_response();
+    }
+    match rt
+        .store
+        .list_desktop_task_links(&task_id, q.include_revoked.unwrap_or(false))
+    {
+        Ok(links) => (StatusCode::OK, Json(json!({ "links": links }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "code": "internal",
+                "message": format!("{e:#}"),
+                "retryable": true
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn revoke_link(
+    State(rt): State<AppState>,
+    Path((task_id, link_id)): Path<(String, String)>,
+) -> Response {
+    if link_id.starts_with("legacy-") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "bad_request",
+                "message": "投影关联不可撤回，请先建立显式关联",
+                "retryable": false
+            })),
+        )
+            .into_response();
+    }
+    match rt.store.revoke_desktop_task_link(&task_id, &link_id) {
+        Ok(Some(link)) => (StatusCode::OK, Json(json!({ "link": link }))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "code": "not_found",
+                "message": "关联不存在",
+                "retryable": false
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "code": "internal",
+                "message": format!("{e:#}"),
+                "retryable": true
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_preferences(State(rt): State<AppState>) -> Response {
+    match rt.store.get_desktop_preferences("local") {
+        Ok(p) => (StatusCode::OK, Json(p)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "code": "internal",
+                "message": format!("{e:#}"),
+                "retryable": true
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn patch_preferences(
+    State(rt): State<AppState>,
+    Json(body): Json<PatchPreferencesBody>,
+) -> Response {
+    let current = match rt.store.get_desktop_preferences("local") {
+        Ok(p) => p,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "code": "internal",
+                    "message": format!("{e:#}"),
+                    "retryable": true
+                })),
+            )
+                .into_response();
+        }
+    };
+    let mut next = current.clone();
+    if let Some(v) = body.name {
+        next.name = v;
+    }
+    if let Some(v) = body.avatar {
+        next.avatar = v;
+    }
+    if let Some(v) = body.role {
+        next.role = v;
+    }
+    if let Some(v) = body.soul {
+        next.soul = v;
+    }
+    if let Some(v) = body.taste {
+        next.taste = v;
+    }
+    if let Some(v) = body.memory_principle {
+        next.memory_principle = v;
+    }
+    if let Some(v) = body.proactivity {
+        next.proactivity = v;
+    }
+    match rt
+        .store
+        .patch_desktop_preferences("local", body.expected_version, &next)
+    {
+        Ok(DesktopPrefPatchOutcome::Ok(p)) => (StatusCode::OK, Json(p)).into_response(),
+        Ok(DesktopPrefPatchOutcome::Conflict(current)) => (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "code": "version_conflict",
+                "message": "配置版本冲突，请基于当前值重新编辑",
+                "retryable": false,
+                "current": current
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "code": "internal",
+                "message": format!("{e:#}"),
+                "retryable": true
+            })),
+        )
+            .into_response(),
+    }
 }
 
 fn envelope_from_cursor(item: &DesktopEventCursor) -> DesktopEventEnvelope {
