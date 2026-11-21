@@ -90,6 +90,21 @@ pub enum DesktopAcceptOutcome {
     },
 }
 
+/// AI Desktop B2：会话事件游标回放条目（`cursor` = 稳定 event id）
+#[derive(Debug, Clone)]
+pub struct DesktopEventCursor {
+    pub cursor: String,
+    pub event: TaskEvent,
+}
+
+/// `list_conversation_events_after` 结果
+#[derive(Debug, Clone)]
+pub enum DesktopEventsAfter {
+    Ok(Vec<DesktopEventCursor>),
+    /// `after` 不存在或不属于该会话（含已淘汰）
+    CursorExpired,
+}
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
@@ -1028,6 +1043,45 @@ impl Store {
         rows.map(|j| Ok(serde_json::from_str(&j?)?)).collect()
     }
 
+    /// AI Desktop B2：会话维度事件游标回放。`after_id` 缺失/不属于该会话 → `CursorExpired`（与任务详情「找不到就全量」不同）。
+    pub fn list_conversation_events_after(
+        &self,
+        conversation_id: &str,
+        after_id: Option<&str>,
+    ) -> Result<DesktopEventsAfter> {
+        let _timer = ReadTimer::new("list_conversation_events");
+        let conn = self.read();
+        let after_rowid: Option<i64> = match after_id {
+            None => None,
+            Some(aid) => {
+                let row: Option<i64> = conn
+                    .query_row(
+                        "SELECT rowid FROM events WHERE id = ?1 AND conversation_id = ?2",
+                        params![aid, conversation_id],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                match row {
+                    Some(r) => Some(r),
+                    None => return Ok(DesktopEventsAfter::CursorExpired),
+                }
+            }
+        };
+        let mut st = conn.prepare(
+            "SELECT id, json FROM events WHERE conversation_id = ?1 AND (?2 IS NULL OR rowid > ?2) ORDER BY created_at, rowid",
+        )?;
+        let rows = st.query_map(params![conversation_id, after_rowid], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, json) = row?;
+            let event: TaskEvent = serde_json::from_str(&json)?;
+            out.push(DesktopEventCursor { cursor: id, event });
+        }
+        Ok(DesktopEventsAfter::Ok(out))
+    }
+
     // ───────────── 节点 ─────────────
 
     /// 保存（或更新）配对的节点。`cards` 是节点最后一次上报的 agent 列表，节点离线时用它显示
@@ -1892,6 +1946,61 @@ mod tests {
         assert_eq!(ids(Some("e1")), vec!["e2", "e3"]);
         assert_eq!(ids(Some("e3")), Vec::<String>::new());
         assert_eq!(ids(Some("missing")), vec!["e1", "e2", "e3"]);
+        drop(store);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn conversation_events_after_expires_missing_cursor() {
+        use an_core::EventKind;
+        let dir = std::env::temp_dir().join(an_core::new_id("an-store-desk-ev"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        let ev = |id: &str, conv: &str| TaskEvent {
+            id: id.into(),
+            conversation_id: conv.into(),
+            task_id: Some("t".into()),
+            kind: EventKind::Progress,
+            status: None,
+            message: id.into(),
+            stream_id: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+        };
+        store.insert_event(&ev("e1", "c1")).unwrap();
+        store.insert_event(&ev("e2", "c1")).unwrap();
+        store.insert_event(&ev("e3", "c2")).unwrap();
+        match store.list_conversation_events_after("c1", None).unwrap() {
+            DesktopEventsAfter::Ok(v) => {
+                assert_eq!(
+                    v.iter().map(|x| x.cursor.as_str()).collect::<Vec<_>>(),
+                    ["e1", "e2"]
+                );
+            }
+            DesktopEventsAfter::CursorExpired => panic!("unexpected expire"),
+        }
+        match store
+            .list_conversation_events_after("c1", Some("e1"))
+            .unwrap()
+        {
+            DesktopEventsAfter::Ok(v) => {
+                assert_eq!(v.len(), 1);
+                assert_eq!(v[0].cursor, "e2");
+            }
+            DesktopEventsAfter::CursorExpired => panic!("unexpected expire"),
+        }
+        assert!(matches!(
+            store
+                .list_conversation_events_after("c1", Some("missing"))
+                .unwrap(),
+            DesktopEventsAfter::CursorExpired
+        ));
+        // 其他会话的游标对本会话视为过期
+        assert!(matches!(
+            store
+                .list_conversation_events_after("c1", Some("e3"))
+                .unwrap(),
+            DesktopEventsAfter::CursorExpired
+        ));
         drop(store);
         std::fs::remove_dir_all(&dir).unwrap();
     }

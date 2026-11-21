@@ -649,6 +649,11 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADACCEPT-02 | ai-desktop | 已成功受理一次 | 同 `client_operation_id` + 同正文再 POST | **202**；`request_id`/`message_id` 不变；`dispatch_count` 仍为 1；用户消息仍一条 |
 | RT-ADACCEPT-03 | ai-desktop | 已成功受理一次 | 同 `client_operation_id`、改正文再 POST | **409** `operation_conflict`；原消息与 `dispatch_count` 不变 |
 | RT-ADACCEPT-04 | ai-desktop | POST 已 202（模拟丢回执） | `GET /api/desktop/v1/requests/{request_id}` | **200**；可读 `status=accepted` 与关联 `message_id` |
+| RT-ADREPLAY-01 | ai-desktop | 会话已有落库事件 | `GET /api/desktop/v1/events?conversation_id=&after=` 再发 live | **200** SSE：先回放缺口，再续接 live；含 `event_id`/`cursor` |
+| RT-ADREPLAY-02 | ai-desktop | 任务权威状态已 COMPLETED；流含较早 status 事件 | 订阅全量回放；再投递迟到 Running 事件 | 流内 `event_id` 去重；`GET` 任务快照 status/`updated_at` 不回退 |
+| RT-ADREPLAY-03 | ai-desktop | 会话存在 | `after` 指向不存在/已淘汰游标 | **410** `cursor_expired`；不静默回传全量 |
+| RT-ADREPLAY-04 | ai-desktop | 写入事件后关闭 Runtime | 同库新进程订阅 `after` | 仍能补齐落库事件，与 store 会话游标一致 |
+| RT-ADREPLAY-05 | ai-desktop | 两会话各有事件 | 只订会话 A | 不得出现会话 B 的 `event_id` |
 
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 
