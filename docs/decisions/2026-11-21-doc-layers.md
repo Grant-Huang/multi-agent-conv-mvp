@@ -80,3 +80,4 @@
 |---|---|---|
 | 2026-11-21 | 新建 | [2026-11-21-design-overview](2026-11-21-design-overview.md) |
 | 2026-11-21 | 按新的决策写法补齐背景、决策依据、简单设计；状态改为“部分生效” | [2026-11-21-decision-format](2026-11-21-decision-format.md) |
+| 2026-11-21 | 文档层级编号改为 D0～D3（本文中的 L0～L3 即 D0～D3），以免与风险等级 L0～L3 重名；本文正文不改 | [2026-11-21-dev-standard-and-guardrails](2026-11-21-dev-standard-and-guardrails.md) |

@@ -1,13 +1,13 @@
 # AgentNexus MVP 工程约定（通用）
 
-本文件是所有 AI 编码 agent 共用的规则入口。产品定位与不能破的原则见 `docs/PRODUCT.md`（产品宪章），系统全景与各特性的设计入口见 `docs/DESIGN.md` 第 0 节，当前计划见 `docs/PLAN.md`。
+本文件是所有 AI 编码 agent 共用的规则入口。研发规范（需求→设计→实现→质量→版本、风险分级、授权、证据等级）见根目录 `DEV_STANDARD.md`，七层围栏与现状见 `docs/fencing/README.md`；产品定位与不能破的原则见 `docs/PRODUCT.md`（产品宪章），系统全景与各特性的设计入口见 `docs/DESIGN.md` 第 0 节，当前计划见 `docs/PLAN.md`。本文只列必须一直遵守的要点，细则以 `DEV_STANDARD.md` 为准。
 注意：本文件是指导，不是安全边界；禁止事项由 CI、分支保护和权限配置强制执行。
 围栏落地说明见 `docs/fencing/README.md`；**提交 / 开 PR 前的自检清单见 [`docs/fencing/PREFLIGHT.md`](docs/fencing/PREFLIGHT.md)**。
 
 ## 开始前
-1. 按顺序读：`docs/PRODUCT.md`（产品宪章：做什么、不做什么、不能破的原则）→ `docs/DESIGN.md` 第 0 节（系统全景与产品特性设计索引）→ `docs/contracts/` 中与本任务相关的共享契约 → 本任务所属特性的权威设计（见第 0.3 节）。再读 `docs/PLAN.md`（当前里程碑）；排查问题或改动已有设计前，先看决策记录（`docs/decisions/` 与 `docs/DECISIONS.md`）。
+1. 按顺序读：`DEV_STANDARD.md`（研发规范）→ `docs/PRODUCT.md`（产品宪章：做什么、不做什么、不能破的原则）→ `docs/DESIGN.md` 第 0 节（系统全景与产品特性设计索引）→ `docs/contracts/` 中与本任务相关的共享契约 → 本任务所属特性的权威设计（见第 0.3 节）。再读 `docs/PLAN.md`（当前里程碑）；排查问题或改动已有设计前，先看决策记录（`docs/decisions/` 与 `docs/DECISIONS.md`）。
    MOM 业务工作台的 UI / UE 设计与开发还须遵守 [主界面设计原则](docs/mom/UI_UX_PRINCIPLES.md)，其场景验收要求作为界面变更评审基线。
-2. 需求没有验收条件时，先提问，不要开始写代码。
+2. 需求没有验收条件、或找不到有效的授权来源（`DEV_STANDARD.md` 第 5 节）时，先提问，不要开始写代码。
 3. 查看 `git status` 和 `git diff`，确认不会覆盖用户未提交的改动。
 
 ## 修改范围
