@@ -847,3 +847,5 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WADES-04 | world-adapter | 远程实验控制可用 | 试跑一次；正式启动一次 | 试跑 `delivery_count=0`；正式 `delivery_count≥1` 且有 `case_id`；试跑 ID ≠ 正式 ID |
 | RT-WADES-05 | world-adapter | 已有完整投递边界；测试控件开 | abort-before-publish → step → Observe；再 commit-publish → Observe | 中断期间 `publish_seq`/事件不变；提交后前进且快照对齐 |
 | RT-WADES-06 | world-adapter | 已 step 发布一次 | Observe；空 pending 再 commit | `as_of`/`objects.publish_seq` 与事件水位一致；无重复 `event_id`；空 commit 不抬水位 |
+| RT-WADES-07 | world-adapter | 已挂运营投影的远程 DES 适配 | 实验员试跑一次 | `delivery_count=0`；运营频道消息数为 0（不投递事项卡） |
+| RT-WADES-08 | world-adapter | 同上；已有可用 `config_version` | 正式启动一次 | `delivery_count≥1` 且有 `case_id`；运营频道出现 `OpsCase`，`provenance=des` |

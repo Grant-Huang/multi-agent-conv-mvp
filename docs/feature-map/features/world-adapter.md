@@ -1,7 +1,7 @@
 # World Adapter 与 MOM 工作台 Feature Map
 
 Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`docs/mom/DES_EXPERIMENT_OPS_SPLIT.md`、`docs/mom/WA_MOCK_REGISTRY.md`、`web/e2e/des-experiment.spec.ts`、`web/e2e/mom-workbench.spec.ts`、`web/e2e/wa-integration.spec.ts`、`scripts/wa-m0-suite.sh`、`web/src/desktop/DesExperiment.tsx`、`web/src/desktop/MomWorkbench.tsx`、`web/src/components/OpsCards.tsx`；用例 `E2E-DESTRIAL`～`E2E-DESLOOP`（M0-3/M0-5 双上下文）、`E2E-WABIND`（WA-01）、`E2E-WACHANNEL`（WA-05 适用切片）；合同 `RT-WA-01～09`；准出证据 `docs/testing/evidence/wa-m0-6.md`。  
-现有路径见 [MOM Feature Map](mom.md)。表中其余 `E2E-WA-*` 为设计编号，登记进 CASES/`features.json` 前须换成 `E2E-[A-Z]+`；控件名是 Playwright 定位契约。M0 H4 覆盖矩阵见 [WA_MOCK_REGISTRY.md](../../mom/WA_MOCK_REGISTRY.md) §4。M0 已准出（#175）；**M1** 正式 id `E2E-WADES` / `WAREAD` / `WAOBS`、`RT-WADES-01`～`04` 已登记（Red：`wa-des-remote.spec.ts`、`mom_world_des.rs`），见 [WA_M1_TASKS.md](../../mom/WA_M1_TASKS.md)。
+现有路径见 [MOM Feature Map](mom.md)。表中其余 `E2E-WA-*` 为设计编号，登记进 CASES/`features.json` 前须换成 `E2E-[A-Z]+`；控件名是 Playwright 定位契约。M0 H4 覆盖矩阵见 [WA_MOCK_REGISTRY.md](../../mom/WA_MOCK_REGISTRY.md) §4。M0 已准出（#175）；**M1** 正式 id `E2E-WADES` / `WAREAD` / `WAOBS`、`RT-WADES-01`～`08` 已登记（`wa-des-remote.spec.ts`、`mom_world_des.rs`），见 [WA_M1_TASKS.md](../../mom/WA_M1_TASKS.md)。
 
 | 拟用例 | 正式 E2E id | 操作路径与定位 | UI 和业务断言 | 追溯 |
 |---|---|---|---|---|
