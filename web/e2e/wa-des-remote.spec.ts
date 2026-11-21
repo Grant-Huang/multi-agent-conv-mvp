@@ -9,7 +9,17 @@ test.afterEach(async ({ page }, info) => {
   await page.screenshot({ path: info.outputPath('page.png'), fullPage: true }).catch(() => {});
 });
 
-test('E2E-WADES: 远程 DES 世界绑定与跨世界隔离', async ({ page }) => {
+test('E2E-WADES: 远程 DES 世界绑定与跨世界隔离', async ({ page, request }) => {
+  // 合同：远程 DES 读适配可用（相对 Mock 前缀）
+  const bind = await request.post('/api/world/des/bind', {
+    data: { factory: 'plant-a', scenario: 's1', seed: 1, request_id: 'e2e-wades' },
+    headers: { 'X-WA-Role': 'experimenter' },
+  });
+  expect(bind.status()).toBe(200);
+  const body = await bind.json();
+  expect(body.provenance).toBe('des');
+  expect(body.world_id).toBeTruthy();
+
   await page.goto('/');
   await expect(page.getByTestId('desktop-home')).toBeVisible();
   await page.getByRole('link', { name: 'MOM 工作台', exact: true }).click();

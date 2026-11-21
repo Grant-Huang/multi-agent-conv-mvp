@@ -11,6 +11,7 @@
     "test:map": "node --test verification/check-map.test.mjs && node verification/check-map.mjs",
     "test:e2e": "tsc --noEmit -p e2e/tsconfig.json && playwright test",
     "test:wa-m0": "bash ../scripts/wa-m0-suite.sh",
+    "test:wa-m1": "bash ../scripts/wa-m1-suite.sh",
     "verify": "node verification/run.mjs"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { api } from "../api";
 import {
   MOM_WORLDS,
   casesForWorld,
@@ -106,13 +107,17 @@ export function MomWorkbench({
   const [caseId, setCaseId] = useState<string | null>(
     () => initialCaseId ?? null,
   );
-  /** DES 读水位（工作台本地；对应 E2E-WAREAD） */
+  /** DES 读水位：经 `/api/world/des` Observe/Subscribe（E2E-WAREAD） */
   const [appliedEventIds, setAppliedEventIds] = useState<string[]>([
     "evt-des-seed-1",
   ]);
   const [eventWatermark, setEventWatermark] = useState("wm-1");
   const [cursorExpired, setCursorExpired] = useState(false);
   const [forceExpiredCursor, setForceExpiredCursor] = useState(false);
+  const [desReadReady, setDesReadReady] = useState(false);
+  const desWorldIdRef = useRef<string | null>(null);
+  const desCursorRef = useRef<string | null>(null);
+  const desSyncGen = useRef(0);
 
   const world = MOM_WORLDS.find((w) => w.world_id === worldId) ?? MOM_WORLDS[0];
   const cases = casesForWorld(world.world_id);
@@ -121,15 +126,100 @@ export function MomWorkbench({
       ? findCase(caseId)
       : undefined;
 
-  function rereadEvents() {
+  useEffect(() => {
+    if (world.provenance !== "des") {
+      desWorldIdRef.current = null;
+      desCursorRef.current = null;
+      setDesReadReady(false);
+      return;
+    }
+    setDesReadReady(false);
+    const gen = ++desSyncGen.current;
+    let cancelled = false;
+    (async () => {
+      try {
+        const bound = await api.worldDes.bind({
+          factory: "plant-a",
+          scenario: "tool-wear",
+          seed: 1,
+          request_id: "wb-des-bind",
+        });
+        if (cancelled || gen !== desSyncGen.current) return;
+        desWorldIdRef.current = bound.world_id;
+        await api.worldDes.step({
+          world_id: bound.world_id,
+          minutes: 1,
+          request_id: "wb-des-step",
+        });
+        if (cancelled || gen !== desSyncGen.current) return;
+        const obs = await api.worldDes.observe({
+          world_id: bound.world_id,
+          request_id: "wb-des-observe",
+        });
+        if (cancelled || gen !== desSyncGen.current) return;
+        desCursorRef.current = obs.cursor;
+        const ids = obs.events.map((e) => e.event_id).filter(Boolean);
+        setAppliedEventIds(ids.length > 0 ? ids : ["evt-des-seed-1"]);
+        setEventWatermark(String(obs.publish_seq));
+        setCursorExpired(false);
+      } catch {
+        /* DES 未挂载时保留种子水位，不阻断工作台 */
+        setAppliedEventIds(["evt-des-seed-1"]);
+        setEventWatermark("wm-1");
+      } finally {
+        if (!cancelled && gen === desSyncGen.current) setDesReadReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [world.provenance, world.world_id]);
+
+  async function rereadEvents() {
     if (forceExpiredCursor) {
+      const wid = desWorldIdRef.current;
+      if (wid) {
+        try {
+          await api.worldDes.subscribe({
+            world_id: wid,
+            cursor: "expired-cursor",
+            request_id: "wb-des-expired",
+          });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (msg.includes("过期") || msg.includes("CURSOR") || msg.includes("409")) {
+            setCursorExpired(true);
+            return;
+          }
+        }
+      }
       setCursorExpired(true);
       return;
     }
     setCursorExpired(false);
-    // 幂等：同事件 ID 只保留一份
+    const wid = desWorldIdRef.current;
+    const cursor = desCursorRef.current;
+    if (wid && cursor) {
+      try {
+        const sub = await api.worldDes.subscribe({
+          world_id: wid,
+          cursor,
+          request_id: "wb-des-reread",
+        });
+        desCursorRef.current = sub.cursor;
+        if (typeof sub.publish_seq === "number") {
+          setEventWatermark(String(sub.publish_seq));
+        }
+        setAppliedEventIds((prev) => {
+          const next = [...prev, ...sub.events.map((e) => e.event_id)];
+          return Array.from(new Set(next.filter(Boolean)));
+        });
+        return;
+      } catch {
+        /* 回退本地幂等 */
+      }
+    }
     setAppliedEventIds((prev) => Array.from(new Set(prev)));
-    setEventWatermark((w) => w);
   }
 
   function selectWorld(id: string) {
@@ -213,7 +303,7 @@ export function MomWorkbench({
         <span className="mom-wb-ids" aria-label="当前世界标识">
           world_id={world.world_id}
         </span>
-        {world.provenance === "des" && (
+        {world.provenance === "des" && desReadReady && (
           <div className="mom-des-readout" aria-label="DES 读水位">
             <span data-testid="event-watermark">水位 {eventWatermark}</span>
             <span data-testid="applied-event-ids" className="muted small">

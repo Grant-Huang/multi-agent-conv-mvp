@@ -231,6 +231,27 @@ export interface WorldMockRun {
   failed: boolean;
 }
 
+/** World Adapter M1 远程 DES 读（`/api/world/des`） */
+export interface WorldDesBindResult {
+  protocol_version: number;
+  world_id: string;
+  provenance: string;
+}
+export interface WorldDesEvent {
+  event_id: string;
+  kind: string;
+  source?: string;
+  payload?: unknown;
+}
+export interface WorldDesObserveResult {
+  protocol_version: number;
+  world_id: string;
+  provenance: string;
+  cursor: string;
+  publish_seq?: number;
+  events: WorldDesEvent[];
+}
+
 const WA_ROLE = { "X-WA-Role": "experimenter" };
 
 /** 统一的请求函数：非 2xx 时抛出后端返回的错误信息 */
@@ -394,6 +415,39 @@ export const api = {
         method: "POST",
         headers: { "X-WA-Role": "operator" },
         body: "{}",
+      }),
+  },
+  /** World Adapter M1 远程 DES 读；未开 world_mock / DES 门控时 404 */
+  worldDes: {
+    bind: (body: {
+      factory?: string;
+      scenario?: string;
+      seed?: number;
+      run_id?: string;
+      request_id?: string;
+    }) =>
+      request<WorldDesBindResult>("/api/world/des/bind", {
+        method: "POST",
+        headers: WA_ROLE,
+        body: JSON.stringify(body),
+      }),
+    observe: (body: { world_id: string; request_id?: string }) =>
+      request<WorldDesObserveResult>("/api/world/des/observe", {
+        method: "POST",
+        headers: WA_ROLE,
+        body: JSON.stringify(body),
+      }),
+    subscribe: (body: { world_id: string; cursor: string; request_id?: string }) =>
+      request<WorldDesObserveResult>("/api/world/des/subscribe", {
+        method: "POST",
+        headers: WA_ROLE,
+        body: JSON.stringify(body),
+      }),
+    step: (body: { world_id: string; minutes?: number; request_id?: string }) =>
+      request<{ publish_seq?: number; published?: boolean }>("/api/world/des/experiment/step", {
+        method: "POST",
+        headers: WA_ROLE,
+        body: JSON.stringify(body),
       }),
   },
 };
