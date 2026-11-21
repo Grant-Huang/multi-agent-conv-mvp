@@ -7,7 +7,7 @@
 | 状态 | 第 0 节对应 2026-11-20 确认的方向（决定 61（AI 桌面）、61（World Adapter）、62）；各特性的实现状态见 [0.3 节](#03-产品特性设计索引) |
 | 核对基线 | 远端 `master` 的 `3e7bdeb` |
 
-**怎么读**：先读第 0 节，知道系统由哪几层组成、每个产品特性的设计写在哪里；要改执行引擎（对话、路由、规则、编排、agent、节点、日志）时再读第 1–17 节。第 1–17 节的编号和锚点保持不变，`AGENTS.md` 等文件引用的"第 10 节"仍然有效。
+**怎么读**：产品定位、主轴、非目标和不能破的原则见 [产品宪章 PRODUCT.md](PRODUCT.md)（本文的上位文档）。然后读第 0 节，知道系统由哪几层组成、每个产品特性的设计写在哪里；要改执行引擎（对话、路由、规则、编排、agent、节点、日志）时再读第 1–17 节。第 1–17 节的编号和锚点保持不变，`AGENTS.md` 等文件引用的"第 10 节"仍然有效。
 
 ---
 
@@ -128,11 +128,15 @@ flowchart TB
 
 | 想知道 | 看哪里 |
 |---|---|
+| 做什么产品、不做什么、不能破的原则 | [PRODUCT.md](PRODUCT.md)（产品宪章） |
 | 系统全貌、某个特性的设计在哪 | 本节 |
+| 跨特性必须一致的约定（身份与审批、状态与取消、事件与追踪） | [contracts/](contracts/README.md)（目前为草案） |
 | 执行引擎怎么实现 | 本文第 1–17 节 |
 | 现在做到哪一步 | [PLAN.md](PLAN.md)（总进度）；各特性的计划见 0.3 节"计划与进度"列 |
 | 各模块怎么打通、黄金场景 | [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)；缺口分析 [feature-map/SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md) |
-| 为什么这样定 | [DECISIONS.md](DECISIONS.md) |
+| 为什么这样定 | 2026-11-21 起的新决策在 [decisions/](decisions/README.md)（一条一个文件）；更早的在 [DECISIONS.md](DECISIONS.md) |
+| 原型、实验、调研 | [explore/](explore/README.md)（不作为设计依据） |
+| 文档体系怎么整理 | [DOC_SYSTEM_PLAN.md](DOC_SYSTEM_PLAN.md) |
 | 怎么测、验收用例、证据 | [testing/README.md](testing/README.md)、[testing/CASES.md](testing/CASES.md)、[feature-map/README.md](feature-map/README.md) |
 | 界面设计原则 | [mom/UI_UX_PRINCIPLES.md](mom/UI_UX_PRINCIPLES.md) |
 | 怎么用 | [manual/README.md](manual/README.md) |
@@ -141,9 +145,10 @@ flowchart TB
 
 ### 0.5 文档规则
 
-1. **一个特性一个权威设计。** 新特性先在 0.3 节登记一行，再写设计；设计文档开头写明状态和核对基线。
-2. **三类内容各归一处。** 设计写"是什么、怎么做"；进度只勾在 PLAN 或该特性的计划文档里；"为什么这样定"只记在 DECISIONS。
-3. **本文第 1–17 节的编号不改。** 多处文档和 `AGENTS.md` 按编号引用（例如第 10 节的事件名）。新增内容放进 0.3 节对应特性的文档，不在这里加新的大节。
+1. **分层与改动门槛。** 产品宪章（[PRODUCT.md](PRODUCT.md)）和共享契约（[contracts/](contracts/README.md)）是刚性层，改动要用户确认；特性设计、计划、探索区走普通 PR。详见 [decisions/2026-11-21-doc-layers.md](decisions/2026-11-21-doc-layers.md)。
+2. **一个特性一个权威设计。** 新特性先在 0.3 节登记一行，并写明为宪章哪一条服务，再写设计；设计文档开头写明状态和核对基线；跨特性的约定引用契约，不自己重新定义。
+3. **三类内容各归一处。** 设计写"是什么、怎么做"；进度只勾在 PLAN 或该特性的计划文档里；"为什么这样定"只记在决策（[decisions/](decisions/README.md)）。
+4. **本文第 1–17 节的编号不改。** 多处文档和 `AGENTS.md` 按编号引用（例如第 10 节的事件名）。新增内容放进 0.3 节对应特性的文档，不在这里加新的大节。
 
 ### 0.6 设计演进简史
 
@@ -154,7 +159,7 @@ flowchart TB
 | 11-16～19 | 产品特性扩展：对话式接入助手、前台提速实验、外发脱敏、业务内省、工程围栏 | DECISIONS 1–55 |
 | 11-18 | 发现三块系统互不连通，定打通计划和 6 个黄金场景；会话、MOM 案例卡、运营频道打通第一步 | [SYSTEM_GAPS.md](feature-map/SYSTEM_GAPS.md)、[INTEGRATION_PLAN.md](INTEGRATION_PLAN.md)、决定 56–58 |
 | 11-20 | 方向收敛：只做组织级 AI 桌面；World Adapter 统一世界访问；仿真实验与运营入口分开 | 决定 61（AI 桌面）、61（World Adapter）、62 |
-| 11-21 | 本文改为"系统全景 + 执行引擎细节"两部分 | 决定 70 |
+| 11-21 | 本文改为"系统全景 + 执行引擎细节"两部分；文档分层（宪章、共享契约、特性设计、计划、探索区） | [decisions/2026-11-21-design-overview.md](decisions/2026-11-21-design-overview.md)、[decisions/2026-11-21-doc-layers.md](decisions/2026-11-21-doc-layers.md) |
 
 ---
 
