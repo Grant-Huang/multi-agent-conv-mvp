@@ -52,7 +52,13 @@ async fn create_request(
     Path(conversation_id): Path<String>,
     Json(body): Json<CreateRequestBody>,
 ) -> Response {
-    if rt.store.get_conversation(&conversation_id).ok().flatten().is_none() {
+    if rt
+        .store
+        .get_conversation(&conversation_id)
+        .ok()
+        .flatten()
+        .is_none()
+    {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({
@@ -110,17 +116,11 @@ async fn create_request(
                     );
                 }
             });
-            (
-                StatusCode::ACCEPTED,
-                Json(to_response(&rec, false)),
-            )
-                .into_response()
+            (StatusCode::ACCEPTED, Json(to_response(&rec, false))).into_response()
         }
-        DesktopAcceptOutcome::Replay(rec) => (
-            StatusCode::ACCEPTED,
-            Json(to_response(&rec, true)),
-        )
-            .into_response(),
+        DesktopAcceptOutcome::Replay(rec) => {
+            (StatusCode::ACCEPTED, Json(to_response(&rec, true))).into_response()
+        }
         DesktopAcceptOutcome::Conflict {
             request_id,
             message_id,
@@ -138,10 +138,7 @@ async fn create_request(
     }
 }
 
-async fn get_request(
-    State(rt): State<AppState>,
-    Path(request_id): Path<String>,
-) -> Response {
+async fn get_request(State(rt): State<AppState>, Path(request_id): Path<String>) -> Response {
     match rt.store.get_desktop_request(&request_id) {
         Ok(Some(rec)) => (StatusCode::OK, Json(rec)).into_response(),
         Ok(None) => (

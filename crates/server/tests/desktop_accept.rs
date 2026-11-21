@@ -58,10 +58,7 @@ async fn boot() -> (Api, Arc<Runtime>, String) {
     std::fs::create_dir_all(&dir).unwrap();
     let db = dir.join("an.db");
     let rt = Arc::new(Runtime::new(config(), Store::open(&db).unwrap()).unwrap());
-    let conv = rt
-        .store
-        .create_conversation("SMT-03 受理测")
-        .unwrap();
+    let conv = rt.store.create_conversation("SMT-03 受理测").unwrap();
     let api = Api {
         base: serve(an_server::api(rt.clone())).await,
         http: reqwest::Client::builder()
