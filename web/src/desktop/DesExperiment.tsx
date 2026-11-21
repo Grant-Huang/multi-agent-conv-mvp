@@ -212,6 +212,9 @@ export function DesExperiment({ onOpenOpsChannel, onBack }: Props) {
 
   return (
     <div className="des-experiment" data-testid="des-experiment">
+      <span data-testid="adapter-mode" data-mode="des" hidden>
+        des
+      </span>
       <header className="des-experiment-header">
         <div className="des-experiment-title-row">
           <button type="button" className="btn small" onClick={onBack}>

@@ -93,10 +93,12 @@ async fn rt_adaccept_01_post_returns_202_with_ids() {
     assert_eq!(v["status"], "accepted");
     assert_eq!(v["dispatch_count"], 1);
     assert_eq!(v["replayed"], false);
+    // 只数用户消息：202 后 tokio::spawn 分流可能已写入助手行（与 CASES「用户消息落库」一致）
     let msgs = rt.store.list_messages(&conv_id, None).unwrap();
-    assert_eq!(msgs.len(), 1);
-    assert_eq!(msgs[0].content, "深入调查 SMT-03");
-    assert_eq!(msgs[0].id, v["message_id"].as_str().unwrap());
+    let users: Vec<_> = msgs.iter().filter(|m| m.role == "user").collect();
+    assert_eq!(users.len(), 1);
+    assert_eq!(users[0].content, "深入调查 SMT-03");
+    assert_eq!(users[0].id, v["message_id"].as_str().unwrap());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -126,9 +128,11 @@ async fn rt_adaccept_03_same_op_id_changed_text_conflicts() {
     assert_eq!(v2["code"], "operation_conflict");
     assert_eq!(v2["request_id"], v1["request_id"]);
     assert_eq!(v2["message_id"], v1["message_id"]);
+    // 冲突不得新增用户消息；分流助手行不计入（对齐 RT-ADACCEPT-03）
     let msgs = rt.store.list_messages(&conv_id, None).unwrap();
-    assert_eq!(msgs.len(), 1);
-    assert_eq!(msgs[0].content, "原文");
+    let users: Vec<_> = msgs.iter().filter(|m| m.role == "user").collect();
+    assert_eq!(users.len(), 1);
+    assert_eq!(users[0].content, "原文");
     let rec = rt
         .store
         .get_desktop_request(v1["request_id"].as_str().unwrap())
