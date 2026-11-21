@@ -105,6 +105,53 @@ pub enum DesktopEventsAfter {
     CursorExpired,
 }
 
+/// AI Desktop B3：会话↔任务关联
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopTaskLink {
+    pub id: String,
+    pub client_operation_id: String,
+    pub conversation_id: String,
+    pub task_id: String,
+    pub source_message_ids: Vec<String>,
+    pub created_by: String,
+    pub created_at: String,
+    pub revoked_at: Option<String>,
+    /// 由 `TaskRecord.conversation_id` 投影，非表内行
+    #[serde(default)]
+    pub projected: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum DesktopLinkOutcome {
+    Created(DesktopTaskLink),
+    Replay(DesktopTaskLink),
+    Conflict {
+        link_id: String,
+        conversation_id: String,
+    },
+}
+
+/// AI Desktop B3：个人配置
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopPreferences {
+    pub user_id: String,
+    pub version: u32,
+    pub name: String,
+    pub avatar: String,
+    pub role: String,
+    pub soul: String,
+    pub taste: String,
+    pub memory_principle: String,
+    pub proactivity: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum DesktopPrefPatchOutcome {
+    Ok(DesktopPreferences),
+    Conflict(DesktopPreferences),
+}
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
@@ -241,6 +288,26 @@ CREATE TABLE IF NOT EXISTS desktop_client_operations (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_desktop_ops_request ON desktop_client_operations(request_id);
+-- AI Desktop B3：会话↔任务多对多关联（可撤回）
+CREATE TABLE IF NOT EXISTS desktop_conversation_task_links (
+    id TEXT PRIMARY KEY,
+    client_operation_id TEXT NOT NULL UNIQUE,
+    conversation_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    source_message_ids_json TEXT NOT NULL DEFAULT '[]',
+    created_by TEXT NOT NULL DEFAULT 'local',
+    created_at TEXT NOT NULL,
+    revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_desktop_links_task ON desktop_conversation_task_links(task_id);
+CREATE INDEX IF NOT EXISTS idx_desktop_links_conv ON desktop_conversation_task_links(conversation_id);
+-- AI Desktop B3：个人配置（单用户占位 local + 乐观版本）
+CREATE TABLE IF NOT EXISTS desktop_preferences (
+    user_id TEXT PRIMARY KEY,
+    version INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 "#;
 
 fn tune(conn: &Connection) -> Result<()> {
@@ -793,6 +860,279 @@ impl Store {
         )
         .optional()
         .map_err(Into::into)
+    }
+
+    /// AI Desktop B3：建立会话↔任务关联（client_operation_id 幂等）
+    pub fn create_desktop_task_link(
+        &self,
+        task_id: &str,
+        conversation_id: &str,
+        client_operation_id: &str,
+        source_message_ids: &[String],
+        created_by: &str,
+    ) -> Result<DesktopLinkOutcome> {
+        if client_operation_id.trim().is_empty() {
+            return Err(anyhow!("client_operation_id 不能为空"));
+        }
+        if conversation_id.trim().is_empty() {
+            return Err(anyhow!("conversation_id 不能为空"));
+        }
+        if self.get_task(task_id)?.is_none() {
+            return Err(anyhow!("任务不存在"));
+        }
+        if self.get_conversation(conversation_id)?.is_none() {
+            return Err(anyhow!("会话不存在"));
+        }
+        let ids_json = serde_json::to_string(source_message_ids)?;
+        let conn = self.write();
+        let tx = conn.unchecked_transaction()?;
+        let existing: Option<(String, String, String, Option<String>)> = tx
+            .query_row(
+                "SELECT id, conversation_id, task_id, revoked_at
+                 FROM desktop_conversation_task_links WHERE client_operation_id = ?1",
+                params![client_operation_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?;
+        if let Some((id, committed_conv, committed_task, revoked_at)) = existing {
+            if revoked_at.is_none()
+                && committed_conv == conversation_id
+                && committed_task == task_id
+            {
+                let link = Self::load_link_row(&tx, &id)?;
+                tx.commit()?;
+                return Ok(DesktopLinkOutcome::Replay(link));
+            }
+            tx.commit()?;
+            return Ok(DesktopLinkOutcome::Conflict {
+                link_id: id,
+                conversation_id: committed_conv,
+            });
+        }
+        let id = an_core::new_id("dlink");
+        let created_at = now();
+        tx.execute(
+            "INSERT INTO desktop_conversation_task_links
+             (id, client_operation_id, conversation_id, task_id, source_message_ids_json, created_by, created_at, revoked_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)",
+            params![
+                id,
+                client_operation_id,
+                conversation_id,
+                task_id,
+                ids_json,
+                created_by,
+                created_at
+            ],
+        )?;
+        let link = Self::load_link_row(&tx, &id)?;
+        tx.commit()?;
+        Ok(DesktopLinkOutcome::Created(link))
+    }
+
+    /// 撤回关联（幂等）
+    pub fn revoke_desktop_task_link(
+        &self,
+        task_id: &str,
+        link_id: &str,
+    ) -> Result<Option<DesktopTaskLink>> {
+        let conn = self.write();
+        let tx = conn.unchecked_transaction()?;
+        let row: Option<(String, Option<String>)> = tx
+            .query_row(
+                "SELECT task_id, revoked_at FROM desktop_conversation_task_links WHERE id = ?1",
+                params![link_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((owned_task, revoked_at)) = row else {
+            tx.commit()?;
+            return Ok(None);
+        };
+        if owned_task != task_id {
+            tx.commit()?;
+            return Ok(None);
+        }
+        if revoked_at.is_none() {
+            tx.execute(
+                "UPDATE desktop_conversation_task_links SET revoked_at = ?2 WHERE id = ?1",
+                params![link_id, now()],
+            )?;
+        }
+        let link = Self::load_link_row(&tx, link_id)?;
+        tx.commit()?;
+        Ok(Some(link))
+    }
+
+    /// 列举任务关联；默认不含已撤回。合并 `TaskRecord.conversation_id` 投影。
+    pub fn list_desktop_task_links(
+        &self,
+        task_id: &str,
+        include_revoked: bool,
+    ) -> Result<Vec<DesktopTaskLink>> {
+        let _timer = ReadTimer::new("list_desktop_task_links");
+        let task = match self.get_task(task_id)? {
+            Some(t) => t,
+            None => return Ok(vec![]),
+        };
+        let conn = self.read();
+        let mut st = if include_revoked {
+            conn.prepare(
+                "SELECT id FROM desktop_conversation_task_links WHERE task_id = ?1
+                 ORDER BY created_at, rowid",
+            )?
+        } else {
+            conn.prepare(
+                "SELECT id FROM desktop_conversation_task_links WHERE task_id = ?1 AND revoked_at IS NULL
+                 ORDER BY created_at, rowid",
+            )?
+        };
+        let ids: Vec<String> = st
+            .query_map(params![task_id], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(st);
+        let mut out = Vec::new();
+        for id in ids {
+            out.push(Self::load_link_row(&conn, &id)?);
+        }
+        let has_owner = out
+            .iter()
+            .any(|l| l.revoked_at.is_none() && l.conversation_id == task.conversation_id);
+        if !has_owner && !task.conversation_id.is_empty() {
+            out.insert(
+                0,
+                DesktopTaskLink {
+                    id: format!("legacy-{task_id}"),
+                    client_operation_id: format!("legacy-op-{task_id}"),
+                    conversation_id: task.conversation_id,
+                    task_id: task_id.into(),
+                    source_message_ids: vec![],
+                    created_by: "legacy".into(),
+                    created_at: task.created_at,
+                    revoked_at: None,
+                    projected: true,
+                },
+            );
+        }
+        Ok(out)
+    }
+
+    fn load_link_row(conn: &Connection, id: &str) -> Result<DesktopTaskLink> {
+        conn.query_row(
+            "SELECT id, client_operation_id, conversation_id, task_id, source_message_ids_json,
+                    created_by, created_at, revoked_at
+             FROM desktop_conversation_task_links WHERE id = ?1",
+            params![id],
+            |r| {
+                let raw: String = r.get(4)?;
+                let source_message_ids: Vec<String> =
+                    serde_json::from_str(&raw).unwrap_or_default();
+                Ok(DesktopTaskLink {
+                    id: r.get(0)?,
+                    client_operation_id: r.get(1)?,
+                    conversation_id: r.get(2)?,
+                    task_id: r.get(3)?,
+                    source_message_ids,
+                    created_by: r.get(5)?,
+                    created_at: r.get(6)?,
+                    revoked_at: r.get(7)?,
+                    projected: false,
+                })
+            },
+        )
+        .map_err(Into::into)
+    }
+
+    fn default_desktop_preferences(user_id: &str) -> DesktopPreferences {
+        DesktopPreferences {
+            user_id: user_id.into(),
+            version: 1,
+            name: "我的助理".into(),
+            avatar: "◇".into(),
+            role: "日常工作伙伴".into(),
+            soul: "简洁、可核对、不替你做未授权决定".into(),
+            taste: "优先事实与可执行下一步".into(),
+            memory_principle: "仅保留你确认过的长期偏好".into(),
+            proactivity: "克制：重要事项可提醒，不抢焦点".into(),
+            updated_at: now(),
+        }
+    }
+
+    /// 读取个人配置；无行时返回默认（不落库，待首次成功 PATCH）
+    pub fn get_desktop_preferences(&self, user_id: &str) -> Result<DesktopPreferences> {
+        let _timer = ReadTimer::new("get_desktop_preferences");
+        let conn = self.read();
+        let row: Option<(i64, String, String)> = conn
+            .query_row(
+                "SELECT version, payload_json, updated_at FROM desktop_preferences WHERE user_id = ?1",
+                params![user_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        match row {
+            None => Ok(Self::default_desktop_preferences(user_id)),
+            Some((version, payload, updated_at)) => {
+                let mut p: DesktopPreferences = serde_json::from_str(&payload)?;
+                p.user_id = user_id.into();
+                p.version = version as u32;
+                p.updated_at = updated_at;
+                Ok(p)
+            }
+        }
+    }
+
+    /// 乐观并发更新配置
+    pub fn patch_desktop_preferences(
+        &self,
+        user_id: &str,
+        expected_version: u32,
+        patch: &DesktopPreferences,
+    ) -> Result<DesktopPrefPatchOutcome> {
+        let conn = self.write();
+        let tx = conn.unchecked_transaction()?;
+        let existing: Option<(i64, String, String)> = tx
+            .query_row(
+                "SELECT version, payload_json, updated_at FROM desktop_preferences WHERE user_id = ?1",
+                params![user_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let current_version = existing.as_ref().map(|(v, _, _)| *v as u32).unwrap_or(1);
+        // 无行时视为 version=1 的默认；首次 PATCH 须 expected_version=1
+        if current_version != expected_version {
+            let current = match existing {
+                Some((version, payload, updated_at)) => {
+                    let mut p: DesktopPreferences = serde_json::from_str(&payload)?;
+                    p.user_id = user_id.into();
+                    p.version = version as u32;
+                    p.updated_at = updated_at;
+                    p
+                }
+                None => Self::default_desktop_preferences(user_id),
+            };
+            tx.commit()?;
+            return Ok(DesktopPrefPatchOutcome::Conflict(current));
+        }
+        let next_version = expected_version + 1;
+        let updated_at = now();
+        let mut saved = patch.clone();
+        saved.user_id = user_id.into();
+        saved.version = next_version;
+        saved.updated_at = updated_at.clone();
+        let payload = serde_json::to_string(&saved)?;
+        if existing.is_some() {
+            tx.execute(
+                "UPDATE desktop_preferences SET version = ?2, payload_json = ?3, updated_at = ?4 WHERE user_id = ?1",
+                params![user_id, next_version as i64, payload, updated_at],
+            )?;
+        } else {
+            tx.execute(
+                "INSERT INTO desktop_preferences (user_id, version, payload_json, updated_at) VALUES (?1, ?2, ?3, ?4)",
+                params![user_id, next_version as i64, payload, updated_at],
+            )?;
+        }
+        tx.commit()?;
+        Ok(DesktopPrefPatchOutcome::Ok(saved))
     }
 
     /// 按时间顺序返回消息；`last` 为 Some(n) 时只返回最近 n 条

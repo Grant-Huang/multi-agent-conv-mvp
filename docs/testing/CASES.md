@@ -654,6 +654,13 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADREPLAY-03 | ai-desktop | 会话存在 | `after` 指向不存在/已淘汰游标 | **410** `cursor_expired`；不静默回传全量 |
 | RT-ADREPLAY-04 | ai-desktop | 写入事件后关闭 Runtime | 同库新进程订阅 `after` | 仍能补齐落库事件，与 store 会话游标一致 |
 | RT-ADREPLAY-05 | ai-desktop | 两会话各有事件 | 只订会话 A | 不得出现会话 B 的 `event_id` |
+| RT-ADLINK-01 | ai-desktop | 已有会话与任务 | `POST /api/desktop/v1/tasks/{id}/links` 带操作 ID | **201**；落库 link；同操作 ID 重放同一 `link_id` |
+| RT-ADLINK-02 | ai-desktop | 已成功建链 | 同操作 ID、改 `conversation_id` 再 POST | **409** `operation_conflict`；原 link 不变 |
+| RT-ADLINK-03 | ai-desktop | 已有显式关联 | `DELETE .../links/{link_id}` 两次 | **200**；`revoked_at` 置位且幂等；默认列表不含已撤回 |
+| RT-ADLINK-04 | ai-desktop | 任务仅有归属 `conversation_id` | 列举 links；重启同库再列 | 可见 `projected` 初始关联且会话一致 |
+| RT-ADPREF-01 | ai-desktop | 空库 | `GET /api/desktop/v1/preferences` | **200**；默认字段与 `version=1` |
+| RT-ADPREF-02 | ai-desktop | 默认配置 | `PATCH` 带 `expected_version=1` | **200**；`version=2`；持久化 |
+| RT-ADPREF-03 | ai-desktop | 已 PATCH 成功 | 再用过期 `expected_version` PATCH | **409** `version_conflict`；不覆盖已存配置 |
 
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 

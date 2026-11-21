@@ -18,7 +18,7 @@
 //! | GET  | /api/diagnostics | 诊断：最近的问题、按错误码统计、agent 与节点状态 |
 //! | GET/POST | /api/admission/... | agent 准入（E3，开启 `[admission]` 时才有，见 `admission_api`） |
 //! | GET/POST | /api/introspection/... | 业务内省（见 `introspection_api`） |
-//! | POST/GET | /api/desktop/v1/... | AI Desktop 扩展（B1 可靠受理；B2 游标 SSE，见 `desktop_api`） |
+//! | POST/GET | /api/desktop/v1/... | AI Desktop 扩展（B1 受理；B2 游标 SSE；B3 关联/配置，见 `desktop_api`） |
 
 pub mod admission_api;
 pub mod desktop_api;
