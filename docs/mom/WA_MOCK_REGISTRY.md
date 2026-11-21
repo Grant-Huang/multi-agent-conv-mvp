@@ -30,7 +30,8 @@
 ## 3. 证据入口
 
 - 套件：`./scripts/wa-m0-suite.sh` / `cd web && npm run test:wa-m0`
-- 准出：`docs/testing/evidence/wa-m0-6.md`（H1～H4）
+- 准出：`docs/testing/evidence/wa-m0-6.md`（H1～H4；M0 已关闭）
+- M1 读路径替换任务卡：[WA_M1_TASKS.md](WA_M1_TASKS.md)
 - 覆盖矩阵：本文 §4 与 [world-adapter Feature Map](../feature-map/features/world-adapter.md)
 
 ## 4. M0 设计清单 → 可执行断言（H4）

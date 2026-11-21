@@ -794,7 +794,9 @@
       "scripts/wa-m0-suite.sh",
       "docs/testing/evidence/wa-m0-5.md",
       "docs/testing/evidence/wa-m0-6.md",
-      "docs/mom/WA_MOCK_REGISTRY.md"
+      "docs/mom/WA_MOCK_REGISTRY.md",
+      "docs/mom/WA_M1_TASKS.md",
+      "docs/testing/evidence/wa-m1-0.md"
     ],
     "coverage": "browser",
     "cases": [

@@ -814,3 +814,17 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WA-07 | world-adapter | 正式运行已暂停 | 实验员 pause → step 1 分钟 | `run_status=paused` 时事项投影为等待而非失败；step 后 `simulation_minute` +1 且执行可 Confirm 前进 |
 | RT-WA-08 | world-adapter | 审核员与运营员 | 审核员读 `ground_truth`；运营员读同一接口 | 审核员可见；运营员 `ACCESS_DENIED` 或字段为空 |
 | RT-WA-09 | world-adapter | 默认 `AppConfig`；未 merge Mock 路由的服务与已挂载 Mock | 读默认 `mom.world_mock`；对未挂载与已挂载分别 POST configs | 默认 `world_mock=false`；未挂载 → 404；挂载 → `protocol_version=1` 且有 `config_version` |
+
+### M1 远程 DES 读取（草案，待确认后改表格）
+
+执行卡：[WA_M1_TASKS.md](../mom/WA_M1_TASKS.md)。下列为断言草案（**尚未**写入正式表格 / `features.json`，避免 check-map 缺测试）：
+
+- **E2E-WADES**（WA-01）：Given 主应用可挂远程 DES，When 工作台/会话绑定该世界并切换另一世界，Then 同一 world/case 一致、跨世界不泄露、来源可辨 DES。
+- **E2E-WAREAD**（WA-02）：Given 已有正式投递游标，When 断线或游标过期后重连/重新读取，Then 同事件 ID 只应用一次，过期与水位单独显示。
+- **E2E-WAOBS**（WA-07）：Given 远程正式运行，When 推进仿真并打开观测/事项，Then 可见正式投递的设备或质量观测，且不含审核标准答案。
+- **RT-WADES-01**：绑定 `DesConnector` 运行后世界可读；未连接返回明确错误。
+- **RT-WADES-02**：tick 完成 MOM 投递后 Observe 才见新事件；中断后服务最近完整边界。
+- **RT-WADES-03**：Subscribe 续读无漏无重；游标过期 → `CURSOR_EXPIRED`。
+- **RT-WADES-04**：试跑 `delivery_count=0`；正式运行投递 ≥1 且有 `case_id`。
+
+用户确认后：改成表格行 + 空壳测试（业务 Red）再实现（M1-1 起）。写路径仍 Mock；M0 套件不得弱化。
