@@ -897,7 +897,7 @@
 
 ### 61. 直接做组织级 AI 桌面；A1 一次换壳；Mock 注册表替换（2026-11-20 用户确认）
 
-> 编号说明（2026-11-21 补注）：第 61 号有两条，本条引用时写作「61（AI 桌面）」。编号按规则不改，见 [decisions/2026-11-21-design-overview.md](decisions/2026-11-21-design-overview.md)。
+> 编号说明（2026-11-21 补注）：第 61 号有两条，本条引用时写作「61（AI 桌面）」。编号按规则不改，见 [decisions/2026-11-21-design-overview.md](decisions/2026-11-21-design-overview.md)。 设计意图与依据的完整说明见 [decisions/2026-11-20-desktop-single-axis.md](decisions/2026-11-20-desktop-single-axis.md)。
 
 - **问题**：V1.7 与旧 MVP 壳、WP1/运营计划如何排期；是否双轨。
 - **定了什么**（用户确认）：
@@ -913,7 +913,7 @@
 
 ### 61. World Adapter 统一世界访问（2026-11-20，设计方向获用户确认）
 
-> 编号说明（2026-11-21 补注）：第 61 号有两条，本条引用时写作「61（World Adapter）」。编号按规则不改，见 [decisions/2026-11-21-design-overview.md](decisions/2026-11-21-design-overview.md)。
+> 编号说明（2026-11-21 补注）：第 61 号有两条，本条引用时写作「61（World Adapter）」。编号按规则不改，见 [decisions/2026-11-21-design-overview.md](decisions/2026-11-21-design-overview.md)。 设计意图与依据的完整说明见 [decisions/2026-11-21-industrial-capabilities-in-desktop.md](decisions/2026-11-21-industrial-capabilities-in-desktop.md)。
 
 - **问题**：会话的动态 DES 闭环需要复用到生产世界，同时能追踪同一个动作在两类世界中的证据。
 - **定了什么**：以 Observe、Subscribe、Propose、Execute、Confirm 定义共同契约，经 MOM 访问当前世界；首版复用已有 DES MCP，随后接入生产观测和一个可查证的写动作。

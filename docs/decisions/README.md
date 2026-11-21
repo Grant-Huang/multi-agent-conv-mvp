@@ -89,6 +89,8 @@
 
 | 文件 | 主题 | 来源 | 状态 |
 |---|---|---|---|
+| [2026-11-20-desktop-single-axis.md](2026-11-20-desktop-single-axis.md) | 设计意图：产品主轴只有 AI 桌面，不做双轨（补全决定 61（AI 桌面）） | 用户确认 | 有效 |
 | [2026-11-21-design-overview.md](2026-11-21-design-overview.md) | DESIGN.md 新增系统全景与产品特性设计索引；重复编号只补注 | 用户确认 | 有效 |
 | [2026-11-21-doc-layers.md](2026-11-21-doc-layers.md) | 文档分层（宪章、共享契约、特性设计、计划、探索区）与低冲突推进方式 | 用户确认 | 部分生效 |
 | [2026-11-21-decision-format.md](2026-11-21-decision-format.md) | 决策一条一个文件，并写清决策依据，必要时附简单设计 | 用户确认 | 有效 |
+| [2026-11-21-industrial-capabilities-in-desktop.md](2026-11-21-industrial-capabilities-in-desktop.md) | 设计意图：MOM、运营桌面、World Adapter 是桌面里的工业业务能力 | 用户确认 | 有效 |
