@@ -2,7 +2,7 @@
 
 本文件是 [WORLD_ADAPTER_PLAN.md](WORLD_ADAPTER_PLAN.md) **M1 远程 DES 读取**的执行版。硬约束仍见该文 §0（DES-32）；协议落地见 [WORLD_ADAPTER.md](WORLD_ADAPTER.md) §6.1；Mock 替换见 [WA_MOCK_REGISTRY.md](WA_MOCK_REGISTRY.md) WAM-01～03。M0 已准出（#175）。
 
-**准出（缺一不可）**：主应用 MOM 可读远程 DES（M1 落地为服务层 `/api/world/des`；真 `DesConnector`/`with_des` 未接，见 `wa-m1-5.md` Q1）；世界绑定到远程 DES 运行；Observe/Subscribe 读的是 **MOM 正式投递**边界（非裸 `events_poll`）；试跑零投递、正式运行可投递；WA-01、02、07 的真实 DES 场景有可执行断言；**写路径仍走隔离 Mock**；全量 M0 套件回归绿。准出证据：[wa-m1-5.md](../testing/evidence/wa-m1-5.md)。
+**准出（缺一不可）**：主应用 MOM 可读远程 DES（M1 服务层 `/api/world/des`；T-50 已补接真 `DesConnector`/`with_des`，见 `wa-des-connector.md`）；世界绑定到远程 DES 运行；Observe/Subscribe 读的是 **MOM 正式投递**边界（非裸 `events_poll`）；试跑零投递、正式运行可投递；WA-01、02、07 的真实 DES 场景有可执行断言；**写路径仍走隔离 Mock**；全量 M0 套件回归绿。准出证据：[wa-m1-5.md](../testing/evidence/wa-m1-5.md)；连接器：[wa-des-connector.md](../testing/evidence/wa-des-connector.md)。
 
 ## 0. 进度总表
 

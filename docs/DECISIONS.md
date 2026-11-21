@@ -1558,6 +1558,8 @@
 - **没选什么**：完整登录；C2 动作网关；改派发路径。
 - **出问题先看**：403 body 是否泄露；撤权后搜索是否仍命中；E2E 默认 principal 是否与种子授权一致。
 
+> T-50 DesConnector/`with_des` 补接决策已按 2026-11-21 单文件约定写入 [decisions/2026-11-21-wa-des-connector-with-des.md](decisions/2026-11-21-wa-des-connector-with-des.md)，不在本档案追加编号。
+
 ### 待决定
 
 - ~~哪一个算“个人主窗口会话”、如何指定（第 54 条）~~ **（S1 已落地）**：`app_state` 键 `main_conversation_id` + `Store::ensure_main_conversation`；第一次需要时创建并记下，之后复用。仍待：会话删除 API 出现时的不可删守卫；“个人”页签与默认打开（G-6）。

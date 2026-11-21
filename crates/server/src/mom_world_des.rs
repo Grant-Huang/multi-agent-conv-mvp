@@ -1,8 +1,11 @@
-//! World Adapter M1 远程 DES 读合同（`/api/world/des`）。
+//! World Adapter M1/T-50 远程 DES 读合同（`/api/world/des`）。
 //!
-//! 服务层独立实现，对齐 `mom_world_mock` 字段形状，`provenance=des`。
-//! 正式投递水位在本适配器内维护：ingest → commit 后才向 Observe 暴露事件与快照。
-//! M1-2：投递中断仍服务最近完整边界；快照与事件同一 `publish_seq`；事件 ID 去重。
+//! 服务层实现，对齐 `mom_world_mock` 字段形状，`provenance=des`。
+//!
+//! - 无 `DesConnector`：内存桩（M0/M1 回归）；正式投递水位在本适配器内 pending→commit。
+//! - 有 `DesConnector`：`create_simulation` / `tick`；Observe 投影 **tick 成功后** Engine 可见边界。
+//!
+//! M1-2：桩模式投递中断仍服务最近完整边界；真连接器不可半提交（测试控件拒用）。
 //! M1-3：试跑零运营投影；正式运行向运营频道投递 `OpsCase`（provenance=des）。
 //! 不改 `engine.rs` / `DesConnector` 内部；写路径仍走 `/api/world/mock`。
 
@@ -11,7 +14,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use an_core::ChatCard;
+use an_runtime::mom::des::{DesSimulationConfig, Pattern, ScenarioConfig};
 use an_runtime::mom::ops_desk::OPS_CHANNEL_ID;
+use an_runtime::mom::Engine;
 use an_runtime::store::Store as AppStore;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -20,8 +25,12 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::mom_des_connector::{DesConnector, E_DES_UNAVAILABLE};
+
 const PROTOCOL_VERSION: u32 = 1;
 const OPS_CHANNEL_TITLE: &str = "运营频道";
+const DEFAULT_HORIZON_MINUTES: u64 = 240;
+const DEFAULT_START_MINUTE: u64 = 497;
 
 /// `connector_available=false` 时绑定失败（模拟未挂 DesConnector）。
 #[derive(Clone)]
@@ -30,6 +39,10 @@ pub struct WorldDesState {
     connector_available: bool,
     allow_test_controls: bool,
     app_store: Option<Arc<AppStore>>,
+    /// 与主应用 MOM 共用的引擎（真连接器模式）。
+    engine: Option<Arc<Mutex<Engine>>>,
+    /// 真模拟工厂连接器；`None` 时走内存桩。
+    connector: Option<Arc<DesConnector>>,
 }
 
 impl WorldDesState {
@@ -39,6 +52,8 @@ impl WorldDesState {
             connector_available,
             allow_test_controls: false,
             app_store: None,
+            engine: None,
+            connector: None,
         }
     }
 
@@ -48,6 +63,8 @@ impl WorldDesState {
             connector_available,
             allow_test_controls: true,
             app_store: None,
+            engine: None,
+            connector: None,
         }
     }
 
@@ -57,6 +74,31 @@ impl WorldDesState {
             connector_available,
             allow_test_controls: false,
             app_store: Some(app_store),
+            engine: None,
+            connector: None,
+        }
+    }
+
+    /// 主应用已 `with_des`：World Adapter 走真连接器 create/tick，与 MOM 共用 Engine。
+    pub fn with_connector(
+        connector: Arc<DesConnector>,
+        engine: Arc<Mutex<Engine>>,
+        app_store: Option<Arc<AppStore>>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Store::default())),
+            connector_available: true,
+            allow_test_controls: false,
+            app_store,
+            engine: Some(engine),
+            connector: Some(connector),
+        }
+    }
+
+    fn live(&self) -> Option<(&Arc<DesConnector>, &Arc<Mutex<Engine>>)> {
+        match (&self.connector, &self.engine) {
+            (Some(c), Some(e)) => Some((c, e)),
+            _ => None,
         }
     }
 }
@@ -96,6 +138,8 @@ struct SnapshotRec {
 struct WorldRec {
     world_id: String,
     run_id: Option<String>,
+    /// 真连接器模式下的仿真编号（与 DesConnector / Engine 对齐）。
+    simulation_id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -203,6 +247,141 @@ fn role_is_experimenter(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
+fn des_cfg(name: &str, seed: u64, horizon: u64) -> DesSimulationConfig {
+    DesSimulationConfig {
+        name: name.to_string(),
+        factory: None,
+        scenario: ScenarioConfig {
+            seed,
+            pattern: Pattern::Script,
+            start_minute: DEFAULT_START_MINUTE,
+            horizon_minutes: horizon.max(1),
+            mechanisms: None,
+        },
+    }
+}
+
+fn map_des_err(e: anyhow::Error, request_id: Option<&str>) -> (StatusCode, Json<Value>) {
+    let message = format!("{e:#}");
+    if message.contains(E_DES_UNAVAILABLE) {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "code": E_DES_UNAVAILABLE,
+                "message": message,
+                "request_id": request_id,
+            })),
+        )
+    } else {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "INVALID_ARGUMENT",
+                "message": message,
+                "request_id": request_id,
+            })),
+        )
+    }
+}
+
+fn init_world_slots(store: &mut Store, world_id: &str, case_id: Option<String>) {
+    store.published.insert(world_id.to_string(), Vec::new());
+    store.pending.insert(world_id.to_string(), Vec::new());
+    store.factory_cursor.insert(world_id.to_string(), 0);
+    store.snapshots.insert(
+        world_id.to_string(),
+        SnapshotRec {
+            publish_seq: 0,
+            as_of: "sim:0".into(),
+            case_id,
+            event_count: 0,
+        },
+    );
+    store.cursor_generation.insert(world_id.to_string(), 1);
+}
+
+/// tick 成功后：把 Engine 已提交案例事件投影为产品水位（去重）；若尚无案例事件则记一笔观测水位。
+fn project_engine_after_tick(
+    store: &mut Store,
+    engine: &Engine,
+    world_id: &str,
+    simulation_id: &str,
+) -> u64 {
+    let prefix = format!("{simulation_id}:");
+    let mut projected: Vec<EventRec> = Vec::new();
+    for case_id in engine.case_ids() {
+        let Ok(case) = engine.case(&case_id) else {
+            continue;
+        };
+        if !case.batch.starts_with(&prefix) {
+            continue;
+        }
+        let Ok(events) = engine.events(&case_id, 0, 1000) else {
+            continue;
+        };
+        for ev in events {
+            projected.push(EventRec {
+                event_id: format!("{}:{}", ev.case_id, ev.sequence),
+                kind: ev.kind,
+                payload: ev.payload,
+            });
+        }
+    }
+    if projected.is_empty() {
+        let minute = engine.now();
+        projected.push(EventRec {
+            event_id: format!("obs:{simulation_id}:{minute}"),
+            kind: "observation.device".into(),
+            payload: json!({
+                "simulation_id": simulation_id,
+                "minute": minute,
+                "source": "engine_boundary",
+            }),
+        });
+    }
+    let published = store.published.entry(world_id.to_string()).or_default();
+    let existing: HashSet<String> = published.iter().map(|e| e.event_id.clone()).collect();
+    let mut added = 0usize;
+    for ev in projected {
+        if existing.contains(&ev.event_id) {
+            continue;
+        }
+        published.push(ev);
+        added += 1;
+    }
+    let prev = store
+        .snapshots
+        .get(world_id)
+        .map(|s| s.publish_seq)
+        .unwrap_or(0);
+    if added == 0 {
+        return prev;
+    }
+    let minute = store
+        .runs
+        .values()
+        .find(|r| r.world_id == world_id)
+        .map(|r| r.simulation_minute)
+        .unwrap_or(engine.now() as i64);
+    let case_id = store
+        .runs
+        .values()
+        .find(|r| r.world_id == world_id)
+        .and_then(|r| r.case_id.clone());
+    let seq = prev + 1;
+    let event_count = published.len();
+    store.snapshots.insert(
+        world_id.to_string(),
+        SnapshotRec {
+            publish_seq: seq,
+            as_of: format!("sim:{minute}"),
+            case_id,
+            event_count,
+        },
+    );
+    seq
+}
+
 pub fn router(state: WorldDesState) -> Router {
     Router::new()
         .route("/api/world/des/bind", post(bind_world))
@@ -267,29 +446,33 @@ async fn bind_world(
             body.request_id.as_deref(),
         );
     }
-    let _ = (&body.factory, &body.scenario, body.seed);
+    let seed = body.seed.unwrap_or(1);
+    let name = format!("wa-bind-{}", body.scenario.as_deref().unwrap_or("default"));
+    let simulation_id = if let Some((conn, engine)) = state.live() {
+        let _ = &body.factory;
+        conn.create_simulation(engine, des_cfg(&name, seed, DEFAULT_HORIZON_MINUTES))
+            .await
+            .map_err(|e| map_des_err(e, body.request_id.as_deref()))?
+    } else {
+        let _ = (&body.factory, &body.scenario);
+        String::new()
+    };
     let mut store = state.inner.lock().map_err(|_| lock_err())?;
-    let world_id = next_id(&mut store, "des-world");
+    let world_id = if simulation_id.is_empty() {
+        next_id(&mut store, "des-world")
+    } else {
+        // 真连接器：world_id 与 simulation_id 对齐，便于投影与排查
+        simulation_id.clone()
+    };
     store.worlds.insert(
         world_id.clone(),
         WorldRec {
             world_id: world_id.clone(),
             run_id: body.run_id.clone(),
+            simulation_id: (!simulation_id.is_empty()).then_some(simulation_id),
         },
     );
-    store.published.insert(world_id.clone(), Vec::new());
-    store.pending.insert(world_id.clone(), Vec::new());
-    store.factory_cursor.insert(world_id.clone(), 0);
-    store.snapshots.insert(
-        world_id.clone(),
-        SnapshotRec {
-            publish_seq: 0,
-            as_of: "sim:0".into(),
-            case_id: None,
-            event_count: 0,
-        },
-    );
-    store.cursor_generation.insert(world_id.clone(), 1);
+    init_world_slots(&mut store, &world_id, None);
     Ok(Json(json!({
         "protocol_version": PROTOCOL_VERSION,
         "request_id": body.request_id,
@@ -481,6 +664,68 @@ async fn step_world(
         );
     }
     let minutes = body.minutes.unwrap_or(1).max(1);
+
+    // 真连接器：tick 成功 = 正式投递边界；不可半提交
+    if let Some((conn, engine)) = state.live() {
+        let simulation_id = {
+            let store = state.inner.lock().map_err(|_| lock_err())?;
+            ensure_world_locked(&store, &body.world_id)?;
+            store
+                .worlds
+                .get(&body.world_id)
+                .and_then(|w| w.simulation_id.clone())
+                .ok_or_else(|| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({
+                            "code": "INVALID_ARGUMENT",
+                            "message": "世界未绑定远程仿真",
+                            "request_id": body.request_id,
+                        })),
+                    )
+                })?
+        };
+        let to_minute = {
+            let e = engine.lock().map_err(|_| lock_err())?;
+            e.now().saturating_add(minutes as u64)
+        };
+        conn.tick(engine, to_minute)
+            .await
+            .map_err(|e| map_des_err(e, body.request_id.as_deref()))?;
+        let mut store = state.inner.lock().map_err(|_| lock_err())?;
+        if let Some(run) = store
+            .runs
+            .values_mut()
+            .find(|r| r.world_id == body.world_id)
+        {
+            run.simulation_minute += minutes;
+        }
+        let factory = store
+            .factory_cursor
+            .entry(body.world_id.clone())
+            .or_insert(0);
+        *factory += minutes as u64;
+        let e = engine.lock().map_err(|_| lock_err())?;
+        let seq = project_engine_after_tick(&mut store, &e, &body.world_id, &simulation_id);
+        let delivered = store
+            .published
+            .get(&body.world_id)
+            .and_then(|v| v.last())
+            .map(|ev| ev.event_id.clone())
+            .unwrap_or_default();
+        return Ok(Json(json!({
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": body.request_id,
+            "world_id": body.world_id,
+            "provenance": "des",
+            "delivered_event_id": delivered,
+            "published": true,
+            "publish_seq": seq,
+            "minutes": minutes,
+            "simulation_id": simulation_id,
+        })));
+    }
+
     let mut store = state.inner.lock().map_err(|_| lock_err())?;
     ensure_world(&mut store, &body.world_id)?;
     // 工厂游标推进（内部）；产品水位仅在 commit_publish 后前进
@@ -534,6 +779,19 @@ async fn step_world(
         "publish_seq": seq,
         "minutes": minutes,
     })))
+}
+
+fn ensure_world_locked(store: &Store, world_id: &str) -> Result<(), (StatusCode, Json<Value>)> {
+    if store.worlds.contains_key(world_id) {
+        return Ok(());
+    }
+    Err((
+        StatusCode::NOT_FOUND,
+        Json(json!({
+            "code": "WORLD_UNAVAILABLE",
+            "message": "未知世界",
+        })),
+    ))
 }
 
 /// pending → published（按 event_id 去重）；仅有新事件时推进 publish_seq 与快照。
@@ -598,6 +856,14 @@ async fn abort_before_publish(
     State(state): State<WorldDesState>,
     Json(body): Json<WorldOnlyBody>,
 ) -> ApiResult {
+    if state.live().is_some() {
+        return err(
+            StatusCode::FORBIDDEN,
+            "ACCESS_DENIED",
+            "真实 tick 不可半提交；测试控件仅桩模式可用",
+            body.request_id.as_deref(),
+        );
+    }
     if !state.allow_test_controls {
         return err(
             StatusCode::NOT_FOUND,
@@ -622,6 +888,14 @@ async fn commit_publish_route(
     headers: HeaderMap,
     Json(body): Json<WorldOnlyBody>,
 ) -> ApiResult {
+    if state.live().is_some() {
+        return err(
+            StatusCode::FORBIDDEN,
+            "ACCESS_DENIED",
+            "真实 tick 不可半提交；测试控件仅桩模式可用",
+            body.request_id.as_deref(),
+        );
+    }
     if !state.allow_test_controls {
         return err(
             StatusCode::NOT_FOUND,
@@ -688,12 +962,16 @@ async fn start_trial(
             body.request_id.as_deref(),
         );
     }
-    let _ = (
-        &body.factory,
-        &body.scenario,
-        body.seed,
-        body.duration_minutes,
-    );
+    let seed = body.seed.unwrap_or(1);
+    let horizon = body.duration_minutes.unwrap_or(60).max(1) as u64;
+    let _ = (&body.factory, &body.scenario);
+    let simulation_id = if let Some((conn, engine)) = state.live() {
+        conn.create_simulation(engine, des_cfg("wa-trial", seed, horizon))
+            .await
+            .map_err(|e| map_des_err(e, body.request_id.as_deref()))?
+    } else {
+        String::new()
+    };
     let mut store = state.inner.lock().map_err(|_| lock_err())?;
     let config_version = match body.config_version {
         Some(v) if store.configs.contains_key(&v) => v,
@@ -712,7 +990,11 @@ async fn start_trial(
         }
     };
     let run_id = next_id(&mut store, "trial");
-    let world_id = format!("des-world-{run_id}");
+    let world_id = if simulation_id.is_empty() {
+        format!("des-world-{run_id}")
+    } else {
+        simulation_id.clone()
+    };
     store.runs.insert(
         run_id.clone(),
         RunRec {
@@ -730,21 +1012,10 @@ async fn start_trial(
         WorldRec {
             world_id: world_id.clone(),
             run_id: Some(run_id.clone()),
+            simulation_id: (!simulation_id.is_empty()).then_some(simulation_id),
         },
     );
-    store.published.insert(world_id.clone(), Vec::new());
-    store.pending.insert(world_id.clone(), Vec::new());
-    store.factory_cursor.insert(world_id.clone(), 0);
-    store.snapshots.insert(
-        world_id.clone(),
-        SnapshotRec {
-            publish_seq: 0,
-            as_of: "sim:0".into(),
-            case_id: None,
-            event_count: 0,
-        },
-    );
-    store.cursor_generation.insert(world_id.clone(), 1);
+    init_world_slots(&mut store, &world_id, None);
     Ok(Json(json!({
         "protocol_version": PROTOCOL_VERSION,
         "request_id": body.request_id,
@@ -803,13 +1074,24 @@ async fn start_official(
                 })),
             )
         })?;
+    let simulation_id = if let Some((conn, engine)) = state.live() {
+        conn.create_simulation(engine, des_cfg("wa-official", 1, DEFAULT_HORIZON_MINUTES))
+            .await
+            .map_err(|e| map_des_err(e, body.request_id.as_deref()))?
+    } else {
+        String::new()
+    };
     let mut store = state.inner.lock().map_err(|_| lock_err())?;
     if !store.configs.contains_key(&config_version) {
         // 允许试跑响应里带回的新版本；若尚无则登记
         store.configs.insert(config_version.clone(), ());
     }
     let run_id = next_id(&mut store, "official");
-    let world_id = format!("des-world-{run_id}");
+    let world_id = if simulation_id.is_empty() {
+        format!("des-world-{run_id}")
+    } else {
+        simulation_id.clone()
+    };
     let case_id = next_id(&mut store, "case");
     store.runs.insert(
         run_id.clone(),
@@ -828,6 +1110,7 @@ async fn start_official(
         WorldRec {
             world_id: world_id.clone(),
             run_id: Some(run_id.clone()),
+            simulation_id: (!simulation_id.is_empty()).then_some(simulation_id),
         },
     );
     store.cursor_generation.insert(world_id.clone(), 1);

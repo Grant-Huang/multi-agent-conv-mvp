@@ -71,9 +71,44 @@ async fn main() -> Result<()> {
         .is_ok_and(|a| a.ip().is_loopback())
     {
         let db = std::path::Path::new(&config.server.db_path).with_extension("mom.db");
-        let state = an_server::mom::AppState::scripted(Arc::new(std::sync::Mutex::new(
-            an_runtime::mom::Engine::open(db)?,
-        )));
+        let engine = Arc::new(std::sync::Mutex::new(an_runtime::mom::Engine::open(db)?));
+        let mut state = an_server::mom::AppState::scripted(engine.clone());
+        // T-50：可选 `DesConnector`（config `[mom] des_mcp` 或 `AN_MOM_DES_MCP`）；与 MOM / World Adapter 共用同一 Engine
+        let des_cmd = {
+            let from_cfg = config.mom.des_mcp.trim();
+            if !from_cfg.is_empty() {
+                Some(from_cfg.to_string())
+            } else {
+                std::env::var("AN_MOM_DES_MCP")
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+            }
+        };
+        let des_connector = if let Some(command) = des_cmd {
+            let admin_token = an_core::new_id("des-admin");
+            let connector = an_server::mom_des_connector::DesConnector::spawn(
+                std::path::Path::new(&command),
+                &[],
+                &admin_token,
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "simulated factory (des_mcp={command}) failed to start; set empty des_mcp to skip"
+                )
+            })?;
+            let connector = Arc::new(connector);
+            state = state.with_des(connector.clone());
+            tracing::info!(
+                event = "des.connected",
+                command = %command,
+                "Simulated factory connected over MCP stdio (assumed parameters; not a real plant)"
+            );
+            Some(connector)
+        } else {
+            None
+        };
         mom_clock = Some(an_server::mom::spawn_clock(state.clone()));
         // 运营频道（[mom] chat_bridge，默认关闭）：发布器消费 MOM 发件箱，案例卡进固定会话 ops-channel
         if config.mom.chat_bridge {
@@ -102,10 +137,18 @@ async fn main() -> Result<()> {
             app = app.merge(an_server::mom_world_mock::router(
                 an_server::mom_world_mock::WorldMockState::with_app_store(false, rt.store.clone()),
             ));
-            // M1 远程 DES 读适配：与 Mock 同门控；正式运行投影运营频道；不改 DesConnector / engine
-            app = app.merge(an_server::mom_world_des::router(
-                an_server::mom_world_des::WorldDesState::with_app_store(true, rt.store.clone()),
-            ));
+            // M1/T-50：远程 DES 读适配；有 des_mcp 时走真连接器，否则保持内存桩（回归）
+            let world_des = match &des_connector {
+                Some(connector) => an_server::mom_world_des::WorldDesState::with_connector(
+                    connector.clone(),
+                    engine.clone(),
+                    Some(rt.store.clone()),
+                ),
+                None => {
+                    an_server::mom_world_des::WorldDesState::with_app_store(true, rt.store.clone())
+                }
+            };
+            app = app.merge(an_server::mom_world_des::router(world_des));
         }
         app = app
             .route(
