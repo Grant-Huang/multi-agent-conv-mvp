@@ -969,7 +969,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 3. 必须有 Mock 开发与取代计划（WORLD_ADAPTER_PLAN §4，含「实验控制与消息」）。
 4. 回归严格覆盖 WA-01～08、UI01～16、**DES-UI-01～06**；合入前每条有可执行断言。
 
-### World Adapter 里程碑（设计已确认；M0 已准出，M1 读路径准出中）
+### World Adapter 里程碑（设计已确认；M0/M1 已准出，M2 写路径进行中）
 
 - [x] **M0-0** 冻结 DES-UI 用例登记（`E2E-DESTRIAL`～`E2E-DESLOOP`；[mom/WA_M0_TASKS.md](mom/WA_M0_TASKS.md)；证据 `testing/evidence/wa-m0-0-red.md`）
 - [x] **M0-1** 协议/实验 Mock HTTP（`/api/world/mock`；RT-WA-01～08；证据 `testing/evidence/wa-m0-1.md`）
@@ -984,9 +984,10 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M1-2** 正式投递水位（#181）
 - [x] **M1-3** 实验控制与运营频道投影（#183）
 - [x] **M1-4** 远程 DES E2E + M0 回归（#184）
-- [ ] **M1-5** 证据 / WAM 读路径 / 准出检查（证据 `testing/evidence/wa-m1-5.md`；本 PR）
-- [ ] **M1** 远程 DES 读取与正式投递（写路径仍 Mock；服务层 `/api/world/des`；真连接器未接，见 `wa-m1-5.md`）
-- [ ] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环
+- [x] **M1-5** 证据 / WAM 读路径 / 准出检查（证据 `testing/evidence/wa-m1-5.md`；#185）
+- [x] **M1** 远程 DES 读取与正式投递（服务层 `/api/world/des`；T-50 `with_des` 见 `wa-des-connector.md` / #187；写路径仍 Mock）
+- [ ] **M2-0** 冻结远程 DES 写用例与任务卡（[mom/WA_M2_TASKS.md](mom/WA_M2_TASKS.md)；证据 `testing/evidence/wa-m2-0.md`）
+- [ ] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环（WA-03/04/05/08）
 - [ ] **M3** 生产只读（写仍 Mock）
 - [ ] **M4** 首个可查证生产写动作（维修工单）
 

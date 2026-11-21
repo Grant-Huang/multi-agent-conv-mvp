@@ -2,7 +2,7 @@
 
 依据 [WA-01～08](WORLD_ADAPTER.md#9-交付与验收)、[UI01～16](UI_UX_PRINCIPLES.md#14-场景验收基线) 和 [MOM 三入口原型](prototype/README.md)。采用 Lauren Tan 分享中的可操作 Feature Map，将入口、定位、操作、业务断言和证据绑定到同一用例。
 
-本计划承接原 DES 阶段⑤「车间视图」、WP1 GS1 产品前门与运营桌面 D3（**DES-31，用户确认**）。入口拆分见 [DES 仿真实验与 MOM 运营入口](DES_EXPERIMENT_OPS_SPLIT.md)（**决定 62**）。DES 内核与⑤a 远程工厂基线不变，见 [DES_CLOSED_LOOP.md](DES_CLOSED_LOOP.md) §11b；系统打通总表见 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md)。M0 执行卡见 [WA_M0_TASKS.md](WA_M0_TASKS.md)。
+本计划承接原 DES 阶段⑤「车间视图」、WP1 GS1 产品前门与运营桌面 D3（**DES-31，用户确认**）。入口拆分见 [DES 仿真实验与 MOM 运营入口](DES_EXPERIMENT_OPS_SPLIT.md)（**决定 62**）。DES 内核与⑤a 远程工厂基线不变，见 [DES_CLOSED_LOOP.md](DES_CLOSED_LOOP.md) §11b；系统打通总表见 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md)。M0 执行卡见 [WA_M0_TASKS.md](WA_M0_TASKS.md)；M1 见 [WA_M1_TASKS.md](WA_M1_TASKS.md)；M2 见 [WA_M2_TASKS.md](WA_M2_TASKS.md)。
 
 与 [AI Desktop V1.7 计划](../ai-desktop/PLAN.md) 的关系：AI Desktop 是产品壳与通用会话/任务前门；本计划覆盖其中 **DES 实验入口 + MOM/运营频道世界适配** 切片。两边共享「完整前端先行、每里程碑 Mock 可测、Mock 替换表、Feature Map + Playwright」硬约束；导航与壳层以 AI Desktop 为准，实验/运营业务路径以本文与 DES_EXPERIMENT_OPS_SPLIT 为准。
 
