@@ -955,7 +955,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **A5.2 审批版本 + Run 恢复 Mock**（2026-11-20）：E2E-ADAPPR、E2E-ADRESUME；证据 `testing/evidence/ai-desktop-a5.2.md`
 - [x] **A5.3 移动语音 / 跨端 Mock**（2026-11-20）：E2E-ADVOICE、E2E-ADHAND；证据 `testing/evidence/ai-desktop-a5.3.md`
 - [x] **A5.4 受理回执 Mock**（2026-11-20）：E2E-ADACCEPT；证据 `testing/evidence/ai-desktop-a5.4.md`（真实可靠受理仍待 B1）
-- [ ] **A5 整体** 异步/协作/审批/移动 Mock 流程（M1–M6 贯通；A5.1 起分卡）
+- [x] **A5 整体**（2026-11-20）：M1–M6 Mock 贯通收口；`desktop.spec.ts` 15/15；证据 `testing/evidence/ai-desktop-a5.md`（B1 真实受理等仍按 MOCK_REGISTRY）
 - [ ] **B/C/D** 按 MOCK_REGISTRY 替换 Mock（全量 Feature Map 回归）
 
 ### World Adapter 交付硬约束（DES-32，用户确认）
