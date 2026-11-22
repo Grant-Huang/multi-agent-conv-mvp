@@ -323,6 +323,11 @@ export const api = {
   task: (id: string, after?: string) => request<TaskDetail>(`/api/tasks/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   cancel: (id: string) => request<{ cancelled: boolean }>(`/api/tasks/${id}/cancel`, { method: "POST" }),
   approve: (id: string) => request<{ approved: boolean }>(`/api/tasks/${id}/approve`, { method: "POST" }),
+  reviewVerdict: (id: string, verdict: "accept" | "reject", note = "") =>
+    request<{ ok: boolean; verdict: string }>(`/api/tasks/${id}/review-verdict`, {
+      method: "POST",
+      body: JSON.stringify({ verdict, note }),
+    }),
   feedback: (body: {
     message_id: string;
     original_action: string;

@@ -4,7 +4,7 @@ import type { Role } from "./bindings/Role";
 import type { TaskRecord } from "./bindings/TaskRecord";
 import type { TaskStatus } from "./bindings/TaskStatus";
 
-/** 任务状态的显示名（面向用户：NEEDS_HUMAN 的动作是"批准"，所以叫"待批准"） */
+/** 任务状态的显示名（NEEDS_HUMAN 默认按「待批准」；有 result 时用 statusLabel） */
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   CREATED: "已创建",
   QUEUED: "排队中",
@@ -15,6 +15,16 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   NEEDS_HUMAN: "待批准",
   CANCELLED: "已取消",
 };
+
+/**
+ * 按等待原因区分 NEEDS_HUMAN：无 result → 待批准；有 result → 待验收（WP2 / T1）。
+ */
+export function statusLabel(task: Pick<TaskRecord, "status" | "result">): string {
+  if (task.status === "NEEDS_HUMAN") {
+    return task.result ? "待验收" : "待批准";
+  }
+  return STATUS_LABEL[task.status];
+}
 
 /** 角色的显示名。内部值（general / coding / reviewer）只用于 API 和日志 */
 export const ROLE_LABEL: Record<Role, string> = {
@@ -32,14 +42,17 @@ export function roleLabel(role: string): string {
  * 对话区任务状态行：带上角色名和排队位置。
  * rank 为排队位置（从 1 开始），非排队状态或未知时传 null。
  */
-export function taskStatusLine(task: Pick<TaskRecord, "status" | "role">, rank: number | null): string {
+export function taskStatusLine(
+  task: Pick<TaskRecord, "status" | "role" | "result">,
+  rank: number | null,
+): string {
   switch (task.status) {
     case "QUEUED":
       return rank ? `排队中（第 ${rank} 位）` : "排队中";
     case "RUNNING":
       return `${roleLabel(task.role)}执行中`;
     default:
-      return STATUS_LABEL[task.status];
+      return statusLabel(task);
   }
 }
 

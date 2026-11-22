@@ -5,16 +5,27 @@ import { shouldShowArtifactList } from "../artifacts";
 import type { TaskEvent } from "../bindings/TaskEvent";
 import type { TaskRecord } from "../bindings/TaskRecord";
 import type { TaskStatus } from "../bindings/TaskStatus";
-import { ROLE_LABEL, roleLabel, STATUS_LABEL } from "../labels";
+import { ROLE_LABEL, roleLabel, statusLabel } from "../labels";
 import { useIncomingDetail } from "../refresh";
 import { ApprovalInfo } from "./ApprovalInfo";
 import { ArtifactList } from "./ArtifactList";
 import { AssignmentLine } from "./AssignmentLine";
 import { ConfirmButton } from "./ConfirmButton";
 import type { TaskActionKind } from "./ChatView";
+import type { TaskResult } from "../bindings/TaskResult";
 
-export function StatusBadge({ status }: { status: TaskStatus }) {
-  return <span className={`badge s-${status.toLowerCase()}`}>{STATUS_LABEL[status]}</span>;
+export function StatusBadge({
+  status,
+  result,
+}: {
+  status: TaskStatus;
+  result?: TaskResult | null;
+}) {
+  return (
+    <span className={`badge s-${status.toLowerCase()}`}>
+      {statusLabel({ status, result: result ?? null })}
+    </span>
+  );
 }
 
 export function TaskPanel(props: {
@@ -72,13 +83,14 @@ function TaskCard(props: {
 
   const running = !["COMPLETED", "FAILED", "CANCELLED"].includes(task.status);
   const awaitingApproval = task.status === "NEEDS_HUMAN" && !task.result;
+  const awaitingAcceptance = task.status === "NEEDS_HUMAN" && !!task.result;
   const d = detail?.task ?? task;
 
   return (
     <div className={`task-card ${open ? "open" : ""}`}>
       {/* 标题是真正的按钮：可以用键盘展开，并告知屏幕阅读器展开状态 */}
       <button type="button" className="task-head" aria-expanded={open} onClick={onToggle}>
-        <StatusBadge status={task.status} />
+        <StatusBadge status={task.status} result={task.result} />
         <span className="role">
           {roleLabel(task.role)}
           {/* 执行者：标题行就能看到是哪个 agent 在做（尚未分配时只显示角色） */}
@@ -92,6 +104,12 @@ function TaskCard(props: {
           <div className="actions">
             {onTaskAction && awaitingApproval && (
               <button type="button" className="btn primary small" disabled={busy} onClick={() => act("approve")}>批准执行</button>
+            )}
+            {onTaskAction && awaitingAcceptance && (
+              <>
+                <button type="button" className="btn primary small" disabled={busy} onClick={() => act("accept_review")}>判定通过</button>
+                <ConfirmButton label="判定不通过" confirmLabel="确认退回" disabled={busy} onConfirm={() => act("reject_review")} />
+              </>
             )}
             {onTaskAction && running && (
               <ConfirmButton label="取消" confirmLabel="确认取消" disabled={busy} onConfirm={() => act("cancel")} />

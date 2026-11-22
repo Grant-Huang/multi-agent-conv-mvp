@@ -3,15 +3,13 @@
 对应 `docs/DESIGN.md` 已知限制 #4；缺口 G04 / 黄金场景 GS3。
 
 **完整实施方按（迁移、回滚、拒绝路径、唯一负责人）见 [WP2_IMPLEMENTATION_PLAN.md](WP2_IMPLEMENTATION_PLAN.md)。**  
-决策：[2026-11-22-wp2-review-acceptance-plan](../decisions/2026-11-22-wp2-review-acceptance-plan.md)（待用户确认后另卡实现）。
-
-**本文件与 WP2 方案卡只定方案与验收；不修改 `orchestrator.rs` / `store.rs`。**
+决策：[2026-11-22-wp2-review-acceptance-plan](../decisions/2026-11-22-wp2-review-acceptance-plan.md)（有效；T-69 实现）。
 
 ## 问题
 
 任务因 Reviewer 结论「需要人工」或审查失败进入 `NEEDS_HUMAN` 且**已有** `result` 时，界面只有取消，没有「人工判定通过 / 不通过」。与执行前「待批准」（无 result）共用状态字面量，文案易混。
 
-## 定了什么（待批准后实现）
+## 定了什么
 
 | 项 | 内容 |
 |---|---|
@@ -38,7 +36,7 @@
 | RT-REV-02 | 同上，仍有返工轮次 | reject | 回到执行/VERIFYING，带问题清单 |
 | RT-REV-03 | 返工用尽 | reject | FAILED |
 | RT-REV-04 | 已是 COMPLETED | accept/reject | 409，状态不变 |
-| E2E-REV-01 | 浏览器任务卡 | 点判定通过 | 状态与交付文案正确 |
+| E2E-REV | 浏览器任务卡 | 点判定通过 | 状态与交付文案正确 |
 
 ## 出问题先看
 

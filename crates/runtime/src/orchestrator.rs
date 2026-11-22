@@ -350,6 +350,195 @@ impl Orchestrator {
         Ok(())
     }
 
+    /// 审查后的人工验收：`accept` → COMPLETED 并交付；`reject` → 有返工额度则入队，否则 FAILED。
+    /// 仅 `NEEDS_HUMAN` 且已有 `result`（待验收）可调用；否则返回错误（由 API 映为 409）。
+    pub async fn human_review_verdict(
+        self: &Arc<Self>,
+        task_id: &str,
+        accept: bool,
+        note: &str,
+    ) -> Result<()> {
+        let task = self.store.get_task(task_id)?.context("任务不存在")?;
+        if task.status != TaskStatus::NeedsHuman || task.result.is_none() {
+            bail!(
+                "只有审查后待验收的任务可以判定，当前状态 {}（result={}）",
+                task.status.as_str(),
+                if task.result.is_some() {
+                    "present"
+                } else {
+                    "null"
+                }
+            );
+        }
+        let sink = EventSink::new(self.bus.clone(), &task.conversation_id, &task.id);
+        let note = note.trim();
+
+        if accept {
+            let changed = {
+                let _guard = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
+                let changed = self.store.accept_human_review(task_id)?;
+                if changed {
+                    self.bus.status(
+                        &task.conversation_id,
+                        &task.id,
+                        TaskStatus::Completed,
+                        "人工验收通过",
+                    );
+                }
+                changed
+            };
+            if !changed {
+                bail!("任务已不再处于待验收，无法判定通过");
+            }
+            tracing::info!(
+                event = "task.human_review_verdict",
+                task_id = %task_id,
+                verdict = "accept",
+                note = %note,
+                "人工验收通过"
+            );
+            sink.progress(if note.is_empty() {
+                "人工验收通过".into()
+            } else {
+                format!("人工验收通过：{note}")
+            });
+            self.deliver(
+                &task,
+                TaskStatus::Completed,
+                task.result.as_ref(),
+                task.review.as_ref(),
+            )
+            .await;
+            return Ok(());
+        }
+
+        // reject：人工退回次数记在 context 标题里（跨 spawn 不丢；无 DDL）
+        let old_ctx = self.store.get_task_context(task_id)?.unwrap_or_default();
+        let human_rejects = old_ctx.matches("## 人工验收未通过").count() as u32;
+        if human_rejects < self.max_review_rounds {
+            let issues = task
+                .review
+                .as_ref()
+                .map(|r| {
+                    r.issues
+                        .iter()
+                        .map(|i| format!("- {i}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default();
+            let summary = task
+                .result
+                .as_ref()
+                .map(|r| an_core::truncate_chars(&r.summary, 2000))
+                .unwrap_or_default();
+            let note_line = if note.is_empty() {
+                String::new()
+            } else {
+                format!("- {note}\n")
+            };
+            let new_ctx = format!(
+                "{old_ctx}\n\n## 人工验收未通过，请修正以下问题\n{note_line}{issues}\n\n## 上一轮结果摘要\n{summary}"
+            );
+            let next_round = human_rejects + 1;
+            let changed = {
+                let _guard = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
+                let changed = self.store.reject_human_review_rework(task_id, &new_ctx)?;
+                if changed {
+                    self.bus.status(
+                        &task.conversation_id,
+                        &task.id,
+                        TaskStatus::Queued,
+                        format!(
+                            "人工退回第 {next_round} 轮返工，{}",
+                            self.queue_message(task_id)
+                        ),
+                    );
+                }
+                changed
+            };
+            if !changed {
+                bail!("任务已不再处于待验收，无法退回返工");
+            }
+            tracing::info!(
+                event = "task.human_review_verdict",
+                task_id = %task_id,
+                verdict = "reject",
+                rework = true,
+                note = %note,
+                "人工验收退回返工"
+            );
+            sink.progress(if note.is_empty() {
+                "人工验收未通过，开始返工".into()
+            } else {
+                format!("人工验收未通过：{note}")
+            });
+            self.spawn(TaskRecord {
+                status: TaskStatus::Queued,
+                ..task
+            });
+            return Ok(());
+        }
+
+        let changed = {
+            let _guard = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
+            let changed = self.store.reject_human_review_fail(task_id)?;
+            if changed {
+                self.bus.status(
+                    &task.conversation_id,
+                    &task.id,
+                    TaskStatus::Failed,
+                    "人工验收未通过且返工次数已用完",
+                );
+            }
+            changed
+        };
+        if !changed {
+            bail!("任务已不再处于待验收，无法判定失败");
+        }
+        tracing::info!(
+            event = "task.human_review_verdict",
+            task_id = %task_id,
+            verdict = "reject",
+            rework = false,
+            note = %note,
+            "人工验收未通过（无返工额度）"
+        );
+        sink.progress(if note.is_empty() {
+            "人工验收未通过，任务失败".into()
+        } else {
+            format!("人工验收未通过：{note}")
+        });
+        self.deliver(
+            &task,
+            TaskStatus::Failed,
+            task.result.as_ref(),
+            task.review.as_ref(),
+        )
+        .await;
+        Ok(())
+    }
+
+    /// 生成交付消息并写入会话（人工验收与自动结束共用）
+    async fn deliver(
+        &self,
+        task: &TaskRecord,
+        status: TaskStatus,
+        result: Option<&TaskResult>,
+        review: Option<&ReviewVerdict>,
+    ) {
+        let reply = self.composer.compose(task, status, result, review).await;
+        match self
+            .store
+            .add_message(&task.conversation_id, "assistant", &reply, Some(&task.id))
+        {
+            Ok(_) => self
+                .bus
+                .assistant_message(&task.conversation_id, Some(&task.id), &reply),
+            Err(e) => tracing::error!(error = %e, "写入交付消息失败"),
+        }
+    }
+
     /// 取消任务。返回 true 表示确实取消了一个未结束的任务。
     /// 先在数据库里改成 CANCELLED，成功了才中止后台执行：已经完成的任务不会被取消，交付照常进行。
     pub fn cancel(&self, task_id: &str) -> Result<bool> {

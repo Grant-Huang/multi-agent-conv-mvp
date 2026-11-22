@@ -17,8 +17,8 @@ import { TaskTicker } from "./TaskTicker";
 import { ChatCardView } from "./ChatCards";
 import { loadReadAnchor, saveReadAnchor } from "../desktop/readAnchorStore";
 
-/** 对话里可以直接对任务做的操作（批准 / 取消），由 App 执行并负责刷新 */
-export type TaskActionKind = "approve" | "cancel";
+/** 对话里可以直接对任务做的操作（批准 / 验收 / 取消），由 App 执行并负责刷新 */
+export type TaskActionKind = "approve" | "accept_review" | "reject_review" | "cancel";
 
 const EMPTY_LINES: string[] = [];
 
@@ -86,6 +86,26 @@ const MessageRow = memo(function MessageRow(props: {
                 <button type="button" className="btn primary small" disabled={busy} onClick={() => onAct("approve", task.id)}>
                   批准执行
                 </button>
+                <ConfirmButton
+                  label="取消"
+                  confirmLabel="确认取消"
+                  disabled={busy}
+                  onConfirm={() => onAct("cancel", task.id)}
+                />
+              </div>
+            )}
+            {/* 审查后待验收：判定通过 / 不通过（WP2） */}
+            {task.status === "NEEDS_HUMAN" && !!task.result && onAct && (
+              <div className="task-actions">
+                <button type="button" className="btn primary small" disabled={busy} onClick={() => onAct("accept_review", task.id)}>
+                  判定通过
+                </button>
+                <ConfirmButton
+                  label="判定不通过"
+                  confirmLabel="确认退回"
+                  disabled={busy}
+                  onConfirm={() => onAct("reject_review", task.id)}
+                />
                 <ConfirmButton
                   label="取消"
                   confirmLabel="确认取消"

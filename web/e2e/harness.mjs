@@ -54,7 +54,13 @@ const model=http.createServer(async(req,res)=>{
       const done=messages.some(m=>m.role==='user'&&m.content.startsWith('工具 write_file 的返回结果'));
       result=done?{thought:'完成',action:'final',tool:'',args:{},answer:'验证报告已写入 reports/verification.md'}:
         {thought:'写入',action:'tool_call',tool:'write_file',args:{path:'reports/verification.md',content:'# 验证报告\n真实文件工具已写入。\n'},answer:''};
-    }else if(schema==='review_verdict')result={verdict:'pass',issues:[],comment:'受控验证通过'};
+    }else if(schema==='review_verdict'){
+      // E2E-REV：目标含「人工验收」时进入待验收（needs_human + result）
+      const blob=messages.map(m=>m.content||'').join('\n');
+      result=blob.includes('人工验收')
+        ?{verdict:'needs_human',issues:['需人工确认'],comment:'需要人工验收'}
+        :{verdict:'pass',issues:[],comment:'受控验证通过'};
+    }
     else if(system.includes('现在没有可用的执行者'))result='现在没有能写代码的助手，这件事还没有开始做。你可以先接入一个写代码的助手。';
     else result=system.includes('直接回答用户的最新消息')?'你好，验证成功。':'验证报告已完成，请查看产物。';
     const content=typeof result==='string'?result:JSON.stringify(result);

@@ -2389,6 +2389,36 @@ impl Store {
         Ok(changed == 1)
     }
 
+    /// 人工验收通过：NEEDS_HUMAN 且已有执行结果 → COMPLETED。并发时只有一个返回 true。
+    pub fn accept_human_review(&self, id: &str) -> Result<bool> {
+        let changed = self.write().execute(
+            "UPDATE tasks SET status = 'COMPLETED', updated_at = ?2 \
+             WHERE id = ?1 AND status = 'NEEDS_HUMAN' AND result_json IS NOT NULL",
+            params![id, now()],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// 人工验收退回返工：NEEDS_HUMAN 且有结果 → QUEUED，并写入 context（含人工 note）。
+    pub fn reject_human_review_rework(&self, id: &str, context: &str) -> Result<bool> {
+        let changed = self.write().execute(
+            "UPDATE tasks SET status = 'QUEUED', context = ?2, updated_at = ?3 \
+             WHERE id = ?1 AND status = 'NEEDS_HUMAN' AND result_json IS NOT NULL",
+            params![id, context, now()],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// 人工验收退回且无返工额度：NEEDS_HUMAN 且有结果 → FAILED（保留 result/review）。
+    pub fn reject_human_review_fail(&self, id: &str) -> Result<bool> {
+        let changed = self.write().execute(
+            "UPDATE tasks SET status = 'FAILED', updated_at = ?2 \
+             WHERE id = ?1 AND status = 'NEEDS_HUMAN' AND result_json IS NOT NULL",
+            params![id, now()],
+        )?;
+        Ok(changed == 1)
+    }
+
     /// 同 [`Store::transition_task`]，`result` 有值时与状态在同一条 UPDATE 里写入：
     /// 条件不满足时状态和结果都不写。
     pub fn finish_task(

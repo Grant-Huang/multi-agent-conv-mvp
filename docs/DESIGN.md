@@ -426,7 +426,9 @@ stateDiagram-v2
     [*] --> CREATED
     CREATED --> QUEUED: 规则允许直接执行
     CREATED --> NEEDS_HUMAN: 风险高，需要审批
-    NEEDS_HUMAN --> QUEUED: 人工批准
+    NEEDS_HUMAN --> QUEUED: 人工批准（无 result）/ 人工验收退回返工（有 result）
+    NEEDS_HUMAN --> COMPLETED: 人工验收通过（有 result）
+    NEEDS_HUMAN --> FAILED: 人工验收退回且返工次数用完（有 result）
     QUEUED --> RUNNING: 分到 agent（忙时在这里排队）
     RUNNING --> FAILED: 执行出错 / 超时
     RUNNING --> COMPLETED: 不需要质检
@@ -448,14 +450,14 @@ stateDiagram-v2
 | QUEUED | 等待执行；执行组都在忙时停在这里排队 |
 | RUNNING | 已分到 agent、正在执行（返工先回到 QUEUED，分到 agent 后再到这里） |
 | VERIFYING | 质检中 |
-| NEEDS_HUMAN | 等人工：审批，或审查认为需要人判断 |
-| COMPLETED | 完成（通过质检，或不需要质检） |
+| NEEDS_HUMAN | 等人工。等待原因按 `result` 区分（契约 T1）：无 result → 待批准（`POST .../approve`）；有 result → 待验收（`POST .../review-verdict`） |
+| COMPLETED | 完成（通过质检，或不需要质检，或经人工验收） |
 | FAILED | 失败。原因会带错误码，例如 `[E_ACP_HANDSHAKE] …` |
 | CANCELLED | 已取消 |
 
 COMPLETED、FAILED、CANCELLED 是终点，进入后不会再变。
 
-**状态守卫**：每次状态变化都写明"允许从哪些状态来"，由数据库的一条带条件 UPDATE 完成（`Store::transition_task` / `finish_task` / `approve_task`）。所以：
+**状态守卫**：每次状态变化都写明"允许从哪些状态来"，由数据库的一条带条件 UPDATE 完成（`Store::transition_task` / `finish_task` / `approve_task` / `accept_human_review` 等）。所以：
 - 取消和完成同时发生时，谁先写进数据库谁算数：已完成的任务取消不了，交付照常；已取消的任务不再写结果、不再交付；
 - 同一个任务被同时批准多次，只有一次生效，只执行一遍；
 - 写库和推送状态事件在同一把锁里完成，前端收到的状态顺序与数据库一致。
@@ -921,7 +923,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 规则 | `policy.reject` | 没有可用 agent，拒绝派发 |
 | 准入 | `admission.preadmitted`、`admission.submitted`、`admission.clarified`、`admission.scored`、`admission.contracted`、`admission.approved`、`admission.activated`、`admission.rejected`、`admission.check`、`admission.warning`、`admission.downgraded`、`admission.revoked`、`admission.sampled`、`admission.bound` | agent 准入协议（E3）每次状态变化一条，带 `agent_id`；同名事件同时写入 `admission_events` 审计表 |
 | 准入（编排器） | `admission.result_rejected`、`admission.tasks_aborted` | 凭证已作废时丢弃 agent 交回的结果（带 `task_id`、`epoch`）；撤权时中止该 agent 进行中的任务（带中止数与耗时） |
-| 任务 | `task.status`、`task.status_conflict` | 每次状态变化一条（FAILED 为 ERROR 级别，NEEDS_HUMAN 为 WARN）；状态已被改掉、这次变化被拒绝时记 `task.status_conflict`（WARN，带期望状态和实际状态） |
+| 任务 | `task.status`、`task.status_conflict`、`task.human_review_verdict` | 每次状态变化一条（FAILED 为 ERROR 级别，NEEDS_HUMAN 为 WARN）；状态已被改掉、这次变化被拒绝时记 `task.status_conflict`（WARN，带期望状态和实际状态）；人工验收判定记 `task.human_review_verdict`（`verdict=accept\|reject`、可选 `rework`、`note`、`task_id`） |
 | 执行组 | `pool.wait`、`pool.member_missing`（debug） | 都在忙需要排队；配置的成员还没连上 |
 | 执行 | `task.no_agent`、`agent.run_start`、`agent.run_end`、`agent.run_failed`、`agent.process_group_killed` | 分配和执行；`agent.process_group_killed` 记录子进程组被清理（`reason`：cancelled / timeout / exited_with_leftovers） |
 | ACP | `acp.permission`、`acp.finished`、`acp.handshake_failed`、`acp.runtime_error`、`acp.timeout` | |
@@ -1188,7 +1190,7 @@ MOM 用独立的库，不与主库混用：主程序在本机监听时用主库�
 | 1 | 补充要求 = 先路由并通过 Policy，再取消旧任务并重新派发；路由失败保留旧任务 | 成功重派时已完成的部分仍被丢弃；取消与新任务创建尚非原子事务 | 任务拆分后只重做受影响的部分 |
 | 2 | ~~任务的背景信息只存在内存里~~ **已解决**：背景信息存在 `tasks` 表，返工时写回（`orchestrator.rs` 的 `get_task_context` / `set_task_context`） | 服务重启后，等待审批的任务批准时仍有背景信息 | — |
 | 3 | 服务重启时未完成的任务直接失败 | 不能续跑 | 参考 Temporal / LangGraph 的持久化执行 |
-| 4 | 因审查进入"待人工"的任务没有"人工判定通过 / 不通过"的入口 | 只能取消或重发 | 设计见 `docs/fencing/REVIEW_VERDICT_DESIGN.md`；改 orchestrator/store 须另批 |
+| 4 | ~~因审查进入"待人工"的任务没有"人工判定通过 / 不通过"的入口~~ **已解决**（WP2）：`POST .../review-verdict`；文案「待验收」；见 `docs/fencing/WP2_IMPLEMENTATION_PLAN.md` | — | — |
 | 5 | 上下文只取最近的消息 | 长对话会丢早期内容 | 会话摘要 |
 | 6 | 发消息时仍要等第一步判断完成 | 判断只输出动作，通常很快；但派活时还要等 Router 分类 | 两步已拆开、回答已流式；Router 可配更小的模型 |
 | 7 | 单进程、SQLite | 不能多实例 | Postgres + 消息队列 |
