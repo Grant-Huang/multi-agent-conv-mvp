@@ -674,6 +674,13 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADAPPR-05 | ai-desktop | 已批准 | execute force_unknown → ack-unknown | receipt 先 unknown 再 applied；execute_count=1 |
 | RT-ADATTN-01 | ai-desktop | mute_ordinary=true | 投递 ordinary 与 urgent | ordinary 不入队；urgent 入队 |
 | RT-ADATTN-02 | ai-desktop | 已有同 title ordinary | 再投递同 title ordinary | 队列中该 title ordinary 仍仅 1 条 |
+| RT-ADVOICE-01 | ai-desktop | reset 后 permission=denied | as-text | **200**；final_text 为文字继续；可无麦克风 |
+| RT-ADVOICE-02 | ai-desktop | start 后 partial | finalize link_task | partial 时 linked_task_id 为空；finalize 后关联任务且 partial 清空 |
+| RT-ADVOICE-03 | ai-desktop | finalize 后 play | barge | playing=false；phase=listening；final_text 保留 |
+| RT-ADVOICE-04 | ai-desktop | finalize 后 offline | as-text 同文 | phase=offline；final_text 保留 |
+| RT-ADHAND-01 | ai-desktop | handoff reset | GET/响应 | 同 task/run/read_message 锚点；voice_shared=false |
+| RT-ADHAND-02 | ai-desktop | 双端不同草稿 | resolve phone | conflict 先 true 后 false；两端正文=手机稿 |
+| RT-ADHAND-03 | ai-desktop | reset | share-voice true→false | voice_shared 随请求切换 |
 
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 
@@ -889,5 +896,8 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WADES-12 | world-adapter | 已 Execute；测试控件丢回执 / 部分失败 | Confirm | 先 `unknown` 或按原关联键回原工单；部分失败 → `failed` 且含部分成功子动作证据 |
 | RT-WADES-13 | world-adapter | 旧运行绑定的工厂实例已变更 | 对旧运行再 Propose/Execute | 失败可见（非静默成功）；新实例不接收旧运行误投 |
 | RT-WADES-14 | world-adapter | 远程动态场景；干预前后可 Observe | 干预（如批准维修）后 Observe；审核员与运营员分别读 | 已发生前缀事件集合不变、未来事件集合改变；审核答案与干预一致；运营员/普通会话 Confirm/Observe 无标准答案字段 |
+| RT-WADES-15 | world-adapter | 已 Execute 且有 `correlation_key`；测试控件丢回执 | 仅用 `correlation_key`（无 execution_id）Confirm；恢复回执后再 Confirm | 找回同一 `execution_id`；先 `unknown` 再 `applied`/`confirmed` |
+| RT-WADES-16 | world-adapter | 已 Execute；部分失败 | `complete-partial` 补齐剩余子动作回执后再 Confirm | 补齐后状态可推进；子动作证据无残留 `failed`/`unknown` |
+| RT-WADES-17 | world-adapter | 已 Confirm 的执行；工厂实例已变更 | Confirm 查历史；旧提案再 Execute；flush 待发 | 历史可查（`factory_instance_stale=true`）；再写失败可见；`dispatched_count=0` |
 | RT-WADES-18 | world-adapter | 已 Execute 维修干预 | 审核员读 ground_truth；运营员 Confirm | `sync_status=synced`；`intervention_id`/`execution_id`/`answer` 与干预一致；Confirm 无标准答案字段 |
 | RT-WADES-19 | world-adapter | 已干预；答案同步失败（测试控件） | `fail-answer-sync` 后 `retry-answer-sync` | 先 `pending`；重试后 `synced` 且答案/intervention_id 与原干预一致 |

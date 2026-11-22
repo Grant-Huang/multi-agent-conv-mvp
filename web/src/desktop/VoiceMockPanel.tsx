@@ -1,28 +1,54 @@
-import { useState } from "react";
-import {
-  bargeIn,
-  commitFinal,
-  continueAsText,
-  goOffline,
-  loadVoiceSession,
-  markConnected,
-  resetVoice,
-  setPartial,
-  setPermission,
-  setShareTranscript,
-  startListening,
-  startPlayback,
-  type VoiceSession,
-} from "./voiceMock";
+import { useEffect, useState } from "react";
+import { api, type DesktopVoiceSessionDto } from "../api";
 
-export function VoiceMockPanel() {
-  const [s, setS] = useState<VoiceSession>(() => resetVoice());
+type Props = {
+  taskId: string;
+};
 
-  const apply = (next: VoiceSession) => setS(next);
+export function VoiceMockPanel({ taskId }: Props) {
+  const [s, setS] = useState<DesktopVoiceSessionDto | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const apply = (next: DesktopVoiceSessionDto) => {
+    setS(next);
+    setError(null);
+  };
+
+  const run = (p: Promise<{ session: DesktopVoiceSessionDto }>) => {
+    void p.then((r) => apply(r.session)).catch((e: Error) => setError(e.message));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .desktopVoiceReset(taskId)
+      .then((r) => {
+        if (!cancelled) apply(r.session);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId]);
+
+  if (!s) {
+    return (
+      <div className="voice-mock" data-testid="voice-mock-panel">
+        <p className="muted">加载语音会话…</p>
+        {error && (
+          <p className="evidence-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="voice-mock" data-testid="voice-mock-panel">
-      <h3>语音（模拟）</h3>
+      <h3>语音（fixture）</h3>
       <dl className="evidence-dl">
         <dt>权限</dt>
         <dd data-testid="voice-permission">{s.permission}</dd>
@@ -33,28 +59,39 @@ export function VoiceMockPanel() {
         <dt>部分转写</dt>
         <dd data-testid="voice-partial">{s.partial || "—"}</dd>
         <dt>最终转写</dt>
-        <dd data-testid="voice-final">{s.finalText || "—"}</dd>
+        <dd data-testid="voice-final">{s.final_text || "—"}</dd>
         <dt>关联任务</dt>
-        <dd data-testid="voice-link">{s.linkedTaskId ?? "未关联"}</dd>
+        <dd data-testid="voice-link">{s.linked_task_id ?? "未关联"}</dd>
         <dt>转写共享</dt>
-        <dd data-testid="voice-share">{s.shareTranscript ? "已共享" : "未授权不共享"}</dd>
+        <dd data-testid="voice-share">{s.share_transcript ? "已共享" : "未授权不共享"}</dd>
       </dl>
+      {error && (
+        <p className="evidence-error" role="alert">
+          {error}
+        </p>
+      )}
       <div className="settings-actions">
-        <button type="button" className="btn small" data-testid="voice-reset" onClick={() => apply(resetVoice())}>
+        <button
+          type="button"
+          className="btn small"
+          data-testid="voice-reset"
+          onClick={() => run(api.desktopVoiceReset(taskId))}
+        >
           重置
         </button>
-        <button type="button" className="btn small" data-testid="voice-deny" onClick={() => apply(setPermission("denied"))}>
+        <button
+          type="button"
+          className="btn small"
+          data-testid="voice-deny"
+          onClick={() => run(api.desktopVoicePermission(taskId, "denied"))}
+        >
           拒绝麦克风
         </button>
         <button
           type="button"
           className="btn primary small"
           data-testid="voice-start"
-          onClick={() => {
-            let next = startListening();
-            if (next.phase === "connecting") next = markConnected();
-            apply(next);
-          }}
+          onClick={() => run(api.desktopVoiceStart(taskId))}
         >
           开启麦克风
         </button>
@@ -62,7 +99,7 @@ export function VoiceMockPanel() {
           type="button"
           className="btn small"
           data-testid="voice-inject-partial"
-          onClick={() => apply(setPartial("正在说…SMT"))}
+          onClick={() => run(api.desktopVoicePartial(taskId, "正在说…SMT"))}
         >
           注入部分转写
         </button>
@@ -70,24 +107,41 @@ export function VoiceMockPanel() {
           type="button"
           className="btn small"
           data-testid="voice-commit"
-          onClick={() => apply(commitFinal("调查 SMT-03 振动异常", true))}
+          onClick={() => run(api.desktopVoiceFinalize(taskId, "调查 SMT-03 振动异常", true))}
         >
           确认最终转写并关联
         </button>
-        <button type="button" className="btn small" data-testid="voice-play" onClick={() => apply(startPlayback())}>
+        <button
+          type="button"
+          className="btn small"
+          data-testid="voice-play"
+          onClick={() => run(api.desktopVoicePlay(taskId))}
+        >
           开始播报
         </button>
-        <button type="button" className="btn small" data-testid="voice-barge" onClick={() => apply(bargeIn())}>
+        <button
+          type="button"
+          className="btn small"
+          data-testid="voice-barge"
+          onClick={() => run(api.desktopVoiceBarge(taskId))}
+        >
           插话停止播报
         </button>
-        <button type="button" className="btn small" data-testid="voice-offline" onClick={() => apply(goOffline())}>
+        <button
+          type="button"
+          className="btn small"
+          data-testid="voice-offline"
+          onClick={() => run(api.desktopVoiceOffline(taskId))}
+        >
           断线
         </button>
         <button
           type="button"
           className="btn small"
           data-testid="voice-as-text"
-          onClick={() => apply(continueAsText(loadVoiceSession().finalText || "改用文字继续"))}
+          onClick={() =>
+            run(api.desktopVoiceAsText(taskId, s.final_text || "改用文字继续"))
+          }
         >
           改用文字继续
         </button>
@@ -95,10 +149,10 @@ export function VoiceMockPanel() {
           type="button"
           className="btn small"
           data-testid="voice-share-toggle"
-          aria-pressed={s.shareTranscript}
-          onClick={() => apply(setShareTranscript(!s.shareTranscript))}
+          aria-pressed={s.share_transcript}
+          onClick={() => run(api.desktopVoiceShare(taskId, !s.share_transcript))}
         >
-          {s.shareTranscript ? "撤销转写共享" : "授权共享转写"}
+          {s.share_transcript ? "撤销转写共享" : "授权共享转写"}
         </button>
       </div>
       {(s.permission === "denied" || s.phase === "offline") && (

@@ -11,7 +11,7 @@
 | M2-0 | 冻结用例草案与任务卡；同步 PLAN / Feature Map / 注册表 | **完成**（#194） | M1 准出 + T-50 |
 | M2-1 | 正式 CASES + Red 空壳；Propose/Execute/Confirm 接远程（高风险先方案） | **完成**（#196） | M2-0 |
 | M2-2 | 授权/并发/取消 + 写路径服务层 Green（RT-WADES-09～14） | **完成**（#199） | M2-1 |
-| M2-3 | 恢复与幂等：丢回执同厂恢复；部分回执补齐；工厂重启旧运行可见失败 | **审查中**（#200） | M2-2 |
+| M2-3 | 恢复与幂等：丢回执同厂恢复；部分回执补齐；工厂重启旧运行可见失败 | **完成**（#200） | M2-2 |
 | M2-4 | DES 闭环：干预后未来事件改变；答案与干预一致；RT-DES/DESC 回归 | **进行中**（本 PR） | M2-2、M2-3 |
 | M2-5 | 浏览器：WA-03/04/05/08 远程场景 + M0/M1 全量回归 | 排队 | M2-4 |
 | M2-6 | 证据、WAM-04～06 写路径状态、准出检查 | 排队 | M2-5 |
@@ -34,6 +34,9 @@
 | 合同：同厂恢复 | `RT-WADES-12` | 丢回执后按原关联键 Confirm 回原工单；部分回执可补齐 |
 | 合同：工厂重启 | `RT-WADES-13` | 工厂实例变更后旧运行提交失败可见；不向新实例误投 |
 | 合同：干预闭环 | `RT-WADES-14` | 干预后已发生前缀不变、未来事件改变；审核答案与干预一致；普通会话无标准答案 |
+| 合同：关联键恢复 | `RT-WADES-15` | 丢回执后仅用 `correlation_key` Confirm 回原 `execution_id` |
+| 合同：部分回执补齐 | `RT-WADES-16` | 部分失败后补齐剩余子动作回执，再 Confirm 到终态 |
+| 合同：重启不误投 | `RT-WADES-17` | 工厂重启后历史可查；旧写失败可见；pending 不误投新实例 |
 | 合同：答案一致 | `RT-WADES-18` | 干预后 `ground_truth` 的 intervention/execution/answer 与干预一致且 `synced` |
 | 合同：答案同步重试 | `RT-WADES-19` | 同步失败 → `pending`；补偿重试 → `synced` 且与原干预一致 |
 | 回归 | 既有 `RT-WA-*`、`RT-WADES-01～08`、`RT-DES-08～11`、`RT-DESC-*`、`wa-m0/m1-suite` | M2 合入前全绿；Mock 写路径保留作回归 |
@@ -58,9 +61,14 @@ M0/M1 已冻结用例 **不得弱化**。`E2E-DESOPS` / `E2E-DESLOOP` 在 M2 补
 3. `features.json` `runtime_cases` 挂入；证据 `wa-m2-2-green.md`。
 4. **不改** `engine.rs` / `DesConnector` 内部；Playwright E2E 写路径 Green 留给 M2-5。
 
-## 2d. M2-3：恢复与幂等（#200 审查中）
+## 2d. M2-3：恢复与幂等加深（已完成，#200）
 
-见 [`WA_M2_3_PLAN.md`](WA_M2_3_PLAN.md)（合入后以该分支为准）。
+见 [`WA_M2_3_PLAN.md`](WA_M2_3_PLAN.md)。
+
+1. Confirm 支持按 `correlation_key` 找回原工单（`RT-WADES-15`）。
+2. `complete-partial` 补齐部分回执后再 Confirm（`RT-WADES-16`）。
+3. 工厂重启后历史可查、待发不误投（`RT-WADES-17`）。
+4. **仍不改** engine / DesConnector；`E2E-WARECV` 浏览器 Green 留给 M2-5。
 
 ## 2e. M2-4：DES 闭环与回归（本卡）
 

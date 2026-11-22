@@ -100,7 +100,7 @@ flowchart TB
 
 | 特性 | 层 | 权威设计 | 计划与进度 | 主要代码 | 相关决策 | 状态（2026-11-21） |
 |---|---|---|---|---|---|---|
-| AI 桌面外壳 | 外壳 | [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) | [ai-desktop/PLAN.md](ai-desktop/PLAN.md)、[MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md) | `web/src/desktop/`、`server/src/desktop_api.rs` | 61（AI 桌面）、66–69；[2026-11-21-ai-desktop-c2-gateway-attn](decisions/2026-11-21-ai-desktop-c2-gateway-attn.md) | 部分实现：A、B1–B3、C1、C2 完成；D 待做 |
+| AI 桌面外壳 | 外壳 | [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) | [ai-desktop/PLAN.md](ai-desktop/PLAN.md)、[MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md) | `web/src/desktop/`、`server/src/desktop_api.rs` | 61（AI 桌面）、66–69；[2026-11-21-ai-desktop-c2-gateway-attn](decisions/2026-11-21-ai-desktop-c2-gateway-attn.md)、[2026-11-21-ai-desktop-d-voice-handoff](decisions/2026-11-21-ai-desktop-d-voice-handoff.md) | 部分实现：A、B1–B3、C1、C2、D（fixture）完成；真机语音另卡 |
 | 对话前台与派发 | 交互与决策 | 本文第 5、9 节 | [PLAN.md](PLAN.md) M4、FT | `runtime/src/conversation.rs`、`router.rs`、`policy.rs`、`prompts.rs` | 18–43 | 已实现 |
 | 多 agent 执行与执行组 | 执行引擎 | 本文第 7 节 | — | `crates/agents`、`runtime/src/registry.rs`、`orchestrator.rs` | — | 已实现 |
 | 跨机器节点 | 执行引擎 | 本文第 8 节 | — | `crates/node`、`runtime/src/nodes.rs` | — | 已实现（局域网明文 HTTP，见第 13 节） |

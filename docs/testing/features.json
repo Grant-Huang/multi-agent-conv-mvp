@@ -743,6 +743,7 @@
       "crates/server/tests/desktop_b3.rs",
       "crates/server/tests/desktop_acl.rs",
       "crates/server/tests/desktop_c2.rs",
+      "crates/server/tests/desktop_d.rs",
       "crates/runtime/src/store.rs",
       "crates/runtime/src/conversation.rs",
       "docs/ai-desktop/DESIGN.md",
@@ -758,8 +759,10 @@
       "docs/testing/evidence/ai-desktop-b3.md",
       "docs/testing/evidence/ai-desktop-c1.md",
       "docs/testing/evidence/ai-desktop-c2.md",
+      "docs/testing/evidence/ai-desktop-d.md",
       "docs/ai-desktop/MOCK_REGISTRY.md",
-      "docs/decisions/2026-11-21-ai-desktop-c2-gateway-attn.md"
+      "docs/decisions/2026-11-21-ai-desktop-c2-gateway-attn.md",
+      "docs/decisions/2026-11-21-ai-desktop-d-voice-handoff.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -809,7 +812,14 @@
       "RT-ADAPPR-04",
       "RT-ADAPPR-05",
       "RT-ADATTN-01",
-      "RT-ADATTN-02"
+      "RT-ADATTN-02",
+      "RT-ADVOICE-01",
+      "RT-ADVOICE-02",
+      "RT-ADVOICE-03",
+      "RT-ADVOICE-04",
+      "RT-ADHAND-01",
+      "RT-ADHAND-02",
+      "RT-ADHAND-03"
     ]
   },
   {
@@ -867,6 +877,8 @@
       "docs/testing/evidence/wa-m2-0.md",
       "docs/testing/evidence/wa-m2-1-red.md",
       "docs/testing/evidence/wa-m2-2-green.md",
+      "docs/testing/evidence/wa-m2-3-recovery.md",
+      "docs/mom/WA_M2_3_PLAN.md",
       "docs/mom/WA_M2_4_PLAN.md",
       "docs/testing/evidence/wa-m2-4-closed-loop.md",
       "scripts/wa-m2-regression.sh",
@@ -914,6 +926,9 @@
       "RT-WADES-12",
       "RT-WADES-13",
       "RT-WADES-14",
+      "RT-WADES-15",
+      "RT-WADES-16",
+      "RT-WADES-17",
       "RT-WADES-18",
       "RT-WADES-19"
     ]

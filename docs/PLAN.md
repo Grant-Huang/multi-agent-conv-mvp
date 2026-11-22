@@ -961,7 +961,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`
-- [ ] **D** 按 MOCK_REGISTRY 替换语音/跨端 Mock（全量 Feature Map 回归）
+- [x] **D 语音/跨端服务权威**（2026-11-21）：fixture 媒体 + store/API；RT-ADVOICE-01～04、RT-ADHAND-01～03；E2E-ADVOICE/ADHAND 真实 HTTP；证据 `testing/evidence/ai-desktop-d.md`（真机 mic/双设备另卡）
 
 ### World Adapter 交付硬约束（DES-32，用户确认）
 
@@ -990,7 +990,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M2-0** 冻结远程 DES 写用例与任务卡（[mom/WA_M2_TASKS.md](mom/WA_M2_TASKS.md)；证据 `testing/evidence/wa-m2-0.md`；#194）
 - [x] **M2-1** 正式 CASES + Red 空壳（[mom/WA_M2_1_PLAN.md](mom/WA_M2_1_PLAN.md)；证据 `testing/evidence/wa-m2-1-red.md`；#196）
 - [x] **M2-2** 写路径服务层 Green（RT-WADES-09～14；证据 `testing/evidence/wa-m2-2-green.md`；#199）
-- [ ] **M2-3** 恢复与幂等加深（RT-WADES-15～17；证据 `testing/evidence/wa-m2-3-recovery.md`；#200）
+- [x] **M2-3** 恢复与幂等加深（RT-WADES-15～17；[mom/WA_M2_3_PLAN.md](mom/WA_M2_3_PLAN.md)；证据 `testing/evidence/wa-m2-3-recovery.md`；#200）
 - [ ] **M2-4** DES 闭环与 RT-DES/DESC 回归（RT-WADES-18～19；[mom/WA_M2_4_PLAN.md](mom/WA_M2_4_PLAN.md)；证据 `testing/evidence/wa-m2-4-closed-loop.md`）
 - [ ] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环（WA-03/04/05/08）
 - [ ] **M3** 生产只读（写仍 Mock）
