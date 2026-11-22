@@ -449,6 +449,28 @@ export const api = {
         headers: WA_ROLE,
         body: JSON.stringify(body),
       }),
+    approveExecute: (body: { case_id: string; plan_revision: number; request_id?: string }) =>
+      request<{
+        already: boolean;
+        approver: string;
+        execution_id?: string;
+        world_id?: string;
+        provenance?: string;
+      }>("/api/world/des/ops/approve-execute", {
+        method: "POST",
+        headers: { "X-WA-Role": "operator" },
+        body: JSON.stringify(body),
+      }),
+    confirm: (body: { world_id: string; execution_id: string; request_id?: string }) =>
+      request<{
+        execution_id: string;
+        status: string;
+        provenance?: string;
+      }>("/api/world/des/confirm", {
+        method: "POST",
+        headers: { "X-WA-Role": "operator" },
+        body: JSON.stringify(body),
+      }),
   },
 
   /** AI Desktop C1：证据 ACL（夹具头 x-desktop-principal） */

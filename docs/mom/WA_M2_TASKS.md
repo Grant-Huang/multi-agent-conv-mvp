@@ -12,8 +12,8 @@
 | M2-1 | 正式 CASES + Red 空壳；Propose/Execute/Confirm 接远程（高风险先方案） | **完成**（#196） | M2-0 |
 | M2-2 | 授权/并发/取消 + 写路径服务层 Green（RT-WADES-09～14） | **完成**（#199） | M2-1 |
 | M2-3 | 恢复与幂等：丢回执同厂恢复；部分回执补齐；工厂重启旧运行可见失败 | **完成**（#200） | M2-2 |
-| M2-4 | DES 闭环：干预后未来事件改变；答案与干预一致；RT-DES/DESC 回归 | **进行中**（本 PR） | M2-2、M2-3 |
-| M2-5 | 浏览器：WA-03/04/05/08 远程场景 + M0/M1 全量回归 | 排队 | M2-4 |
+| M2-4 | DES 闭环：干预后未来事件改变；答案与干预一致；RT-DES/DESC 回归 | **完成**（#202） | M2-2、M2-3 |
+| M2-5 | 浏览器：WA-03/04/05/08 远程场景 + M0/M1 全量回归 | **进行中**（本 PR） | M2-4 |
 | M2-6 | 证据、WAM-04～06 写路径状态、准出检查 | 排队 | M2-5 |
 
 一张卡 ≈ 一个 PR。每卡先 Red（业务断言失败）再 Green；断言冻结后不得弱化。
@@ -70,13 +70,18 @@ M0/M1 已冻结用例 **不得弱化**。`E2E-DESOPS` / `E2E-DESLOOP` 在 M2 补
 3. 工厂重启后历史可查、待发不误投（`RT-WADES-17`）。
 4. **仍不改** engine / DesConnector；`E2E-WARECV` 浏览器 Green 留给 M2-5。
 
-## 2e. M2-4：DES 闭环与回归（本卡）
+## 2e. M2-4：DES 闭环与回归（已完成，#202）
 
 见 [`WA_M2_4_PLAN.md`](WA_M2_4_PLAN.md)。
 
-1. 答案与干预一致（`RT-WADES-18`）；答案同步失败可补偿重试（`RT-WADES-19`）。
-2. `./scripts/wa-m2-regression.sh`：RT-DES-08～11 + RT-DESC connector + WADES 读/写。
-3. **仍不改** engine / DesConnector；`E2E-WADYN` 浏览器 Green 留给 M2-5。
+## 2f. M2-5：浏览器远程写（本卡）
+
+见 [`WA_M2_5_PLAN.md`](WA_M2_5_PLAN.md)。
+
+1. Playwright Green：`E2E-WAEXEC` / `WARECV` / `WADYN` / `WALOOP`。
+2. 服务层投影 + `ops/approve-execute`；OpsCards DES 定位契约。
+3. `./scripts/wa-m2-suite.sh` + M0/M1 全量回归。
+4. **仍不改** engine / DesConnector。
 
 ## 3. M2-2～M2-4：服务端（纲要）
 
