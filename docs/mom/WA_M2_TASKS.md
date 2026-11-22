@@ -13,8 +13,8 @@
 | M2-2 | 授权/并发/取消 + 写路径服务层 Green（RT-WADES-09～14） | **完成**（#199） | M2-1 |
 | M2-3 | 恢复与幂等：丢回执同厂恢复；部分回执补齐；工厂重启旧运行可见失败 | **完成**（#200） | M2-2 |
 | M2-4 | DES 闭环：干预后未来事件改变；答案与干预一致；RT-DES/DESC 回归 | **完成**（#202） | M2-2、M2-3 |
-| M2-5 | 浏览器：WA-03/04/05/08 远程场景 + M0/M1 全量回归 | **进行中**（本 PR） | M2-4 |
-| M2-6 | 证据、WAM-04～06 写路径状态、准出检查 | 排队 | M2-5 |
+| M2-5 | 浏览器：WA-03/04/05/08 远程场景 + M0/M1 全量回归 | **完成**（#206） | M2-4 |
+| M2-6 | 证据、WAM-04～06 写路径状态、准出检查 | **进行中**（本 PR） | M2-5 |
 
 一张卡 ≈ 一个 PR。每卡先 Red（业务断言失败）再 Green；断言冻结后不得弱化。
 
@@ -74,14 +74,18 @@ M0/M1 已冻结用例 **不得弱化**。`E2E-DESOPS` / `E2E-DESLOOP` 在 M2 补
 
 见 [`WA_M2_4_PLAN.md`](WA_M2_4_PLAN.md)。
 
-## 2f. M2-5：浏览器远程写（本卡）
+## 2f. M2-5：浏览器远程写（已完成，#206）
 
 见 [`WA_M2_5_PLAN.md`](WA_M2_5_PLAN.md)。
 
-1. Playwright Green：`E2E-WAEXEC` / `WARECV` / `WADYN` / `WALOOP`。
-2. 服务层投影 + `ops/approve-execute`；OpsCards DES 定位契约。
-3. `./scripts/wa-m2-suite.sh` + M0/M1 全量回归。
-4. **仍不改** engine / DesConnector。
+## 2g. M2-6：证据与准出（本卡）
+
+见 [`WA_M2_6_PLAN.md`](WA_M2_6_PLAN.md)。
+
+1. 准出证据 `wa-m2-6.md`；对照任务卡文首准出表逐条勾选。
+2. `WA_MOCK_REGISTRY` WAM-04～06 写路径状态定稿。
+3. 同步 PLAN / Feature Map / COVERAGE / `features.json`。
+4. **不改**业务代码与 engine / DesConnector。
 
 ## 3. M2-2～M2-4：服务端（纲要）
 
