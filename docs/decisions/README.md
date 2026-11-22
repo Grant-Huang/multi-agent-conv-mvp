@@ -100,3 +100,4 @@
 | [2026-11-21-ai-desktop-d-voice-handoff.md](2026-11-21-ai-desktop-d-voice-handoff.md) | AI Desktop D 语音与跨端 | 用户确认 | 有效 |
 | [2026-11-21-wa-m2-1-green-service-layer.md](2026-11-21-wa-m2-1-green-service-layer.md) | WA M2 Green 服务层优先 | 用户确认 | 有效 |
 | [2026-11-22-c2-m2-minimal-contracts.md](2026-11-22-c2-m2-minimal-contracts.md) | C2/M2 最小共享契约（批准/取消/追踪） | 用户确认 | 有效 |
+| [2026-11-22-wp2-review-acceptance-plan.md](2026-11-22-wp2-review-acceptance-plan.md) | WP2 审查需人工验收出口方案 | 助手建议 / T-65 方案卡 | 待用户确认 |
