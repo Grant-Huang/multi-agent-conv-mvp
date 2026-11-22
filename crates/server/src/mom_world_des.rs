@@ -138,6 +138,8 @@ struct Store {
     cancelled_cases: HashSet<String>,
     /// case_id → 尚未下游发送的缓冲写
     pending_writes: HashMap<String, Vec<PendingWrite>>,
+    /// (world_id, correlation_key) → execution_id
+    correlation_keys: HashMap<(String, String), String>,
     /// 审核标准答案（仅 auditor）
     ground_truth: HashMap<String, Value>,
 }
@@ -163,6 +165,8 @@ struct ExecRec {
     proposal_id: String,
     approval_ref: String,
     plan_revision: String,
+    /// 外部关联键（同厂丢回执后按此找回原工单）
+    correlation_key: String,
     status: String,
     subactions: Vec<Value>,
     confirmation_policy: String,
@@ -478,6 +482,10 @@ pub fn router(state: WorldDesState) -> Router {
         .route("/api/world/des/test/lose-receipt", post(lose_receipt))
         .route("/api/world/des/test/restore-receipt", post(restore_receipt))
         .route("/api/world/des/test/partial-fail", post(partial_fail))
+        .route(
+            "/api/world/des/test/complete-partial",
+            post(complete_partial),
+        )
         .route("/api/world/des/test/factory-restart", post(factory_restart))
         .route("/api/world/des/test/bump-plan-revision", post(bump_plan))
         .route("/api/world/des/test/cancel-case", post(cancel_case))
@@ -1448,6 +1456,7 @@ async fn execute(State(state): State<WorldDesState>, Json(body): Json<ExecuteBod
             "request_id": body.request_id,
             "world_id": body.world_id,
             "execution_id": exec.execution_id,
+            "correlation_key": exec.correlation_key,
             "status": exec.status,
             "confirmation_policy": exec.confirmation_policy,
             "already": true,
@@ -1463,6 +1472,7 @@ async fn execute(State(state): State<WorldDesState>, Json(body): Json<ExecuteBod
         .map(|c| store.cancelled_cases.contains(c))
         .unwrap_or(false);
     let execution_id = next_id(&mut store, "exec");
+    let correlation_key = format!("des-order-{}", execution_id);
     let mut status = "accepted".to_string();
     let mut dispatched = true;
     if cancelled {
@@ -1479,6 +1489,7 @@ async fn execute(State(state): State<WorldDesState>, Json(body): Json<ExecuteBod
             proposal_id: body.proposal_id.clone(),
             approval_ref: body.approval_ref.clone(),
             plan_revision: exec_rev,
+            correlation_key: correlation_key.clone(),
             status: status.clone(),
             subactions: subactions.clone(),
             confirmation_policy: "maintenance_completed".into(),
@@ -1488,6 +1499,10 @@ async fn execute(State(state): State<WorldDesState>, Json(body): Json<ExecuteBod
         },
     );
     store.exec_keys.insert(key, execution_id.clone());
+    store.correlation_keys.insert(
+        (body.world_id.clone(), correlation_key.clone()),
+        execution_id.clone(),
+    );
     if !dispatched {
         if let Some(cid) = &case_id {
             store
@@ -1545,6 +1560,7 @@ async fn execute(State(state): State<WorldDesState>, Json(body): Json<ExecuteBod
         "request_id": body.request_id,
         "world_id": body.world_id,
         "execution_id": execution_id,
+        "correlation_key": correlation_key,
         "status": "accepted",
         "confirmation_policy": "maintenance_completed",
         "already": false,
@@ -1558,7 +1574,11 @@ async fn execute(State(state): State<WorldDesState>, Json(body): Json<ExecuteBod
 #[serde(deny_unknown_fields)]
 struct ConfirmBody {
     world_id: String,
-    execution_id: String,
+    #[serde(default)]
+    execution_id: Option<String>,
+    /// 同厂丢回执后按原关联键找回
+    #[serde(default)]
+    correlation_key: Option<String>,
     #[serde(default)]
     request_id: Option<String>,
 }
@@ -1567,7 +1587,25 @@ async fn confirm(State(state): State<WorldDesState>, Json(body): Json<ConfirmBod
     let mut store = state.inner.lock().map_err(|_| lock_err())?;
     ensure_world(&mut store, &body.world_id)?;
     let factory_instance = *store.factory_instance.get(&body.world_id).unwrap_or(&1);
-    let Some(exec) = store.executions.get(&body.execution_id).cloned() else {
+    let resolved_id = if let Some(id) = body.execution_id.as_deref() {
+        Some(id.to_string())
+    } else if let Some(ck) = body.correlation_key.as_deref() {
+        store
+            .correlation_keys
+            .get(&(body.world_id.clone(), ck.to_string()))
+            .cloned()
+    } else {
+        None
+    };
+    let Some(execution_id) = resolved_id else {
+        return err(
+            StatusCode::BAD_REQUEST,
+            "INVALID_ARGUMENT",
+            "需要 execution_id 或 correlation_key",
+            body.request_id.as_deref(),
+        );
+    };
+    let Some(exec) = store.executions.get(&execution_id).cloned() else {
         return err(
             StatusCode::NOT_FOUND,
             "INVALID_ARGUMENT",
@@ -1583,17 +1621,9 @@ async fn confirm(State(state): State<WorldDesState>, Json(body): Json<ConfirmBod
             body.request_id.as_deref(),
         );
     }
-    if exec.factory_instance != factory_instance
-        && exec.status != "unknown"
-        && exec.status != "applied"
-    {
-        return err(
-            StatusCode::CONFLICT,
-            "FACTORY_INSTANCE_STALE",
-            "工厂实例已变更",
-            body.request_id.as_deref(),
-        );
-    }
+    // 工厂重启后：Confirm 只查历史证据，不因实例变更拒查（WORLD_ADAPTER §5/§6.2）。
+    // 仅当旧实例执行仍处 accepted 且试图推进写路径时拒绝；known 终态与 unknown/applied 可查。
+    let stale_instance = exec.factory_instance != factory_instance;
     let case_terminal = exec
         .case_id
         .as_ref()
@@ -1601,10 +1631,16 @@ async fn confirm(State(state): State<WorldDesState>, Json(body): Json<ConfirmBod
         .map(|_| "CANCELLED");
     let mut status = exec.status.clone();
     let mut subactions = exec.subactions.clone();
-    if status == "accepted" || status == "applied" {
+    if stale_instance && status == "accepted" {
+        // 重启后未决写进入待查证，不推进到 confirmed
+        status = "unknown".into();
+        if let Some(e) = store.executions.get_mut(&execution_id) {
+            e.status = status.clone();
+        }
+    } else if !stale_instance && (status == "accepted" || status == "applied") {
         status = "confirmed".into();
         subactions = vec![json!({ "name": "maintenance", "status": "confirmed" })];
-        if let Some(e) = store.executions.get_mut(&body.execution_id) {
+        if let Some(e) = store.executions.get_mut(&execution_id) {
             e.status = status.clone();
             e.subactions = subactions.clone();
         }
@@ -1614,12 +1650,14 @@ async fn confirm(State(state): State<WorldDesState>, Json(body): Json<ConfirmBod
         "request_id": body.request_id,
         "world_id": body.world_id,
         "execution_id": exec.execution_id,
+        "correlation_key": exec.correlation_key,
         "status": status,
         "confirmation_policy": exec.confirmation_policy,
         "evidence": subactions,
         "subactions": subactions,
         "provenance": "des",
         "case_terminal": case_terminal,
+        "factory_instance_stale": stale_instance,
     })))
 }
 
@@ -1779,6 +1817,72 @@ async fn partial_fail(
     })))
 }
 
+/// 部分失败后补齐剩余子动作回执（同厂恢复）。
+async fn complete_partial(
+    State(state): State<WorldDesState>,
+    Json(body): Json<ExecCtrlBody>,
+) -> ApiResult {
+    let _ = require_test_controls(&state, body.request_id.as_deref())?;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    let Some(exec_id) = body.execution_id.as_deref() else {
+        return err(
+            StatusCode::BAD_REQUEST,
+            "INVALID_ARGUMENT",
+            "需要 execution_id",
+            body.request_id.as_deref(),
+        );
+    };
+    let Some(exec_snap) = store.executions.get(exec_id).cloned() else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "INVALID_ARGUMENT",
+            "未知执行",
+            body.request_id.as_deref(),
+        );
+    };
+    let current = *store
+        .factory_instance
+        .get(&exec_snap.world_id)
+        .unwrap_or(&1);
+    if exec_snap.factory_instance != current {
+        return err(
+            StatusCode::CONFLICT,
+            "FACTORY_INSTANCE_STALE",
+            "工厂实例已变更，不可补齐旧运行回执",
+            body.request_id.as_deref(),
+        );
+    }
+    if exec_snap.status != "failed" && exec_snap.status != "unknown" {
+        return err(
+            StatusCode::CONFLICT,
+            "PRECONDITION_FAILED",
+            "仅 failed/unknown 可补齐部分回执",
+            body.request_id.as_deref(),
+        );
+    }
+    let exec = store.executions.get_mut(exec_id).unwrap();
+    let mut completed = 0u32;
+    for s in &mut exec.subactions {
+        let st = s.get("status").and_then(|v| v.as_str());
+        if st == Some("failed") || st == Some("unknown") {
+            s["status"] = json!("applied");
+            s["completed_by"] = json!("complete_partial");
+            completed += 1;
+        }
+    }
+    exec.status = "applied".into();
+    let status = exec.status.clone();
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "ok": true,
+        "kind": "complete_partial",
+        "execution_id": exec_id,
+        "completed_subactions": completed,
+        "status": status,
+    })))
+}
+
 async fn factory_restart(
     State(state): State<WorldDesState>,
     Json(body): Json<ExecCtrlBody>,
@@ -1791,12 +1895,40 @@ async fn factory_restart(
         .entry(body.world_id.clone())
         .or_insert(1);
     *gen += 1;
+    let new_gen = *gen;
+    // 清空该世界相关待发，防止误投新实例
+    let case_ids: Vec<String> = store
+        .runs
+        .values()
+        .filter(|r| r.world_id == body.world_id)
+        .filter_map(|r| r.case_id.clone())
+        .chain(
+            store
+                .snapshots
+                .get(&body.world_id)
+                .and_then(|s| s.case_id.clone()),
+        )
+        .collect();
+    let mut cleared_pending = 0usize;
+    for cid in &case_ids {
+        if let Some(p) = store.pending_writes.remove(cid) {
+            cleared_pending += p.len();
+        }
+    }
+    // 未决 accepted → unknown（待查证）；已有证据保留
+    for exec in store.executions.values_mut() {
+        if exec.world_id == body.world_id && exec.status == "accepted" {
+            exec.status = "unknown".into();
+            exec.subactions = vec![json!({ "name": "maintenance", "status": "unknown" })];
+        }
+    }
     Ok(Json(json!({
         "protocol_version": PROTOCOL_VERSION,
         "request_id": body.request_id,
         "ok": true,
         "kind": "factory_restart",
-        "factory_instance": *gen,
+        "factory_instance": new_gen,
+        "cleared_pending": cleared_pending,
     })))
 }
 
@@ -1858,27 +1990,36 @@ async fn flush_pending(
     let _ = require_test_controls(&state, body.request_id.as_deref())?;
     let mut store = state.inner.lock().map_err(|_| lock_err())?;
     ensure_world(&mut store, &body.world_id)?;
+    let current_factory = *store.factory_instance.get(&body.world_id).unwrap_or(&1);
     let case_id = body
         .case_id
         .or_else(|| case_id_for_world(&store, &body.world_id))
         .unwrap_or_default();
     let pending = store.pending_writes.remove(&case_id).unwrap_or_default();
     let mut cancelled_ids = Vec::new();
+    let mut rejected_stale = Vec::new();
     for p in &pending {
         if let Some(exec) = store.executions.get_mut(&p.execution_id) {
+            if exec.factory_instance != current_factory {
+                // 旧工厂实例待发：不误投新实例
+                exec.dispatched = false;
+                rejected_stale.push(p.execution_id.clone());
+                continue;
+            }
             exec.dispatched = false;
             exec.status = "cancelled".into();
             exec.subactions = vec![json!({ "name": "maintenance", "status": "cancelled" })];
             cancelled_ids.push(p.execution_id.clone());
         }
     }
-    // 迟到回执：已发执行只更新证据，不改案例终态
+    // 迟到回执：已发执行只更新证据，不改案例终态（仅同工厂实例）
     let late_updated = store
         .executions
         .values_mut()
         .filter(|e| {
             e.world_id == body.world_id
                 && e.dispatched
+                && e.factory_instance == current_factory
                 && e.case_id.as_deref() == Some(case_id.as_str())
         })
         .map(|e| {
@@ -1897,6 +2038,7 @@ async fn flush_pending(
         "request_id": body.request_id,
         "ok": true,
         "cancelled_pending": cancelled_ids,
+        "rejected_stale_pending": rejected_stale,
         "late_receipts_recorded": late_updated,
         "case_terminal": terminal,
         "dispatched_count": 0,

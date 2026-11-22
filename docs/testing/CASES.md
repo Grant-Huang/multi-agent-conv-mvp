@@ -889,3 +889,6 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WADES-12 | world-adapter | 已 Execute；测试控件丢回执 / 部分失败 | Confirm | 先 `unknown` 或按原关联键回原工单；部分失败 → `failed` 且含部分成功子动作证据 |
 | RT-WADES-13 | world-adapter | 旧运行绑定的工厂实例已变更 | 对旧运行再 Propose/Execute | 失败可见（非静默成功）；新实例不接收旧运行误投 |
 | RT-WADES-14 | world-adapter | 远程动态场景；干预前后可 Observe | 干预（如批准维修）后 Observe；审核员与运营员分别读 | 已发生前缀事件集合不变、未来事件集合改变；审核答案与干预一致；运营员/普通会话 Confirm/Observe 无标准答案字段 |
+| RT-WADES-15 | world-adapter | 已 Execute 且有 `correlation_key`；测试控件丢回执 | 仅用 `correlation_key`（无 execution_id）Confirm；恢复回执后再 Confirm | 找回同一 `execution_id`；先 `unknown` 再 `applied`/`confirmed` |
+| RT-WADES-16 | world-adapter | 已 Execute；部分失败 | `complete-partial` 补齐剩余子动作回执后再 Confirm | 补齐后状态可推进；子动作证据无残留 `failed`/`unknown` |
+| RT-WADES-17 | world-adapter | 已 Confirm 的执行；工厂实例已变更 | Confirm 查历史；旧提案再 Execute；flush 待发 | 历史可查（`factory_instance_stale=true`）；再写失败可见；`dispatched_count=0` |
