@@ -961,7 +961,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`
-- [ ] **D** 按 MOCK_REGISTRY 替换语音/跨端 Mock（全量 Feature Map 回归）
+- [x] **D 语音/跨端服务权威**（2026-11-21）：fixture 媒体 + store/API；RT-ADVOICE-01～04、RT-ADHAND-01～03；E2E-ADVOICE/ADHAND 真实 HTTP；证据 `testing/evidence/ai-desktop-d.md`（真机 mic/双设备另卡）
 
 ### World Adapter 交付硬约束（DES-32，用户确认）
 

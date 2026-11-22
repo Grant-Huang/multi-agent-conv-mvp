@@ -570,6 +570,88 @@ export const api = {
     request<{ dismissed: boolean }>(`/api/desktop/v1/attention/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }),
+
+  /** AI Desktop D：语音会话（fixture 媒体） */
+  desktopVoiceGet: (taskId: string) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice`,
+    ),
+  desktopVoiceReset: (taskId: string) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice/reset`,
+      { method: "POST", body: "{}" },
+    ),
+  desktopVoicePermission: (taskId: string, permission: string) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice/permission`,
+      { method: "POST", body: JSON.stringify({ permission }) },
+    ),
+  desktopVoiceStart: (taskId: string) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice/start`,
+      { method: "POST", body: "{}" },
+    ),
+  desktopVoicePartial: (taskId: string, text: string) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice/partial`,
+      { method: "POST", body: JSON.stringify({ text }) },
+    ),
+  desktopVoiceFinalize: (taskId: string, text: string, linkTask = true) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice/finalize`,
+      { method: "POST", body: JSON.stringify({ text, link_task: linkTask }) },
+    ),
+  desktopVoicePlay: (taskId: string) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice/play`,
+      { method: "POST", body: "{}" },
+    ),
+  desktopVoiceBarge: (taskId: string) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice/barge`,
+      { method: "POST", body: "{}" },
+    ),
+  desktopVoiceOffline: (taskId: string) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice/offline`,
+      { method: "POST", body: "{}" },
+    ),
+  desktopVoiceAsText: (taskId: string, text: string) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice/as-text`,
+      { method: "POST", body: JSON.stringify({ text }) },
+    ),
+  desktopVoiceShare: (taskId: string, share: boolean) =>
+    request<{ session: DesktopVoiceSessionDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/voice/share`,
+      { method: "POST", body: JSON.stringify({ share }) },
+    ),
+
+  /** AI Desktop D：跨端续接 */
+  desktopHandoffGet: (taskId: string) =>
+    request<{ handoff: DesktopHandoffDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/handoff`,
+    ),
+  desktopHandoffReset: (taskId: string) =>
+    request<{ handoff: DesktopHandoffDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/handoff/reset`,
+      { method: "POST", body: "{}" },
+    ),
+  desktopHandoffDraft: (taskId: string, device: "phone" | "desktop", text: string) =>
+    request<{ handoff: DesktopHandoffDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/handoff/draft`,
+      { method: "POST", body: JSON.stringify({ device, text }) },
+    ),
+  desktopHandoffResolve: (taskId: string, chosen: "phone" | "desktop") =>
+    request<{ handoff: DesktopHandoffDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/handoff/resolve`,
+      { method: "POST", body: JSON.stringify({ chosen }) },
+    ),
+  desktopHandoffShareVoice: (taskId: string, share: boolean) =>
+    request<{ handoff: DesktopHandoffDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/handoff/share-voice`,
+      { method: "POST", body: JSON.stringify({ share }) },
+    ),
 };
 
 export type DesktopEvidenceDto = {
@@ -604,6 +686,32 @@ export type DesktopAttentionDto = {
   body: string;
   task_id: string | null;
   created_at: string;
+};
+
+export type DesktopVoiceSessionDto = {
+  id: string;
+  task_id: string;
+  permission: string;
+  phase: string;
+  playing: boolean;
+  partial: string;
+  final_text: string;
+  linked_task_id: string | null;
+  share_transcript: boolean;
+};
+
+export type DesktopHandoffDto = {
+  task_id: string;
+  conversation_id: string;
+  run_id: string;
+  read_message_id: string;
+  phone_text: string;
+  phone_version: number;
+  desktop_text: string;
+  desktop_version: number;
+  conflict: boolean;
+  chosen: string | null;
+  voice_shared: boolean;
 };
 /** 订阅某个会话的 SSE 事件流，返回取消订阅函数 */
 export function subscribeEvents(cid: string, onEvent: (e: TaskEvent) => void): () => void {
