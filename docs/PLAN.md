@@ -990,7 +990,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M2-0** 冻结远程 DES 写用例与任务卡（[mom/WA_M2_TASKS.md](mom/WA_M2_TASKS.md)；证据 `testing/evidence/wa-m2-0.md`；#194）
 - [x] **M2-1** 正式 CASES + Red 空壳（[mom/WA_M2_1_PLAN.md](mom/WA_M2_1_PLAN.md)；证据 `testing/evidence/wa-m2-1-red.md`；#196）
 - [x] **M2-2** 写路径服务层 Green（RT-WADES-09～14；证据 `testing/evidence/wa-m2-2-green.md`；#199）
-- [ ] **M2-3** 恢复与幂等加深（RT-WADES-15～17；[mom/WA_M2_3_PLAN.md](mom/WA_M2_3_PLAN.md)；证据 `testing/evidence/wa-m2-3-recovery.md`）
+- [x] **M2-3** 恢复与幂等加深（RT-WADES-15～17；[mom/WA_M2_3_PLAN.md](mom/WA_M2_3_PLAN.md)；证据 `testing/evidence/wa-m2-3-recovery.md`；#200）
+- [ ] **M2-4** DES 闭环与 RT-DES/DESC 回归（RT-WADES-18～19；[mom/WA_M2_4_PLAN.md](mom/WA_M2_4_PLAN.md)；证据 `testing/evidence/wa-m2-4-closed-loop.md`）
 - [ ] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环（WA-03/04/05/08）
 - [ ] **M3** 生产只读（写仍 Mock）
 - [ ] **M4** 首个可查证生产写动作（维修工单）

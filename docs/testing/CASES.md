@@ -899,3 +899,5 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WADES-15 | world-adapter | 已 Execute 且有 `correlation_key`；测试控件丢回执 | 仅用 `correlation_key`（无 execution_id）Confirm；恢复回执后再 Confirm | 找回同一 `execution_id`；先 `unknown` 再 `applied`/`confirmed` |
 | RT-WADES-16 | world-adapter | 已 Execute；部分失败 | `complete-partial` 补齐剩余子动作回执后再 Confirm | 补齐后状态可推进；子动作证据无残留 `failed`/`unknown` |
 | RT-WADES-17 | world-adapter | 已 Confirm 的执行；工厂实例已变更 | Confirm 查历史；旧提案再 Execute；flush 待发 | 历史可查（`factory_instance_stale=true`）；再写失败可见；`dispatched_count=0` |
+| RT-WADES-18 | world-adapter | 已 Execute 维修干预 | 审核员读 ground_truth；运营员 Confirm | `sync_status=synced`；`intervention_id`/`execution_id`/`answer` 与干预一致；Confirm 无标准答案字段 |
+| RT-WADES-19 | world-adapter | 已干预；答案同步失败（测试控件） | `fail-answer-sync` 后 `retry-answer-sync` | 先 `pending`；重试后 `synced` 且答案/intervention_id 与原干预一致 |

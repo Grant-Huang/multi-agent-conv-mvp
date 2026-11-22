@@ -142,6 +142,8 @@ struct Store {
     correlation_keys: HashMap<(String, String), String>,
     /// 审核标准答案（仅 auditor）
     ground_truth: HashMap<String, Value>,
+    /// 最近一次干预的 execution_id（答案同步补偿用）
+    last_intervention: HashMap<String, String>,
 }
 
 #[derive(Clone)]
@@ -471,6 +473,14 @@ pub fn router(state: WorldDesState) -> Router {
         .route("/api/world/des/execute", post(execute))
         .route("/api/world/des/confirm", post(confirm))
         .route("/api/world/des/ground_truth", post(ground_truth))
+        .route(
+            "/api/world/des/test/fail-answer-sync",
+            post(fail_answer_sync),
+        )
+        .route(
+            "/api/world/des/test/retry-answer-sync",
+            post(retry_answer_sync),
+        )
         .route(
             "/api/world/des/test/abort-before-publish",
             post(abort_before_publish),
@@ -1546,11 +1556,16 @@ async fn execute(State(state): State<WorldDesState>, Json(body): Json<ExecuteBod
                 event_count,
             },
         );
+        store
+            .last_intervention
+            .insert(body.world_id.clone(), execution_id.clone());
         store.ground_truth.insert(
             body.world_id.clone(),
             json!({
                 "answer": "maintenance-applied",
                 "execution_id": execution_id,
+                "intervention_id": execution_id,
+                "sync_status": "synced",
                 "note": "auditor only"
             }),
         );
@@ -1700,6 +1715,82 @@ async fn ground_truth(
         "world_id": body.world_id,
         "ground_truth": truth,
         "provenance": "des",
+    })))
+}
+
+/// 模拟审核答案刷新失败 → pending（WORLD_ADAPTER §6.3）。
+async fn fail_answer_sync(
+    State(state): State<WorldDesState>,
+    Json(body): Json<ExecCtrlBody>,
+) -> ApiResult {
+    let _ = require_test_controls(&state, body.request_id.as_deref())?;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    let intervention_id = store
+        .last_intervention
+        .get(&body.world_id)
+        .cloned()
+        .or_else(|| body.execution_id.clone());
+    let Some(iid) = intervention_id else {
+        return err(
+            StatusCode::CONFLICT,
+            "PRECONDITION_FAILED",
+            "尚无干预可同步",
+            body.request_id.as_deref(),
+        );
+    };
+    store.ground_truth.insert(
+        body.world_id.clone(),
+        json!({
+            "answer": null,
+            "execution_id": iid,
+            "intervention_id": iid,
+            "sync_status": "pending",
+            "note": "auditor only; sync failed"
+        }),
+    );
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "ok": true,
+        "kind": "fail_answer_sync",
+        "sync_status": "pending",
+    })))
+}
+
+/// 独立补偿重试：按最近干预恢复与干预一致的审核答案。
+async fn retry_answer_sync(
+    State(state): State<WorldDesState>,
+    Json(body): Json<ExecCtrlBody>,
+) -> ApiResult {
+    let _ = require_test_controls(&state, body.request_id.as_deref())?;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    let Some(iid) = store.last_intervention.get(&body.world_id).cloned() else {
+        return err(
+            StatusCode::CONFLICT,
+            "PRECONDITION_FAILED",
+            "尚无干预可同步",
+            body.request_id.as_deref(),
+        );
+    };
+    store.ground_truth.insert(
+        body.world_id.clone(),
+        json!({
+            "answer": "maintenance-applied",
+            "execution_id": iid,
+            "intervention_id": iid,
+            "sync_status": "synced",
+            "note": "auditor only; retried"
+        }),
+    );
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "ok": true,
+        "kind": "retry_answer_sync",
+        "sync_status": "synced",
+        "intervention_id": iid,
     })))
 }
 
