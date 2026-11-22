@@ -901,3 +901,20 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WADES-17 | world-adapter | 已 Confirm 的执行；工厂实例已变更 | Confirm 查历史；旧提案再 Execute；flush 待发 | 历史可查（`factory_instance_stale=true`）；再写失败可见；`dispatched_count=0` |
 | RT-WADES-18 | world-adapter | 已 Execute 维修干预 | 审核员读 ground_truth；运营员 Confirm | `sync_status=synced`；`intervention_id`/`execution_id`/`answer` 与干预一致；Confirm 无标准答案字段 |
 | RT-WADES-19 | world-adapter | 已干预；答案同步失败（测试控件） | `fail-answer-sync` 后 `retry-answer-sync` | 先 `pending`；重试后 `synced` 且答案/intervention_id 与原干预一致 |
+
+### M3 生产只读（用例草案，实现前定义）
+
+执行卡：[WA_M3_TASKS.md](../mom/WA_M3_TASKS.md)。设计：[WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md) §7、§9（WA-02/07 生产源；WA-06 写属 M4）；里程碑：[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) M3；替换台账 WAM-07。以下为**草案**：待用户确认断言后，M3-1 写成表格行并挂 Playwright / Rust 空壳（因此暂不写成表格行，避免被 `check-map` 当作缺测试的已登记用例）。
+
+- **E2E-WAPROD**：选择生产世界 → 看板/观测可见正式只读；`provenance=production`；写入口关闭或明确指向隔离 Mock/DES 世界。
+- **E2E-WAPISO**：无权限或跨站点读被拒绝；列表/详情不泄露其他站点事项。
+- **E2E-WAPREAD**：断线或游标过期后「重新读取」；同事件 ID 只应用一次；过期与水位单独显示。
+- **E2E-WAPDELAY**：多来源延迟场景下 `as_of`/截至时间可辨；过期空态区别于正常空态。
+- **RT-WAPROD-01**：生产世界 bind 成功；未配置权威源 → 明确错误（非 200）。
+- **RT-WAPROD-02**：Observe/Subscribe 对齐正式水位；响应含 source / as_of / `protocol_version`。
+- **RT-WAPROD-03**：跨 scope / 无授权 → 明确拒绝。
+- **RT-WAPROD-04**：过期游标 → `CURSOR_EXPIRED`；恢复后续读无漏无重复。
+- **RT-WAPROD-05**：注入延迟后水位与载荷截至时间一致。
+- **RT-WAPROD-06**：生产世界 Propose/Execute 能力关闭或拒绝；Mock/DES 写路径仍可用。
+
+说明：Feature Map 中 `E2E-WA-10`（生产确认写）属 **M4**；本里程碑只保证生产只读与写演示隔离。M0～M2 已冻结用例不得弱化。
