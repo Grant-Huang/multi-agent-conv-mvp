@@ -1,36 +1,107 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  clearRuns,
-  loadRuns,
-  replayAfterDisconnect,
-  resumeWaiting,
-  seedParallelRuns,
-  type MockRun,
-} from "./runResumeMock";
-
-const TASK_A = "TASK-2026-018";
-const TASK_B = "TASK-2026-021";
+  api,
+  subscribeDesktopEvents,
+  type DesktopEventEnvelopeDto,
+  type DesktopResumeRunDto,
+} from "../api";
 
 type Props = {
   onOpenTask?: (taskId: string) => void;
 };
 
-export function ResumeMockPanel({ onOpenTask }: Props) {
-  const [runs, setRuns] = useState<MockRun[]>(() => loadRuns());
+type RunView = {
+  taskId: string;
+  status: string;
+  progress: string;
+  version: number;
+  seenEventIds: string[];
+};
 
-  const refresh = () => setRuns(loadRuns());
+function mapStatus(raw: string | null | undefined, fallback: string): string {
+  if (!raw) return fallback;
+  const s = raw.toUpperCase();
+  if (s === "RUNNING") return "running";
+  if (s === "NEEDS_HUMAN") return "waiting_input";
+  if (s === "QUEUED") return "queued";
+  if (s === "COMPLETED") return "completed";
+  if (s === "FAILED") return "failed";
+  if (s === "CANCELLED") return "cancelled";
+  return raw;
+}
+
+function fromSeed(runs: DesktopResumeRunDto[]): RunView[] {
+  return runs.map((r) => ({
+    taskId: r.task_id,
+    status: r.status,
+    progress: r.progress,
+    version: r.version,
+    seenEventIds: [],
+  }));
+}
+
+export function ResumeMockPanel({ onOpenTask }: Props) {
+  const [runs, setRuns] = useState<RunView[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
+  const unsubRef = useRef<(() => void) | null>(null);
+
+  const stopSse = () => {
+    unsubRef.current?.();
+    unsubRef.current = null;
+  };
+
+  useEffect(() => () => stopSse(), []);
+
+  const applyEnvelope = (ev: DesktopEventEnvelopeDto) => {
+    const taskId = ev.task_id;
+    if (!taskId) return;
+    setRuns((prev) => {
+      const idx = prev.findIndex((r) => r.taskId === taskId);
+      if (idx < 0) return prev;
+      const run = prev[idx];
+      if (run.seenEventIds.includes(ev.event_id)) return prev;
+      const next: RunView = {
+        ...run,
+        seenEventIds: [...run.seenEventIds, ev.event_id],
+        status: mapStatus(ev.status, run.status),
+        progress: ev.message || run.progress,
+        version: run.version + 1,
+      };
+      const copy = [...prev];
+      copy[idx] = next;
+      return copy;
+    });
+  };
+
+  const connectSse = (conversationId: string, after: string) => {
+    stopSse();
+    conversationIdRef.current = conversationId;
+    unsubRef.current = subscribeDesktopEvents(conversationId, after, applyEnvelope);
+  };
 
   return (
     <div className="resume-mock" data-testid="resume-mock-panel">
-      <h3>异步 Run 恢复（模拟）</h3>
+      <h3>异步 Run 恢复（B2 SSE）</h3>
+      {error && (
+        <p className="evidence-error" role="alert">
+          {error}
+        </p>
+      )}
       <div className="settings-actions">
         <button
           type="button"
           className="btn primary small"
           data-testid="resume-seed"
           onClick={() => {
-            clearRuns();
-            setRuns(seedParallelRuns(TASK_A, TASK_B));
+            void api
+              .desktopResumeSeed()
+              .then((r) => {
+                setError(null);
+                setRuns(fromSeed(r.runs));
+                connectSse(r.conversation_id, r.after_cursor);
+              })
+              .catch((e: Error) => setError(e.message));
           }}
         >
           种子双任务
@@ -40,14 +111,15 @@ export function ResumeMockPanel({ onOpenTask }: Props) {
           className="btn small"
           data-testid="resume-replay-a"
           onClick={() => {
-            const run = runs.find((r) => r.taskId === TASK_A);
-            if (!run) return;
-            replayAfterDisconnect(run.id, [
-              { id: "ev-a-1", status: "running", progress: "采集 40%" },
-              { id: "ev-a-1", status: "running", progress: "采集 40%（重复）" },
-              { id: "ev-a-2", status: "running", progress: "采集 80%" },
-            ]);
-            refresh();
+            const cid = conversationIdRef.current;
+            if (!cid) {
+              setError("请先种子双任务");
+              return;
+            }
+            void api
+              .desktopResumeReplayA(cid)
+              .then(() => setError(null))
+              .catch((e: Error) => setError(e.message));
           }}
         >
           断线重放 A（含重复）
@@ -57,10 +129,15 @@ export function ResumeMockPanel({ onOpenTask }: Props) {
           className="btn small"
           data-testid="resume-continue-b"
           onClick={() => {
-            const run = runs.find((r) => r.taskId === TASK_B);
-            if (!run) return;
-            resumeWaiting(run.id, "限定 Line-B 批次");
-            refresh();
+            const cid = conversationIdRef.current;
+            if (!cid) {
+              setError("请先种子双任务");
+              return;
+            }
+            void api
+              .desktopResumeContinueB(cid)
+              .then(() => setError(null))
+              .catch((e: Error) => setError(e.message));
           }}
         >
           补充 B 并继续
@@ -68,7 +145,7 @@ export function ResumeMockPanel({ onOpenTask }: Props) {
       </div>
       <ul className="resume-list" data-testid="resume-run-list">
         {runs.map((r) => (
-          <li key={r.id} data-testid={`resume-run-${r.taskId}`} data-run-status={r.status}>
+          <li key={r.taskId} data-testid={`resume-run-${r.taskId}`} data-run-status={r.status}>
             <strong>{r.taskId}</strong>
             <span data-testid={`resume-status-${r.taskId}`}>{r.status}</span>
             <span className="muted" data-testid={`resume-progress-${r.taskId}`}>

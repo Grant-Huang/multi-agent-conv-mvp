@@ -5,6 +5,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
+use an_core::EventPublisher;
 use an_runtime::store::{
     DesktopAcceptOutcome, DesktopApprovalDecideOutcome, DesktopApprovalExecuteOutcome,
     DesktopEventCursor, DesktopEventsAfter, DesktopEvidenceAccess, DesktopLinkOutcome,
@@ -168,6 +169,19 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/desktop/v1/tasks/{id}/handoff/share-voice",
             post(handoff_share_voice),
+        )
+        // T-64 harness fixture：往 bus 灌事件供 B2 SSE 消费（无新表）
+        .route(
+            "/api/desktop/v1/resume/fixture/seed",
+            post(resume_fixture_seed),
+        )
+        .route(
+            "/api/desktop/v1/resume/fixture/replay-a",
+            post(resume_fixture_replay_a),
+        )
+        .route(
+            "/api/desktop/v1/resume/fixture/continue-b",
+            post(resume_fixture_continue_b),
         )
 }
 
@@ -1303,6 +1317,202 @@ async fn handoff_share_voice(
         rt.store
             .set_desktop_handoff_voice_shared(&task_id, body.share),
     )
+}
+
+const RESUME_TASK_A: &str = "TASK-2026-018";
+const RESUME_TASK_B: &str = "TASK-2026-021";
+
+#[derive(Debug, Deserialize)]
+struct ResumeFixtureBody {
+    #[serde(default)]
+    conversation_id: Option<String>,
+}
+
+fn publish_resume_event(
+    rt: &Runtime,
+    conversation_id: &str,
+    task_id: &str,
+    id: &str,
+    kind: an_core::EventKind,
+    status: Option<an_core::TaskStatus>,
+    message: &str,
+) {
+    rt.bus.publish(an_core::TaskEvent {
+        id: id.into(),
+        conversation_id: conversation_id.into(),
+        task_id: Some(task_id.into()),
+        kind,
+        status,
+        message: message.into(),
+        stream_id: None,
+        created_at: an_core::now(),
+    });
+}
+
+/// fixture：种子双任务（A running / B waiting→NeedsHuman），返回 conversation_id。
+async fn resume_fixture_seed(State(rt): State<AppState>) -> Response {
+    let conv = match rt.store.create_conversation("SMT-03 Resume fixture") {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+            )
+                .into_response();
+        }
+    };
+    let cid = conv.id;
+    publish_resume_event(
+        &rt,
+        &cid,
+        RESUME_TASK_A,
+        "seed-a-status",
+        an_core::EventKind::StatusChanged,
+        Some(an_core::TaskStatus::Running),
+        "采集中",
+    );
+    publish_resume_event(
+        &rt,
+        &cid,
+        RESUME_TASK_B,
+        "seed-b-status",
+        an_core::EventKind::StatusChanged,
+        Some(an_core::TaskStatus::NeedsHuman),
+        "等待补充范围",
+    );
+    rt.store.flush_events();
+    (
+        StatusCode::OK,
+        Json(json!({
+            "conversation_id": cid,
+            "after_cursor": "seed-b-status",
+            "task_a": RESUME_TASK_A,
+            "task_b": RESUME_TASK_B,
+            "runs": [
+                {
+                    "task_id": RESUME_TASK_A,
+                    "status": "running",
+                    "progress": "采集中",
+                    "version": 1
+                },
+                {
+                    "task_id": RESUME_TASK_B,
+                    "status": "waiting_input",
+                    "progress": "等待补充范围",
+                    "version": 1
+                }
+            ]
+        })),
+    )
+        .into_response()
+}
+
+/// fixture：断线重放 A（含重复 event_id）；依赖已有 conversation_id。
+async fn resume_fixture_replay_a(
+    State(rt): State<AppState>,
+    Json(body): Json<ResumeFixtureBody>,
+) -> Response {
+    let Some(cid) = body
+        .conversation_id
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "bad_request",
+                "message": "conversation_id 必填",
+                "retryable": false
+            })),
+        )
+            .into_response();
+    };
+    if rt.store.get_conversation(&cid).ok().flatten().is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "code": "not_found",
+                "message": "会话不存在",
+                "retryable": false
+            })),
+        )
+            .into_response();
+    }
+    // 两个唯一 event_id；重复去重由 SSE/客户端保证（events.id 主键不可二次插入）
+    publish_resume_event(
+        &rt,
+        &cid,
+        RESUME_TASK_A,
+        "ev-a-1",
+        an_core::EventKind::Progress,
+        Some(an_core::TaskStatus::Running),
+        "采集 40%",
+    );
+    publish_resume_event(
+        &rt,
+        &cid,
+        RESUME_TASK_A,
+        "ev-a-2",
+        an_core::EventKind::Progress,
+        Some(an_core::TaskStatus::Running),
+        "采集 80%",
+    );
+    rt.store.flush_events();
+    (
+        StatusCode::OK,
+        Json(json!({ "ok": true, "conversation_id": cid })),
+    )
+        .into_response()
+}
+
+/// fixture：B 补充输入后继续 running。
+async fn resume_fixture_continue_b(
+    State(rt): State<AppState>,
+    Json(body): Json<ResumeFixtureBody>,
+) -> Response {
+    let Some(cid) = body
+        .conversation_id
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "bad_request",
+                "message": "conversation_id 必填",
+                "retryable": false
+            })),
+        )
+            .into_response();
+    };
+    if rt.store.get_conversation(&cid).ok().flatten().is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "code": "not_found",
+                "message": "会话不存在",
+                "retryable": false
+            })),
+        )
+            .into_response();
+    }
+    publish_resume_event(
+        &rt,
+        &cid,
+        RESUME_TASK_B,
+        "ev-b-continue",
+        an_core::EventKind::StatusChanged,
+        Some(an_core::TaskStatus::Running),
+        "已补充：限定 Line-B 批次",
+    );
+    rt.store.flush_events();
+    (
+        StatusCode::OK,
+        Json(json!({ "ok": true, "conversation_id": cid })),
+    )
+        .into_response()
 }
 
 fn envelope_from_cursor(item: &DesktopEventCursor) -> DesktopEventEnvelope {
