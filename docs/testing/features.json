@@ -742,6 +742,7 @@
       "crates/server/tests/desktop_replay.rs",
       "crates/server/tests/desktop_b3.rs",
       "crates/server/tests/desktop_acl.rs",
+      "crates/server/tests/desktop_c2.rs",
       "crates/runtime/src/store.rs",
       "crates/runtime/src/conversation.rs",
       "docs/ai-desktop/DESIGN.md",
@@ -756,7 +757,9 @@
       "docs/testing/evidence/ai-desktop-b2.md",
       "docs/testing/evidence/ai-desktop-b3.md",
       "docs/testing/evidence/ai-desktop-c1.md",
-      "docs/ai-desktop/MOCK_REGISTRY.md"
+      "docs/testing/evidence/ai-desktop-c2.md",
+      "docs/ai-desktop/MOCK_REGISTRY.md",
+      "docs/decisions/2026-11-21-ai-desktop-c2-gateway-attn.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -799,7 +802,14 @@
       "RT-ADACL-02",
       "RT-ADACL-03",
       "RT-ADACL-04",
-      "RT-ADACL-05"
+      "RT-ADACL-05",
+      "RT-ADAPPR-01",
+      "RT-ADAPPR-02",
+      "RT-ADAPPR-03",
+      "RT-ADAPPR-04",
+      "RT-ADAPPR-05",
+      "RT-ADATTN-01",
+      "RT-ADATTN-02"
     ]
   },
   {

@@ -177,6 +177,47 @@ pub enum DesktopEvidenceAccess {
     NotFound,
 }
 
+/// AI Desktop C2：任务动作审批（副作用计数在 store，不写厂）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopApproval {
+    pub id: String,
+    pub task_id: String,
+    pub plan_revision: i64,
+    pub params: String,
+    /// pending | approved | rejected | expired
+    pub status: String,
+    pub decided_by: Option<String>,
+    pub execute_count: i64,
+    /// none | applied | unknown | failed
+    pub last_receipt: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum DesktopApprovalDecideOutcome {
+    Ok(DesktopApproval),
+    RevisionConflict(DesktopApproval),
+    NotFound,
+}
+
+#[derive(Debug, Clone)]
+pub enum DesktopApprovalExecuteOutcome {
+    Ok(DesktopApproval),
+    RevisionConflict(DesktopApproval),
+    Forbidden(DesktopApproval),
+    NotFound,
+}
+
+/// AI Desktop C2：Attention 条目
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopAttentionItem {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub task_id: Option<String>,
+    pub created_at: String,
+}
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
@@ -353,6 +394,31 @@ CREATE TABLE IF NOT EXISTS desktop_evidence_grants (
     principal_id TEXT NOT NULL,
     revoked_at TEXT,
     PRIMARY KEY (evidence_id, principal_id)
+);
+-- AI Desktop C2：动作审批（每任务一行当前方案）
+CREATE TABLE IF NOT EXISTS desktop_approvals (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL UNIQUE,
+    plan_revision INTEGER NOT NULL,
+    params TEXT NOT NULL,
+    status TEXT NOT NULL,
+    decided_by TEXT,
+    execute_count INTEGER NOT NULL DEFAULT 0,
+    last_receipt TEXT NOT NULL DEFAULT 'none',
+    updated_at TEXT NOT NULL
+);
+-- AI Desktop C2：Attention 队列与静音偏好
+CREATE TABLE IF NOT EXISTS desktop_attention_items (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    task_id TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS desktop_attention_prefs (
+    user_id TEXT PRIMARY KEY,
+    mute_ordinary INTEGER NOT NULL DEFAULT 0
 );
 "#;
 
@@ -1469,6 +1535,310 @@ impl Store {
              ON CONFLICT(evidence_id, principal_id) DO UPDATE SET revoked_at = NULL",
             params![evidence.id, principal],
         )?;
+        Ok(())
+    }
+
+    fn map_desktop_approval(r: &rusqlite::Row<'_>) -> rusqlite::Result<DesktopApproval> {
+        Ok(DesktopApproval {
+            id: r.get(0)?,
+            task_id: r.get(1)?,
+            plan_revision: r.get(2)?,
+            params: r.get(3)?,
+            status: r.get(4)?,
+            decided_by: r.get(5)?,
+            execute_count: r.get(6)?,
+            last_receipt: r.get(7)?,
+        })
+    }
+
+    fn load_desktop_approval_by_task(
+        conn: &Connection,
+        task_id: &str,
+    ) -> Result<Option<DesktopApproval>> {
+        conn.query_row(
+            "SELECT id, task_id, plan_revision, params, status, decided_by, execute_count, last_receipt
+             FROM desktop_approvals WHERE task_id = ?1",
+            params![task_id],
+            Self::map_desktop_approval,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    fn load_desktop_approval_by_id(conn: &Connection, id: &str) -> Result<Option<DesktopApproval>> {
+        conn.query_row(
+            "SELECT id, task_id, plan_revision, params, status, decided_by, execute_count, last_receipt
+             FROM desktop_approvals WHERE id = ?1",
+            params![id],
+            Self::map_desktop_approval,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    fn save_desktop_approval(conn: &Connection, a: &DesktopApproval) -> Result<()> {
+        conn.execute(
+            "INSERT INTO desktop_approvals
+             (id, task_id, plan_revision, params, status, decided_by, execute_count, last_receipt, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+             ON CONFLICT(task_id) DO UPDATE SET
+               id=excluded.id, plan_revision=excluded.plan_revision, params=excluded.params,
+               status=excluded.status, decided_by=excluded.decided_by,
+               execute_count=excluded.execute_count, last_receipt=excluded.last_receipt,
+               updated_at=excluded.updated_at",
+            params![
+                a.id,
+                a.task_id,
+                a.plan_revision,
+                a.params,
+                a.status,
+                a.decided_by,
+                a.execute_count,
+                a.last_receipt,
+                now()
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// 读取或创建任务默认审批夹具
+    pub fn get_or_create_desktop_approval(&self, task_id: &str) -> Result<DesktopApproval> {
+        let conn = self.write();
+        if let Some(a) = Self::load_desktop_approval_by_task(&conn, task_id)? {
+            return Ok(a);
+        }
+        let a = DesktopApproval {
+            id: format!("appr-{task_id}"),
+            task_id: task_id.into(),
+            plan_revision: 1,
+            params: "停机检修 · 备用机切换".into(),
+            status: "pending".into(),
+            decided_by: None,
+            execute_count: 0,
+            last_receipt: "none".into(),
+        };
+        Self::save_desktop_approval(&conn, &a)?;
+        Ok(a)
+    }
+
+    /// 重置为初始 pending（夹具）
+    pub fn reset_desktop_approval(&self, task_id: &str) -> Result<DesktopApproval> {
+        let a = DesktopApproval {
+            id: format!("appr-{task_id}"),
+            task_id: task_id.into(),
+            plan_revision: 1,
+            params: "停机检修 · 备用机切换".into(),
+            status: "pending".into(),
+            decided_by: None,
+            execute_count: 0,
+            last_receipt: "none".into(),
+        };
+        let conn = self.write();
+        Self::save_desktop_approval(&conn, &a)?;
+        Ok(a)
+    }
+
+    pub fn decide_desktop_approval(
+        &self,
+        id: &str,
+        decision: &str,
+        expected_revision: i64,
+        decided_by: &str,
+    ) -> Result<DesktopApprovalDecideOutcome> {
+        let conn = self.write();
+        let Some(mut a) = Self::load_desktop_approval_by_id(&conn, id)? else {
+            return Ok(DesktopApprovalDecideOutcome::NotFound);
+        };
+        if a.plan_revision != expected_revision {
+            return Ok(DesktopApprovalDecideOutcome::RevisionConflict(a));
+        }
+        match decision {
+            "approve" => {
+                a.status = "approved".into();
+                a.decided_by = Some(decided_by.into());
+            }
+            "reject" => {
+                a.status = "rejected".into();
+                a.decided_by = Some(decided_by.into());
+            }
+            _ => return Ok(DesktopApprovalDecideOutcome::NotFound),
+        }
+        Self::save_desktop_approval(&conn, &a)?;
+        Ok(DesktopApprovalDecideOutcome::Ok(a))
+    }
+
+    pub fn bump_desktop_approval(&self, id: &str, params: &str) -> Result<Option<DesktopApproval>> {
+        let conn = self.write();
+        let Some(mut a) = Self::load_desktop_approval_by_id(&conn, id)? else {
+            return Ok(None);
+        };
+        a.params = params.into();
+        a.plan_revision += 1;
+        a.status = "pending".into();
+        a.decided_by = None;
+        a.last_receipt = "none".into();
+        // 升版不重置 execute_count（历史副作用保留）；本夹具单方案行仍保留计数供审计
+        Self::save_desktop_approval(&conn, &a)?;
+        Ok(Some(a))
+    }
+
+    pub fn expire_desktop_approval(&self, id: &str) -> Result<Option<DesktopApproval>> {
+        let conn = self.write();
+        let Some(mut a) = Self::load_desktop_approval_by_id(&conn, id)? else {
+            return Ok(None);
+        };
+        a.status = "expired".into();
+        Self::save_desktop_approval(&conn, &a)?;
+        Ok(Some(a))
+    }
+
+    pub fn execute_desktop_approval(
+        &self,
+        id: &str,
+        expected_revision: i64,
+        force_unknown: bool,
+    ) -> Result<DesktopApprovalExecuteOutcome> {
+        let conn = self.write();
+        let Some(mut a) = Self::load_desktop_approval_by_id(&conn, id)? else {
+            return Ok(DesktopApprovalExecuteOutcome::NotFound);
+        };
+        if a.plan_revision != expected_revision {
+            return Ok(DesktopApprovalExecuteOutcome::RevisionConflict(a));
+        }
+        if a.status == "rejected" || a.status == "expired" {
+            return Ok(DesktopApprovalExecuteOutcome::Forbidden(a));
+        }
+        if a.status != "approved" {
+            return Ok(DesktopApprovalExecuteOutcome::Forbidden(a));
+        }
+        if force_unknown {
+            a.last_receipt = "unknown".into();
+            Self::save_desktop_approval(&conn, &a)?;
+            return Ok(DesktopApprovalExecuteOutcome::Ok(a));
+        }
+        if a.execute_count > 0 && a.last_receipt == "applied" {
+            return Ok(DesktopApprovalExecuteOutcome::Ok(a));
+        }
+        a.execute_count += 1;
+        a.last_receipt = "applied".into();
+        Self::save_desktop_approval(&conn, &a)?;
+        Ok(DesktopApprovalExecuteOutcome::Ok(a))
+    }
+
+    pub fn ack_desktop_approval_unknown(&self, id: &str) -> Result<Option<DesktopApproval>> {
+        let conn = self.write();
+        let Some(mut a) = Self::load_desktop_approval_by_id(&conn, id)? else {
+            return Ok(None);
+        };
+        if a.last_receipt != "unknown" {
+            return Ok(Some(a));
+        }
+        a.last_receipt = "applied".into();
+        if a.execute_count < 1 {
+            a.execute_count = 1;
+        }
+        Self::save_desktop_approval(&conn, &a)?;
+        Ok(Some(a))
+    }
+
+    pub fn get_desktop_attention_mute(&self, user_id: &str) -> Result<bool> {
+        let conn = self.read();
+        let v: Option<i64> = conn
+            .query_row(
+                "SELECT mute_ordinary FROM desktop_attention_prefs WHERE user_id = ?1",
+                params![user_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(v.unwrap_or(0) != 0)
+    }
+
+    pub fn set_desktop_attention_mute(&self, user_id: &str, mute: bool) -> Result<()> {
+        let conn = self.write();
+        conn.execute(
+            "INSERT INTO desktop_attention_prefs (user_id, mute_ordinary) VALUES (?1, ?2)
+             ON CONFLICT(user_id) DO UPDATE SET mute_ordinary = excluded.mute_ordinary",
+            params![user_id, if mute { 1 } else { 0 }],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_desktop_attention(&self) -> Result<Vec<DesktopAttentionItem>> {
+        let conn = self.read();
+        let mut st = conn.prepare(
+            "SELECT id, kind, title, body, task_id, created_at FROM desktop_attention_items
+             ORDER BY created_at DESC, id DESC LIMIT 40",
+        )?;
+        let rows = st.query_map([], |r| {
+            Ok(DesktopAttentionItem {
+                id: r.get(0)?,
+                kind: r.get(1)?,
+                title: r.get(2)?,
+                body: r.get(3)?,
+                task_id: r.get(4)?,
+                created_at: r.get(5)?,
+            })
+        })?;
+        let mut out: Vec<_> = rows.collect::<rusqlite::Result<_>>()?;
+        out.reverse();
+        Ok(out)
+    }
+
+    /// 投递 Attention；返回是否实际入队
+    pub fn enqueue_desktop_attention(
+        &self,
+        user_id: &str,
+        kind: &str,
+        title: &str,
+        body: &str,
+        task_id: Option<&str>,
+    ) -> Result<(bool, Option<DesktopAttentionItem>)> {
+        let mute = self.get_desktop_attention_mute(user_id)?;
+        if mute && kind != "urgent" {
+            return Ok((false, None));
+        }
+        let item = DesktopAttentionItem {
+            id: an_core::new_id("attn"),
+            kind: kind.into(),
+            title: title.into(),
+            body: body.into(),
+            task_id: task_id.map(str::to_string),
+            created_at: now(),
+        };
+        let conn = self.write();
+        if kind == "ordinary" {
+            conn.execute(
+                "DELETE FROM desktop_attention_items WHERE kind = 'ordinary' AND title = ?1",
+                params![title],
+            )?;
+        }
+        conn.execute(
+            "INSERT INTO desktop_attention_items (id, kind, title, body, task_id, created_at)
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![
+                item.id,
+                item.kind,
+                item.title,
+                item.body,
+                item.task_id,
+                item.created_at
+            ],
+        )?;
+        Ok((true, Some(item)))
+    }
+
+    pub fn dismiss_desktop_attention(&self, id: &str) -> Result<()> {
+        let conn = self.write();
+        conn.execute(
+            "DELETE FROM desktop_attention_items WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_desktop_attention(&self) -> Result<()> {
+        let conn = self.write();
+        conn.execute("DELETE FROM desktop_attention_items", [])?;
         Ok(())
     }
 

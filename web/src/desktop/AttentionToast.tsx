@@ -1,11 +1,13 @@
-import {
-  dismissAttention,
-  enqueueAttention,
-  loadAttentionQueue,
-  loadMuteOrdinary,
-  saveMuteOrdinary,
-  type AttentionItem,
-} from "./attentionStore";
+import { api, type DesktopAttentionDto } from "../api";
+
+export type AttentionItem = {
+  id: string;
+  kind: "ordinary" | "digest" | "urgent" | string;
+  title: string;
+  body: string;
+  taskId?: string;
+  at?: number;
+};
 
 type Props = {
   items: AttentionItem[];
@@ -14,18 +16,34 @@ type Props = {
   onChange: (next: { items: AttentionItem[]; muted: boolean }) => void;
 };
 
-/** 主动消息浮层：不抢焦点；静音后 ordinary/digest 不再投递。 */
-export function AttentionToast({ items, muted, composing, onChange }: Props) {
-  const refresh = () => onChange({ items: loadAttentionQueue(), muted: loadMuteOrdinary() });
+function mapItem(d: DesktopAttentionDto): AttentionItem {
+  return {
+    id: d.id,
+    kind: d.kind,
+    title: d.title,
+    body: d.body,
+    taskId: d.task_id ?? undefined,
+  };
+}
 
-  const inject = (kind: AttentionItem["kind"]) => {
-    enqueueAttention({
-      kind,
-      title: kind === "urgent" ? "紧急：产线联锁" : kind === "digest" ? "摘要：多条关注更新" : "建议：复核 SMT-03 证据",
-      body: kind === "urgent" ? "安全联锁触发，请立即处理" : "可在稍后打开；不打断当前输入",
-      taskId: "TASK-2026-018",
+/** 主动消息浮层：真实 Attention API；不抢焦点；静音后 ordinary/digest 不再投递。 */
+export function AttentionToast({ items, muted, composing, onChange }: Props) {
+  const refresh = async () => {
+    const r = await api.desktopAttentionList();
+    onChange({
+      items: r.items.map(mapItem),
+      muted: r.mute_ordinary,
     });
-    refresh();
+  };
+
+  const inject = async (kind: "ordinary" | "urgent") => {
+    await api.desktopAttentionPost({
+      kind,
+      title: kind === "urgent" ? "紧急：产线联锁" : "建议：复核 SMT-03 证据",
+      body: kind === "urgent" ? "安全联锁触发，请立即处理" : "可在稍后打开；不打断当前输入",
+      task_id: "TASK-2026-018",
+    });
+    await refresh();
   };
 
   return (
@@ -36,7 +54,7 @@ export function AttentionToast({ items, muted, composing, onChange }: Props) {
           className="btn small"
           data-testid="attn-inject-ordinary"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => inject("ordinary")}
+          onClick={() => void inject("ordinary")}
         >
           注入普通建议
         </button>
@@ -45,7 +63,7 @@ export function AttentionToast({ items, muted, composing, onChange }: Props) {
           className="btn small"
           data-testid="attn-inject-urgent"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => inject("urgent")}
+          onClick={() => void inject("urgent")}
         >
           注入紧急
         </button>
@@ -56,8 +74,7 @@ export function AttentionToast({ items, muted, composing, onChange }: Props) {
           aria-pressed={muted}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
-            saveMuteOrdinary(!muted);
-            refresh();
+            void api.desktopAttentionMute(!muted).then(() => refresh());
           }}
         >
           {muted ? "取消静音普通建议" : "静音普通建议"}
@@ -65,10 +82,22 @@ export function AttentionToast({ items, muted, composing, onChange }: Props) {
       </div>
       <ul className="attn-list" data-testid="attn-list" aria-live="polite">
         {items.map((it) => (
-          <li key={it.id} className={`attn-item attn-${it.kind}`} data-testid={`attn-item-${it.kind}`} data-attn-id={it.id}>
+          <li
+            key={it.id}
+            className={`attn-item attn-${it.kind}`}
+            data-testid={`attn-item-${it.kind}`}
+            data-attn-id={it.id}
+          >
             <strong>{it.title}</strong>
             <span className="muted">{it.body}</span>
-            <button type="button" className="btn small" data-testid="attn-dismiss" onClick={() => { dismissAttention(it.id); refresh(); }}>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="attn-dismiss"
+              onClick={() => {
+                void api.desktopAttentionDismiss(it.id).then(() => refresh());
+              }}
+            >
               忽略
             </button>
           </li>
