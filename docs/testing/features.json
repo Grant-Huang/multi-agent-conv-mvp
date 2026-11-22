@@ -848,8 +848,14 @@
       "docs/testing/evidence/wa-des-connector.md",
       "scripts/wa-m1-suite.sh",
       "web/e2e/wa-des-remote.spec.ts",
+      "web/e2e/wa-des-write.spec.ts",
       "crates/server/src/mom_world_des.rs",
-      "crates/server/tests/mom_world_des.rs"
+      "crates/server/tests/mom_world_des.rs",
+      "docs/mom/WA_M2_TASKS.md",
+      "docs/mom/WA_M2_1_PLAN.md",
+      "docs/testing/evidence/wa-m2-0.md",
+      "docs/testing/evidence/wa-m2-1-red.md",
+      "docs/decisions/2026-11-21-wa-m2-1-green-service-layer.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -863,7 +869,11 @@
       "E2E-WACHANNEL",
       "E2E-WADES",
       "E2E-WAREAD",
-      "E2E-WAOBS"
+      "E2E-WAOBS",
+      "E2E-WAEXEC",
+      "E2E-WARECV",
+      "E2E-WADYN",
+      "E2E-WALOOP"
     ],
     "runtime_cases": [
       "RT-WA-01",
