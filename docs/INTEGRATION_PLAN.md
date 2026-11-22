@@ -185,7 +185,8 @@ sequenceDiagram
 | WP0-5 | 修正 `docs/DESIGN.md` §15 过时描述 | §15 全文 | 描述与代码一致，评审通过 |
 
 ### WP2 审查“需人工”的出口（**高风险：orchestrator.rs/store.rs，必须先出方案并经用户批准；弱 agent 不得直接实施**）
-方案要写：状态拆分（待批准 / 待验收）、迁移写法（参考 `store.rs` 补列）、验收通过/退回返工的接口、回滚。用例：GS3。
+方案要写：状态拆分（待批准 / 待验收）、迁移写法（参考 `store.rs` 补列）、验收通过/退回返工的接口、回滚。用例：GS3。  
+**方案文档（T-65）**：[fencing/WP2_IMPLEMENTATION_PLAN.md](fencing/WP2_IMPLEMENTATION_PLAN.md)；决策 [2026-11-22-wp2-review-acceptance-plan](decisions/2026-11-22-wp2-review-acceptance-plan.md)（待确认）。实现另卡。
 
 ### WP3 现有功能整链 E2E（不碰高风险文件）
 按 `docs/feature-map/SCENARIOS.md` 的 S05/S06/S08/S10 逐个补：每个场景一个 `web/e2e/*.spec.ts` 用例，断言跨两个模块以上；依赖 WP0-2/0-3。先读 `web/e2e/features.spec.ts` 的写法，复用其辅助函数。
