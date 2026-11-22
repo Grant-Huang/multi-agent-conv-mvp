@@ -889,3 +889,5 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WADES-12 | world-adapter | 已 Execute；测试控件丢回执 / 部分失败 | Confirm | 先 `unknown` 或按原关联键回原工单；部分失败 → `failed` 且含部分成功子动作证据 |
 | RT-WADES-13 | world-adapter | 旧运行绑定的工厂实例已变更 | 对旧运行再 Propose/Execute | 失败可见（非静默成功）；新实例不接收旧运行误投 |
 | RT-WADES-14 | world-adapter | 远程动态场景；干预前后可 Observe | 干预（如批准维修）后 Observe；审核员与运营员分别读 | 已发生前缀事件集合不变、未来事件集合改变；审核答案与干预一致；运营员/普通会话 Confirm/Observe 无标准答案字段 |
+| RT-WADES-18 | world-adapter | 已 Execute 维修干预 | 审核员读 ground_truth；运营员 Confirm | `sync_status=synced`；`intervention_id`/`execution_id`/`answer` 与干预一致；Confirm 无标准答案字段 |
+| RT-WADES-19 | world-adapter | 已干预；答案同步失败（测试控件） | `fail-answer-sync` 后 `retry-answer-sync` | 先 `pending`；重试后 `synced` 且答案/intervention_id 与原干预一致 |

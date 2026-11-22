@@ -529,3 +529,153 @@ async fn rt_wades_14_intervention_changes_future_events() {
         .unwrap();
     assert!(truth.get("ground_truth").is_some());
 }
+
+/// RT-WADES-18：干预后审核答案与干预一致；运营 Confirm/Observe 无标准答案。
+#[tokio::test]
+async fn rt_wades_18_answer_matches_intervention() {
+    let (url, _task) = des_server().await;
+    let client = reqwest::Client::new();
+    let world_id = bind(&client, &url).await;
+    let prop = propose_ok(&client, &url, &world_id, "rev-1").await;
+    let exec: Value = client
+        .post(format!("{url}{DES_API}/execute"))
+        .headers(operator())
+        .json(&json!({
+            "world_id": world_id,
+            "proposal_id": prop["proposal_id"],
+            "approval_ref": "ops-ans",
+            "idempotency_key": "idem-ans",
+            "plan_revision": "rev-1"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let execution_id = exec["execution_id"].as_str().unwrap();
+
+    let confirmed: Value = client
+        .post(format!("{url}{DES_API}/confirm"))
+        .headers(operator())
+        .json(&json!({ "world_id": world_id, "execution_id": execution_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let blob = confirmed.to_string();
+    assert!(
+        !blob.contains("ground_truth") && !blob.contains("标准答案"),
+        "Confirm 不得含标准答案"
+    );
+
+    let truth: Value = client
+        .post(format!("{url}{DES_API}/ground_truth"))
+        .headers(auditor())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let gt = &truth["ground_truth"];
+    assert_eq!(gt["sync_status"], "synced");
+    assert_eq!(gt["execution_id"], execution_id);
+    assert_eq!(gt["intervention_id"], execution_id);
+    assert_eq!(gt["answer"], "maintenance-applied");
+}
+
+/// RT-WADES-19：答案同步失败后独立补偿重试，恢复与干预一致的副本。
+#[tokio::test]
+async fn rt_wades_19_answer_sync_retry_after_failure() {
+    let (url, _task) = des_server().await;
+    let client = reqwest::Client::new();
+    let world_id = bind(&client, &url).await;
+    let prop = propose_ok(&client, &url, &world_id, "rev-1").await;
+    let exec: Value = client
+        .post(format!("{url}{DES_API}/execute"))
+        .headers(operator())
+        .json(&json!({
+            "world_id": world_id,
+            "proposal_id": prop["proposal_id"],
+            "approval_ref": "ops-sync",
+            "idempotency_key": "idem-sync",
+            "plan_revision": "rev-1"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let execution_id = exec["execution_id"].as_str().unwrap();
+
+    client
+        .post(format!("{url}{DES_API}/test/fail-answer-sync"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    let pending: Value = client
+        .post(format!("{url}{DES_API}/ground_truth"))
+        .headers(auditor())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(pending["ground_truth"]["sync_status"], "pending");
+    assert_eq!(pending["ground_truth"]["intervention_id"], execution_id);
+
+    let retried: Value = client
+        .post(format!("{url}{DES_API}/test/retry-answer-sync"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(retried["sync_status"], "synced");
+    assert_eq!(retried["intervention_id"], execution_id);
+
+    let truth: Value = client
+        .post(format!("{url}{DES_API}/ground_truth"))
+        .headers(auditor())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let gt = &truth["ground_truth"];
+    assert_eq!(gt["sync_status"], "synced");
+    assert_eq!(gt["intervention_id"], execution_id);
+    assert_eq!(gt["execution_id"], execution_id);
+    assert_eq!(gt["answer"], "maintenance-applied");
+}
