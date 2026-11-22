@@ -867,6 +867,8 @@
       "docs/testing/evidence/wa-m2-0.md",
       "docs/testing/evidence/wa-m2-1-red.md",
       "docs/testing/evidence/wa-m2-2-green.md",
+      "docs/testing/evidence/wa-m2-3-recovery.md",
+      "docs/mom/WA_M2_3_PLAN.md",
       "docs/decisions/2026-11-21-wa-m2-1-green-service-layer.md"
     ],
     "coverage": "browser",
@@ -910,7 +912,10 @@
       "RT-WADES-11",
       "RT-WADES-12",
       "RT-WADES-13",
-      "RT-WADES-14"
+      "RT-WADES-14",
+      "RT-WADES-15",
+      "RT-WADES-16",
+      "RT-WADES-17"
     ]
   },
   {

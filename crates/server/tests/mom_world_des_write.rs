@@ -529,3 +529,294 @@ async fn rt_wades_14_intervention_changes_future_events() {
         .unwrap();
     assert!(truth.get("ground_truth").is_some());
 }
+
+/// RT-WADES-15：同厂丢回执后按原关联键 Confirm 回原工单。
+#[tokio::test]
+async fn rt_wades_15_recover_by_correlation_key() {
+    let (url, _task) = des_server().await;
+    let client = reqwest::Client::new();
+    let world_id = bind(&client, &url).await;
+    let prop = propose_ok(&client, &url, &world_id, "rev-1").await;
+    let exec: Value = client
+        .post(format!("{url}{DES_API}/execute"))
+        .headers(operator())
+        .json(&json!({
+            "world_id": world_id,
+            "proposal_id": prop["proposal_id"],
+            "approval_ref": "ops-corr",
+            "idempotency_key": "idem-corr",
+            "plan_revision": "rev-1"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let execution_id = exec["execution_id"].as_str().unwrap().to_string();
+    let correlation_key = exec["correlation_key"].as_str().unwrap().to_string();
+    assert!(!correlation_key.is_empty());
+
+    client
+        .post(format!("{url}{DES_API}/test/lose-receipt"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id, "execution_id": execution_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    let unknown: Value = client
+        .post(format!("{url}{DES_API}/confirm"))
+        .headers(operator())
+        .json(&json!({
+            "world_id": world_id,
+            "correlation_key": correlation_key
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(unknown["execution_id"], execution_id);
+    assert_eq!(unknown["status"], "unknown");
+
+    client
+        .post(format!("{url}{DES_API}/test/restore-receipt"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id, "execution_id": execution_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    let recovered: Value = client
+        .post(format!("{url}{DES_API}/confirm"))
+        .headers(operator())
+        .json(&json!({
+            "world_id": world_id,
+            "correlation_key": correlation_key
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(recovered["execution_id"], execution_id);
+    assert_eq!(recovered["correlation_key"], correlation_key);
+    assert!(
+        recovered["status"] == "confirmed" || recovered["status"] == "applied",
+        "{recovered}"
+    );
+}
+
+/// RT-WADES-16：部分失败后补齐剩余回执，再 Confirm 到终态。
+#[tokio::test]
+async fn rt_wades_16_complete_partial_receipts() {
+    let (url, _task) = des_server().await;
+    let client = reqwest::Client::new();
+    let world_id = bind(&client, &url).await;
+    let prop = propose_ok(&client, &url, &world_id, "rev-1").await;
+    let exec: Value = client
+        .post(format!("{url}{DES_API}/execute"))
+        .headers(operator())
+        .json(&json!({
+            "world_id": world_id,
+            "proposal_id": prop["proposal_id"],
+            "approval_ref": "ops-partial",
+            "idempotency_key": "idem-complete-partial",
+            "plan_revision": "rev-1"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let execution_id = exec["execution_id"].as_str().unwrap();
+
+    client
+        .post(format!("{url}{DES_API}/test/partial-fail"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id, "execution_id": execution_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    let failed: Value = client
+        .post(format!("{url}{DES_API}/confirm"))
+        .headers(operator())
+        .json(&json!({ "world_id": world_id, "execution_id": execution_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(failed["status"], "failed");
+
+    let done: Value = client
+        .post(format!("{url}{DES_API}/test/complete-partial"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id, "execution_id": execution_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(done["completed_subactions"].as_u64().unwrap() >= 1);
+    assert_eq!(done["status"], "applied");
+
+    let confirmed: Value = client
+        .post(format!("{url}{DES_API}/confirm"))
+        .headers(operator())
+        .json(&json!({ "world_id": world_id, "execution_id": execution_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        confirmed["status"] == "confirmed" || confirmed["status"] == "applied",
+        "{confirmed}"
+    );
+    let subs = confirmed["subactions"].as_array().unwrap();
+    assert!(subs.iter().all(|s| {
+        let st = s["status"].as_str().unwrap_or("");
+        st == "applied" || st == "confirmed"
+    }));
+}
+
+/// RT-WADES-17：工厂重启后旧执行历史可查；待发不误投新实例；旧提案再写失败可见。
+#[tokio::test]
+async fn rt_wades_17_factory_restart_history_no_misdispatch() {
+    let (url, _task) = des_server().await;
+    let client = reqwest::Client::new();
+    let world_id = bind(&client, &url).await;
+    let prop = propose_ok(&client, &url, &world_id, "rev-1").await;
+    let exec: Value = client
+        .post(format!("{url}{DES_API}/execute"))
+        .headers(operator())
+        .json(&json!({
+            "world_id": world_id,
+            "proposal_id": prop["proposal_id"],
+            "approval_ref": "ops-hist",
+            "idempotency_key": "idem-hist",
+            "plan_revision": "rev-1"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let execution_id = exec["execution_id"].as_str().unwrap();
+
+    let confirmed: Value = client
+        .post(format!("{url}{DES_API}/confirm"))
+        .headers(operator())
+        .json(&json!({ "world_id": world_id, "execution_id": execution_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        confirmed["status"] == "confirmed" || confirmed["status"] == "applied",
+        "{confirmed}"
+    );
+
+    let restart: Value = client
+        .post(format!("{url}{DES_API}/test/factory-restart"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(restart["factory_instance"].as_u64().unwrap() >= 2);
+
+    // 历史仍可 Confirm
+    let hist: Value = client
+        .post(format!("{url}{DES_API}/confirm"))
+        .headers(operator())
+        .json(&json!({ "world_id": world_id, "execution_id": execution_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(hist["execution_id"], execution_id);
+    assert!(
+        hist["status"] == "confirmed" || hist["status"] == "applied",
+        "{hist}"
+    );
+    assert_eq!(hist["factory_instance_stale"], true);
+
+    // 旧提案再 Execute 失败可见
+    let stale = client
+        .post(format!("{url}{DES_API}/execute"))
+        .headers(operator())
+        .json(&json!({
+            "world_id": world_id,
+            "proposal_id": prop["proposal_id"],
+            "approval_ref": "ops-hist",
+            "idempotency_key": "idem-hist-2",
+            "plan_revision": "rev-1"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert!(stale.status().as_u16() >= 400);
+    let body: Value = stale.json().await.unwrap();
+    assert_eq!(body["code"], "FACTORY_INSTANCE_STALE");
+
+    // flush 不误投
+    let flush: Value = client
+        .post(format!("{url}{DES_API}/test/flush-pending"))
+        .headers(experimenter())
+        .json(&json!({ "world_id": world_id }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(flush["dispatched_count"], 0);
+}
