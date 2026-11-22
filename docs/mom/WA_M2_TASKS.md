@@ -9,8 +9,8 @@
 | 卡片 | 内容 | 状态 | 依赖 |
 |---|---|---|---|
 | M2-0 | 冻结用例草案与任务卡；同步 PLAN / Feature Map / 注册表 | **完成**（#194） | M1 准出 + T-50 |
-| M2-1 | 正式 CASES + Red 空壳；Propose/Execute/Confirm 接远程（高风险先方案） | **进行中**（本 PR） | M2-0 |
-| M2-2 | 授权/并发/取消：过期批准零写入；同授权只执行一次；取消后待发不发 | 排队 | M2-1 |
+| M2-1 | 正式 CASES + Red 空壳；Propose/Execute/Confirm 接远程（高风险先方案） | **完成**（#196） | M2-0 |
+| M2-2 | 授权/并发/取消 + 写路径服务层 Green（RT-WADES-09～14） | **进行中**（本 PR） | M2-1 |
 | M2-3 | 恢复与幂等：丢回执同厂恢复；部分回执补齐；工厂重启旧运行可见失败 | 排队 | M2-1 |
 | M2-4 | DES 闭环：干预后未来事件改变；答案与干预一致；RT-DES/DESC 回归 | 排队 | M2-2、M2-3 |
 | M2-5 | 浏览器：WA-03/04/05/08 远程场景 + M0/M1 全量回归 | 排队 | M2-4 |
@@ -42,12 +42,19 @@ M0/M1 已冻结用例 **不得弱化**。`E2E-DESOPS` / `E2E-DESLOOP` 在 M2 补
 
 见 #194 / `docs/testing/evidence/wa-m2-0.md`。
 
-## 2b. M2-1：正式表格 + Red（本卡）
+## 2b. M2-1：正式表格 + Red（已完成，#196）
 
 1. CASES 正式表格 + Playwright 空壳 `web/e2e/wa-des-write.spec.ts` + `features.json` cases。
 2. 高风险 Green 方案：[`WA_M2_1_PLAN.md`](WA_M2_1_PLAN.md)（服务层优先；不改 engine/DesConnector 内部）。
-3. `RT-WADES-09`～`14`：表格已冻结；本地 HTTP Red 证据见 `wa-m2-1-red.md`；**Rust 失败测试不入库**（Green 卡再挂 `mom_world_des_write` + `runtime_cases`）。
+3. `RT-WADES-09`～`14`：表格已冻结；本地 HTTP Red 证据见 `wa-m2-1-red.md`；**Rust 失败测试不入库**（由 M2-2 挂 `mom_world_des_write` + `runtime_cases`）。
 4. **本卡不写 Green。**
+
+## 2c. M2-2：写路径服务层 Green（本卡）
+
+1. 按已批方案在 `mom_world_des` 实现 `/api/world/des/propose|execute|confirm` 与测试控件。
+2. 合同测试入库：`crates/server/tests/mom_world_des_write.rs` → `RT-WADES-09`～`14` Green。
+3. `features.json` `runtime_cases` 挂入；证据 `wa-m2-2-green.md`。
+4. **不改** `engine.rs` / `DesConnector` 内部；Playwright E2E 写路径 Green 留给 M2-5。
 
 ## 3. M2-2～M2-4：服务端（纲要）
 

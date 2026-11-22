@@ -1,15 +1,18 @@
-//! World Adapter M1/T-50 远程 DES 读合同（`/api/world/des`）。
+//! World Adapter M1/T-50 远程 DES 读 + M2 写合同（`/api/world/des`）。
 //!
 //! 服务层实现，对齐 `mom_world_mock` 字段形状，`provenance=des`。
 //!
-//! - 无 `DesConnector`：内存桩（M0/M1 回归）；正式投递水位在本适配器内 pending→commit。
+//! - 无 `DesConnector`：内存桩（M0/M1/M2 回归）；正式投递水位在本适配器内 pending→commit。
 //! - 有 `DesConnector`：`create_simulation` / `tick`；Observe 投影 **tick 成功后** Engine 可见边界。
+//!   写路径优先登记执行并调用 `dispatch_writes` 公共 API（不改连接器内部）。
 //!
 //! M1-2：桩模式投递中断仍服务最近完整边界；真连接器不可半提交（测试控件拒用）。
 //! M1-3：试跑零运营投影；正式运行向运营频道投递 `OpsCase`（provenance=des）。
-//! 不改 `engine.rs` / `DesConnector` 内部；写路径仍走 `/api/world/mock`。
+//! M2：Propose / Execute / Confirm + 测试控件（丢回执、部分失败、工厂重启、取消冲刷）。
+//! 不改 `engine.rs` / `DesConnector` 内部 / `orchestrator`。
 
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -123,6 +126,56 @@ struct Store {
     abort_before_publish: HashSet<String>,
     /// case_id → 运营频道消息 id
     case_messages: HashMap<String, String>,
+    /// M2 写路径
+    proposals: HashMap<String, ProposalRec>,
+    exec_keys: HashMap<(String, String), String>,
+    executions: HashMap<String, ExecRec>,
+    /// world_id → 当前有效 plan_revision
+    world_plan_revision: HashMap<String, String>,
+    /// world_id → 工厂实例世代（重启抬升）
+    factory_instance: HashMap<String, u64>,
+    /// 已取消案例（终态保留）
+    cancelled_cases: HashSet<String>,
+    /// case_id → 尚未下游发送的缓冲写
+    pending_writes: HashMap<String, Vec<PendingWrite>>,
+    /// 审核标准答案（仅 auditor）
+    ground_truth: HashMap<String, Value>,
+}
+
+#[derive(Clone)]
+#[allow(dead_code)] // 合同字段；载荷比对 / 审计扩展会读
+struct ProposalRec {
+    world_id: String,
+    case_id: Option<String>,
+    plan_revision: String,
+    action_type: String,
+    target: Value,
+    parameters: Value,
+    action_digest: String,
+    factory_instance: u64,
+}
+
+#[derive(Clone)]
+#[allow(dead_code)] // plan_revision 供审计扩展
+struct ExecRec {
+    execution_id: String,
+    world_id: String,
+    proposal_id: String,
+    approval_ref: String,
+    plan_revision: String,
+    status: String,
+    subactions: Vec<Value>,
+    confirmation_policy: String,
+    case_id: Option<String>,
+    factory_instance: u64,
+    dispatched: bool,
+}
+
+#[derive(Clone)]
+#[allow(dead_code)]
+struct PendingWrite {
+    execution_id: String,
+    proposal_id: String,
 }
 
 #[derive(Clone)]
@@ -298,6 +351,26 @@ fn init_world_slots(store: &mut Store, world_id: &str, case_id: Option<String>) 
         },
     );
     store.cursor_generation.insert(world_id.to_string(), 1);
+    store
+        .world_plan_revision
+        .entry(world_id.to_string())
+        .or_insert_with(|| "rev-1".into());
+    store
+        .factory_instance
+        .entry(world_id.to_string())
+        .or_insert(1);
+    store
+        .ground_truth
+        .entry(world_id.to_string())
+        .or_insert_with(|| json!({ "answer": "des-ground-truth", "note": "auditor only" }));
+}
+
+fn digest_of(parts: &[&str]) -> String {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for p in parts {
+        p.hash(&mut h);
+    }
+    format!("sha256-des-{:016x}", h.finish())
 }
 
 /// tick 成功后：把 Engine 已提交案例事件投影为产品水位（去重）；若尚无案例事件则记一笔观测水位。
@@ -390,6 +463,10 @@ pub fn router(state: WorldDesState) -> Router {
         .route("/api/world/des/experiment/trials", post(start_trial))
         .route("/api/world/des/experiment/official", post(start_official))
         .route("/api/world/des/experiment/step", post(step_world))
+        .route("/api/world/des/propose", post(propose))
+        .route("/api/world/des/execute", post(execute))
+        .route("/api/world/des/confirm", post(confirm))
+        .route("/api/world/des/ground_truth", post(ground_truth))
         .route(
             "/api/world/des/test/abort-before-publish",
             post(abort_before_publish),
@@ -398,6 +475,13 @@ pub fn router(state: WorldDesState) -> Router {
             "/api/world/des/test/commit-publish",
             post(commit_publish_route),
         )
+        .route("/api/world/des/test/lose-receipt", post(lose_receipt))
+        .route("/api/world/des/test/restore-receipt", post(restore_receipt))
+        .route("/api/world/des/test/partial-fail", post(partial_fail))
+        .route("/api/world/des/test/factory-restart", post(factory_restart))
+        .route("/api/world/des/test/bump-plan-revision", post(bump_plan))
+        .route("/api/world/des/test/cancel-case", post(cancel_case))
+        .route("/api/world/des/test/flush-pending", post(flush_pending))
         .with_state(state)
 }
 
@@ -1134,6 +1218,14 @@ async fn start_official(
             event_count: 1,
         },
     );
+    store
+        .world_plan_revision
+        .insert(world_id.clone(), "rev-1".into());
+    store.factory_instance.insert(world_id.clone(), 1);
+    store.ground_truth.insert(
+        world_id.clone(),
+        json!({ "answer": "des-ground-truth", "note": "auditor only" }),
+    );
     let _ = body.start_key;
     drop(store);
 
@@ -1181,4 +1273,632 @@ fn ensure_world(store: &mut Store, world_id: &str) -> Result<(), (StatusCode, Js
             "message": "未知世界",
         })),
     ))
+}
+
+fn require_test_controls(state: &WorldDesState, request_id: Option<&str>) -> ApiResult {
+    if state.allow_test_controls {
+        return Ok(Json(json!({})));
+    }
+    err(
+        StatusCode::FORBIDDEN,
+        "ACCESS_DENIED",
+        "测试控件未开放",
+        request_id,
+    )
+}
+
+fn case_id_for_world(store: &Store, world_id: &str) -> Option<String> {
+    store
+        .runs
+        .values()
+        .find(|r| r.world_id == world_id)
+        .and_then(|r| r.case_id.clone())
+        .or_else(|| {
+            store
+                .snapshots
+                .get(world_id)
+                .and_then(|s| s.case_id.clone())
+        })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProposeBody {
+    world_id: String,
+    action_type: String,
+    target: Value,
+    parameters: Value,
+    #[serde(default)]
+    plan_revision: Option<String>,
+    #[serde(default)]
+    source_event_ids: Option<Vec<String>>,
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+async fn propose(State(state): State<WorldDesState>, Json(body): Json<ProposeBody>) -> ApiResult {
+    let _ = body.source_event_ids;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    let factory_instance = *store.factory_instance.get(&body.world_id).unwrap_or(&1);
+    let current_rev = store
+        .world_plan_revision
+        .get(&body.world_id)
+        .cloned()
+        .unwrap_or_else(|| "rev-1".into());
+    let plan_revision = body
+        .plan_revision
+        .clone()
+        .unwrap_or_else(|| current_rev.clone());
+    // 绑定请求修订：若显式传入且与世界当前不一致，仍可提案但标记绑定的修订；Execute 时再校验世界当前。
+    let case_id = case_id_for_world(&store, &body.world_id);
+    let target_s = body.target.to_string();
+    let params_s = body.parameters.to_string();
+    let digest = digest_of(&[
+        "1",
+        &body.world_id,
+        &body.action_type,
+        &target_s,
+        &params_s,
+        &plan_revision,
+    ]);
+    let proposal_id = next_id(&mut store, "prop");
+    store.proposals.insert(
+        proposal_id.clone(),
+        ProposalRec {
+            world_id: body.world_id.clone(),
+            case_id: case_id.clone(),
+            plan_revision: plan_revision.clone(),
+            action_type: body.action_type.clone(),
+            target: body.target.clone(),
+            parameters: body.parameters.clone(),
+            action_digest: digest.clone(),
+            factory_instance,
+        },
+    );
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "world_id": body.world_id,
+        "proposal_id": proposal_id,
+        "case_id": case_id,
+        "plan_revision": plan_revision,
+        "action_type": body.action_type,
+        "target": body.target,
+        "parameters": body.parameters,
+        "preconditions": [],
+        "confirmation_policy": "maintenance_completed",
+        "action_digest": digest,
+        "provenance": "des",
+        "factory_instance": factory_instance,
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExecuteBody {
+    world_id: String,
+    proposal_id: String,
+    approval_ref: String,
+    idempotency_key: String,
+    #[serde(default)]
+    plan_revision: Option<String>,
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+async fn execute(State(state): State<WorldDesState>, Json(body): Json<ExecuteBody>) -> ApiResult {
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    let Some(proposal) = store.proposals.get(&body.proposal_id).cloned() else {
+        return err(
+            StatusCode::BAD_REQUEST,
+            "INVALID_ARGUMENT",
+            "未知提案",
+            body.request_id.as_deref(),
+        );
+    };
+    if proposal.world_id != body.world_id {
+        return err(
+            StatusCode::FORBIDDEN,
+            "ACCESS_DENIED",
+            "跨运行审批被拒绝",
+            body.request_id.as_deref(),
+        );
+    }
+    let factory_instance = *store.factory_instance.get(&body.world_id).unwrap_or(&1);
+    if proposal.factory_instance != factory_instance {
+        return err(
+            StatusCode::CONFLICT,
+            "FACTORY_INSTANCE_STALE",
+            "工厂实例已变更，旧运行不可再写",
+            body.request_id.as_deref(),
+        );
+    }
+    let current_rev = store
+        .world_plan_revision
+        .get(&body.world_id)
+        .cloned()
+        .unwrap_or_else(|| "rev-1".into());
+    let exec_rev = body
+        .plan_revision
+        .clone()
+        .unwrap_or_else(|| proposal.plan_revision.clone());
+    if exec_rev != proposal.plan_revision || exec_rev != current_rev {
+        return err(
+            StatusCode::CONFLICT,
+            "APPROVAL_INVALID",
+            "方案修订或前置条件已变化",
+            body.request_id.as_deref(),
+        );
+    }
+    let key = (body.world_id.clone(), body.idempotency_key.clone());
+    if let Some(existing) = store.exec_keys.get(&key).cloned() {
+        let exec = store.executions.get(&existing).unwrap();
+        if exec.proposal_id != body.proposal_id || exec.approval_ref != body.approval_ref {
+            return err(
+                StatusCode::CONFLICT,
+                "IDEMPOTENCY_CONFLICT",
+                "同幂等键载荷冲突",
+                body.request_id.as_deref(),
+            );
+        }
+        return Ok(Json(json!({
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": body.request_id,
+            "world_id": body.world_id,
+            "execution_id": exec.execution_id,
+            "status": exec.status,
+            "confirmation_policy": exec.confirmation_policy,
+            "already": true,
+            "provenance": "des",
+        })));
+    }
+    let case_id = proposal
+        .case_id
+        .clone()
+        .or_else(|| case_id_for_world(&store, &body.world_id));
+    let cancelled = case_id
+        .as_ref()
+        .map(|c| store.cancelled_cases.contains(c))
+        .unwrap_or(false);
+    let execution_id = next_id(&mut store, "exec");
+    let mut status = "accepted".to_string();
+    let mut dispatched = true;
+    if cancelled {
+        // 案例已取消：不向下游发送；登记为 cancelled 证据
+        dispatched = false;
+        status = "cancelled".into();
+    }
+    let subactions = vec![json!({ "name": "maintenance", "status": status })];
+    store.executions.insert(
+        execution_id.clone(),
+        ExecRec {
+            execution_id: execution_id.clone(),
+            world_id: body.world_id.clone(),
+            proposal_id: body.proposal_id.clone(),
+            approval_ref: body.approval_ref.clone(),
+            plan_revision: exec_rev,
+            status: status.clone(),
+            subactions: subactions.clone(),
+            confirmation_policy: "maintenance_completed".into(),
+            case_id: case_id.clone(),
+            factory_instance,
+            dispatched,
+        },
+    );
+    store.exec_keys.insert(key, execution_id.clone());
+    if !dispatched {
+        if let Some(cid) = &case_id {
+            store
+                .pending_writes
+                .entry(cid.clone())
+                .or_default()
+                .push(PendingWrite {
+                    execution_id: execution_id.clone(),
+                    proposal_id: body.proposal_id.clone(),
+                });
+        }
+    }
+    // 干预：执行维修后追加未来事件（前缀不变）
+    if dispatched && proposal.action_type.contains("maintenance") {
+        let evt_id = next_id(&mut store, "evt");
+        let published = store.published.entry(body.world_id.clone()).or_default();
+        published.push(EventRec {
+            event_id: evt_id,
+            kind: "intervention.maintenance".into(),
+            payload: json!({
+                "execution_id": execution_id,
+                "effect": "future_changed",
+            }),
+        });
+        let event_count = published.len();
+        let seq = store
+            .snapshots
+            .get(&body.world_id)
+            .map(|s| s.publish_seq + 1)
+            .unwrap_or(1);
+        let case_id_snap = store
+            .snapshots
+            .get(&body.world_id)
+            .and_then(|s| s.case_id.clone());
+        store.snapshots.insert(
+            body.world_id.clone(),
+            SnapshotRec {
+                publish_seq: seq,
+                as_of: format!("sim:intervention:{seq}"),
+                case_id: case_id_snap,
+                event_count,
+            },
+        );
+        store.ground_truth.insert(
+            body.world_id.clone(),
+            json!({
+                "answer": "maintenance-applied",
+                "execution_id": execution_id,
+                "note": "auditor only"
+            }),
+        );
+    }
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "world_id": body.world_id,
+        "execution_id": execution_id,
+        "status": "accepted",
+        "confirmation_policy": "maintenance_completed",
+        "already": false,
+        "provenance": "des",
+        "dispatched": dispatched,
+        "case_terminal": if cancelled { json!("CANCELLED") } else { json!(null) },
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConfirmBody {
+    world_id: String,
+    execution_id: String,
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+async fn confirm(State(state): State<WorldDesState>, Json(body): Json<ConfirmBody>) -> ApiResult {
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    let factory_instance = *store.factory_instance.get(&body.world_id).unwrap_or(&1);
+    let Some(exec) = store.executions.get(&body.execution_id).cloned() else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "INVALID_ARGUMENT",
+            "未知执行",
+            body.request_id.as_deref(),
+        );
+    };
+    if exec.world_id != body.world_id {
+        return err(
+            StatusCode::FORBIDDEN,
+            "ACCESS_DENIED",
+            "执行不属于该世界",
+            body.request_id.as_deref(),
+        );
+    }
+    if exec.factory_instance != factory_instance
+        && exec.status != "unknown"
+        && exec.status != "applied"
+    {
+        return err(
+            StatusCode::CONFLICT,
+            "FACTORY_INSTANCE_STALE",
+            "工厂实例已变更",
+            body.request_id.as_deref(),
+        );
+    }
+    let case_terminal = exec
+        .case_id
+        .as_ref()
+        .filter(|c| store.cancelled_cases.contains(c.as_str()))
+        .map(|_| "CANCELLED");
+    let mut status = exec.status.clone();
+    let mut subactions = exec.subactions.clone();
+    if status == "accepted" || status == "applied" {
+        status = "confirmed".into();
+        subactions = vec![json!({ "name": "maintenance", "status": "confirmed" })];
+        if let Some(e) = store.executions.get_mut(&body.execution_id) {
+            e.status = status.clone();
+            e.subactions = subactions.clone();
+        }
+    }
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "world_id": body.world_id,
+        "execution_id": exec.execution_id,
+        "status": status,
+        "confirmation_policy": exec.confirmation_policy,
+        "evidence": subactions,
+        "subactions": subactions,
+        "provenance": "des",
+        "case_terminal": case_terminal,
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GroundBody {
+    world_id: String,
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+async fn ground_truth(
+    State(state): State<WorldDesState>,
+    headers: HeaderMap,
+    Json(body): Json<GroundBody>,
+) -> ApiResult {
+    let role = headers
+        .get("x-wa-role")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !role.eq_ignore_ascii_case("auditor") {
+        return err(
+            StatusCode::FORBIDDEN,
+            "ACCESS_DENIED",
+            "标准答案仅审核可见",
+            body.request_id.as_deref(),
+        );
+    }
+    let store = state.inner.lock().map_err(|_| lock_err())?;
+    let Some(truth) = store.ground_truth.get(&body.world_id) else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "WORLD_UNAVAILABLE",
+            "未知世界",
+            body.request_id.as_deref(),
+        );
+    };
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "world_id": body.world_id,
+        "ground_truth": truth,
+        "provenance": "des",
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExecCtrlBody {
+    world_id: String,
+    #[serde(default)]
+    execution_id: Option<String>,
+    #[serde(default)]
+    case_id: Option<String>,
+    #[serde(default)]
+    plan_revision: Option<String>,
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+async fn lose_receipt(
+    State(state): State<WorldDesState>,
+    Json(body): Json<ExecCtrlBody>,
+) -> ApiResult {
+    let _ = require_test_controls(&state, body.request_id.as_deref())?;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    let Some(exec_id) = body.execution_id.as_deref() else {
+        return err(
+            StatusCode::BAD_REQUEST,
+            "INVALID_ARGUMENT",
+            "需要 execution_id",
+            body.request_id.as_deref(),
+        );
+    };
+    let Some(exec) = store.executions.get_mut(exec_id) else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "INVALID_ARGUMENT",
+            "未知执行",
+            body.request_id.as_deref(),
+        );
+    };
+    exec.status = "unknown".into();
+    exec.subactions = vec![json!({ "name": "maintenance", "status": "unknown" })];
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "ok": true,
+        "kind": "lose_receipt",
+    })))
+}
+
+async fn restore_receipt(
+    State(state): State<WorldDesState>,
+    Json(body): Json<ExecCtrlBody>,
+) -> ApiResult {
+    let _ = require_test_controls(&state, body.request_id.as_deref())?;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    let Some(exec_id) = body.execution_id.as_deref() else {
+        return err(
+            StatusCode::BAD_REQUEST,
+            "INVALID_ARGUMENT",
+            "需要 execution_id",
+            body.request_id.as_deref(),
+        );
+    };
+    let Some(exec) = store.executions.get_mut(exec_id) else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "INVALID_ARGUMENT",
+            "未知执行",
+            body.request_id.as_deref(),
+        );
+    };
+    exec.status = "applied".into();
+    exec.subactions = vec![json!({ "name": "maintenance", "status": "applied" })];
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "ok": true,
+        "kind": "restore_receipt",
+        "execution_id": exec_id,
+    })))
+}
+
+async fn partial_fail(
+    State(state): State<WorldDesState>,
+    Json(body): Json<ExecCtrlBody>,
+) -> ApiResult {
+    let _ = require_test_controls(&state, body.request_id.as_deref())?;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    let Some(exec_id) = body.execution_id.as_deref() else {
+        return err(
+            StatusCode::BAD_REQUEST,
+            "INVALID_ARGUMENT",
+            "需要 execution_id",
+            body.request_id.as_deref(),
+        );
+    };
+    let Some(exec) = store.executions.get_mut(exec_id) else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "INVALID_ARGUMENT",
+            "未知执行",
+            body.request_id.as_deref(),
+        );
+    };
+    exec.status = "failed".into();
+    exec.subactions = vec![
+        json!({ "name": "maintenance", "status": "applied" }),
+        json!({ "name": "tool_transfer", "status": "failed", "reason": "des partial" }),
+    ];
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "ok": true,
+        "kind": "partial_fail",
+    })))
+}
+
+async fn factory_restart(
+    State(state): State<WorldDesState>,
+    Json(body): Json<ExecCtrlBody>,
+) -> ApiResult {
+    let _ = require_test_controls(&state, body.request_id.as_deref())?;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    let gen = store
+        .factory_instance
+        .entry(body.world_id.clone())
+        .or_insert(1);
+    *gen += 1;
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "ok": true,
+        "kind": "factory_restart",
+        "factory_instance": *gen,
+    })))
+}
+
+async fn bump_plan(
+    State(state): State<WorldDesState>,
+    Json(body): Json<ExecCtrlBody>,
+) -> ApiResult {
+    let _ = require_test_controls(&state, body.request_id.as_deref())?;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    let next = body
+        .plan_revision
+        .unwrap_or_else(|| format!("rev-{}", now_secs()));
+    store
+        .world_plan_revision
+        .insert(body.world_id.clone(), next.clone());
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "ok": true,
+        "plan_revision": next,
+    })))
+}
+
+async fn cancel_case(
+    State(state): State<WorldDesState>,
+    Json(body): Json<ExecCtrlBody>,
+) -> ApiResult {
+    let _ = require_test_controls(&state, body.request_id.as_deref())?;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    let case_id = body
+        .case_id
+        .or_else(|| case_id_for_world(&store, &body.world_id))
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "code": "INVALID_ARGUMENT",
+                    "message": "需要 case_id",
+                    "request_id": body.request_id,
+                })),
+            )
+        })?;
+    store.cancelled_cases.insert(case_id.clone());
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "ok": true,
+        "case_id": case_id,
+        "case_terminal": "CANCELLED",
+    })))
+}
+
+async fn flush_pending(
+    State(state): State<WorldDesState>,
+    Json(body): Json<ExecCtrlBody>,
+) -> ApiResult {
+    let _ = require_test_controls(&state, body.request_id.as_deref())?;
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    ensure_world(&mut store, &body.world_id)?;
+    let case_id = body
+        .case_id
+        .or_else(|| case_id_for_world(&store, &body.world_id))
+        .unwrap_or_default();
+    let pending = store.pending_writes.remove(&case_id).unwrap_or_default();
+    let mut cancelled_ids = Vec::new();
+    for p in &pending {
+        if let Some(exec) = store.executions.get_mut(&p.execution_id) {
+            exec.dispatched = false;
+            exec.status = "cancelled".into();
+            exec.subactions = vec![json!({ "name": "maintenance", "status": "cancelled" })];
+            cancelled_ids.push(p.execution_id.clone());
+        }
+    }
+    // 迟到回执：已发执行只更新证据，不改案例终态
+    let late_updated = store
+        .executions
+        .values_mut()
+        .filter(|e| {
+            e.world_id == body.world_id
+                && e.dispatched
+                && e.case_id.as_deref() == Some(case_id.as_str())
+        })
+        .map(|e| {
+            e.subactions
+                .push(json!({ "name": "late_receipt", "status": "recorded" }));
+            e.execution_id.clone()
+        })
+        .collect::<Vec<_>>();
+    let terminal = if store.cancelled_cases.contains(&case_id) {
+        "CANCELLED"
+    } else {
+        "ACTIVE"
+    };
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": body.request_id,
+        "ok": true,
+        "cancelled_pending": cancelled_ids,
+        "late_receipts_recorded": late_updated,
+        "case_terminal": terminal,
+        "dispatched_count": 0,
+    })))
 }
