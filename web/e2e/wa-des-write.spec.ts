@@ -220,7 +220,8 @@ test('E2E-WADYN: 干预后前缀不变未来改变且无标准答案', async ({ 
 
   await page.goto('/');
   await page.getByRole('link', { name: 'MOM 工作台', exact: true }).click();
-  await page.getByLabel('选择世界').selectOption({ label: /DES/ });
+  // Red 壳曾写 RegExp；Playwright selectOption.label 只接受 string（与 wa-des-remote 对齐）。
+  await page.getByLabel('选择世界').selectOption({ label: '刀具磨损演练 · DES' });
   await page.getByRole('button', { name: '看板', exact: true }).click();
   await page.getByRole('button', { name: /^事项 / }).first().click();
   const detail = page.getByTestId('mom-case-page');

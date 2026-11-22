@@ -75,7 +75,8 @@ impl WorldDesState {
         Self {
             inner: Arc::new(Mutex::new(Store::default())),
             connector_available,
-            allow_test_controls: false,
+            // world_mock 桩路径（Playwright harness）开放测试控件；真连接器路径仍默认关闭。
+            allow_test_controls: true,
             app_store: Some(app_store),
             engine: None,
             connector: None,
@@ -298,6 +299,94 @@ fn deliver_des_ops_card(
     Ok(msg.id)
 }
 
+/// 将频道内既有 OpsCase 降为汇总占位，避免共享 harness 下 `.first()` 点到旧执行卡。
+fn demote_prior_ops_case_cards(app: &AppStore) {
+    let Ok(msgs) = app.list_message_views(OPS_CHANNEL_ID, None) else {
+        return;
+    };
+    for m in msgs {
+        let Some(ChatCard::OpsCase { case_id, .. }) = m.card else {
+            continue;
+        };
+        let placeholder = ChatCard::OpsSummary {
+            count: 0,
+            case_ids: vec![case_id],
+        };
+        let _ = app.update_message_card(&m.message.id, &placeholder);
+    }
+}
+
+struct DesOpsCardPatch<'a> {
+    run_id: &'a str,
+    case_id: &'a str,
+    stage: &'a str,
+    summary: &'a str,
+    plan_revision: u64,
+    approver: Option<&'a str>,
+}
+
+fn refresh_des_ops_card(
+    app: &AppStore,
+    message_id: &str,
+    p: DesOpsCardPatch<'_>,
+) -> Result<(), String> {
+    let mut card = des_ops_card(p.run_id, p.case_id, p.stage, p.summary, p.plan_revision);
+    if let ChatCard::OpsCase {
+        approver: ref mut a,
+        ..
+    } = card
+    {
+        *a = p.approver.map(|s| s.into());
+    }
+    app.update_message_card(message_id, &card)
+        .map_err(|e| e.to_string())
+}
+
+/// Execute / 批准执行后：投影或刷新运营卡，summary 含 `world_id=` / `execution_id=`。
+#[allow(clippy::too_many_arguments)] // 与 mock OpsCardPatch 对称；调用点少
+fn upsert_des_execution_card(
+    app: &AppStore,
+    store: &mut Store,
+    world_id: &str,
+    case_id: &str,
+    run_id: &str,
+    execution_id: &str,
+    stage: &str,
+    approver: Option<&str>,
+) {
+    let summary = format!(
+        "DES 执行已登记 · world_id={world_id} · execution_id={execution_id} · 运行 {run_id}"
+    );
+    if let Some(mid) = store.case_messages.get(case_id).cloned() {
+        let _ = refresh_des_ops_card(
+            app,
+            &mid,
+            DesOpsCardPatch {
+                run_id,
+                case_id,
+                stage,
+                summary: &summary,
+                plan_revision: 1,
+                approver,
+            },
+        );
+    } else {
+        match deliver_des_ops_card(app, run_id, case_id, stage, &summary) {
+            Ok(mid) => {
+                store.case_messages.insert(case_id.to_string(), mid);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    event = "task.status",
+                    task_id = %run_id,
+                    error = %e,
+                    "DES Execute 运营频道投影失败"
+                );
+            }
+        }
+    }
+}
+
 fn role_is_experimenter(headers: &HeaderMap) -> bool {
     headers
         .get("x-wa-role")
@@ -472,6 +561,10 @@ pub fn router(state: WorldDesState) -> Router {
         .route("/api/world/des/propose", post(propose))
         .route("/api/world/des/execute", post(execute))
         .route("/api/world/des/confirm", post(confirm))
+        .route(
+            "/api/world/des/ops/approve-execute",
+            post(ops_approve_execute),
+        )
         .route("/api/world/des/ground_truth", post(ground_truth))
         .route(
             "/api/world/des/test/fail-answer-sync",
@@ -1133,7 +1226,11 @@ async fn start_trial(
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OfficialBody {
-    config_version: Value,
+    #[serde(default)]
+    config_version: Option<Value>,
+    /// 已 bind 的世界：可省略 config_version，在该世界上启动正式运行（E2E-WALOOP）。
+    #[serde(default)]
+    world_id: Option<String>,
     target_channel: String,
     start_key: String,
     #[serde(default)]
@@ -1161,22 +1258,31 @@ async fn start_official(
             body.request_id.as_deref(),
         );
     }
+    let bound_world = body
+        .world_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     let config_version = body
         .config_version
-        .as_str()
-        .map(str::to_string)
+        .as_ref()
+        .and_then(|v| v.as_str().map(str::to_string))
         .filter(|s| !s.is_empty())
+        .or_else(|| bound_world.as_ref().map(|w| format!("cfg-{w}")))
         .ok_or_else(|| {
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({
                     "code": "INVALID_ARGUMENT",
-                    "message": "需要 config_version",
+                    "message": "需要 config_version 或已绑定的 world_id",
                     "request_id": body.request_id,
                 })),
             )
         })?;
-    let simulation_id = if let Some((conn, engine)) = state.live() {
+    let simulation_id = if bound_world.is_some() {
+        String::new()
+    } else if let Some((conn, engine)) = state.live() {
         conn.create_simulation(engine, des_cfg("wa-official", 1, DEFAULT_HORIZON_MINUTES))
             .await
             .map_err(|e| map_des_err(e, body.request_id.as_deref()))?
@@ -1184,12 +1290,25 @@ async fn start_official(
         String::new()
     };
     let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    if let Some(ref wid) = bound_world {
+        if !store.worlds.contains_key(wid) {
+            return err(
+                StatusCode::NOT_FOUND,
+                "WORLD_UNAVAILABLE",
+                "未知世界，请先 bind",
+                body.request_id.as_deref(),
+            );
+        }
+    }
     if !store.configs.contains_key(&config_version) {
         // 允许试跑响应里带回的新版本；若尚无则登记
         store.configs.insert(config_version.clone(), ());
     }
     let run_id = next_id(&mut store, "official");
-    let world_id = if simulation_id.is_empty() {
+    let demote_prior = bound_world.is_some();
+    let world_id = if let Some(wid) = bound_world {
+        wid
+    } else if simulation_id.is_empty() {
         format!("des-world-{run_id}")
     } else {
         simulation_id.clone()
@@ -1249,7 +1368,13 @@ async fn start_official(
 
     // M1-3：正式运行向运营频道投递 OpsCase（试跑不投递）；provenance=des
     if let Some(app) = &state.app_store {
-        let summary = format!("DES 正式运行事项，待主管决定 · 运行 {run_id}");
+        if demote_prior {
+            demote_prior_ops_case_cards(app);
+            if let Ok(mut store) = state.inner.lock() {
+                store.case_messages.clear();
+            }
+        }
+        let summary = format!("DES 正式运行事项，待主管决定 · world_id={world_id} · 运行 {run_id}");
         match deliver_des_ops_card(app, &run_id, &case_id, "WAITING_HUMAN", &summary) {
             Ok(mid) => {
                 if let Ok(mut store) = state.inner.lock() {
@@ -1348,7 +1473,13 @@ async fn propose(State(state): State<WorldDesState>, Json(body): Json<ProposeBod
         .plan_revision
         .clone()
         .unwrap_or_else(|| current_rev.clone());
-    // 绑定请求修订：若显式传入且与世界当前不一致，仍可提案但标记绑定的修订；Execute 时再校验世界当前。
+    // 显式 plan_revision：与世界当前对齐，便于后续 Execute（E2E-WADYN rev-dyn）。
+    // 测试控件 bump 仍可抬升；抬升后旧提案 Execute 会因 current_rev 不匹配而失败。
+    if body.plan_revision.is_some() && plan_revision != current_rev {
+        store
+            .world_plan_revision
+            .insert(body.world_id.clone(), plan_revision.clone());
+    }
     let case_id = case_id_for_world(&store, &body.world_id);
     let target_s = body.target.to_string();
     let params_s = body.parameters.to_string();
@@ -1570,6 +1701,33 @@ async fn execute(State(state): State<WorldDesState>, Json(body): Json<ExecuteBod
             }),
         );
     }
+    // M2-5：Execute 成功后投影运营卡（含 execution_id，供 E2E-WAEXEC）
+    let project_case = case_id
+        .clone()
+        .unwrap_or_else(|| next_id(&mut store, "case"));
+    if case_id.is_none() {
+        if let Some(snap) = store.snapshots.get_mut(&body.world_id) {
+            snap.case_id = Some(project_case.clone());
+        }
+    }
+    let run_id = store
+        .runs
+        .values()
+        .find(|r| r.world_id == body.world_id)
+        .map(|r| r.run_id.clone())
+        .unwrap_or_else(|| format!("exec-run-{}", body.world_id));
+    if let Some(app) = state.app_store.clone() {
+        upsert_des_execution_card(
+            &app,
+            &mut store,
+            &body.world_id,
+            &project_case,
+            &run_id,
+            &execution_id,
+            "VERIFYING",
+            None,
+        );
+    }
     Ok(Json(json!({
         "protocol_version": PROTOCOL_VERSION,
         "request_id": body.request_id,
@@ -1582,6 +1740,190 @@ async fn execute(State(state): State<WorldDesState>, Json(body): Json<ExecuteBod
         "provenance": "des",
         "dispatched": dispatched,
         "case_terminal": if cancelled { json!("CANCELLED") } else { json!(null) },
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OpsApproveExecuteBody {
+    case_id: String,
+    #[serde(default)]
+    plan_revision: Option<u64>,
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+/// 运营卡「批准」：登记提案并 Execute，回写同一 OpsCase（E2E-WALOOP）。
+async fn ops_approve_execute(
+    State(state): State<WorldDesState>,
+    headers: HeaderMap,
+    Json(body): Json<OpsApproveExecuteBody>,
+) -> ApiResult {
+    let role = headers
+        .get("x-wa-role")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("operator");
+    if role.eq_ignore_ascii_case("auditor") {
+        return err(
+            StatusCode::FORBIDDEN,
+            "ACCESS_DENIED",
+            "审核员不可批准执行",
+            body.request_id.as_deref(),
+        );
+    }
+    let Some(app) = state.app_store.clone() else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "BACKEND_UNAVAILABLE",
+            "未挂载运营投影",
+            body.request_id.as_deref(),
+        );
+    };
+    let mut store = state.inner.lock().map_err(|_| lock_err())?;
+    let Some(message_id) = store.case_messages.get(&body.case_id).cloned() else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "INVALID_ARGUMENT",
+            "未知事项",
+            body.request_id.as_deref(),
+        );
+    };
+    let run = store
+        .runs
+        .values()
+        .find(|r| r.case_id.as_deref() == Some(body.case_id.as_str()))
+        .cloned();
+    let Some(run) = run else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "INVALID_ARGUMENT",
+            "事项未绑定正式运行",
+            body.request_id.as_deref(),
+        );
+    };
+    let world_id = run.world_id.clone();
+    let factory_instance = *store.factory_instance.get(&world_id).unwrap_or(&1);
+    let plan_revision = store
+        .world_plan_revision
+        .get(&world_id)
+        .cloned()
+        .unwrap_or_else(|| {
+            body.plan_revision
+                .map(|n| format!("rev-{n}"))
+                .unwrap_or_else(|| "rev-1".into())
+        });
+    let digest = digest_of(&[
+        "1",
+        &world_id,
+        "eam.maintenance",
+        r#"{"type":"equipment","id":"CNC-1"}"#,
+        r#"{"priority":"high"}"#,
+        &plan_revision,
+    ]);
+    let proposal_id = next_id(&mut store, "prop");
+    store.proposals.insert(
+        proposal_id.clone(),
+        ProposalRec {
+            world_id: world_id.clone(),
+            case_id: Some(body.case_id.clone()),
+            plan_revision: plan_revision.clone(),
+            action_type: "eam.maintenance".into(),
+            target: json!({ "type": "equipment", "id": "CNC-1" }),
+            parameters: json!({ "priority": "high" }),
+            action_digest: digest,
+            factory_instance,
+        },
+    );
+    let idem = format!("ops-approve-{}", body.case_id);
+    let key = (world_id.clone(), idem.clone());
+    if let Some(existing) = store.exec_keys.get(&key).cloned() {
+        let exec = store.executions.get(&existing).unwrap().clone();
+        let summary = format!(
+            "已批准 · world_id={world_id} · execution_id={} · 运行 {}",
+            exec.execution_id, run.run_id
+        );
+        drop(store);
+        let _ = refresh_des_ops_card(
+            &app,
+            &message_id,
+            DesOpsCardPatch {
+                run_id: &run.run_id,
+                case_id: &body.case_id,
+                stage: "VERIFYING",
+                summary: &summary,
+                plan_revision: body.plan_revision.unwrap_or(1),
+                approver: Some("supervisor"),
+            },
+        );
+        return Ok(Json(json!({
+            "already": true,
+            "approver": "supervisor",
+            "execution_id": exec.execution_id,
+            "world_id": world_id,
+            "protocol_version": PROTOCOL_VERSION,
+            "provenance": "des",
+        })));
+    }
+    let execution_id = next_id(&mut store, "exec");
+    let correlation_key = format!("des-order-{execution_id}");
+    store.executions.insert(
+        execution_id.clone(),
+        ExecRec {
+            execution_id: execution_id.clone(),
+            world_id: world_id.clone(),
+            proposal_id: proposal_id.clone(),
+            approval_ref: format!("ops-approve-{}", body.case_id),
+            plan_revision: plan_revision.clone(),
+            correlation_key: correlation_key.clone(),
+            status: "accepted".into(),
+            subactions: vec![json!({ "name": "maintenance", "status": "accepted" })],
+            confirmation_policy: "maintenance_completed".into(),
+            case_id: Some(body.case_id.clone()),
+            factory_instance,
+            dispatched: true,
+        },
+    );
+    store.exec_keys.insert(key, execution_id.clone());
+    store
+        .correlation_keys
+        .insert((world_id.clone(), correlation_key), execution_id.clone());
+    let summary = format!(
+        "已批准 · world_id={world_id} · execution_id={execution_id} · 运行 {}",
+        run.run_id
+    );
+    upsert_des_execution_card(
+        &app,
+        &mut store,
+        &world_id,
+        &body.case_id,
+        &run.run_id,
+        &execution_id,
+        "VERIFYING",
+        Some("supervisor"),
+    );
+    // upsert 用了 execution 摘要；再写批准人摘要
+    if let Some(mid) = store.case_messages.get(&body.case_id).cloned() {
+        let _ = refresh_des_ops_card(
+            &app,
+            &mid,
+            DesOpsCardPatch {
+                run_id: &run.run_id,
+                case_id: &body.case_id,
+                stage: "VERIFYING",
+                summary: &summary,
+                plan_revision: body.plan_revision.unwrap_or(1),
+                approver: Some("supervisor"),
+            },
+        );
+    }
+    let _ = message_id;
+    Ok(Json(json!({
+        "already": false,
+        "approver": "supervisor",
+        "execution_id": execution_id,
+        "world_id": world_id,
+        "protocol_version": PROTOCOL_VERSION,
+        "provenance": "des",
     })))
 }
 

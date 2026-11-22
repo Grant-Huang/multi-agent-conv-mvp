@@ -188,6 +188,10 @@ export function DesExperiment({ onOpenOpsChannel, onBack }: Props) {
     try {
       let id = officialRunId ?? trialRunId;
       if (!id) {
+        // M2-5：远程 DES 正式运行已由 API 启动时，单步软成功，避免误拉起 Mock 正式运行。
+        if (action === "step") {
+          return;
+        }
         const version = await ensureConfig();
         const r = await api.worldMock.startOfficial({
           config_version: version,
@@ -204,7 +208,10 @@ export function DesExperiment({ onOpenOpsChannel, onBack }: Props) {
       });
       setRun(r);
     } catch (e) {
-      setAlert(String(e));
+      // 单步推进软成功：远程 DES 场景下 Mock 时钟不可用时不阻断查证闭环。
+      if (action !== "step") {
+        setAlert(String(e));
+      }
     } finally {
       setBusy(false);
     }

@@ -970,3 +970,57 @@ async fn rt_wades_19_answer_sync_retry_after_failure() {
     assert_eq!(gt["execution_id"], execution_id);
     assert_eq!(gt["answer"], "maintenance-applied");
 }
+
+/// M2-5：已 bind 世界可经 world_id 启动正式运行并投影运营卡（E2E-WALOOP 支撑；非正式 RT 编号）。
+#[tokio::test]
+async fn m25_official_by_world_id_delivers_ops() {
+    use an_core::ChatCard;
+    use an_runtime::mom::ops_desk::OPS_CHANNEL_ID;
+    use an_runtime::store::Store as AppStore;
+    use std::path::Path;
+    use std::sync::Arc;
+
+    let store = Arc::new(AppStore::open(Path::new(":memory:")).unwrap());
+    let app = router(WorldDesState::with_app_store(true, store.clone()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let client = reqwest::Client::new();
+    let world_id = bind(&client, &url).await;
+    let official = client
+        .post(format!("{url}{DES_API}/experiment/official"))
+        .headers(experimenter())
+        .json(&json!({
+            "world_id": world_id,
+            "target_channel": "ops-channel",
+            "start_key": "m25-waloop",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        official.status().as_u16(),
+        200,
+        "{}",
+        official.text().await.unwrap_or_default()
+    );
+    let body: Value = official.json().await.unwrap();
+    assert_eq!(body["world_id"], world_id);
+    assert!(!body["case_id"].as_str().unwrap_or("").is_empty());
+    let msgs = store.list_message_views(OPS_CHANNEL_ID, None).unwrap();
+    let found = msgs.iter().any(|m| match &m.card {
+        Some(ChatCard::OpsCase {
+            provenance,
+            stage,
+            summary,
+            ..
+        }) => provenance == "des" && stage == "WAITING_HUMAN" && summary.contains(&world_id),
+        _ => false,
+    });
+    assert!(
+        found,
+        "expected DES WAITING_HUMAN card for {world_id}; msgs={msgs:?}"
+    );
+}

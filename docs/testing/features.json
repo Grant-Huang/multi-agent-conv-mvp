@@ -881,7 +881,10 @@
       "docs/mom/WA_M2_3_PLAN.md",
       "docs/mom/WA_M2_4_PLAN.md",
       "docs/testing/evidence/wa-m2-4-closed-loop.md",
+      "docs/mom/WA_M2_5_PLAN.md",
+      "docs/testing/evidence/wa-m2-5-browser.md",
       "scripts/wa-m2-regression.sh",
+      "scripts/wa-m2-suite.sh",
       "docs/decisions/2026-11-21-wa-m2-1-green-service-layer.md"
     ],
     "coverage": "browser",
