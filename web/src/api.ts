@@ -490,6 +490,86 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ principal_id: principalId }),
     }),
+
+  /** AI Desktop C2：动作审批网关 */
+  desktopApprovalGet: (taskId: string) =>
+    request<{ approval: DesktopApprovalDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/approvals`,
+    ),
+  desktopApprovalReset: (taskId: string) =>
+    request<{ approval: DesktopApprovalDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/approvals/reset`,
+      { method: "POST", body: "{}" },
+    ),
+  desktopApprovalDecide: (id: string, decision: "approve" | "reject", expectedRevision: number) =>
+    request<{ approval: DesktopApprovalDto }>(
+      `/api/desktop/v1/approvals/${encodeURIComponent(id)}/decide`,
+      {
+        method: "POST",
+        body: JSON.stringify({ decision, expected_revision: expectedRevision }),
+      },
+    ),
+  desktopApprovalBump: (id: string, params: string) =>
+    request<{ approval: DesktopApprovalDto }>(
+      `/api/desktop/v1/approvals/${encodeURIComponent(id)}/bump`,
+      { method: "POST", body: JSON.stringify({ params }) },
+    ),
+  desktopApprovalExecute: async (
+    id: string,
+    expectedRevision: number,
+    forceUnknown = false,
+  ): Promise<
+    | { ok: true; approval: DesktopApprovalDto }
+    | { ok: false; message: string; approval?: DesktopApprovalDto }
+  > => {
+    const res = await fetch(`/api/desktop/v1/approvals/${encodeURIComponent(id)}/execute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expected_revision: expectedRevision, force_unknown: forceUnknown }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return {
+        ok: false,
+        message: String(body.message ?? `HTTP ${res.status}`),
+        approval: body.approval as DesktopApprovalDto | undefined,
+      };
+    }
+    return { ok: true, approval: body.approval as DesktopApprovalDto };
+  },
+  desktopApprovalAckUnknown: (id: string) =>
+    request<{ approval: DesktopApprovalDto }>(
+      `/api/desktop/v1/approvals/${encodeURIComponent(id)}/ack-unknown`,
+      { method: "POST", body: "{}" },
+    ),
+  desktopApprovalExpire: (id: string) =>
+    request<{ approval: DesktopApprovalDto }>(
+      `/api/desktop/v1/approvals/${encodeURIComponent(id)}/expire`,
+      { method: "POST", body: "{}" },
+    ),
+
+  /** AI Desktop C2：Attention 投递 */
+  desktopAttentionList: () =>
+    request<{ mute_ordinary: boolean; items: DesktopAttentionDto[] }>("/api/desktop/v1/attention"),
+  desktopAttentionPost: (body: {
+    kind: "ordinary" | "digest" | "urgent";
+    title: string;
+    body: string;
+    task_id?: string;
+  }) =>
+    request<{ delivered: boolean; item: DesktopAttentionDto | null }>("/api/desktop/v1/attention", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  desktopAttentionMute: (muteOrdinary: boolean) =>
+    request<{ mute_ordinary: boolean }>("/api/desktop/v1/attention/mute", {
+      method: "POST",
+      body: JSON.stringify({ mute_ordinary: muteOrdinary }),
+    }),
+  desktopAttentionDismiss: (id: string) =>
+    request<{ dismissed: boolean }>(`/api/desktop/v1/attention/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 };
 
 export type DesktopEvidenceDto = {
@@ -504,6 +584,26 @@ export type DesktopEvidenceDto = {
   summary: string;
   source_body: string;
   error_message: string;
+};
+
+export type DesktopApprovalDto = {
+  id: string;
+  task_id: string;
+  plan_revision: number;
+  params: string;
+  status: string;
+  decided_by: string | null;
+  execute_count: number;
+  last_receipt: string;
+};
+
+export type DesktopAttentionDto = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  task_id: string | null;
+  created_at: string;
 };
 /** 订阅某个会话的 SSE 事件流，返回取消订阅函数 */
 export function subscribeEvents(cid: string, onEvent: (e: TaskEvent) => void): () => void {

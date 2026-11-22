@@ -23,8 +23,7 @@ import { EvidencePanel, type EvidenceLayer } from "./desktop/EvidencePanel";
 import { HistoryPanel } from "./desktop/HistoryPanel";
 import { SettingsPanel, type SettingsLayer } from "./desktop/SettingsPanel";
 import { loadProfile, type AssistantProfile, type SettingsCategoryId } from "./desktop/profileStore";
-import { AttentionToast } from "./desktop/AttentionToast";
-import { loadAttentionQueue, loadMuteOrdinary, clearAttentionQueue } from "./desktop/attentionStore";
+import { AttentionToast, type AttentionItem } from "./desktop/AttentionToast";
 import type { S1BgJob } from "./desktop/S1AskBar";
 import {
   SMT03_TASK_ID,
@@ -377,8 +376,8 @@ export default function App() {
   const [s1BgJob, setS1BgJob] = useState<S1BgJob | null>(null);
   const [s1Reply, setS1Reply] = useState<string | null>(null);
   const [composingInput, setComposingInput] = useState(false);
-  const [attnItems, setAttnItems] = useState(() => loadAttentionQueue());
-  const [attnMuted, setAttnMuted] = useState(() => loadMuteOrdinary());
+  const [attnItems, setAttnItems] = useState<AttentionItem[]>([]);
+  const [attnMuted, setAttnMuted] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -389,8 +388,28 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    clearAttentionQueue();
-    setAttnItems([]);
+    let cancelled = false;
+    api
+      .desktopAttentionList()
+      .then((r) => {
+        if (cancelled) return;
+        setAttnItems(
+          r.items.map((d) => ({
+            id: d.id,
+            kind: d.kind,
+            title: d.title,
+            body: d.body,
+            taskId: d.task_id ?? undefined,
+          })),
+        );
+        setAttnMuted(r.mute_ordinary);
+      })
+      .catch(() => {
+        /* harness 未就绪时忽略 */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const openWorkspace = (taskId: string) => {

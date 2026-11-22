@@ -6,8 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use an_runtime::store::{
-    DesktopAcceptOutcome, DesktopEventCursor, DesktopEventsAfter, DesktopEvidenceAccess,
-    DesktopLinkOutcome, DesktopPrefPatchOutcome, DesktopRequestRecord,
+    DesktopAcceptOutcome, DesktopApprovalDecideOutcome, DesktopApprovalExecuteOutcome,
+    DesktopEventCursor, DesktopEventsAfter, DesktopEvidenceAccess, DesktopLinkOutcome,
+    DesktopPrefPatchOutcome, DesktopRequestRecord,
 };
 use an_runtime::Runtime;
 use axum::extract::{Path, Query, State};
@@ -97,6 +98,34 @@ pub fn routes() -> Router<AppState> {
             "/api/desktop/v1/evidence/{id}/revoke",
             post(revoke_evidence),
         )
+        .route("/api/desktop/v1/tasks/{id}/approvals", get(get_approval))
+        .route(
+            "/api/desktop/v1/tasks/{id}/approvals/reset",
+            post(reset_approval),
+        )
+        .route(
+            "/api/desktop/v1/approvals/{id}/decide",
+            post(decide_approval),
+        )
+        .route("/api/desktop/v1/approvals/{id}/bump", post(bump_approval))
+        .route(
+            "/api/desktop/v1/approvals/{id}/execute",
+            post(execute_approval),
+        )
+        .route(
+            "/api/desktop/v1/approvals/{id}/ack-unknown",
+            post(ack_approval_unknown),
+        )
+        .route(
+            "/api/desktop/v1/approvals/{id}/expire",
+            post(expire_approval),
+        )
+        .route(
+            "/api/desktop/v1/attention",
+            get(list_attention).post(post_attention),
+        )
+        .route("/api/desktop/v1/attention/mute", post(mute_attention))
+        .route("/api/desktop/v1/attention/{id}", delete(dismiss_attention))
 }
 
 fn principal_from(headers: &HeaderMap) -> String {
@@ -719,6 +748,294 @@ async fn revoke_evidence(
             })),
         )
             .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct DecideApprovalBody {
+    decision: String,
+    expected_revision: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct BumpApprovalBody {
+    params: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExecuteApprovalBody {
+    expected_revision: i64,
+    #[serde(default)]
+    force_unknown: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct MuteAttentionBody {
+    mute_ordinary: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct PostAttentionBody {
+    kind: String,
+    title: String,
+    body: String,
+    #[serde(default)]
+    task_id: Option<String>,
+}
+
+async fn get_approval(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    match rt.store.get_or_create_desktop_approval(&task_id) {
+        Ok(a) => (StatusCode::OK, Json(json!({ "approval": a }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn reset_approval(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    match rt.store.reset_desktop_approval(&task_id) {
+        Ok(a) => (StatusCode::OK, Json(json!({ "approval": a }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn decide_approval(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<DecideApprovalBody>,
+) -> Response {
+    match rt.store.decide_desktop_approval(
+        &id,
+        body.decision.trim(),
+        body.expected_revision,
+        "supervisor",
+    ) {
+        Ok(DesktopApprovalDecideOutcome::Ok(a)) => {
+            (StatusCode::OK, Json(json!({ "approval": a }))).into_response()
+        }
+        Ok(DesktopApprovalDecideOutcome::RevisionConflict(a)) => (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "code": "revision_conflict",
+                "message": "方案版本已变更，原审批失效，请重新确认",
+                "approval": a,
+                "retryable": false
+            })),
+        )
+            .into_response(),
+        Ok(DesktopApprovalDecideOutcome::NotFound) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "审批不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn bump_approval(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<BumpApprovalBody>,
+) -> Response {
+    match rt.store.bump_desktop_approval(&id, body.params.trim()) {
+        Ok(Some(a)) => (StatusCode::OK, Json(json!({ "approval": a }))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "审批不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn execute_approval(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<ExecuteApprovalBody>,
+) -> Response {
+    match rt
+        .store
+        .execute_desktop_approval(&id, body.expected_revision, body.force_unknown)
+    {
+        Ok(DesktopApprovalExecuteOutcome::Ok(a)) => {
+            (StatusCode::OK, Json(json!({ "approval": a }))).into_response()
+        }
+        Ok(DesktopApprovalExecuteOutcome::RevisionConflict(a)) => (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "code": "revision_conflict",
+                "message": "方案版本已变更，原审批失效，请重新确认",
+                "approval": a,
+                "retryable": false
+            })),
+        )
+            .into_response(),
+        Ok(DesktopApprovalExecuteOutcome::Forbidden(a)) => {
+            let msg = if a.status == "rejected" || a.status == "expired" {
+                "审批已拒绝或过期，不能执行"
+            } else {
+                "尚未批准，不能执行"
+            };
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "code": "forbidden",
+                    "message": msg,
+                    "approval": a,
+                    "retryable": false
+                })),
+            )
+                .into_response()
+        }
+        Ok(DesktopApprovalExecuteOutcome::NotFound) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "审批不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn ack_approval_unknown(State(rt): State<AppState>, Path(id): Path<String>) -> Response {
+    match rt.store.ack_desktop_approval_unknown(&id) {
+        Ok(Some(a)) => (StatusCode::OK, Json(json!({ "approval": a }))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "审批不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn expire_approval(State(rt): State<AppState>, Path(id): Path<String>) -> Response {
+    match rt.store.expire_desktop_approval(&id) {
+        Ok(Some(a)) => (StatusCode::OK, Json(json!({ "approval": a }))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "审批不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_attention(State(rt): State<AppState>) -> Response {
+    let mute = match rt.store.get_desktop_attention_mute("local") {
+        Ok(m) => m,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+            )
+                .into_response();
+        }
+    };
+    match rt.store.list_desktop_attention() {
+        Ok(items) => (
+            StatusCode::OK,
+            Json(json!({ "mute_ordinary": mute, "items": items })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn post_attention(
+    State(rt): State<AppState>,
+    Json(body): Json<PostAttentionBody>,
+) -> Response {
+    let kind = body.kind.trim();
+    if !matches!(kind, "ordinary" | "digest" | "urgent") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "bad_request",
+                "message": "kind 须为 ordinary|digest|urgent",
+                "retryable": false
+            })),
+        )
+            .into_response();
+    }
+    match rt.store.enqueue_desktop_attention(
+        "local",
+        kind,
+        body.title.trim(),
+        body.body.trim(),
+        body.task_id.as_deref(),
+    ) {
+        Ok((delivered, item)) => (
+            StatusCode::OK,
+            Json(json!({ "delivered": delivered, "item": item })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn mute_attention(
+    State(rt): State<AppState>,
+    Json(body): Json<MuteAttentionBody>,
+) -> Response {
+    match rt
+        .store
+        .set_desktop_attention_mute("local", body.mute_ordinary)
+    {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(json!({ "mute_ordinary": body.mute_ordinary })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn dismiss_attention(State(rt): State<AppState>, Path(id): Path<String>) -> Response {
+    match rt.store.dismiss_desktop_attention(&id) {
+        Ok(()) => (StatusCode::OK, Json(json!({ "dismissed": true }))).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),

@@ -667,6 +667,13 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADACL-04 | ai-desktop | 已撤权 alice | carol 读原文 | **200**；互不影响 |
 | RT-ADACL-05 | ai-desktop | 证据 status=expired/revoked | 有权主体读 summary/source | **410** `source_unavailable`；不回正文 |
 | E2E-ADSOURCES | ai-desktop | 打开证据面板（真实 ACL） | 切换 bob/alice 撤权/carol；搜索 | 无授权与撤权后列表与搜索拒绝；carol 仍可读原文 |
+| RT-ADAPPR-01 | ai-desktop | 任务审批夹具 pending | decide approve + 匹配 revision | **200**；status=approved；decided_by 非空 |
+| RT-ADAPPR-02 | ai-desktop | 已批准 revision=1 | bump 升版后再用旧 revision execute | **409** `revision_conflict`；execute_count 仍为 0 |
+| RT-ADAPPR-03 | ai-desktop | reset 后 reject | execute | 拒绝（4xx）；execute_count=0 |
+| RT-ADAPPR-04 | ai-desktop | 已批准 | execute 两次（同 revision） | 两次均成功语义；execute_count=1；last_receipt=applied |
+| RT-ADAPPR-05 | ai-desktop | 已批准 | execute force_unknown → ack-unknown | receipt 先 unknown 再 applied；execute_count=1 |
+| RT-ADATTN-01 | ai-desktop | mute_ordinary=true | 投递 ordinary 与 urgent | ordinary 不入队；urgent 入队 |
+| RT-ADATTN-02 | ai-desktop | 已有同 title ordinary | 再投递同 title ordinary | 队列中该 title ordinary 仍仅 1 条 |
 
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 
