@@ -958,7 +958,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **A5 整体**（2026-11-20）：M1–M6 Mock 贯通收口；`desktop.spec.ts` 15/15；证据 `testing/evidence/ai-desktop-a5.md`（B1 真实受理等仍按 MOCK_REGISTRY）
 - [x] **B1 可靠受理**（2026-11-20）：`/api/desktop/v1/.../requests` + store 幂等；RT-ADACCEPT-01～04；证据 `testing/evidence/ai-desktop-b1.md`
 - [x] **T-61 受理面板接真**（2026-11-22）：AcceptMockPanel → B1 HTTP；E2E-ADACCEPT 真实路径；证据 `testing/evidence/ai-desktop-t61-accept.md`（丢回执为客户端夹具）
-- [x] **B2 Run SSE / 断线重放**（2026-11-20）：`GET /api/desktop/v1/events?after=`；store 会话游标；RT-ADREPLAY-01～05；证据 `testing/evidence/ai-desktop-b2.md`（E2E-ADRESUME Mock 仍保留；不改 orchestrator）
+- [x] **B2 Run SSE / 断线重放**（2026-11-20）：`GET /api/desktop/v1/events?after=`；store 会话游标；RT-ADREPLAY-01～05；证据 `testing/evidence/ai-desktop-b2.md`（不改 orchestrator）
+- [x] **T-64 Resume 面板接 B2 SSE**（2026-11-22）：ResumeMockPanel → `/events`；E2E-ADRESUME 真实路径；证据 `testing/evidence/ai-desktop-t64-resume.md`
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`

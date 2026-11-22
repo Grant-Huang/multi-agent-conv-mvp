@@ -718,6 +718,23 @@ export const api = {
       `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/handoff/share-voice`,
       { method: "POST", body: JSON.stringify({ share }) },
     ),
+
+  /** AI Desktop T-64：Resume fixture + B2 SSE */
+  desktopResumeSeed: () =>
+    request<DesktopResumeSeedDto>("/api/desktop/v1/resume/fixture/seed", {
+      method: "POST",
+      body: "{}",
+    }),
+  desktopResumeReplayA: (conversationId: string) =>
+    request<{ ok: boolean; conversation_id: string }>(
+      "/api/desktop/v1/resume/fixture/replay-a",
+      { method: "POST", body: JSON.stringify({ conversation_id: conversationId }) },
+    ),
+  desktopResumeContinueB: (conversationId: string) =>
+    request<{ ok: boolean; conversation_id: string }>(
+      "/api/desktop/v1/resume/fixture/continue-b",
+      { method: "POST", body: JSON.stringify({ conversation_id: conversationId }) },
+    ),
 };
 
 export type DesktopEvidenceDto = {
@@ -800,6 +817,34 @@ export type DesktopHandoffDto = {
   chosen: string | null;
   voice_shared: boolean;
 };
+
+export type DesktopResumeRunDto = {
+  task_id: string;
+  status: string;
+  progress: string;
+  version: number;
+};
+
+export type DesktopResumeSeedDto = {
+  conversation_id: string;
+  after_cursor: string;
+  task_a: string;
+  task_b: string;
+  runs: DesktopResumeRunDto[];
+};
+
+export type DesktopEventEnvelopeDto = {
+  event_id: string;
+  cursor: string;
+  conversation_id: string;
+  task_id?: string | null;
+  kind: string;
+  status?: string | null;
+  message: string;
+  stream_id?: string | null;
+  created_at: string;
+};
+
 /** 订阅某个会话的 SSE 事件流，返回取消订阅函数 */
 export function subscribeEvents(cid: string, onEvent: (e: TaskEvent) => void): () => void {
   const es = new EventSource(`/api/events?conversation_id=${cid}`);
@@ -808,6 +853,25 @@ export function subscribeEvents(cid: string, onEvent: (e: TaskEvent) => void): (
       onEvent(JSON.parse((msg as MessageEvent).data));
     } catch {
       /* 忽略无法解析的事件 */
+    }
+  });
+  return () => es.close();
+}
+
+/** B2：桌面游标 SSE（`desktop_event`） */
+export function subscribeDesktopEvents(
+  conversationId: string,
+  after: string | undefined,
+  onEvent: (e: DesktopEventEnvelopeDto) => void,
+): () => void {
+  const q = new URLSearchParams({ conversation_id: conversationId });
+  if (after) q.set("after", after);
+  const es = new EventSource(`/api/desktop/v1/events?${q.toString()}`);
+  es.addEventListener("desktop_event", (msg) => {
+    try {
+      onEvent(JSON.parse((msg as MessageEvent).data) as DesktopEventEnvelopeDto);
+    } catch {
+      /* 忽略 */
     }
   });
   return () => es.close();
