@@ -25,7 +25,7 @@
 | WAM-04 | 方案与批准 | 版本、角色；审批走运营频道卡 | **M2** 复用 MOM；**M4** 真实审批 | 过期批准零写入 | **M0 Mock** + **M2 服务层**（`/api/world/des` Propose/批准；`ops/approve-execute`；见 `wa-m2-2-green.md` / `wa-m2-5-browser.md`）；真实审批 **M4** |
 | WAM-05 | 写入、回执、取消 | 稳定 execution_id、丢回执、部分失败 | **M2** DES；**M4** MES | 重复执行、终态保护 | **M0 Mock** + **M2 DES 写**（Execute/Confirm；`RT-WADES-09～17`；E2E-WAEXEC/WARECV；见 `wa-m2-3-recovery.md` / `wa-m2-5-browser.md`）；MES **M4** |
 | WAM-06 | 审核与诊断 | 标准答案仅审核可见 | **M2** DES 审核源 | 访问边界、刷新失败恢复 | **M0 Mock** + **M2 DES 审核**（`RT-WADES-18～19`；E2E-WADYN/WALOOP；见 `wa-m2-4-closed-loop.md` / `wa-m2-5-browser.md`） |
-| WAM-07 | 生产来源 | 模拟站点/延迟（种子标识） | **M3** 读；**M4** 写 | 对账可复验 | **M0 种子标识**；完整路径 **M3/M4** |
+| WAM-07 | 生产来源 | 模拟站点/延迟（种子标识） | **M3** 读；**M4** 写 | 对账可复验 | **M0 种子标识**；**M3 读**任务卡冻结中（见 [WA_M3_TASKS.md](WA_M3_TASKS.md) / `wa-m3-0.md`）；写 **M4** |
 
 退役真实路径上的 Mock 路由时：关掉 `world_mock`、保留隔离套件作回归、更新本表状态为「已替换」并附 PR。
 
@@ -34,7 +34,8 @@
 - 套件：`./scripts/wa-m0-suite.sh` / `cd web && npm run test:wa-m0`；M1：`./scripts/wa-m1-suite.sh` / `npm run test:wa-m1`；M2：`./scripts/wa-m2-suite.sh` / `./scripts/wa-m2-regression.sh`
 - 准出：`docs/testing/evidence/wa-m0-6.md`（H1～H4；M0 已关闭）；M1：`docs/testing/evidence/wa-m1-5.md`；M2：`docs/testing/evidence/wa-m2-6.md`
 - M1 读路径替换任务卡：[WA_M1_TASKS.md](WA_M1_TASKS.md)（M1-0～5 已关闭；T-50 #187）
-- M2 写路径替换任务卡：[WA_M2_TASKS.md](WA_M2_TASKS.md)（M2-0～5 已合入；M2-6 准出见 [WA_M2_6_PLAN.md](WA_M2_6_PLAN.md)）
+- M2 写路径替换任务卡：[WA_M2_TASKS.md](WA_M2_TASKS.md)（M2-0～6 已关闭；准出 `wa-m2-6.md` / #207）
+- M3 生产只读任务卡：[WA_M3_TASKS.md](WA_M3_TASKS.md)（M3-0 冻结；证据 `wa-m3-0.md`）
 - 覆盖矩阵：本文 §4 与 [world-adapter Feature Map](../feature-map/features/world-adapter.md)
 
 ## 4. M0 设计清单 → 可执行断言（H4）

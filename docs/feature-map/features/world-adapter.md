@@ -1,7 +1,7 @@
 # World Adapter 与 MOM 工作台 Feature Map
 
 Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`docs/mom/DES_EXPERIMENT_OPS_SPLIT.md`、`docs/mom/WA_MOCK_REGISTRY.md`、`web/e2e/des-experiment.spec.ts`、`web/e2e/mom-workbench.spec.ts`、`web/e2e/wa-integration.spec.ts`、`web/e2e/wa-des-remote.spec.ts`、`web/e2e/wa-des-write.spec.ts`、`scripts/wa-m0-suite.sh`、`scripts/wa-m1-suite.sh`、`scripts/wa-m2-suite.sh`、`web/src/desktop/DesExperiment.tsx`、`web/src/desktop/MomWorkbench.tsx`、`web/src/components/OpsCards.tsx`；用例 `E2E-DESTRIAL`～`E2E-DESLOOP`、`E2E-WABIND`、`E2E-WACHANNEL`、`E2E-WADES`/`WAREAD`/`WAOBS`、`E2E-WAEXEC`/`WARECV`/`WADYN`/`WALOOP`；合同 `RT-WA-01～09`、`RT-WADES-01～19`；准出证据 `docs/testing/evidence/wa-m0-6.md`、`docs/testing/evidence/wa-m1-5.md`、`docs/testing/evidence/wa-m2-6.md`。  
-现有路径见 [MOM Feature Map](mom.md)。表中其余 `E2E-WA-*` 为设计编号，登记进 CASES/`features.json` 前须换成 `E2E-[A-Z]+`；控件名是 Playwright 定位契约。M0 H4 覆盖矩阵见 [WA_MOCK_REGISTRY.md](../../mom/WA_MOCK_REGISTRY.md) §4。M0 已准出（#175）；**M1** 读路径准出见 [WA_M1_TASKS.md](../../mom/WA_M1_TASKS.md) / `wa-m1-5.md`；**M2** 写路径准出见 [WA_M2_TASKS.md](../../mom/WA_M2_TASKS.md) / `wa-m2-6.md`（服务层 Propose/Execute/Confirm；E2E-WAEXEC/WARECV/WADYN/WALOOP Green #206；WAM-04～06 定稿）。
+现有路径见 [MOM Feature Map](mom.md)。表中其余 `E2E-WA-*` 为设计编号，登记进 CASES/`features.json` 前须换成 `E2E-[A-Z]+`；控件名是 Playwright 定位契约。M0 H4 覆盖矩阵见 [WA_MOCK_REGISTRY.md](../../mom/WA_MOCK_REGISTRY.md) §4。M0 已准出（#175）；**M1** 读路径准出见 [WA_M1_TASKS.md](../../mom/WA_M1_TASKS.md) / `wa-m1-5.md`；**M2** 写路径准出见 [WA_M2_TASKS.md](../../mom/WA_M2_TASKS.md) / `wa-m2-6.md`（#207）；**M3** 生产只读冻结见 [WA_M3_TASKS.md](../../mom/WA_M3_TASKS.md) / `wa-m3-0.md`（拟 `E2E-WAPROD`/`WAPISO`/`WAPREAD`/`WAPDELAY`、`RT-WAPROD-01～06`；写仍 Mock/DES，真 MES 写属 M4）。
 
 | 拟用例 | 正式 E2E id | 操作路径与定位 | UI 和业务断言 | 追溯 |
 |---|---|---|---|---|
@@ -14,7 +14,7 @@ Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`do
 | E2E-WA-07 动态 DES | `E2E-WAOBS`（M1，Green）；`E2E-WADYN` / `E2E-WALOOP`（M2 Green） | 会话进入动态 DES → 推进 → 观测/事项 → 干预 | M1：正式投递观测可见且无标准答案；M2：批准维修后未来事件改变；双角色同一正式运行 | WA-05、07、08 / UI07、14、15 / RT-DES-08～11、RT-DESC |
 | E2E-WA-08 会话和小屏 | （待登记） | 「与 AI 讨论」写 A 草稿 → 切 C → 回 A；节点证据页按 Escape | 草稿和上下文隔离，焦点恢复，小屏无横溢，模型离线时已有证据可查 | WA-07、08 / UI12、16 / P-MOM-CONTEXT |
 | E2E-WA-09 客诉与移交 | （待登记） | C101 →「承诺与交接」→检查冻结、回复、8D 与接责 | 缺依据不能关闭。4 小时回复、24 小时报告与关闭各自验证。移交保留风险 | WA-08 / UI13、14 |
-| E2E-WA-10 生产确认 | （待登记） | 选择生产世界 → 资产来源及水位 →「创建维修工单」→批准→「查证结果」 | 按工单号核对站点、设备与状态。延迟显示待查证。工单记录和设备恢复分开 | WA-06、07 / UI02、09、10、15 |
+| E2E-WA-10 生产确认 | （M4）；M3 拟只读 `E2E-WAPROD`/`WAPREAD`/`WAPDELAY` | 选择生产世界 → 资产来源及水位；M4 再「创建维修工单」→批准→「查证结果」 | M3：只读观测与水位/权限；M4：按工单号核对站点、设备与状态 | WA-06、07 / UI02、09、10、15 |
 
 Playwright 先用 Harness 装载场景和时钟，再从产品首页开始。以拥有明确名称的导航、事项区、对话框或频道卡限定定位范围。重复业务动作使用案例或执行 ID 定位，例如在对应 OpsCase 内定位角色 button 和精确名称「批准」。故障准备可以调用测试入口，正常操作经 UI。通过正常业务 API 核对副作用和版本。
 

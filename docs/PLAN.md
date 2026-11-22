@@ -971,7 +971,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 3. 必须有 Mock 开发与取代计划（WORLD_ADAPTER_PLAN §4，含「实验控制与消息」）。
 4. 回归严格覆盖 WA-01～08、UI01～16、**DES-UI-01～06**；合入前每条有可执行断言。
 
-### World Adapter 里程碑（设计已确认；M0/M1 已准出，M2 写路径准出中）
+### World Adapter 里程碑（设计已确认；M0/M1/M2 已准出，M3 生产只读进行中）
 
 - [x] **M0-0** 冻结 DES-UI 用例登记（`E2E-DESTRIAL`～`E2E-DESLOOP`；[mom/WA_M0_TASKS.md](mom/WA_M0_TASKS.md)；证据 `testing/evidence/wa-m0-0-red.md`）
 - [x] **M0-1** 协议/实验 Mock HTTP（`/api/world/mock`；RT-WA-01～08；证据 `testing/evidence/wa-m0-1.md`）
@@ -994,9 +994,10 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M2-3** 恢复与幂等加深（RT-WADES-15～17；[mom/WA_M2_3_PLAN.md](mom/WA_M2_3_PLAN.md)；证据 `testing/evidence/wa-m2-3-recovery.md`；#200）
 - [x] **M2-4** DES 闭环与 RT-DES/DESC 回归（RT-WADES-18～19；[mom/WA_M2_4_PLAN.md](mom/WA_M2_4_PLAN.md)；证据 `testing/evidence/wa-m2-4-closed-loop.md`；#202）
 - [x] **M2-5** 浏览器远程写 + M0/M1 回归（E2E-WAEXEC/WARECV/WADYN/WALOOP；[mom/WA_M2_5_PLAN.md](mom/WA_M2_5_PLAN.md)；证据 `testing/evidence/wa-m2-5-browser.md`；#206）
-- [ ] **M2-6** 证据 / WAM-04～06 / 准出检查（[mom/WA_M2_6_PLAN.md](mom/WA_M2_6_PLAN.md)；证据 `testing/evidence/wa-m2-6.md`）
-- [ ] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环（WA-03/04/05/08；合入 M2-6 后勾选）
-- [ ] **M3** 生产只读（写仍 Mock）
+- [x] **M2-6** 证据 / WAM-04～06 / 准出检查（[mom/WA_M2_6_PLAN.md](mom/WA_M2_6_PLAN.md)；证据 `testing/evidence/wa-m2-6.md`；#207）
+- [x] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环（WA-03/04/05/08；服务层 `/api/world/des`；套件 `wa-m2-suite`）
+- [x] **M3-0** 冻结生产只读用例与任务卡（[mom/WA_M3_TASKS.md](mom/WA_M3_TASKS.md)；证据 `testing/evidence/wa-m3-0.md`）
+- [ ] **M3** 生产只读（写仍 Mock；接站点权威源/水位/权限/断点恢复）
 - [ ] **M4** 首个可查证生产写动作（维修工单）
 
 入口拆分设计：[mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md)。产品壳与通用前门见 [ai-desktop/PLAN.md](ai-desktop/PLAN.md)（与 WA 切片并行，硬约束一致）。
