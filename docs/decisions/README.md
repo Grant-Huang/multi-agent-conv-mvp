@@ -96,3 +96,7 @@
 | [2026-11-21-industrial-capabilities-in-desktop.md](2026-11-21-industrial-capabilities-in-desktop.md) | 设计意图：MOM、运营桌面、World Adapter 是桌面里的工业业务能力 | 用户确认 | 有效 |
 | [2026-11-21-doc-rules-enforcement.md](2026-11-21-doc-rules-enforcement.md) | 文档规则写进入口文件，CI 文档检查先警告后强制 | 用户确认 | 有效 |
 | [2026-11-21-dev-standard-and-guardrails.md](2026-11-21-dev-standard-and-guardrails.md) | 唯一研发规范 DEV_STANDARD.md 与唯一围栏入口；编号 D0～D3 / L0～L3 / 第一～七层；围栏登记表 | 用户确认 | 有效 |
+| [2026-11-21-ai-desktop-c2-gateway-attn.md](2026-11-21-ai-desktop-c2-gateway-attn.md) | AI Desktop C2 动作网关与 Attention | 用户确认 | 有效 |
+| [2026-11-21-ai-desktop-d-voice-handoff.md](2026-11-21-ai-desktop-d-voice-handoff.md) | AI Desktop D 语音与跨端 | 用户确认 | 有效 |
+| [2026-11-21-wa-m2-1-green-service-layer.md](2026-11-21-wa-m2-1-green-service-layer.md) | WA M2 Green 服务层优先 | 用户确认 | 有效 |
+| [2026-11-22-c2-m2-minimal-contracts.md](2026-11-22-c2-m2-minimal-contracts.md) | C2/M2 最小共享契约（批准/取消/追踪） | 用户确认 | 有效 |
