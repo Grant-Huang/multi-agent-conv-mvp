@@ -571,6 +571,50 @@ export const api = {
       method: "DELETE",
     }),
 
+  /** AI Desktop B1：可靠受理（T-61 面板接真） */
+  desktopAcceptCreate: async (
+    conversationId: string,
+    body: {
+      client_operation_id: string;
+      text: string;
+      scope?: string;
+      task_id?: string;
+    },
+  ): Promise<
+    | { ok: true; status: number; body: DesktopAcceptDto }
+    | { ok: false; status: number; code: string; message: string; request_id?: string; message_id?: string }
+  > => {
+    const res = await fetch(
+      `/api/desktop/v1/conversations/${encodeURIComponent(conversationId)}/requests`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_operation_id: body.client_operation_id,
+          text: body.text,
+          scope: body.scope ?? "continue",
+          task_id: body.task_id,
+        }),
+      },
+    );
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 202) {
+      return { ok: true, status: 202, body: data as DesktopAcceptDto };
+    }
+    return {
+      ok: false,
+      status: res.status,
+      code: String(data.code ?? "error"),
+      message: String(data.message ?? `HTTP ${res.status}`),
+      request_id: data.request_id as string | undefined,
+      message_id: data.message_id as string | undefined,
+    };
+  },
+  desktopAcceptGet: (requestId: string) =>
+    request<DesktopRequestRecordDto>(
+      `/api/desktop/v1/requests/${encodeURIComponent(requestId)}`,
+    ),
+
   /** AI Desktop D：语音会话（fixture 媒体） */
   desktopVoiceGet: (taskId: string) =>
     request<{ session: DesktopVoiceSessionDto }>(
@@ -686,6 +730,27 @@ export type DesktopAttentionDto = {
   body: string;
   task_id: string | null;
   created_at: string;
+};
+
+export type DesktopAcceptDto = {
+  request_id: string;
+  message_id: string;
+  status: string;
+  task_id?: string | null;
+  dispatch_count: number;
+  replayed: boolean;
+};
+
+export type DesktopRequestRecordDto = {
+  request_id: string;
+  message_id: string;
+  conversation_id: string;
+  client_operation_id: string;
+  text: string;
+  scope: string;
+  task_id: string | null;
+  status: string;
+  dispatch_count: number;
 };
 
 export type DesktopVoiceSessionDto = {

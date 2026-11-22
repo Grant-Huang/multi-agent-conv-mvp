@@ -169,7 +169,7 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
           {showResume && <ResumeMockPanel onOpenTask={onOpenTask} />}
           {showVoice && <VoiceMockPanel taskId={taskId} />}
           {showHandoff && <HandoffMockPanel taskId={taskId} />}
-          {showAccept && <AcceptMockPanel />}
+          {showAccept && <AcceptMockPanel taskId={taskId} />}
           <p className="workspace-hint">草稿与作用域按 Task 隔离（A2）。</p>
           <WorkspaceComposer taskId={taskId} />
         </section>
