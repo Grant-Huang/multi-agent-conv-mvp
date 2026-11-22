@@ -15,7 +15,7 @@
 
 | ID | 能力 | A 阶段交付（开发） | 种子 / 故障夹具 | 替换里程碑 | 替换验收（真实） | 状态 |
 |---|---|---|---|---|---|---|
-| M1 | 对话、任务、上下文、历史、首页卡片 | 有状态 HTTP；SMT-03=`TASK-2026-018`、产品改进、独立会话；受理/拒绝/延迟/误关联/纠正 | 双 Task 草稿串写；迟到响应；操作 ID 冲突 | **B1/B3** | 一条消息一次派发；历史与 ConversationTaskLink 持久；与现有 `/api/conversations*`、`/api/tasks*` 对齐后可混跑 | **混合**：**B1 受理 + B3 关联已接**（requests / links；RT-ADACCEPT、RT-ADLINK）；首页卡/SMT-03 与 `acceptMock`/`draftStore` UI 仍在；会话 `POST .../messages` 仍可用 |
+| M1 | 对话、任务、上下文、历史、首页卡片 | 有状态 HTTP；SMT-03=`TASK-2026-018`、产品改进、独立会话；受理/拒绝/延迟/误关联/纠正 | 双 Task 草稿串写；迟到响应；操作 ID 冲突 | **B1/B3** | 一条消息一次派发；历史与 ConversationTaskLink 持久；与现有 `/api/conversations*`、`/api/tasks*` 对齐后可混跑 | **混合**：**B1 受理 API + 面板已接真**（T-61；E2E-ADACCEPT 真实 HTTP；丢回执为客户端夹具）；B3 关联已接；首页卡/`draftStore` 仍本地；会话 `POST .../messages` 仍可用 |
 | M2 | Run、进度、产物、事件流 | 状态机 + 受控时钟；等待输入/取消/失败/重试；可读产物；重复与过期游标事件 | 断线重连；乱序/重复 event_id；游标过期→重拉快照 | **B2** | HTTP/SSE 重连与进程重启后对账；主 Run 不被迟到事件回退 | **混合**：**B2 游标 SSE 已接**（`GET /api/desktop/v1/events`；RT-ADREPLAY）；`runResumeMock` UI/E2E 仍保留；独立 Run 表与 orchestrator 续跑仍待后续 |
 | M3 | 助理配置、记忆、偏好、已读 | 可改配置；保存失败与版本冲突；未读与已读幂等 | 冲突后保留编辑；已读重复提交 | **B3**（基础设置）→ **C2**（记忆建议/投递） | 配置持久与 expected_version；已读跨端一致 | **混合**：**B3 preferences 已接**；**C2 Attention 投递已接**（mute/去重；RT-ADATTN）；`profileStore`/记忆建议 UI 仍 Mock；已读跨端仍待后续 |
 | M4 | 频道、RelOS、MOM/证据权限 | 两角色；浏览来源/对象；撤权；来源失效；**可挂现有真实 MOM desk/频道**（有则真、无则 Mock） | 撤权后搜索/摘要/下载/通知全拒；缓存清除 | **C1** | 组织身份与 ACL 生效；与运营 D3a/真实 desk 读模型汇合 | **混合**：**C1 证据 ACL 已接**（夹具 `x-desktop-principal`；RT-ADACL；E2E-ADSOURCES 真实 HTTP）；运营 desk/频道仍混合；完整 IdP 仍待后续 |

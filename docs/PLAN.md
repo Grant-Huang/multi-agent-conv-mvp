@@ -956,7 +956,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **A5.3 移动语音 / 跨端 Mock**（2026-11-20）：E2E-ADVOICE、E2E-ADHAND；证据 `testing/evidence/ai-desktop-a5.3.md`
 - [x] **A5.4 受理回执 Mock**（2026-11-20）：E2E-ADACCEPT；证据 `testing/evidence/ai-desktop-a5.4.md`（真实可靠受理仍待 B1）
 - [x] **A5 整体**（2026-11-20）：M1–M6 Mock 贯通收口；`desktop.spec.ts` 15/15；证据 `testing/evidence/ai-desktop-a5.md`（B1 真实受理等仍按 MOCK_REGISTRY）
-- [x] **B1 可靠受理**（2026-11-20）：`/api/desktop/v1/.../requests` + store 幂等；RT-ADACCEPT-01～04；证据 `testing/evidence/ai-desktop-b1.md`（E2E-ADACCEPT Mock 仍保留；B2/B3 另卡）
+- [x] **B1 可靠受理**（2026-11-20）：`/api/desktop/v1/.../requests` + store 幂等；RT-ADACCEPT-01～04；证据 `testing/evidence/ai-desktop-b1.md`
+- [x] **T-61 受理面板接真**（2026-11-22）：AcceptMockPanel → B1 HTTP；E2E-ADACCEPT 真实路径；证据 `testing/evidence/ai-desktop-t61-accept.md`（丢回执为客户端夹具）
 - [x] **B2 Run SSE / 断线重放**（2026-11-20）：`GET /api/desktop/v1/events?after=`；store 会话游标；RT-ADREPLAY-01～05；证据 `testing/evidence/ai-desktop-b2.md`（E2E-ADRESUME Mock 仍保留；不改 orchestrator）
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
