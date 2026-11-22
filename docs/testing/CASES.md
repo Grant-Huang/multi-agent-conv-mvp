@@ -674,6 +674,13 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADAPPR-05 | ai-desktop | 已批准 | execute force_unknown → ack-unknown | receipt 先 unknown 再 applied；execute_count=1 |
 | RT-ADATTN-01 | ai-desktop | mute_ordinary=true | 投递 ordinary 与 urgent | ordinary 不入队；urgent 入队 |
 | RT-ADATTN-02 | ai-desktop | 已有同 title ordinary | 再投递同 title ordinary | 队列中该 title ordinary 仍仅 1 条 |
+| RT-ADVOICE-01 | ai-desktop | reset 后 permission=denied | as-text | **200**；final_text 为文字继续；可无麦克风 |
+| RT-ADVOICE-02 | ai-desktop | start 后 partial | finalize link_task | partial 时 linked_task_id 为空；finalize 后关联任务且 partial 清空 |
+| RT-ADVOICE-03 | ai-desktop | finalize 后 play | barge | playing=false；phase=listening；final_text 保留 |
+| RT-ADVOICE-04 | ai-desktop | finalize 后 offline | as-text 同文 | phase=offline；final_text 保留 |
+| RT-ADHAND-01 | ai-desktop | handoff reset | GET/响应 | 同 task/run/read_message 锚点；voice_shared=false |
+| RT-ADHAND-02 | ai-desktop | 双端不同草稿 | resolve phone | conflict 先 true 后 false；两端正文=手机稿 |
+| RT-ADHAND-03 | ai-desktop | reset | share-voice true→false | voice_shared 随请求切换 |
 
 ## 运营桌面与运营频道 D0/D1（用例草案，实现前定义）
 

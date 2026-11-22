@@ -126,6 +126,49 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/desktop/v1/attention/mute", post(mute_attention))
         .route("/api/desktop/v1/attention/{id}", delete(dismiss_attention))
+        .route("/api/desktop/v1/tasks/{id}/voice", get(get_voice))
+        .route("/api/desktop/v1/tasks/{id}/voice/reset", post(reset_voice))
+        .route(
+            "/api/desktop/v1/tasks/{id}/voice/permission",
+            post(voice_permission),
+        )
+        .route("/api/desktop/v1/tasks/{id}/voice/start", post(voice_start))
+        .route(
+            "/api/desktop/v1/tasks/{id}/voice/partial",
+            post(voice_partial),
+        )
+        .route(
+            "/api/desktop/v1/tasks/{id}/voice/finalize",
+            post(voice_finalize),
+        )
+        .route("/api/desktop/v1/tasks/{id}/voice/play", post(voice_play))
+        .route("/api/desktop/v1/tasks/{id}/voice/barge", post(voice_barge))
+        .route(
+            "/api/desktop/v1/tasks/{id}/voice/offline",
+            post(voice_offline),
+        )
+        .route(
+            "/api/desktop/v1/tasks/{id}/voice/as-text",
+            post(voice_as_text),
+        )
+        .route("/api/desktop/v1/tasks/{id}/voice/share", post(voice_share))
+        .route("/api/desktop/v1/tasks/{id}/handoff", get(get_handoff))
+        .route(
+            "/api/desktop/v1/tasks/{id}/handoff/reset",
+            post(reset_handoff),
+        )
+        .route(
+            "/api/desktop/v1/tasks/{id}/handoff/draft",
+            post(handoff_draft),
+        )
+        .route(
+            "/api/desktop/v1/tasks/{id}/handoff/resolve",
+            post(handoff_resolve),
+        )
+        .route(
+            "/api/desktop/v1/tasks/{id}/handoff/share-voice",
+            post(handoff_share_voice),
+        )
 }
 
 fn principal_from(headers: &HeaderMap) -> String {
@@ -1042,6 +1085,224 @@ async fn dismiss_attention(State(rt): State<AppState>, Path(id): Path<String>) -
         )
             .into_response(),
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct VoicePermissionBody {
+    permission: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct VoicePartialBody {
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct VoiceFinalizeBody {
+    text: String,
+    #[serde(default = "default_true")]
+    link_task: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize)]
+struct VoiceTextBody {
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct VoiceShareBody {
+    share: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct HandoffDraftBody {
+    device: String,
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct HandoffResolveBody {
+    chosen: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct HandoffShareBody {
+    share: bool,
+}
+
+fn voice_ok(r: anyhow::Result<Option<an_runtime::store::DesktopVoiceSession>>) -> Response {
+    match r {
+        Ok(Some(s)) => (StatusCode::OK, Json(json!({ "session": s }))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "语音会话不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+fn handoff_ok(r: anyhow::Result<Option<an_runtime::store::DesktopHandoff>>) -> Response {
+    match r {
+        Ok(Some(h)) => (StatusCode::OK, Json(json!({ "handoff": h }))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "跨端状态不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_voice(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    match rt.store.get_or_create_desktop_voice(&task_id) {
+        Ok(s) => (StatusCode::OK, Json(json!({ "session": s }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn reset_voice(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    match rt.store.reset_desktop_voice(&task_id) {
+        Ok(s) => (StatusCode::OK, Json(json!({ "session": s }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn voice_permission(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(body): Json<VoicePermissionBody>,
+) -> Response {
+    voice_ok(
+        rt.store
+            .set_desktop_voice_permission(&task_id, body.permission.trim()),
+    )
+}
+
+async fn voice_start(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    voice_ok(rt.store.start_desktop_voice(&task_id))
+}
+
+async fn voice_partial(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(body): Json<VoicePartialBody>,
+) -> Response {
+    voice_ok(rt.store.set_desktop_voice_partial(&task_id, &body.text))
+}
+
+async fn voice_finalize(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(body): Json<VoiceFinalizeBody>,
+) -> Response {
+    voice_ok(
+        rt.store
+            .finalize_desktop_voice(&task_id, &body.text, body.link_task),
+    )
+}
+
+async fn voice_play(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    voice_ok(rt.store.play_desktop_voice(&task_id))
+}
+
+async fn voice_barge(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    voice_ok(rt.store.barge_desktop_voice(&task_id))
+}
+
+async fn voice_offline(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    voice_ok(rt.store.offline_desktop_voice(&task_id))
+}
+
+async fn voice_as_text(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(body): Json<VoiceTextBody>,
+) -> Response {
+    voice_ok(rt.store.voice_continue_as_text(&task_id, &body.text))
+}
+
+async fn voice_share(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(body): Json<VoiceShareBody>,
+) -> Response {
+    voice_ok(rt.store.set_desktop_voice_share(&task_id, body.share))
+}
+
+async fn get_handoff(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    match rt.store.get_or_create_desktop_handoff(&task_id) {
+        Ok(h) => (StatusCode::OK, Json(json!({ "handoff": h }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn reset_handoff(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    match rt.store.reset_desktop_handoff(&task_id) {
+        Ok(h) => (StatusCode::OK, Json(json!({ "handoff": h }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+async fn handoff_draft(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(body): Json<HandoffDraftBody>,
+) -> Response {
+    handoff_ok(
+        rt.store
+            .write_desktop_handoff_draft(&task_id, body.device.trim(), &body.text),
+    )
+}
+
+async fn handoff_resolve(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(body): Json<HandoffResolveBody>,
+) -> Response {
+    handoff_ok(
+        rt.store
+            .resolve_desktop_handoff(&task_id, body.chosen.trim()),
+    )
+}
+
+async fn handoff_share_voice(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(body): Json<HandoffShareBody>,
+) -> Response {
+    handoff_ok(
+        rt.store
+            .set_desktop_handoff_voice_shared(&task_id, body.share),
+    )
 }
 
 fn envelope_from_cursor(item: &DesktopEventCursor) -> DesktopEventEnvelope {

@@ -13,7 +13,7 @@
 | 5 历史协作、6 布局 | AD-HISTORY、AD-SOURCES、AD-INPUT | E2E-ADHISTORY、E2E-ADSOURCES、E2E-ADINPUT | browser | E2E-ADHISTORY **已登记**（A3）；E2E-ADINPUT **已登记**（A4）；E2E-ADSOURCES **已登记**（C1 真实 HTTP） |
 | 7–9 刷新/分工/风控 | AD-RESUME、AD-ATTENTION、AD-EVIDENCE、AD-APPROVE | E2E-ADRESUME、E2E-ADATTN、E2E-ADEVID、E2E-ADAPPR；RT-ADREPLAY-01～05 | browser+RT | E2E-ADEVID **已登记**（A3）；E2E-ADATTN **已登记**（A5.1）；E2E-ADAPPR/ADRESUME **已登记**（A5.2 Mock）；**RT-ADREPLAY Green（B2）**；审批 RT 待 C |
 | 10–13 阶段/开放/指南/参考 | 里程碑与决议 | — | docs | 见 PLAN / DECISIONS 61 |
-| 14–15 助理/语音跨端 | AD-PROFILE、AD-VOICE、AD-HANDOFF | E2E-ADPROF、E2E-ADVOICE、E2E-ADHAND；RT-ADPREF-01～03 | browser / Mock→D | E2E-ADPROF **已登记**（A4）；**RT-ADPREF Green（B3）**；E2E-ADVOICE/ADHAND **已登记**（A5.3）；真实媒体待 D |
+| 14–15 助理/语音跨端 | AD-PROFILE、AD-VOICE、AD-HANDOFF | E2E-ADPROF、E2E-ADVOICE、E2E-ADHAND；RT-ADPREF-01～03；RT-ADVOICE-01～04；RT-ADHAND-01～03 | browser+HTTP | E2E-ADPROF **已登记**（A4）；**RT-ADPREF Green（B3）**；**RT-ADVOICE/ADHAND + E2E 真实 HTTP（D fixture）**；真机媒体另卡 |
 | 16–18 异步/主动/设置 | AD-S1、AD-ACCEPT、AD-ATTENTION、AD-PROFILE | E2E-ADASK、E2E-ADATTN、E2E-ADACCEPT | browser | E2E-ADASK/ADATTN **已登记**（A5.1）；E2E-ADACCEPT **已登记**（A5.4 Mock）；真实可靠受理待 B1 |
 | 19–21 连续性/导航/回归 | AD-NAV、AD-LAYOUT、AD-DRAFT、AD-EVIDENCE、AD-INPUT | （同上） | browser | 随 A 增量；**A5 整体** `desktop.spec` 15/15（证据 `testing/evidence/ai-desktop-a5.md`） |
 
@@ -28,7 +28,7 @@
 | M3 助理/设置 | E2E-ADPROF、E2E-ADINPUT | a4；a5 整体复跑 |
 | M4 频道/权限 | E2E-OPS* / E2E-WA*（混合真实）；证据 ACL：RT-ADACL + E2E-ADSOURCES（C1） | 见 MOCK_REGISTRY M4 |
 | M5 审批/提醒 | E2E-ADAPPR、E2E-ADATTN、E2E-ADASK | a5.1/a5.2 + a5 整体 |
-| M6 语音/跨端 | E2E-ADVOICE、E2E-ADHAND | a5.3 + a5 整体 |
+| M6 语音/跨端 | E2E-ADVOICE、E2E-ADHAND；RT-ADVOICE/ADHAND | a5.3 + a5 整体；**D** `ai-desktop-d.md` |
 
 ## A1 必验条款（本里程碑）
 

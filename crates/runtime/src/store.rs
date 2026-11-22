@@ -218,6 +218,38 @@ pub struct DesktopAttentionItem {
     pub created_at: String,
 }
 
+/// AI Desktop D：语音会话（fixture 媒体，无真实 mic）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopVoiceSession {
+    pub id: String,
+    pub task_id: String,
+    /// prompt | granted | denied
+    pub permission: String,
+    /// idle | connecting | listening | speaking | muted | offline
+    pub phase: String,
+    pub playing: bool,
+    pub partial: String,
+    pub final_text: String,
+    pub linked_task_id: Option<String>,
+    pub share_transcript: bool,
+}
+
+/// AI Desktop D：跨端续接
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopHandoff {
+    pub task_id: String,
+    pub conversation_id: String,
+    pub run_id: String,
+    pub read_message_id: String,
+    pub phone_text: String,
+    pub phone_version: i64,
+    pub desktop_text: String,
+    pub desktop_version: i64,
+    pub conflict: bool,
+    pub chosen: Option<String>,
+    pub voice_shared: bool,
+}
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
@@ -419,6 +451,33 @@ CREATE TABLE IF NOT EXISTS desktop_attention_items (
 CREATE TABLE IF NOT EXISTS desktop_attention_prefs (
     user_id TEXT PRIMARY KEY,
     mute_ordinary INTEGER NOT NULL DEFAULT 0
+);
+-- AI Desktop D：语音会话与跨端草稿（fixture）
+CREATE TABLE IF NOT EXISTS desktop_voice_sessions (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL UNIQUE,
+    permission TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    playing INTEGER NOT NULL DEFAULT 0,
+    partial TEXT NOT NULL DEFAULT '',
+    final_text TEXT NOT NULL DEFAULT '',
+    linked_task_id TEXT,
+    share_transcript INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS desktop_handoff (
+    task_id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    read_message_id TEXT NOT NULL,
+    phone_text TEXT NOT NULL DEFAULT '',
+    phone_version INTEGER NOT NULL DEFAULT 0,
+    desktop_text TEXT NOT NULL DEFAULT '',
+    desktop_version INTEGER NOT NULL DEFAULT 0,
+    conflict INTEGER NOT NULL DEFAULT 0,
+    chosen TEXT,
+    voice_shared INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
 );
 "#;
 
@@ -1840,6 +1899,399 @@ impl Store {
         let conn = self.write();
         conn.execute("DELETE FROM desktop_attention_items", [])?;
         Ok(())
+    }
+
+    fn map_voice(r: &rusqlite::Row<'_>) -> rusqlite::Result<DesktopVoiceSession> {
+        let playing: i64 = r.get(4)?;
+        let share: i64 = r.get(8)?;
+        Ok(DesktopVoiceSession {
+            id: r.get(0)?,
+            task_id: r.get(1)?,
+            permission: r.get(2)?,
+            phase: r.get(3)?,
+            playing: playing != 0,
+            partial: r.get(5)?,
+            final_text: r.get(6)?,
+            linked_task_id: r.get(7)?,
+            share_transcript: share != 0,
+        })
+    }
+
+    fn load_voice(conn: &Connection, task_id: &str) -> Result<Option<DesktopVoiceSession>> {
+        conn.query_row(
+            "SELECT id, task_id, permission, phase, playing, partial, final_text, linked_task_id, share_transcript
+             FROM desktop_voice_sessions WHERE task_id = ?1",
+            params![task_id],
+            Self::map_voice,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    fn save_voice(conn: &Connection, s: &DesktopVoiceSession) -> Result<()> {
+        conn.execute(
+            "INSERT INTO desktop_voice_sessions
+             (id, task_id, permission, phase, playing, partial, final_text, linked_task_id, share_transcript, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
+             ON CONFLICT(task_id) DO UPDATE SET
+               id=excluded.id, permission=excluded.permission, phase=excluded.phase,
+               playing=excluded.playing, partial=excluded.partial, final_text=excluded.final_text,
+               linked_task_id=excluded.linked_task_id, share_transcript=excluded.share_transcript,
+               updated_at=excluded.updated_at",
+            params![
+                s.id,
+                s.task_id,
+                s.permission,
+                s.phase,
+                if s.playing { 1 } else { 0 },
+                s.partial,
+                s.final_text,
+                s.linked_task_id,
+                if s.share_transcript { 1 } else { 0 },
+                now()
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn empty_voice(task_id: &str) -> DesktopVoiceSession {
+        DesktopVoiceSession {
+            id: format!("voice-{task_id}"),
+            task_id: task_id.into(),
+            permission: "prompt".into(),
+            phase: "idle".into(),
+            playing: false,
+            partial: String::new(),
+            final_text: String::new(),
+            linked_task_id: None,
+            share_transcript: false,
+        }
+    }
+
+    pub fn reset_desktop_voice(&self, task_id: &str) -> Result<DesktopVoiceSession> {
+        let s = Self::empty_voice(task_id);
+        let conn = self.write();
+        Self::save_voice(&conn, &s)?;
+        Ok(s)
+    }
+
+    pub fn get_or_create_desktop_voice(&self, task_id: &str) -> Result<DesktopVoiceSession> {
+        let conn = self.write();
+        if let Some(s) = Self::load_voice(&conn, task_id)? {
+            return Ok(s);
+        }
+        let s = Self::empty_voice(task_id);
+        Self::save_voice(&conn, &s)?;
+        Ok(s)
+    }
+
+    pub fn set_desktop_voice_permission(
+        &self,
+        task_id: &str,
+        permission: &str,
+    ) -> Result<Option<DesktopVoiceSession>> {
+        let conn = self.write();
+        let Some(mut s) = Self::load_voice(&conn, task_id)? else {
+            return Ok(None);
+        };
+        if permission == "denied" {
+            s.permission = "denied".into();
+            s.phase = "idle".into();
+            s.playing = false;
+            s.partial.clear();
+        } else {
+            s.permission = permission.into();
+        }
+        Self::save_voice(&conn, &s)?;
+        Ok(Some(s))
+    }
+
+    pub fn start_desktop_voice(&self, task_id: &str) -> Result<Option<DesktopVoiceSession>> {
+        let conn = self.write();
+        let Some(mut s) = Self::load_voice(&conn, task_id)? else {
+            return Ok(None);
+        };
+        if s.permission == "denied" {
+            Self::save_voice(&conn, &s)?;
+            return Ok(Some(s));
+        }
+        if s.permission == "prompt" {
+            s.permission = "granted".into();
+            s.phase = "listening".into();
+            s.playing = false;
+        } else {
+            s.phase = "listening".into();
+            s.playing = false;
+        }
+        Self::save_voice(&conn, &s)?;
+        Ok(Some(s))
+    }
+
+    pub fn set_desktop_voice_partial(
+        &self,
+        task_id: &str,
+        text: &str,
+    ) -> Result<Option<DesktopVoiceSession>> {
+        let conn = self.write();
+        let Some(mut s) = Self::load_voice(&conn, task_id)? else {
+            return Ok(None);
+        };
+        if s.phase == "listening" || s.phase == "speaking" {
+            s.partial = text.into();
+        }
+        Self::save_voice(&conn, &s)?;
+        Ok(Some(s))
+    }
+
+    pub fn finalize_desktop_voice(
+        &self,
+        task_id: &str,
+        text: &str,
+        link_task: bool,
+    ) -> Result<Option<DesktopVoiceSession>> {
+        let conn = self.write();
+        let Some(mut s) = Self::load_voice(&conn, task_id)? else {
+            return Ok(None);
+        };
+        s.partial.clear();
+        s.final_text = text.into();
+        s.linked_task_id = if link_task {
+            Some(s.task_id.clone())
+        } else {
+            None
+        };
+        s.phase = "listening".into();
+        Self::save_voice(&conn, &s)?;
+        Ok(Some(s))
+    }
+
+    pub fn play_desktop_voice(&self, task_id: &str) -> Result<Option<DesktopVoiceSession>> {
+        let conn = self.write();
+        let Some(mut s) = Self::load_voice(&conn, task_id)? else {
+            return Ok(None);
+        };
+        s.playing = true;
+        s.phase = "speaking".into();
+        Self::save_voice(&conn, &s)?;
+        Ok(Some(s))
+    }
+
+    pub fn barge_desktop_voice(&self, task_id: &str) -> Result<Option<DesktopVoiceSession>> {
+        let conn = self.write();
+        let Some(mut s) = Self::load_voice(&conn, task_id)? else {
+            return Ok(None);
+        };
+        s.playing = false;
+        s.phase = "listening".into();
+        Self::save_voice(&conn, &s)?;
+        Ok(Some(s))
+    }
+
+    pub fn offline_desktop_voice(&self, task_id: &str) -> Result<Option<DesktopVoiceSession>> {
+        let conn = self.write();
+        let Some(mut s) = Self::load_voice(&conn, task_id)? else {
+            return Ok(None);
+        };
+        s.phase = "offline".into();
+        s.playing = false;
+        s.partial.clear();
+        Self::save_voice(&conn, &s)?;
+        Ok(Some(s))
+    }
+
+    pub fn voice_continue_as_text(
+        &self,
+        task_id: &str,
+        text: &str,
+    ) -> Result<Option<DesktopVoiceSession>> {
+        let conn = self.write();
+        let Some(mut s) = Self::load_voice(&conn, task_id)? else {
+            return Ok(None);
+        };
+        if s.permission != "denied" && s.phase != "offline" {
+            s.phase = "listening".into();
+        }
+        s.final_text = text.into();
+        s.partial.clear();
+        Self::save_voice(&conn, &s)?;
+        Ok(Some(s))
+    }
+
+    pub fn set_desktop_voice_share(
+        &self,
+        task_id: &str,
+        share: bool,
+    ) -> Result<Option<DesktopVoiceSession>> {
+        let conn = self.write();
+        let Some(mut s) = Self::load_voice(&conn, task_id)? else {
+            return Ok(None);
+        };
+        s.share_transcript = share;
+        Self::save_voice(&conn, &s)?;
+        Ok(Some(s))
+    }
+
+    fn map_handoff(r: &rusqlite::Row<'_>) -> rusqlite::Result<DesktopHandoff> {
+        let conflict: i64 = r.get(8)?;
+        let voice_shared: i64 = r.get(10)?;
+        Ok(DesktopHandoff {
+            task_id: r.get(0)?,
+            conversation_id: r.get(1)?,
+            run_id: r.get(2)?,
+            read_message_id: r.get(3)?,
+            phone_text: r.get(4)?,
+            phone_version: r.get(5)?,
+            desktop_text: r.get(6)?,
+            desktop_version: r.get(7)?,
+            conflict: conflict != 0,
+            chosen: r.get(9)?,
+            voice_shared: voice_shared != 0,
+        })
+    }
+
+    fn load_handoff(conn: &Connection, task_id: &str) -> Result<Option<DesktopHandoff>> {
+        conn.query_row(
+            "SELECT task_id, conversation_id, run_id, read_message_id,
+                    phone_text, phone_version, desktop_text, desktop_version,
+                    conflict, chosen, voice_shared
+             FROM desktop_handoff WHERE task_id = ?1",
+            params![task_id],
+            Self::map_handoff,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    fn save_handoff(conn: &Connection, h: &DesktopHandoff) -> Result<()> {
+        conn.execute(
+            "INSERT INTO desktop_handoff
+             (task_id, conversation_id, run_id, read_message_id, phone_text, phone_version,
+              desktop_text, desktop_version, conflict, chosen, voice_shared, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+             ON CONFLICT(task_id) DO UPDATE SET
+               conversation_id=excluded.conversation_id, run_id=excluded.run_id,
+               read_message_id=excluded.read_message_id, phone_text=excluded.phone_text,
+               phone_version=excluded.phone_version, desktop_text=excluded.desktop_text,
+               desktop_version=excluded.desktop_version, conflict=excluded.conflict,
+               chosen=excluded.chosen, voice_shared=excluded.voice_shared,
+               updated_at=excluded.updated_at",
+            params![
+                h.task_id,
+                h.conversation_id,
+                h.run_id,
+                h.read_message_id,
+                h.phone_text,
+                h.phone_version,
+                h.desktop_text,
+                h.desktop_version,
+                if h.conflict { 1 } else { 0 },
+                h.chosen,
+                if h.voice_shared { 1 } else { 0 },
+                now()
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn empty_handoff(task_id: &str) -> DesktopHandoff {
+        DesktopHandoff {
+            task_id: task_id.into(),
+            conversation_id: "conv-smt-03".into(),
+            run_id: "run-smt-03-1".into(),
+            read_message_id: "msg-anchor-1".into(),
+            phone_text: String::new(),
+            phone_version: 0,
+            desktop_text: String::new(),
+            desktop_version: 0,
+            conflict: false,
+            chosen: None,
+            voice_shared: false,
+        }
+    }
+
+    pub fn reset_desktop_handoff(&self, task_id: &str) -> Result<DesktopHandoff> {
+        let h = Self::empty_handoff(task_id);
+        let conn = self.write();
+        Self::save_handoff(&conn, &h)?;
+        Ok(h)
+    }
+
+    pub fn get_or_create_desktop_handoff(&self, task_id: &str) -> Result<DesktopHandoff> {
+        let conn = self.write();
+        if let Some(h) = Self::load_handoff(&conn, task_id)? {
+            return Ok(h);
+        }
+        let h = Self::empty_handoff(task_id);
+        Self::save_handoff(&conn, &h)?;
+        Ok(h)
+    }
+
+    pub fn write_desktop_handoff_draft(
+        &self,
+        task_id: &str,
+        device: &str,
+        text: &str,
+    ) -> Result<Option<DesktopHandoff>> {
+        let conn = self.write();
+        let Some(mut h) = Self::load_handoff(&conn, task_id)? else {
+            return Ok(None);
+        };
+        match device {
+            "phone" => {
+                h.phone_version += 1;
+                h.phone_text = text.into();
+                h.conflict =
+                    h.desktop_version > 0 && !h.desktop_text.is_empty() && h.desktop_text != text;
+            }
+            "desktop" => {
+                h.desktop_version += 1;
+                h.desktop_text = text.into();
+                h.conflict =
+                    h.phone_version > 0 && !h.phone_text.is_empty() && h.phone_text != text;
+            }
+            _ => return Ok(Some(h)),
+        }
+        if h.conflict {
+            h.chosen = None;
+        }
+        Self::save_handoff(&conn, &h)?;
+        Ok(Some(h))
+    }
+
+    pub fn resolve_desktop_handoff(
+        &self,
+        task_id: &str,
+        chosen: &str,
+    ) -> Result<Option<DesktopHandoff>> {
+        let conn = self.write();
+        let Some(mut h) = Self::load_handoff(&conn, task_id)? else {
+            return Ok(None);
+        };
+        let keep = if chosen == "phone" {
+            h.phone_text.clone()
+        } else {
+            h.desktop_text.clone()
+        };
+        h.phone_text = keep.clone();
+        h.desktop_text = keep;
+        h.conflict = false;
+        h.chosen = Some(chosen.into());
+        Self::save_handoff(&conn, &h)?;
+        Ok(Some(h))
+    }
+
+    pub fn set_desktop_handoff_voice_shared(
+        &self,
+        task_id: &str,
+        shared: bool,
+    ) -> Result<Option<DesktopHandoff>> {
+        let conn = self.write();
+        let Some(mut h) = Self::load_handoff(&conn, task_id)? else {
+            return Ok(None);
+        };
+        h.voice_shared = shared;
+        Self::save_handoff(&conn, &h)?;
+        Ok(Some(h))
     }
 
     /// 按时间顺序返回消息；`last` 为 Some(n) 时只返回最近 n 条
