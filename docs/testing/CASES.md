@@ -902,19 +902,24 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WADES-18 | world-adapter | 已 Execute 维修干预 | 审核员读 ground_truth；运营员 Confirm | `sync_status=synced`；`intervention_id`/`execution_id`/`answer` 与干预一致；Confirm 无标准答案字段 |
 | RT-WADES-19 | world-adapter | 已干预；答案同步失败（测试控件） | `fail-answer-sync` 后 `retry-answer-sync` | 先 `pending`；重试后 `synced` 且答案/intervention_id 与原干预一致 |
 
-### M3 生产只读（用例草案，实现前定义）
+### M3 生产只读（断言已冻结；M3-1 Red）
 
-执行卡：[WA_M3_TASKS.md](../mom/WA_M3_TASKS.md)。设计：[WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md) §7、§9（WA-02/07 生产源；WA-06 写属 M4）；里程碑：[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) M3；替换台账 WAM-07。以下为**草案**：待用户确认断言后，M3-1 写成表格行并挂 Playwright / Rust 空壳（因此暂不写成表格行，避免被 `check-map` 当作缺测试的已登记用例）。
+执行卡：[WA_M3_TASKS.md](../mom/WA_M3_TASKS.md)；Green 方案：[WA_M3_1_PLAN.md](../mom/WA_M3_1_PLAN.md)。设计：[WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md) §7、§9（WA-02/07 生产源；WA-06 写属 M4）；里程碑：[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) M3；替换台账 WAM-07。浏览器用例：`web/e2e/wa-prod-read.spec.ts`。合同：拟 `crates/server/tests/mom_world_prod.rs`（**Green 卡入库**；本卡仅本地 Red 证据，见 `docs/testing/evidence/wa-m3-1-red.md`）。路由前缀 `/api/world/prod`。M0～M2 已冻结用例不得弱化。生产写属 M4。
 
-- **E2E-WAPROD**：选择生产世界 → 看板/观测可见正式只读；`provenance=production`；写入口关闭或明确指向隔离 Mock/DES 世界。
-- **E2E-WAPISO**：无权限或跨站点读被拒绝；列表/详情不泄露其他站点事项。
-- **E2E-WAPREAD**：断线或游标过期后「重新读取」；同事件 ID 只应用一次；过期与水位单独显示。
-- **E2E-WAPDELAY**：多来源延迟场景下 `as_of`/截至时间可辨；过期空态区别于正常空态。
-- **RT-WAPROD-01**：生产世界 bind 成功；未配置权威源 → 明确错误（非 200）。
-- **RT-WAPROD-02**：Observe/Subscribe 对齐正式水位；响应含 source / as_of / `protocol_version`。
-- **RT-WAPROD-03**：跨 scope / 无授权 → 明确拒绝。
-- **RT-WAPROD-04**：过期游标 → `CURSOR_EXPIRED`；恢复后续读无漏无重复。
-- **RT-WAPROD-05**：注入延迟后水位与载荷截至时间一致。
-- **RT-WAPROD-06**：生产世界 Propose/Execute 能力关闭或拒绝；Mock/DES 写路径仍可用。
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| E2E-WAPROD | world-adapter | 工作台可选生产世界；生产读 stub/适配可用 | 选择生产世界 → 看板/观测 | 可见正式只读；`provenance=production`；写入口关闭或明确指向隔离 Mock/DES 世界 |
+| E2E-WAPISO | world-adapter | 两站点/两身份；至少一无权限 | 无权限或跨站点读列表与详情 | 服务端拒绝；列表/详情不泄露其他站点事项 |
+| E2E-WAPREAD | world-adapter | 已绑定生产世界并观测；水位可见 | 断线或注入过期游标后「重新读取」 | 同事件 ID 只应用一次；过期与水位单独显示；可恢复续读 |
+| E2E-WAPDELAY | world-adapter | 多来源生产 stub；可注入延迟 | 观测多源对象与水位 | `as_of`/截至时间可辨；过期空态区别于正常空态 |
 
-说明：Feature Map 中 `E2E-WA-10`（生产确认写）属 **M4**；本里程碑只保证生产只读与写演示隔离。M0～M2 已冻结用例不得弱化。
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-WAPROD-01 | world-adapter | 已登记权威源的生产站点；另测未配置权威源 | Bind | 成功响应含 `world_id`/`provenance=production`/`protocol_version`；未配置 → 明确错误（非 200） |
+| RT-WAPROD-02 | world-adapter | 已 Bind | Observe；Subscribe | 水位对齐；响应含 `source` / `as_of` / `protocol_version` |
+| RT-WAPROD-03 | world-adapter | 跨 scope 或无授权身份 | Observe / Subscribe / 列表 | 明确拒绝（`ACCESS_DENIED` 等，非 200）；无跨站泄露 |
+| RT-WAPROD-04 | world-adapter | 已有合法游标；测试控件可使游标过期 | 过期游标 Subscribe；恢复后续读 | `CURSOR_EXPIRED`；恢复后无漏无重复（按 `event_id`） |
+| RT-WAPROD-05 | world-adapter | 多源 stub；测试控件注入延迟 | Observe | 水位与载荷截至时间一致；延迟可见 |
+| RT-WAPROD-06 | world-adapter | 已 Bind 生产世界；Mock/DES 写路径仍挂载 | 对生产世界 Propose/Execute；对 Mock/DES 写 | 生产写关闭或拒绝；Mock/DES 写仍可用 |
+
+说明：Feature Map 中 `E2E-WA-10`（生产确认写）属 **M4**；本里程碑只保证生产只读与写演示隔离。

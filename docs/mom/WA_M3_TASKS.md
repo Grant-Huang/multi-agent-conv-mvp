@@ -8,8 +8,8 @@
 
 | 卡片 | 内容 | 状态 | 依赖 |
 |---|---|---|---|
-| M3-0 | 冻结用例草案与任务卡；同步 PLAN / Feature Map / 注册表 | **进行中**（本 PR） | M2 准出 |
-| M3-1 | 正式 CASES + Red 空壳；生产读合同（高风险先方案） | 排队 | M3-0 |
+| M3-0 | 冻结用例草案与任务卡；同步 PLAN / Feature Map / 注册表 | **完成**（#209） | M2 准出 |
+| M3-1 | 正式 CASES + Red 空壳；生产读合同（高风险先方案） | **进行中**（本 PR） | M3-0 |
 | M3-2 | 绑定 / Observe / 水位服务层 Green | 排队 | M3-1 |
 | M3-3 | 权限、跨范围、延迟与多源 | 排队 | M3-2 |
 | M3-4 | 浏览器生产读场景 + M0～M2 全量回归 | 排队 | M3-3 |
@@ -17,11 +17,11 @@
 
 一张卡 ≈ 一个 PR。每卡先 Red 再 Green；断言冻结后不得弱化。
 
-## 1. 拟正式 id（待确认后 M3-1 表格化）
+## 1. 正式 id（已写入 CASES 表格，M3-1）
 
 设计项侧重 **生产只读**（WA-02 续读在生产源、WA-07 能力可见性、WAM-07 生产来源读替换）。**WA-06 生产写确认属 M4**，本里程碑只保证写演示仍在隔离世界。
 
-| 设计 | 拟 id | 要点 |
+| 设计 | 正式 id | 要点 |
 |---|---|---|
 | 生产绑定与观测 | `E2E-WAPROD` | 选择生产世界 → 看板/观测可见正式读；`provenance=production`；写入口关闭或指向隔离世界 |
 | 权限与隔离 | `E2E-WAPISO` | 无权限/跨站点读拒绝；列表与详情不泄露 |
@@ -35,14 +35,18 @@
 | 合同：写关闭 | `RT-WAPROD-06` | 生产世界 Propose/Execute 能力关闭或拒绝；Mock/DES 写路径仍可用 |
 | 回归 | `wa-m0/m1/m2-suite` + 既有 RT-WA/WADES/DES/DESC | M3 合入前全绿 |
 
-## 2. M3-0：冻结与收尾（本卡）
+## 2. M3-0：冻结与收尾（已完成，#209）
 
-1. 本任务卡入库；PLAN 勾选已合入的 M2-6 / **M2**；增加 M3-0 入口。
-2. CASES 增加 M3 **草案 bullet**（不写表格行，避免 check-map 缺测试）。
-3. Feature Map / COVERAGE / `WA_MOCK_REGISTRY` 指向 M3 生产读（WAM-07 读）。
-4. 证据 `docs/testing/evidence/wa-m3-0.md`；`npm run test:map` 绿。
+见 `docs/testing/evidence/wa-m3-0.md`。
 
-## 3. M3-1～M3-5：纲要
+## 2b. M3-1：正式表格 + Red（本卡）
+
+1. CASES 正式表格 + Playwright 空壳 `web/e2e/wa-prod-read.spec.ts` + `features.json` cases。
+2. 高风险 Green 方案：[`WA_M3_1_PLAN.md`](WA_M3_1_PLAN.md)（服务层 `/api/world/prod` + 生产 stub；不改 engine/store/凭据 egress）。
+3. `RT-WAPROD-01`～`06`：表格已冻结；本地 HTTP Red 证据见 `wa-m3-1-red.md`；**Rust 失败测试不入库**（由 M3-2+ 挂 `mom_world_prod` + `runtime_cases`）。
+4. **本卡不写 Green。**
+
+## 3. M3-2～M3-5：纲要
 
 - **优先服务层**：`/api/world/prod`（或扩展既有世界读合同，字段对齐 `/api/world/des` 的 Observe/Subscribe）；生产 stub 先于真站点。
 - **高风险**：若需改 `engine.rs`、`store` 表结构、对外凭据/egress、或生产身份映射，**先出方案等人批准**。
