@@ -225,6 +225,32 @@ fn rt_opsdesk_05_skips_are_explained_and_cap_summarizes() {
 }
 
 #[test]
+fn rt_opsdesk_05_repeated_updates_count_a_summarized_case_once() {
+    let store = store();
+    let mut engine = Engine::memory().unwrap();
+    let mut publisher = OpsPublisher::memory(store.clone(), cfg(0, 1)).unwrap();
+
+    pending_case(&mut engine, "RT05-FIRST");
+    assert_eq!(publisher.tick(&mut engine, 5000).unwrap().posted, 1);
+    let repeated = pending_case(&mut engine, "RT05-REPEATED");
+    assert_eq!(publisher.tick(&mut engine, 5001).unwrap().summarized, 1);
+
+    approve(&mut engine, &repeated);
+    publisher.tick(&mut engine, 5002).unwrap();
+    let another = pending_case(&mut engine, "RT05-ANOTHER");
+    publisher.tick(&mut engine, 5003).unwrap();
+
+    let summaries: Vec<_> = channel(&store)
+        .into_iter()
+        .filter_map(|message| match message.card {
+            Some(an_core::ChatCard::OpsSummary { count, case_ids }) => Some((count, case_ids)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(summaries, vec![(2, vec![repeated, another])]);
+}
+
+#[test]
 fn rt_opsdesk_08_ensure_conversation_uses_fixed_id_and_is_idempotent() {
     let store = store();
     let a = store

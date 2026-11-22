@@ -11,7 +11,7 @@ use super::{Case, Engine};
 use crate::store::Store;
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
-use std::{path::Path, sync::Arc};
+use std::{collections::HashSet, path::Path, sync::Arc};
 
 /// 运营频道的固定会话 id
 pub const OPS_CHANNEL_ID: &str = "ops-channel";
@@ -299,7 +299,7 @@ impl OpsPublisher {
         Ok(())
     }
 
-    /// 汇总卡只有一张：第一次创建，之后累加案例并更新原卡
+    /// 汇总卡只有一张：按首次加入顺序保留不同案例，之后更新原卡
     fn update_summary(&mut self, added: Vec<String>) -> Result<()> {
         let mut ids: Vec<String> = self
             .meta("summary_cases")?
@@ -307,6 +307,8 @@ impl OpsPublisher {
             .transpose()?
             .unwrap_or_default();
         ids.extend(added);
+        let mut seen = HashSet::new();
+        ids.retain(|id| seen.insert(id.clone()));
         let card = an_core::ChatCard::OpsSummary {
             count: ids.len() as u32,
             case_ids: ids.clone(),

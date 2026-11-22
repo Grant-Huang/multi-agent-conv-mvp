@@ -5,7 +5,7 @@ const root=fileURLToPath(new URL('../../',import.meta.url));
 const steps=[
  ['npm',['run','test:map'],web],
  ['npm',['run','build'],web],
- ['cargo',['build','--locked','--bin','agentnexus'],root],
+ ['cargo',['build','--locked','--bin','agentnexus','--bin','an-mock-acp'],root],
  ['npm',['run','test:e2e'],web],
 ];
 for(const [cmd,args,cwd] of steps){
