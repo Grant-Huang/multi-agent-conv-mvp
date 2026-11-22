@@ -22,9 +22,9 @@
 | WAM-01 | 实验控制与消息 | 试跑/正式分登记；时钟；幂等启动；事项投递 | **M1** 读与观察；**M2** 真实回执 | `wa-m0-suite` + `wa-m1-suite` | **写：M0 Mock**；**读：M1 + T-50**（`/api/world/des`；主应用可 `with_des`） |
 | WAM-02 | 世界与权限 | 两身份、两世界、跨范围拒绝 | **M1** DES 绑定；**M3** 生产权限 | 列表/详情/计数/隔离合同不变 | **M0 Mock** + **M1** `E2E-WADES` / `RT-WADES-01`（含 live bind） |
 | WAM-03 | 读与事件 | 快照、有序事件、游标过期 | **M1** MOM 投递；**M3** 多源水位 | 续读无漏、无重复业务应用 | **M0 Mock** + **M1/T-50** 正式投递水位（桩 + tick 投影；`RT-WADES-02/03/05/06`、`E2E-WAREAD`） |
-| WAM-04 | 方案与批准 | 版本、角色；审批走运营频道卡 | **M2** 复用 MOM；**M4** 真实审批 | 过期批准零写入 | **M0 Mock**；**M2-1 Red**（见 [WA_M2_TASKS.md](WA_M2_TASKS.md) / `wa-m2-1-red.md`） |
-| WAM-05 | 写入、回执、取消 | 稳定 execution_id、丢回执、部分失败 | **M2** DES；**M4** MES | 重复执行、终态保护 | **M0 Mock**；**M2-1 Red**（`RT-WADES-09～13` 表格已冻） |
-| WAM-06 | 审核与诊断 | 标准答案仅审核可见 | **M2** DES 审核源 | 访问边界、刷新失败恢复 | **M0 Mock**；**M2-1 Red**（`RT-WADES-14` / `E2E-WADYN`） |
+| WAM-04 | 方案与批准 | 版本、角色；审批走运营频道卡 | **M2** 复用 MOM；**M4** 真实审批 | 过期批准零写入 | **M0 Mock**；**M2-2 Green** 服务层（`/api/world/des`；见 `wa-m2-2-green.md`） |
+| WAM-05 | 写入、回执、取消 | 稳定 execution_id、丢回执、部分失败 | **M2** DES；**M4** MES | 重复执行、终态保护 | **M0 Mock**；**M2-2 Green**（`RT-WADES-09～13`） |
+| WAM-06 | 审核与诊断 | 标准答案仅审核可见 | **M2** DES 审核源 | 访问边界、刷新失败恢复 | **M0 Mock**；**M2-2 Green**（`RT-WADES-14`；E2E 随 M2-5） |
 | WAM-07 | 生产来源 | 模拟站点/延迟（种子标识） | **M3** 读；**M4** 写 | 对账可复验 | **M0 种子标识**；完整路径 **M3/M4** |
 
 退役真实路径上的 Mock 路由时：关掉 `world_mock`、保留隔离套件作回归、更新本表状态为「已替换」并附 PR。
@@ -34,7 +34,7 @@
 - 套件：`./scripts/wa-m0-suite.sh` / `cd web && npm run test:wa-m0`；M1：`./scripts/wa-m1-suite.sh` / `npm run test:wa-m1`
 - 准出：`docs/testing/evidence/wa-m0-6.md`（H1～H4；M0 已关闭）；M1：`docs/testing/evidence/wa-m1-5.md`
 - M1 读路径替换任务卡：[WA_M1_TASKS.md](WA_M1_TASKS.md)（M1-0～5 已关闭；T-50 #187）
-- M2 写路径替换任务卡：[WA_M2_TASKS.md](WA_M2_TASKS.md)（M2-0 完成；M2-1 Red 进行中，见 [WA_M2_1_PLAN.md](WA_M2_1_PLAN.md)）
+- M2 写路径替换任务卡：[WA_M2_TASKS.md](WA_M2_TASKS.md)（M2-1 Red #196；M2-2 Green 服务层进行中，见 [WA_M2_1_PLAN.md](WA_M2_1_PLAN.md)）
 - 覆盖矩阵：本文 §4 与 [world-adapter Feature Map](../feature-map/features/world-adapter.md)
 
 ## 4. M0 设计清单 → 可执行断言（H4）
