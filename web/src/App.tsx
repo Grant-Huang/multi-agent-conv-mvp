@@ -22,7 +22,7 @@ import { WorkspaceView } from "./desktop/WorkspaceView";
 import { EvidencePanel, type EvidenceLayer } from "./desktop/EvidencePanel";
 import { HistoryPanel } from "./desktop/HistoryPanel";
 import { SettingsPanel, type SettingsLayer } from "./desktop/SettingsPanel";
-import { loadProfile, type AssistantProfile, type SettingsCategoryId } from "./desktop/profileStore";
+import { fetchProfile, loadProfile, type AssistantProfile, type SettingsCategoryId } from "./desktop/profileStore";
 import { AttentionToast, type AttentionItem } from "./desktop/AttentionToast";
 import type { S1BgJob } from "./desktop/S1AskBar";
 import {
@@ -385,6 +385,20 @@ export default function App() {
     apply();
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchProfile()
+      .then((p) => {
+        if (!cancelled) setAssistantProfile(p);
+      })
+      .catch(() => {
+        /* harness 未就绪时保留默认占位 */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

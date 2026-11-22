@@ -735,6 +735,38 @@ export const api = {
       "/api/desktop/v1/resume/fixture/continue-b",
       { method: "POST", body: JSON.stringify({ conversation_id: conversationId }) },
     ),
+
+  /** AI Desktop B3 / T-70：个人助理 preferences */
+  desktopPreferencesGet: () =>
+    request<DesktopPreferencesDto>("/api/desktop/v1/preferences"),
+  desktopPreferencesPatch: async (body: {
+    expected_version: number;
+    name?: string;
+    avatar?: string;
+    role?: string;
+    soul?: string;
+    taste?: string;
+    memory_principle?: string;
+    proactivity?: string;
+  }): Promise<
+    | { ok: true; body: DesktopPreferencesDto }
+    | { ok: false; status: number; code: string; message: string; current?: DesktopPreferencesDto }
+  > => {
+    const res = await fetch("/api/desktop/v1/preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) return { ok: true, body: data as DesktopPreferencesDto };
+    return {
+      ok: false,
+      status: res.status,
+      code: String(data.code ?? "error"),
+      message: String(data.message ?? `HTTP ${res.status}`),
+      current: data.current as DesktopPreferencesDto | undefined,
+    };
+  },
 };
 
 export type DesktopEvidenceDto = {
@@ -816,6 +848,19 @@ export type DesktopHandoffDto = {
   conflict: boolean;
   chosen: string | null;
   voice_shared: boolean;
+};
+
+export type DesktopPreferencesDto = {
+  user_id: string;
+  version: number;
+  name: string;
+  avatar: string;
+  role: string;
+  soul: string;
+  taste: string;
+  memory_principle: string;
+  proactivity: string;
+  updated_at: string;
 };
 
 export type DesktopResumeRunDto = {
