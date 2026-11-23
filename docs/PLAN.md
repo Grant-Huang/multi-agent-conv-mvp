@@ -997,7 +997,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M2-5** 浏览器远程写 + M0/M1 回归（E2E-WAEXEC/WARECV/WADYN/WALOOP；[mom/WA_M2_5_PLAN.md](mom/WA_M2_5_PLAN.md)；证据 `testing/evidence/wa-m2-5-browser.md`；#206）
 - [x] **M2-6** 证据 / WAM-04～06 / 准出检查（[mom/WA_M2_6_PLAN.md](mom/WA_M2_6_PLAN.md)；证据 `testing/evidence/wa-m2-6.md`；#207）
 - [x] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环（WA-03/04/05/08；服务层 `/api/world/des`；套件 `wa-m2-suite`）
-- [x] **M3-0** 冻结生产只读用例与任务卡（[mom/WA_M3_TASKS.md](mom/WA_M3_TASKS.md)；证据 `testing/evidence/wa-m3-0.md`）
+- [x] **M3-0** 冻结生产只读用例与任务卡（[mom/WA_M3_TASKS.md](mom/WA_M3_TASKS.md)；证据 `testing/evidence/wa-m3-0.md`；#209）
+- [ ] **M3-1** 正式 CASES + Red 空壳；生产读合同方案（[mom/WA_M3_1_PLAN.md](mom/WA_M3_1_PLAN.md)；证据 `testing/evidence/wa-m3-1-red.md`）
 - [ ] **M3** 生产只读（写仍 Mock；接站点权威源/水位/权限/断点恢复）
 - [ ] **M4** 首个可查证生产写动作（维修工单）
 

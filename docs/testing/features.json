@@ -871,6 +871,7 @@
       "scripts/wa-m1-suite.sh",
       "web/e2e/wa-des-remote.spec.ts",
       "web/e2e/wa-des-write.spec.ts",
+      "web/e2e/wa-prod-read.spec.ts",
       "crates/server/src/mom_world_des.rs",
       "crates/server/tests/mom_world_des.rs",
       "crates/server/tests/mom_world_des_write.rs",
@@ -888,10 +889,13 @@
       "docs/mom/WA_M2_6_PLAN.md",
       "docs/testing/evidence/wa-m2-6.md",
       "docs/mom/WA_M3_TASKS.md",
+      "docs/mom/WA_M3_1_PLAN.md",
       "docs/testing/evidence/wa-m3-0.md",
+      "docs/testing/evidence/wa-m3-1-red.md",
       "scripts/wa-m2-regression.sh",
       "scripts/wa-m2-suite.sh",
-      "docs/decisions/2026-11-21-wa-m2-1-green-service-layer.md"
+      "docs/decisions/2026-11-21-wa-m2-1-green-service-layer.md",
+      "docs/decisions/2026-11-22-wa-m3-1-prod-read-service-layer.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -909,7 +913,11 @@
       "E2E-WAEXEC",
       "E2E-WARECV",
       "E2E-WADYN",
-      "E2E-WALOOP"
+      "E2E-WALOOP",
+      "E2E-WAPROD",
+      "E2E-WAPISO",
+      "E2E-WAPREAD",
+      "E2E-WAPDELAY"
     ],
     "runtime_cases": [
       "RT-WA-01",
