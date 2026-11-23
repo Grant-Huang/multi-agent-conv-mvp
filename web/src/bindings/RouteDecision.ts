@@ -18,4 +18,16 @@ risk_level: Risk,
 /**
  * 路由理由：写入日志，用于积累评测集
  */
-reason: string, };
+reason: string, 
+/**
+ * M4.3 / WP4：模板 id；空字符串表示不拆（DESIGN §9.6）
+ */
+template_id?: string, 
+/**
+ * 模板声明的交付物名称；不适用时为空
+ */
+deliverable?: string, 
+/**
+ * `yes` 才允许拆分；其他（含空）整单
+ */
+slots_ok?: string, };

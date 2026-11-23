@@ -91,6 +91,7 @@ fn env(assign: BTreeMap<String, Vec<String>>, cfg: AdmissionConfig, agents: Vec<
         Composer::new(llm),
         0,
         Duration::from_secs(10),
+        Arc::new(an_runtime::template::TemplateRegistry::default()),
     ));
     orch.set_admission(ledger.clone());
     Env {
@@ -148,6 +149,9 @@ fn route(risk: Risk) -> RouteDecision {
         required_tools: vec![],
         risk_level: risk,
         reason: String::new(),
+        template_id: String::new(),
+        deliverable: String::new(),
+        slots_ok: String::new(),
     }
 }
 

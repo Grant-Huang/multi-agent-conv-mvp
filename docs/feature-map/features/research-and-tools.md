@@ -8,7 +8,7 @@
 - **General 工具**：读写文件（只限 `[agents.general].workspace_dir`）、计算、`websearch`（命令不在 PATH 则不注册）
 - **MCP**：`[[mcp.servers]]` stdio / Streamable HTTP；启动时握手 + `tools/list` 发现 Schema；仅开放显式列出的工具；调用前校验参数；`GET /api/capabilities` 能力目录
 - **tools-evals**：终端工具 `websearch`、`an-eval`（路由评测）、`dream`；失败草稿，不自动改主评测集
-- **templates（仅校验）**：模板校验、Router 拆分决定、分支信封与汇合输入在 Runtime 集成层验证；**没有界面入口，并行执行与 Composer 汇合回复未实现**
+- **templates（WP4）**：内置三张模板接入编排；Router `template_id`/`deliverable`/`slots_ok` 命中则父任务并行分支 → 信封汇合 → Composer 只对父交付；任务面板展示模板/分支角标（E2E-TPL）
 
 ## How to get to it (user POV)
 

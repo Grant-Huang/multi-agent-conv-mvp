@@ -433,8 +433,8 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 
 - [x] **4.1 评测样本**：F 组 5 条（`mq-01` 到 `mq-03` 全是直接回答，`mq-mix-01` / `mq-mix-02` 含必须委派的子问题）。4.3 之前混合样本仍是整条一个动作
 - [x] **4.2 直接回答**：回答提示词要求按编号逐条回答、不遗漏。`reply_prompt_numbers_each_question`、`multi_question_reply_is_numbered`
-- [ ] **4.3 混合情况**：按 `docs/DESIGN.md` 第 9.6 节实现。能串行的不拆；只有写死的模板才并行。Router 只输出 `template_id`、`deliverable`、`slots_ok`。分支和汇合的输入输出用 JSON 信封校验，缺一路记 `missing`，Composer 只转述汇合结果
-  - 设计已写入第 9.6 节；模板校验与 RT-TPL-01～10 已实现，模板并行执行和 Composer 汇合尚未接入编排器
+- [x] **4.3 混合情况**：按 `docs/DESIGN.md` 第 9.6 节实现。能串行的不拆；只有写死的模板才并行。Router 只输出 `template_id`、`deliverable`、`slots_ok`。分支和汇合的输入输出用 JSON 信封校验，缺一路记 `missing`，Composer 只转述汇合结果
+  - 设计见第 9.6 节；校验 RT-TPL-01～10；编排接入 RT-TPL-11～16 / E2E-TPL（WP4 / #216 方案批后实现）。**不做**动态 DAG；M4.4 评测门槛另卡
 - [ ] **4.4 验收**：F 组样本逐条覆盖率 ≥ 95%
 
 ## M5 9B vs 35B A/B
@@ -868,7 +868,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 1. ~~M2 的第三方依赖~~（已确认：核心 ddgs + httpx；trafilatura、mcp 为可选安装）
 2. M6 的压测门槛和话题集
 3. 用 35B 作评委打分是否可接受（会占用 8200 槽位）
-4. M4.3 按 `docs/DESIGN.md` 第 9.6 节接入编排器（校验已实现，执行与汇合待实现）
+4. ~~M4.3 按 `docs/DESIGN.md` 第 9.6 节接入编排器~~（#216 方案批；实现卡 WP4 / T-76）
 5. ~~M7 是否排在 M3 之前 / 统一流式 / 槽位数~~（已确认：提前并改名 pre-M3；统一流式；35B 槽位 5→6 见第 6 项；9B 下线）
 6. ~~前台借用后台槽位~~（已确认 2026-11-05：**不借用**，改为 6 槽位 = 前台 2 + 后台 4；`borrow_idle` 默认 false）
 7. ~~pre-M3.5 怎样固定 pi 的槽位~~（已确认 2026-11-05：选 A，pi 扩展 + 环境变量 `AN_LLM_SLOT`；其他 coding agent 以后各自适配，通用代理方案 C 留到连接器设计评审时再议）

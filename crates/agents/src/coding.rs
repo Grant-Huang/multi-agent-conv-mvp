@@ -523,6 +523,10 @@ mod tests {
                 required_tools: vec![],
                 risk_level: Risk::Low,
                 reason: String::new(),
+
+                template_id: String::new(),
+                deliverable: String::new(),
+                slots_ok: String::new(),
             },
         }
     }

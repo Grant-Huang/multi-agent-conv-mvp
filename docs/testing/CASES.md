@@ -80,6 +80,13 @@
 | RT-EGR-15 | egress | 模型服务替身流式返回，Token 被切在两个数据块之间 | 带外发检查的客户端 chat_stream / chat | 模型服务收到的请求只含 Token；用户看到的增量与结果都是恢复后的原值 |
 | RT-EGR-16 | egress | 外发检查判定 BLOCK | 调用 chat | 返回 EgressBlocked；模型服务没有收到任何请求 |
 | RT-TPL-10 | templates | 后端 llama_cpp 配置 background_slots=[2,3,4,5]；openai 配置 max_inflight=8、reserved_interactive=1；openai 不限并发 | 读取 background_capacity | 分别为 4、7、不限（None） |
+| RT-TPL-11 | templates | Router 输出 template_id=quote、deliverable=报价单、slots_ok=yes；模板已注册 | 委派消息走编排 | 创建 1 个 parent（fanout=root）+ 3 个 branch；事件含 template_split / 进度提及拆分 |
+| RT-TPL-12 | templates | 同 RT-TPL-11；三路分支均返回合法 ok 信封 | 跑完 | join 完成；parent COMPLETED；会话交付含三路字段；汇合 complete |
+| RT-TPL-13 | templates | 同 RT-TPL-11；一路返回坏信封 / 缺字段 | 跑完 | 该路 missing；交付写明缺失；parent 仍可 COMPLETED；complete 为假 |
+| RT-TPL-14 | templates | slots_ok=no，或 template_id 未注册 | 委派 | 不拆分；仅一条普通任务（无 fanout=root） |
+| RT-TPL-15 | templates | 已拆分且分支仍在跑 | 取消 parent | 子 ACTIVE→CANCELLED；不新建 join；parent CANCELLED |
+| RT-TPL-16 | templates | 一支审查 needs_human | 未验收前 | 不启动 join；WP2 accept 该支后可继续汇合 |
+| E2E-TPL | templates | 浏览器；受控模型目标含「报价单模板」 | 观察任务卡并等待完成 | 可见拆分/多路；最终汇合向交付且 parent COMPLETED |
 
 ## MOM 可配置持续仿真（实现前定义）
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roleLabel, STATUS_LABEL, statusLabel, taskStatusLine } from "./labels";
+import { fanoutLabel, roleLabel, STATUS_LABEL, statusLabel, taskStatusLine } from "./labels";
 import type { TaskStatus } from "./bindings/TaskStatus";
 
 describe("状态与角色文案", () => {
@@ -38,5 +38,17 @@ describe("状态与角色文案", () => {
       ),
     ).toBe("待验收");
     expect(taskStatusLine({ status: "COMPLETED", role: "general", result: null }, null)).toBe("已完成");
+  });
+
+  it("模板父任务 RUNNING 显示并行文案，分支/汇合有角标", () => {
+    expect(
+      taskStatusLine(
+        { status: "RUNNING", role: "general", result: null, fanout_kind: "root", template_id: "quote" },
+        null,
+      ),
+    ).toBe("模板 quote 并行执行中");
+    expect(fanoutLabel({ fanout_kind: "root", template_id: "quote" })).toBe("模板·quote");
+    expect(fanoutLabel({ fanout_kind: "branch", branch_id: "damage" })).toBe("分支·damage");
+    expect(fanoutLabel({ fanout_kind: "join" })).toBe("汇合");
   });
 });

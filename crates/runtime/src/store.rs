@@ -278,9 +278,14 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     context TEXT NOT NULL DEFAULT '',
-    assignment_json TEXT
+    assignment_json TEXT,
+    parent_id TEXT,
+    fanout_kind TEXT,
+    branch_id TEXT,
+    template_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_conv ON tasks(conversation_id, created_at);
+-- idx_tasks_parent 在 open() 补列之后创建（旧库尚无 parent_id 时不能先建索引）
 CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
@@ -667,6 +672,18 @@ impl Store {
         if has_assignment == 0 {
             conn.execute_batch("ALTER TABLE tasks ADD COLUMN assignment_json TEXT")?;
         }
+        // WP4：父子拆分列（可空；旧行为 NULL = 单任务）
+        for col in ["parent_id", "fanout_kind", "branch_id", "template_id"] {
+            let n: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = ?1",
+                [col],
+                |r| r.get(0),
+            )?;
+            if n == 0 {
+                conn.execute_batch(&format!("ALTER TABLE tasks ADD COLUMN {col} TEXT"))?;
+            }
+        }
+        conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id)")?;
         // 兼容旧库：messages 表补 card_json 列（AG.4 对话里的卡片；旧消息为 NULL）
         let has_card: i64 = conn.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'card_json'",
@@ -2326,8 +2343,8 @@ impl Store {
 
     pub fn insert_task(&self, t: &TaskRecord, context: &str) -> Result<()> {
         self.write().execute(
-            "INSERT INTO tasks (id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, context)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO tasks (id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, context, parent_id, fanout_kind, branch_id, template_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 t.id,
                 t.conversation_id,
@@ -2341,9 +2358,24 @@ impl Store {
                 t.created_at,
                 t.updated_at,
                 context,
+                t.parent_id,
+                t.fanout_kind,
+                t.branch_id,
+                t.template_id,
             ],
         )?;
         Ok(())
+    }
+
+    /// WP4：列出同一父任务下的子任务（含 branch / join）
+    pub fn list_children(&self, parent_id: &str) -> Result<Vec<TaskRecord>> {
+        let _timer = ReadTimer::new("list_children");
+        let conn = self.read();
+        let mut st = conn.prepare(&format!(
+            "{TASK_SELECT} WHERE parent_id = ?1 ORDER BY created_at ASC"
+        ))?;
+        let rows = st.query_map([parent_id], task_from_row)?;
+        rows.map(|r| r?).collect()
     }
 
     /// 执行上下文（近期对话摘录；返工时会追加审查问题）。submit 时写入，执行时读取
@@ -3157,7 +3189,7 @@ fn lock_writer(
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-const TASK_SELECT: &str = "SELECT id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, assignment_json FROM tasks";
+const TASK_SELECT: &str = "SELECT id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, assignment_json, parent_id, fanout_kind, branch_id, template_id FROM tasks";
 
 /// 把一行 tasks 记录还原成 TaskRecord（JSON 列解析失败时返回 Err）
 fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Result<TaskRecord>> {
@@ -3168,6 +3200,10 @@ fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Result<TaskRecord>> {
     let result: Option<String> = r.get(7)?;
     let review: Option<String> = r.get(8)?;
     let assignment: Option<String> = r.get(11)?;
+    let parent_id: Option<String> = r.get(12)?;
+    let fanout_kind: Option<String> = r.get(13)?;
+    let branch_id: Option<String> = r.get(14)?;
+    let template_id: Option<String> = r.get(15)?;
     let (id, conversation_id, goal, created_at, updated_at): (
         String,
         String,
@@ -3187,6 +3223,10 @@ fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Result<TaskRecord>> {
             result: result.map(|s| serde_json::from_str(&s)).transpose()?,
             review: review.map(|s| serde_json::from_str(&s)).transpose()?,
             assignment: assignment.map(|s| serde_json::from_str(&s)).transpose()?,
+            parent_id,
+            fanout_kind,
+            branch_id,
+            template_id,
             created_at,
             updated_at,
         })
@@ -3820,6 +3860,10 @@ mod tests {
                 required_tools: vec![],
                 risk_level: Risk::Low,
                 reason: String::new(),
+
+                template_id: String::new(),
+                deliverable: String::new(),
+                slots_ok: String::new(),
             },
             policy: PolicyVerdict {
                 auto_execute: true,
@@ -3830,6 +3874,10 @@ mod tests {
             result: None,
             review: None,
             assignment: None,
+            parent_id: None,
+            fanout_kind: None,
+            branch_id: None,
+            template_id: None,
             created_at: now(),
             updated_at: now(),
         }

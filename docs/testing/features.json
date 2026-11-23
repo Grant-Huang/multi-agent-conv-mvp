@@ -203,10 +203,17 @@
     "document": "docs/feature-map/features/research-and-tools.md",
     "sources": [
       "crates/runtime/src/template.rs",
-      "crates/llm/src/backend.rs"
+      "crates/runtime/src/builtin_templates.rs",
+      "crates/runtime/src/orchestrator.rs",
+      "crates/runtime/src/store.rs",
+      "crates/llm/src/backend.rs",
+      "web/src/components/TaskPanel.tsx",
+      "web/src/labels.ts"
     ],
-    "coverage": "backend",
-    "cases": [],
+    "coverage": "browser",
+    "cases": [
+      "E2E-TPL"
+    ],
     "runtime_cases": [
       "RT-TPL-01",
       "RT-TPL-02",
@@ -217,7 +224,13 @@
       "RT-TPL-07",
       "RT-TPL-08",
       "RT-TPL-09",
-      "RT-TPL-10"
+      "RT-TPL-10",
+      "RT-TPL-11",
+      "RT-TPL-12",
+      "RT-TPL-13",
+      "RT-TPL-14",
+      "RT-TPL-15",
+      "RT-TPL-16"
     ]
   },
   {

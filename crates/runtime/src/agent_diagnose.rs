@@ -372,6 +372,10 @@ impl Runtime {
                 required_tools: vec![],
                 risk_level: Risk::Low,
                 reason: "AG.5 排查：请帮手只读排查".into(),
+
+                template_id: String::new(),
+                deliverable: String::new(),
+                slots_ok: String::new(),
             },
         };
         // 记录外发：目的地、内容摘要和长度，不记内容本身
