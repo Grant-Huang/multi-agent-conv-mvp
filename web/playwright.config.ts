@@ -23,9 +23,11 @@ export default defineConfig({
   },
   webServer: {
     command:'node e2e/harness.mjs',
-    url:'http://127.0.0.1:18787/api/health',
+    // Q-T67-02：等 harness 深就绪门（/api/health + 首页数据接口 2s 内有响应），
+    // 而不是只等 /api/health；未就绪时用例不启动，避免冷启动/高负载下的导航假红
+    url:'http://127.0.0.1:18789/ready',
     reuseExistingServer:false,
-    timeout:30_000,
+    timeout:120_000,
     gracefulShutdown:{signal:'SIGTERM',timeout:7000},
   },
 });
