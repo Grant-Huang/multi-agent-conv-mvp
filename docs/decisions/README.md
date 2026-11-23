@@ -98,6 +98,7 @@
 | [2026-11-21-dev-standard-and-guardrails.md](2026-11-21-dev-standard-and-guardrails.md) | 唯一研发规范 DEV_STANDARD.md 与唯一围栏入口；编号 D0～D3 / L0～L3 / 第一～七层；围栏登记表 | 用户确认 | 有效 |
 | [2026-11-21-ai-desktop-c2-gateway-attn.md](2026-11-21-ai-desktop-c2-gateway-attn.md) | AI Desktop C2 动作网关与 Attention | 用户确认 | 有效 |
 | [2026-11-21-ai-desktop-d-voice-handoff.md](2026-11-21-ai-desktop-d-voice-handoff.md) | AI Desktop D 语音与跨端 | 用户确认 | 有效 |
+| [2026-11-23-ai-desktop-mic-real-plan.md](2026-11-23-ai-desktop-mic-real-plan.md) | AI Desktop 真机 mic 接入方案（T-74） | 助手建议 / 方案卡 | 待用户确认 |
 | [2026-11-21-wa-m2-1-green-service-layer.md](2026-11-21-wa-m2-1-green-service-layer.md) | WA M2 Green 服务层优先 | 用户确认 | 有效 |
 | [2026-11-22-c2-m2-minimal-contracts.md](2026-11-22-c2-m2-minimal-contracts.md) | C2/M2 最小共享契约（批准/取消/追踪） | 用户确认 | 有效 |
 | [2026-11-22-wp2-review-acceptance-plan.md](2026-11-22-wp2-review-acceptance-plan.md) | WP2 审查需人工验收出口方案 | 助手建议 / T-65 方案卡 | 待用户确认 |
