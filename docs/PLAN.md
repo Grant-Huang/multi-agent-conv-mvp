@@ -14,7 +14,7 @@
 
 - [ ] 第 1、4 线：首页正常入口接入可靠受理。先验丢回执后按同一操作回读及重连，再验人工验收与结果回传。
 - [ ] 第 2 线：独立复跑真实桌面委派和运营频道远程 DES 场景，分别记录合入基线、运行模式和证据。
-- [ ] 第 3 线：沿用 M2-6 准出及 T-63 独立复验，维护远程 DES 基线；以已合入的 M3-2/3 桩数据服务层为基础准备候选站点与数据源。
+- [ ] 第 3 线：沿用 M2-6 准出及 T-63 独立复验，维护远程 DES 基线；**M3 桩数据准出**（`wa-m3-5.md`）后准备候选站点与数据源，再做真站点只读验收。
 - [ ] 第 5 线：确认 REQ-conversation-memory-01 并建立会话注入验收，沿用业务内省基线。分期见[第 5 线计划](features/conversation-memory/PLAN.md)。
 
 ## 0. 当前环境
@@ -1015,8 +1015,9 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M3-1** 正式 CASES + Red 空壳；生产读合同方案（[mom/WA_M3_1_PLAN.md](mom/WA_M3_1_PLAN.md)；证据 `testing/evidence/wa-m3-1-red.md`；#213）
 - [x] **M3-2** Bind / Observe / 水位服务层 Green（桩数据，`RT-WAPROD-01`/`02`；证据 `testing/evidence/wa-m3-2-green.md`；#218）
 - [x] **M3-3** 权限 / 续读 / 延迟 / 写关闭（桩数据，`RT-WAPROD-03`～`06`；证据 `testing/evidence/wa-m3-3-green.md`；#220）
-- [ ] **M3-4** 浏览器生产读 + M0～M2 回归（桩数据，`E2E-WAPROD*`；证据 `testing/evidence/wa-m3-4-browser.md`）
-- [ ] **M3** 生产只读（写仍 Mock；接站点权威源/水位/权限/断点恢复）
+- [x] **M3-4** 浏览器生产读 + M0～M2 回归（桩数据，`E2E-WAPROD*`；证据 `testing/evidence/wa-m3-4-browser.md`；#224）
+- [x] **M3-5** 证据 / WAM-07 / 准出检查（[mom/WA_M3_5_PLAN.md](mom/WA_M3_5_PLAN.md)；证据 `testing/evidence/wa-m3-5.md`；本 PR）
+- [x] **M3** 生产只读 · 桩数据准出（写仍 Mock/DES；`wa-m3-5.md`；真站点只读另验）
 - [ ] **M4** 首个可查证生产写动作（维修工单）
 
 入口拆分设计：[mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md)。产品壳与通用前门见 [ai-desktop/PLAN.md](ai-desktop/PLAN.md)（与 WA 切片并行，硬约束一致）。

@@ -4,6 +4,8 @@
 
 **准出（缺一不可）**：可绑定生产世界并只读观测（含来源与截至水位）；权限/跨范围拒绝可执行；断线或游标过期后续读无漏无重复；多来源延迟与 `as_of` 可辨；写能力在生产世界上声明关闭或仍走隔离 Mock/DES；全量 M0～M2 套件回归绿。
 
+**里程碑结论（M3-5）**：上述准出项在 **桩数据** `/api/world/prod` 路径上已齐；证据 [wa-m3-5.md](../testing/evidence/wa-m3-5.md)。真站点只读验收另开。
+
 ## 0. 进度总表
 
 | 卡片 | 内容 | 状态 | 依赖 |
@@ -12,8 +14,8 @@
 | M3-1 | 正式 CASES + Red 空壳；生产读合同（高风险先方案） | **完成**（#213） | M3-0 |
 | M3-2 | 绑定 / Observe / 水位服务层 Green | **完成**（#218） | M3-1 |
 | M3-3 | 权限、跨范围、延迟与多源 | **完成**（#220） | M3-2 |
-| M3-4 | 浏览器生产读场景 + M0～M2 全量回归 | **进行中**（本 PR） | M3-3 |
-| M3-5 | 证据、WAM-07 读路径状态、准出检查 | 排队 | M3-4 |
+| M3-4 | 浏览器生产读场景 + M0～M2 全量回归 | **完成**（#224） | M3-3 |
+| M3-5 | 证据、WAM-07 读路径状态、准出检查 | **进行中**（本 PR） | M3-4 |
 
 一张卡 ≈ 一个 PR。每卡先 Red 再 Green；断言冻结后不得弱化。
 
@@ -33,38 +35,24 @@
 | 合同：续读 | `RT-WAPROD-04` | 过期游标 → `CURSOR_EXPIRED`；恢复后续读无漏无重复 |
 | 合同：延迟多源 | `RT-WAPROD-05` | 注入延迟后水位与载荷截至时间一致 |
 | 合同：写关闭 | `RT-WAPROD-06` | 生产世界 Propose/Execute 能力关闭或拒绝；Mock/DES 写路径仍可用 |
-| 回归 | `wa-m0/m1/m2-suite` + 既有 RT-WA/WADES/DES/DESC | M3 合入前全绿 |
+| 回归 | `wa-m0/m1/m2/m3-suite` + 既有 RT-WA/WADES/DES/DESC | M3 合入前全绿 |
 
-## 2. M3-0：冻结与收尾（已完成，#209）
+## 2. M3-0～M3-4（已完成）
 
-见 `docs/testing/evidence/wa-m3-0.md`。
+| 卡 | 证据 |
+|---|---|
+| M3-0 | `docs/testing/evidence/wa-m3-0.md`（#209） |
+| M3-1 | `wa-m3-1-red.md`；方案 [`WA_M3_1_PLAN.md`](WA_M3_1_PLAN.md)（#213） |
+| M3-2 | `wa-m3-2-green.md`（#218） |
+| M3-3 | `wa-m3-3-green.md`（#220） |
+| M3-4 | `wa-m3-4-browser.md`；套件 `scripts/wa-m3-suite.sh`（#224） |
 
-## 2b. M3-1：正式表格 + Red（已完成，#213）
+## 3. M3-5：证据 / WAM-07 / 准出（本卡）
 
-见 `docs/testing/evidence/wa-m3-1-red.md`；Green 路径已批（合入即确认 [`WA_M3_1_PLAN.md`](WA_M3_1_PLAN.md)）。
-
-## 2c. M3-2：Bind / Observe / 水位 Green（已完成，#218）
-
-见 `docs/testing/evidence/wa-m3-2-green.md`。
-
-## 2d. M3-3：权限 / 续读 / 延迟 / 写关闭（已完成，#220）
-
-见 `docs/testing/evidence/wa-m3-3-green.md`。
-
-## 2e. M3-4：浏览器生产读 + M0～M2 回归（本卡）
-
-1. 工作台生产世界种子「华东精加工 · 生产」；`MomWorkbench` 接 `/api/world/prod` Bind/Observe/Subscribe；水位 / `as_of` / 续读 / 写关闭控件。
-2. Playwright Green：`web/e2e/wa-prod-read.spec.ts` → `E2E-WAPROD`/`WAPISO`/`WAPREAD`/`WAPDELAY`。
-3. 套件：`scripts/wa-m3-suite.sh` = 上述 Playwright + `wa-m2-suite`（含 M0/M1）。
-4. 证据 `wa-m3-4-browser.md`；**仍不改** engine / store / orchestrator / 真站点凭据；WAM-07 准出收口留给 M3-5。
-
-## 3. M3-5：纲要
-
-- **优先服务层**：`/api/world/prod`（字段对齐 `/api/world/des`）；生产 stub 先于真站点。
-- **高风险**：若需改 `engine.rs`、`store` 表结构、对外凭据/egress、或生产身份映射，**先出方案等人批准**。
-- 故障与延迟测试控件不得在生产配置默认打开（`world_mock` 演示门控下可开，与 DES 内存桩一致）。
-- 写路径：生产世界不开放 MES 写；演示写继续 Mock/DES。
-- **M3-5**：证据 / WAM-07 读路径状态 / 准出检查。
+1. 准出证据 `docs/testing/evidence/wa-m3-5.md`；方案 [`WA_M3_5_PLAN.md`](WA_M3_5_PLAN.md)。
+2. `WA_MOCK_REGISTRY` WAM-07 **读**路径定稿；入口 `wa-m3-suite` / `wa-m3-5.md`。
+3. 同步 PLAN / Feature Map / `features.json` / CASES。
+4. **仍不改** engine / store / orchestrator / 真站点凭据；不自行开 M4。
 
 ## 4. 不做（M3）
 
