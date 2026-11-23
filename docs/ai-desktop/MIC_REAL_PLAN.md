@@ -138,7 +138,7 @@ DESIGN §9：首响应、插话停止、误打断、任务识别准确率。首�
 |---|---|---|
 | **T-75（建议）** | MediaCapture + Web Speech → 现有 `/voice/*`；旗标；E2E-ADMIC-01～04（fake device）；证据 `ai-desktop-t75-mic-real.md` | 真机链路可辨；ADVOICE 回归绿 |
 | T-76（建议） | 可选远端 ASR 适配器 + egress 登记 | 质量试点 |
-| T-77（建议） | 双设备 D01 指标采集 | MOCK M6「两设备」收口 |
+| T-77（建议） | 双设备 D01 指标采集 | MOCK M6「两设备」收口（**已实现**：双 context；第二物理机另验） |
 
 编号待排期确认；**本卡不开实现**。
 

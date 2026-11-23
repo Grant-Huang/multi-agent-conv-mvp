@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type DesktopHandoffDto } from "../api";
+import { api, type DesktopHandoffDto, type DesktopVoiceSessionDto } from "../api";
 
 type Props = {
   taskId: string;
@@ -9,6 +9,7 @@ export function HandoffMockPanel({ taskId }: Props) {
   const [s, setS] = useState<DesktopHandoffDto | null>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
   const [desktopDraft, setDesktopDraft] = useState("");
+  const [peerVoice, setPeerVoice] = useState<DesktopVoiceSessionDto | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const apply = (next: DesktopHandoffDto) => {
@@ -22,12 +23,35 @@ export function HandoffMockPanel({ taskId }: Props) {
     void p.then((r) => apply(r.handoff)).catch((e: Error) => setError(e.message));
   };
 
+  const refreshPeerVoice = () => {
+    void api
+      .desktopVoiceGet(taskId)
+      .then((r) => setPeerVoice(r.session))
+      .catch((e: Error) => setError(e.message));
+  };
+
+  const refreshAll = () => {
+    void api
+      .desktopHandoffGet(taskId)
+      .then((r) => {
+        apply(r.handoff);
+        refreshPeerVoice();
+      })
+      .catch((e: Error) => setError(e.message));
+  };
+
   useEffect(() => {
     let cancelled = false;
+    // 挂载只 GET，不 reset——双 context 桌面续接依赖手机侧已写状态
     api
-      .desktopHandoffReset(taskId)
+      .desktopHandoffGet(taskId)
       .then((r) => {
-        if (!cancelled) apply(r.handoff);
+        if (cancelled) return;
+        apply(r.handoff);
+        return api.desktopVoiceGet(taskId);
+      })
+      .then((r) => {
+        if (!cancelled && r) setPeerVoice(r.session);
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message);
@@ -50,6 +74,15 @@ export function HandoffMockPanel({ taskId }: Props) {
     );
   }
 
+  const peerText =
+    s.voice_shared && peerVoice?.final_text
+      ? peerVoice.final_text
+      : "未授权不共享";
+  const peerLink =
+    s.voice_shared && peerVoice?.linked_task_id
+      ? peerVoice.linked_task_id
+      : "—";
+
   return (
     <div className="handoff-mock" data-testid="handoff-mock-panel">
       <h3>跨端续接（fixture）</h3>
@@ -65,7 +98,13 @@ export function HandoffMockPanel({ taskId }: Props) {
         <dt>选用</dt>
         <dd data-testid="handoff-chosen">{s.chosen ?? "—"}</dd>
         <dt>语音转写共享</dt>
-        <dd data-testid="handoff-voice-shared">{s.voice_shared ? "共享中" : "未授权不共享"}</dd>
+        <dd data-testid="handoff-voice-shared">
+          {s.voice_shared ? "共享中" : "未授权不共享"}
+        </dd>
+        <dt>对端转写</dt>
+        <dd data-testid="handoff-peer-voice">{peerText}</dd>
+        <dt>对端关联</dt>
+        <dd data-testid="handoff-peer-link">{peerLink}</dd>
       </dl>
       {error && (
         <p className="evidence-error" role="alert">
@@ -125,6 +164,14 @@ export function HandoffMockPanel({ taskId }: Props) {
         <button
           type="button"
           className="btn small"
+          data-testid="handoff-refresh"
+          onClick={() => refreshAll()}
+        >
+          刷新跨端
+        </button>
+        <button
+          type="button"
+          className="btn small"
           data-testid="handoff-choose-phone"
           disabled={!s.conflict}
           onClick={() => run(api.desktopHandoffResolve(taskId, "phone"))}
@@ -145,7 +192,15 @@ export function HandoffMockPanel({ taskId }: Props) {
           className="btn small"
           data-testid="handoff-voice-share"
           aria-pressed={s.voice_shared}
-          onClick={() => run(api.desktopHandoffShareVoice(taskId, !s.voice_shared))}
+          onClick={() => {
+            void api
+              .desktopHandoffShareVoice(taskId, !s.voice_shared)
+              .then((r) => {
+                apply(r.handoff);
+                refreshPeerVoice();
+              })
+              .catch((e: Error) => setError(e.message));
+          }}
         >
           {s.voice_shared ? "关闭转写共享" : "授权转写共享"}
         </button>

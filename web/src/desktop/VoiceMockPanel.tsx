@@ -42,8 +42,9 @@ export function VoiceMockPanel({ taskId }: Props) {
     setMode(getVoiceMediaMode());
     setAsrBackend(getAsrBackend());
     let cancelled = false;
+    // 挂载只 GET，不 reset——双 context 续接依赖对端已写会话
     api
-      .desktopVoiceReset(taskId)
+      .desktopVoiceGet(taskId)
       .then((r) => {
         if (!cancelled) apply(r.session);
       })
@@ -186,6 +187,42 @@ export function VoiceMockPanel({ taskId }: Props) {
           }}
         >
           重置
+        </button>
+        <button
+          type="button"
+          className="btn small"
+          data-testid="voice-refresh"
+          onClick={() => run(api.desktopVoiceGet(taskId))}
+        >
+          刷新会话
+        </button>
+        <button
+          type="button"
+          className="btn small"
+          data-testid="voice-commit-nolink"
+          onClick={() => {
+            const text = isReal
+              ? lastPartialRef.current || s.partial || "调查 SMT-03 振动异常"
+              : "调查 SMT-03 振动异常";
+            commitFinal(text, false);
+          }}
+        >
+          确认最终（不关联）
+        </button>
+        <button
+          type="button"
+          className="btn small"
+          data-testid="voice-correct-link"
+          onClick={() => {
+            const text =
+              s.final_text ||
+              lastPartialRef.current ||
+              s.partial ||
+              "调查 SMT-03 振动异常";
+            commitFinal(text, true);
+          }}
+        >
+          纠正关联到当前任务
         </button>
         {!isReal && (
           <>

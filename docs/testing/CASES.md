@@ -657,6 +657,9 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-ADASR-01 | ai-desktop | media=real；asr=remote-stub | 开麦后 stub 自动 partial；确认最终并关联 | asr=remote-stub；partial 含「远端」且未关联；finalize 关联 Task；不上送音频 |
 | E2E-ADASR-02 | ai-desktop | media=real；asr=remote；无 URL/密钥 | 开麦 | 回退 webspeech/harness；可见「真钥另验」提示；仍可 ASR 注入并关联 |
 | E2E-ADHAND | ai-desktop | 打开 SMT-03 工作区 | 手机与桌面各写不同草稿；选手机稿解决冲突；默认未共享转写，授权后再关闭 | 同一 Task/Run/阅读锚点；冲突可选后两端一致；未授权显示不共享 |
+| E2E-ADD01-01 | ai-desktop | 双 browser context；同服务；fixture 语音 | 端 A（手机）语音发起→部分不关联→确认关联 SMT-03；端 B（桌面）开 handoff 刷新 | 两端同 Task/Run/锚点；默认 voice_shared=false；端 B 对端转写为「未授权不共享」；第二物理机另验 |
+| E2E-ADD01-02 | ai-desktop | 接 ADD01-01；端 A 已关联 | 端 A 授权 handoff 转写共享；端 B 刷新；端 B 续写桌面草稿 | 端 B 可见最终转写与关联 Task；可续写且不重置语音会话；第二物理机另验 |
+| E2E-ADD01-03 | ai-desktop | 双 context；端 A 先 finalize 不关联 | 端 A 纠正关联到当前 Task；端 B 在共享后刷新 | linked_task_id 纠正为 SMT-03；端 B 共享后可见；不改 store 表结构 |
 | E2E-ADACCEPT | ai-desktop | 打开 SMT-03 工作区 | 现有模式丢回执→须回读；可靠模式丢回执后原操作 ID 重试；同 ID 改正文 | 待确认可见；派发次数保持 1；改正文得 409 冲突且不二次派发 |
 
 ### AI Desktop B1 可靠受理（运行时 / HTTP）

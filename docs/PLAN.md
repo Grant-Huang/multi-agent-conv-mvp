@@ -976,6 +976,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **T-74 真机 mic 接入方案**（2026-11-23，**仅文档**）：[ai-desktop/MIC_REAL_PLAN.md](ai-desktop/MIC_REAL_PLAN.md)；#225 合入视为批准
 - [x] **T-75 真机 mic 首刀**（2026-11-23）：Web Speech/Harness ASR + fake device → `/voice/*`；E2E-ADMIC-01～04；证据 `testing/evidence/ai-desktop-t75-mic-real.md`
 - [x] **T-76 可选远端 ASR**（2026-11-23）：remote-stub/remote 适配器 + egress 登记；E2E-ADASR-01～02；证据 `testing/evidence/ai-desktop-t76-remote-asr.md`（真钥另验）
+- [x] **T-77 双设备 D01**（2026-11-23）：双 browser context；E2E-ADD01-01～03；证据 `testing/evidence/ai-desktop-t77-dual-device.md`（第二物理机另验）
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`

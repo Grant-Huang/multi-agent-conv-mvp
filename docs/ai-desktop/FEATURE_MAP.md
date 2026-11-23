@@ -30,6 +30,7 @@
 | AD-MIC / E2E-ADMIC-01～04 | media=real；拒麦 / fake device 开麦+ASR 注入 / 插话 / offline 改文字 | 权限与转写经 `/voice/*`；partial 不关联；finalize 关联；与 fixture ADVOICE 并存 |
 | AD-ASR / E2E-ADASR-01～02 | asr=remote-stub 自动 partial；asr=remote 无钥回退 | stub 可辨远端路径；回退提示真钥另验；默认不上送音频 |
 | AD-HANDOFF / E2E-ADHAND | 手机发起工作，桌面打开并续写；两端各编辑草稿，再处理冲突 | 同一 Task/Run 与读取位置，草稿冲突可选，未授权转写不共享 |
+| AD-D01 / E2E-ADD01-01～03 | 双 browser context：手机语音发起→纠正关联→桌面续接与共享门闩 | 同 Task/Run；未授权对端不共享转写；授权后可见并可续写；第二物理机另验 |
 
 ## 清单追溯入口
 
