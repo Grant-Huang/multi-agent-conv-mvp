@@ -288,6 +288,56 @@ test('E2E-ADMEMW: 记忆纠错与撤回', async ({ page, request }) => {
   await expect(page.getByTestId('workspace-input')).toHaveValue('纠错时应保留的草稿');
 });
 
+test('E2E-ADXR: 已读跨端服务权威与幂等', async ({ page, browser, request }) => {
+  const reset = await request.post('/api/desktop/v1/assistant/messages/fixture/reset', {
+    data: {},
+  });
+  expect(reset.ok()).toBeTruthy();
+
+  await page.goto('/');
+  await expect(page.getByTestId('asst-read-root')).toBeVisible();
+  await expect(page.getByTestId('asst-read-unread')).toContainText(/未读 [2-9]/);
+  await expect(page.getByTestId('asst-read-item-asst-msg-1')).toHaveAttribute('data-read', '0');
+
+  await page.getByTestId('asst-read-mark-asst-msg-1').click();
+  await expect(page.getByTestId('asst-read-item-asst-msg-1')).toHaveAttribute('data-read', '1');
+  await expect(page.getByTestId('asst-read-flag-asst-msg-1')).toHaveText('已读');
+  const unreadAfterA = await page.getByTestId('asst-read-unread').innerText();
+  expect(unreadAfterA).toMatch(/未读 [1-9]/);
+  expect(unreadAfterA).not.toMatch(/未读 0$/);
+
+  const ctxB = await browser.newContext();
+  const pageB = await ctxB.newPage();
+  await pageB.goto('/');
+  await expect(pageB.getByTestId('asst-read-root')).toBeVisible();
+  await expect(pageB.getByTestId('asst-read-item-asst-msg-1')).toHaveAttribute('data-read', '1');
+  await expect(pageB.getByTestId('asst-read-unread')).toHaveText(unreadAfterA);
+
+  for (const id of ['asst-msg-2', 'asst-msg-3'] as const) {
+    const mark = pageB.getByTestId(`asst-read-mark-${id}`);
+    if (await mark.count()) {
+      await mark.click();
+      await expect(pageB.getByTestId(`asst-read-item-${id}`)).toHaveAttribute('data-read', '1');
+    }
+  }
+  await expect(pageB.getByTestId('asst-read-unread')).toHaveText('未读 0');
+
+  await page.getByTestId('asst-read-refresh').click();
+  await expect(page.getByTestId('asst-read-unread')).toHaveText('未读 0');
+  await expect(page.getByTestId('asst-read-item-asst-msg-1')).toHaveAttribute('data-read', '1');
+
+  const again = await request.post('/api/desktop/v1/assistant/messages/read', {
+    data: { message_ids: ['asst-msg-1', 'asst-msg-2', 'asst-msg-3'] },
+  });
+  expect(again.ok()).toBeTruthy();
+  const body = await again.json();
+  expect(body.newly_marked).toBe(0);
+
+  await page.getByTestId('asst-read-refresh').click();
+  await expect(page.getByTestId('asst-read-unread')).toHaveText('未读 0');
+  await ctxB.close();
+});
+
 test('E2E-ADINPUT: 响应式设置入口、Escape、IME 与减少动态效果', async ({ page }) => {
   const widths = [360, 768, 1024, 1440] as const;
   for (const w of widths) {

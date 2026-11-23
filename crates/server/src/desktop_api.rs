@@ -102,6 +102,19 @@ pub fn routes() -> Router<AppState> {
             "/api/desktop/v1/memories/{id}",
             get(get_memory).patch(patch_memory).delete(delete_memory),
         )
+        // T-73：助理消息已读跨端（进程内夹具，无新表）
+        .route(
+            "/api/desktop/v1/assistant/messages",
+            get(list_assistant_messages),
+        )
+        .route(
+            "/api/desktop/v1/assistant/messages/read",
+            get(get_assistant_reads).post(mark_assistant_reads),
+        )
+        .route(
+            "/api/desktop/v1/assistant/messages/fixture/reset",
+            post(reset_assistant_read_fixture),
+        )
         .route("/api/desktop/v1/tasks/{id}/evidence", get(list_evidence))
         .route("/api/desktop/v1/evidence/search", get(search_evidence))
         .route("/api/desktop/v1/evidence/{id}", get(get_evidence))
@@ -815,6 +828,141 @@ async fn delete_memory(Path(id): Path<String>) -> Response {
 async fn reset_memories_fixture() -> Response {
     let mut guard = memory_fixture().lock().unwrap_or_else(|e| e.into_inner());
     *guard = seed_memories();
+    (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response()
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AssistantMessageSeed {
+    id: String,
+    kind: String,
+    title: String,
+    body: String,
+}
+
+#[derive(Debug, Default)]
+struct AssistantReadState {
+    messages: Vec<AssistantMessageSeed>,
+    read_ids: HashSet<String>,
+}
+
+fn seed_assistant_messages() -> Vec<AssistantMessageSeed> {
+    vec![
+        AssistantMessageSeed {
+            id: "asst-msg-1".into(),
+            kind: "ordinary".into(),
+            title: "建议关注 · 证据缺口".into(),
+            body: "SMT-03 质量报告仍缺一处复核；可稍后处理。".into(),
+        },
+        AssistantMessageSeed {
+            id: "asst-msg-2".into(),
+            kind: "urgent".into(),
+            title: "紧急 · 产线联锁提醒".into(),
+            body: "Line-A 安全联锁触发，请优先确认。".into(),
+        },
+        AssistantMessageSeed {
+            id: "asst-msg-3".into(),
+            kind: "digest".into(),
+            title: "今日摘要".into(),
+            body: "2 项后台工作推进中；普通建议已合并。".into(),
+        },
+    ]
+}
+
+fn assistant_read_fixture() -> &'static Mutex<AssistantReadState> {
+    static STORE: OnceLock<Mutex<AssistantReadState>> = OnceLock::new();
+    STORE.get_or_init(|| {
+        Mutex::new(AssistantReadState {
+            messages: seed_assistant_messages(),
+            read_ids: HashSet::new(),
+        })
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct MarkAssistantReadBody {
+    message_ids: Vec<String>,
+}
+
+async fn list_assistant_messages() -> Response {
+    let guard = assistant_read_fixture()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let items: Vec<_> = guard
+        .messages
+        .iter()
+        .map(|m| {
+            let read = guard.read_ids.contains(&m.id);
+            json!({
+                "id": m.id,
+                "kind": m.kind,
+                "title": m.title,
+                "body": m.body,
+                "read": read,
+            })
+        })
+        .collect();
+    let unread_count = items.iter().filter(|i| i["read"] == false).count();
+    (
+        StatusCode::OK,
+        Json(json!({ "items": items, "unread_count": unread_count })),
+    )
+        .into_response()
+}
+
+async fn get_assistant_reads() -> Response {
+    let guard = assistant_read_fixture()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut read_ids: Vec<_> = guard.read_ids.iter().cloned().collect();
+    read_ids.sort();
+    (StatusCode::OK, Json(json!({ "read_ids": read_ids }))).into_response()
+}
+
+async fn mark_assistant_reads(Json(body): Json<MarkAssistantReadBody>) -> Response {
+    let ids: Vec<String> = body
+        .message_ids
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if ids.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "invalid_request",
+                "message": "message_ids 不能为空",
+                "retryable": false
+            })),
+        )
+            .into_response();
+    }
+    let mut guard = assistant_read_fixture()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut newly_marked = 0u32;
+    for id in ids {
+        if guard.read_ids.insert(id) {
+            newly_marked += 1;
+        }
+    }
+    let mut read_ids: Vec<_> = guard.read_ids.iter().cloned().collect();
+    read_ids.sort();
+    (
+        StatusCode::OK,
+        Json(json!({
+            "read_ids": read_ids,
+            "newly_marked": newly_marked,
+        })),
+    )
+        .into_response()
+}
+
+async fn reset_assistant_read_fixture() -> Response {
+    let mut guard = assistant_read_fixture()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    guard.messages = seed_assistant_messages();
+    guard.read_ids.clear();
     (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response()
 }
 

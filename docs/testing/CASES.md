@@ -634,6 +634,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-ADPROF | ai-desktop | 打开 SMT-03 并写草稿 | 工作区点「调整助理」；改名称并保存；查看记忆再返回；注入冲突后再保存 | 侧栏/首页助理名同步；记忆面包屑回到助理分类；草稿仍在；冲突提示且输入框草稿未被存档覆盖 |
 | E2E-ADMEM | ai-desktop | 打开 SMT-03 工作区 | 调整助理 → 查看记忆；列表可见服务端条目；打开 mem-1 看正文；返回列表再回助理 | 列表标题含「质量报告偏好摘要格式」；详情正文与来源/有效期来自 HTTP；返回路径不丢草稿 |
 | E2E-ADMEMW | ai-desktop | 打开 SMT-03；夹具已 reset | 打开 mem-1 纠错正文并保存；撤回 mem-2；回列表 | mem-1 正文已更新；列表不再含 mem-2；工作区草稿仍在 |
+| E2E-ADXR | ai-desktop | 干净浏览器；夹具 reset；双上下文同服务 | 端 A 见未读≥2 并标记 asst-msg-1 已读；端 B 刷新后 asst-msg-1 已读且未读减 1；端 B 再标其余；端 A 刷新未读为 0；重复提交已读 | 服务权威跨端一致；重复提交幂等；未读徽标来自 HTTP |
 | E2E-ADINPUT | ai-desktop | 干净浏览器 | 在 360/768/1024/1440 宽检查关键控件可达；设置中 Escape 关闭；会话输入 composition 期间 Enter 不发请求；`prefers-reduced-motion` 时根节点标注 | 各宽度可见「设置与管理」或抽屉入口；Esc 关掉设置；composition 中无 POST /messages；`html[data-reduced-motion]` 为 1 |
 | E2E-ADASK | ai-desktop | 干净浏览器 · 桌面首页 | S1 先问答；再委派复杂任务；后台芯片出现后继续问答；手动打开任务 | 问答后仍在桌面；委派先「提交中」再「已受理」且不强制进工作区；打开任务进入 SMT-03 |
 | E2E-ADATTN | ai-desktop | 干净浏览器 · 会话输入聚焦 | 输入中注入普通建议；静音后再注入普通建议；注入紧急 | 输入框保持焦点；普通建议可见但不抢焦点；静音后普通建议不新增；紧急仍可见 |
@@ -669,6 +670,10 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADMEM-04 | ai-desktop | reset 后 | `PATCH /memories/mem-1` 改 `body` | **200**；GET/列表正文已更新 |
 | RT-ADMEM-05 | ai-desktop | reset 后 | `DELETE /memories/mem-2` | **200**；默认列表不含 mem-2；再 DELETE 幂等 |
 | RT-ADMEM-06 | ai-desktop | harness | `PATCH /memories/no-such` | **404** `not_found` |
+| RT-ADXR-01 | ai-desktop | harness reset | `GET /api/desktop/v1/assistant/messages` | **200**；`items` ≥2 含 `asst-msg-1`/`asst-msg-2`；均 `read=false`；`unread_count`≥2 |
+| RT-ADXR-02 | ai-desktop | reset 后 | `POST .../assistant/messages/read` 带 `["asst-msg-1"]` | **200**；`newly_marked=1`；GET 列表该条 `read=true`；`unread_count` 减 1 |
+| RT-ADXR-03 | ai-desktop | 已标 asst-msg-1 | 同 ID 再 POST read | **200**；`newly_marked=0`；`read_ids` 不变 |
+| RT-ADXR-04 | ai-desktop | harness | `POST .../read` 空 `message_ids` | **400** `invalid_request` |
 | RT-ADACL-01 | ai-desktop | 种子证据；alice 有授权 | `GET .../evidence/{id}?view=summary|source` + 头 | **200**；可读摘要/原文 |
 | RT-ADACL-02 | ai-desktop | bob 无授权 | 同上带 bob | **403**；body 不泄露原文/摘要 |
 | RT-ADACL-03 | ai-desktop | 撤权 alice | 读各视图 + 列表 + 搜索 | 全拒或列表/搜索不含该条；撤权幂等 |

@@ -764,6 +764,23 @@ export const api = {
       method: "POST",
       body: "{}",
     }),
+  /** AI Desktop T-73：助理消息已读跨端（服务夹具权威） */
+  desktopAssistantMessagesList: () =>
+    request<{ items: DesktopAssistantMessageDto[]; unread_count: number }>(
+      "/api/desktop/v1/assistant/messages",
+    ),
+  desktopAssistantMessagesGetReads: () =>
+    request<{ read_ids: string[] }>("/api/desktop/v1/assistant/messages/read"),
+  desktopAssistantMessagesRead: (messageIds: string[]) =>
+    request<{ read_ids: string[]; newly_marked: number }>(
+      "/api/desktop/v1/assistant/messages/read",
+      { method: "POST", body: JSON.stringify({ message_ids: messageIds }) },
+    ),
+  desktopAssistantMessagesReset: () =>
+    request<{ ok: boolean; reset: boolean }>(
+      "/api/desktop/v1/assistant/messages/fixture/reset",
+      { method: "POST", body: "{}" },
+    ),
   desktopPreferencesPatch: async (body: {
     expected_version: number;
     name?: string;
@@ -894,6 +911,14 @@ export type DesktopMemoryDto = {
   source: string;
   body: string;
   expires: string;
+};
+
+export type DesktopAssistantMessageDto = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  read: boolean;
 };
 
 export type DesktopResumeRunDto = {

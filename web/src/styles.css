@@ -730,6 +730,11 @@ html[data-reduced-motion="1"] .btn {
 .attn-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .attn-item { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: 13px; padding: 6px 8px; border-radius: 4px; background: rgba(127,127,127,.06); }
 .attn-item.attn-urgent { background: #ffe8e8; }
+.asst-read-root { margin: 8px 12px; padding: 8px 10px; border: 1px dashed var(--border, #ccc); border-radius: 6px; }
+.asst-read-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+.asst-read-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.asst-read-item { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: 13px; padding: 6px 8px; border-radius: 4px; background: rgba(127,127,127,.06); }
+.asst-read-item.is-read { opacity: 0.72; }
 
 /* A5.2 / A5.3 / A5.4 Mock 面板 */
 .workspace-mock-toggles { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
