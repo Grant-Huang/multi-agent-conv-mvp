@@ -979,6 +979,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **T-77 双设备 D01**（2026-11-23）：双 browser context；E2E-ADD01-01～03；证据 `testing/evidence/ai-desktop-t77-dual-device.md`（第二物理机另验）
 - [x] **T-78 记忆持久化表**（2026-11-23）：`desktop_memories` + Store 权威；RT-ADMEM-01～07；E2E-ADMEM/ADMEMW；证据 `testing/evidence/ai-desktop-t78-memory-persist.md`
 - [x] **T-81 记忆持久化验收探针**（2026-11-23，主线 #1:1）：RT-ADMEM-08 库间隔离 / 09 全撤回重启不重播种（对 T-78 实现的回归守卫；9/9 绿）；证据 `testing/evidence/ai-desktop-t81-mem-acceptance.md`
+- [x] **T-82 首页卡接真实快照**（2026-11-23，主线 #1:1）：`GET /api/desktop/v1/snapshot` 三区读模型（我的工作/Agent 工作=真实任务、为你关注=Attention；store 零改动）；RT-ADSNAP-01～04；`desktop.spec` 31/31；证据 `testing/evidence/ai-desktop-t82-home-snapshot.md`
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`

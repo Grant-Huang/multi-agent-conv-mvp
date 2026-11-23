@@ -1,4 +1,6 @@
-import { DESKTOP_CARDS, SMT03_TASK_ID, type DesktopCard } from "./mockData";
+import { useCallback, useEffect, useState } from "react";
+import { api, type DesktopSnapshotCardDto } from "../api";
+import { SMT03_TASK_ID, type DesktopCard } from "./mockData";
 import { S1AskBar, type S1BgJob } from "./S1AskBar";
 
 type Props = {
@@ -8,7 +10,6 @@ type Props = {
   onOpenOpsChannel?: () => void;
   onOpenMomWorkbench?: () => void;
   opsEnabled: boolean;
-  cards?: DesktopCard[];
   assistantName?: string;
   s1BgJob?: S1BgJob | null;
   onS1Ask?: (text: string) => void;
@@ -16,6 +17,18 @@ type Props = {
   onOpenBgTask?: (job: S1BgJob) => void;
   s1Reply?: string | null;
 };
+
+function toCard(d: DesktopSnapshotCardDto): DesktopCard {
+  return {
+    id: d.id,
+    zone: d.zone as DesktopCard["zone"],
+    title: d.title,
+    subtitle: d.subtitle,
+    entityId: d.entity_id,
+    badge: d.badge,
+    simulated: d.simulated,
+  };
+}
 
 function Zone({
   title,
@@ -64,6 +77,8 @@ function Zone({
   );
 }
 
+/** 首页三区：卡片来自真实快照 `/api/desktop/v1/snapshot`（T-82）。
+ *  加载失败显示明确不可用并允许重试，不静默回退静态卡（宪章原则 8）。 */
 export function DesktopHome({
   onOpenTask,
   onOpenEvidence,
@@ -71,7 +86,6 @@ export function DesktopHome({
   onOpenOpsChannel,
   onOpenMomWorkbench,
   opsEnabled,
-  cards = DESKTOP_CARDS,
   assistantName,
   s1BgJob = null,
   onS1Ask,
@@ -79,6 +93,21 @@ export function DesktopHome({
   onOpenBgTask,
   s1Reply = null,
 }: Props) {
+  const [cards, setCards] = useState<DesktopCard[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  const load = useCallback(() => {
+    setFailed(false);
+    api
+      .desktopSnapshot()
+      .then((r) => setCards(r.cards.map(toCard)))
+      .catch(() => setFailed(true));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
   const open = (c: DesktopCard) => onOpenTask(c.entityId, "home-card");
   return (
     <div className="desktop-home" data-testid="desktop-home">
@@ -144,11 +173,26 @@ export function DesktopHome({
           )}
         </>
       )}
-      <div className="desktop-zones">
-        <Zone title="我的工作" cards={cards.filter((c) => c.zone === "mine")} onOpen={open} onEvidence={onOpenEvidence} />
-        <Zone title="Agent 工作" cards={cards.filter((c) => c.zone === "agent")} onOpen={open} onEvidence={onOpenEvidence} />
-        <Zone title="为你关注" cards={cards.filter((c) => c.zone === "watch")} onOpen={open} onEvidence={onOpenEvidence} />
-      </div>
+      {failed && (
+        <p className="muted" data-testid="snapshot-unavailable" role="status">
+          首页快照暂不可用。
+          <button type="button" className="btn small" data-testid="snapshot-retry" onClick={load}>
+            重试
+          </button>
+        </p>
+      )}
+      {!failed && cards === null && (
+        <p className="muted" data-testid="snapshot-loading" role="status">
+          首页加载中…
+        </p>
+      )}
+      {cards !== null && (
+        <div className="desktop-zones">
+          <Zone title="我的工作" cards={cards.filter((c) => c.zone === "mine")} onOpen={open} onEvidence={onOpenEvidence} />
+          <Zone title="Agent 工作" cards={cards.filter((c) => c.zone === "agent")} onOpen={open} onEvidence={onOpenEvidence} />
+          <Zone title="为你关注" cards={cards.filter((c) => c.zone === "watch")} onOpen={open} onEvidence={onOpenEvidence} />
+        </div>
+      )}
     </div>
   );
 }

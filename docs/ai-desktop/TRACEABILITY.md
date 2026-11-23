@@ -15,7 +15,7 @@
 | 10–13 阶段/开放/指南/参考 | 里程碑与决议 | — | docs | 见 PLAN / DECISIONS 61 |
 | 14–15 助理/语音跨端 | AD-PROFILE、AD-VOICE、AD-HANDOFF、AD-MIC、AD-ASR、AD-D01 | E2E-ADPROF、E2E-ADMEM、E2E-ADMEMW、E2E-ADXR、E2E-ADVOICE、E2E-ADMIC-01～04、E2E-ADASR-01～02、E2E-ADHAND、E2E-ADD01-01～03；RT-ADPREF-01～03；RT-ADMEM-01～09；RT-ADXR-01～04；RT-ADVOICE-01～04；RT-ADHAND-01～03 | browser+HTTP | **T-71～76**；**双 context D01（T-77；第二物理机另验）**；**RT-ADMEM-08/09 验收探针（T-81）** |
 | 16–18 异步/主动/设置 | AD-S1、AD-ACCEPT、AD-ATTENTION、AD-PROFILE | E2E-ADASK、E2E-ADATTN、E2E-ADACCEPT | browser+HTTP | E2E-ADASK/ADATTN **已登记**（A5.1）；**E2E-ADACCEPT 真实 HTTP（T-61）** |
-| 19–21 连续性/导航/回归 | AD-NAV、AD-LAYOUT、AD-DRAFT、AD-EVIDENCE、AD-INPUT | （同上） | browser | 随 A 增量；**A5 整体** `desktop.spec` 15/15（证据 `testing/evidence/ai-desktop-a5.md`） |
+| 19–21 连续性/导航/回归 | AD-NAV、AD-LAYOUT、AD-DRAFT、AD-EVIDENCE、AD-INPUT | （同上）＋RT-ADSNAP-01～04 | browser+HTTP | 随 A 增量；**A5 整体** `desktop.spec`（证据 `testing/evidence/ai-desktop-a5.md`）；**首页卡真实快照（T-82）** `desktop.spec` 31/31 |
 
 开放问题（清单 §11）决议前不写死 Case 断言；落地条款确认后补行。
 
