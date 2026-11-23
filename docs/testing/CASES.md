@@ -853,6 +853,18 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | RT-REV-04 | approval | 已是 COMPLETED | accept 或 reject | 409，状态不变 |
 | E2E-REV | approval | 浏览器任务卡为有 result 的待人工 | 点「判定通过」 | 状态与交付文案为已完成 |
 
+### 重启语义（WP7 / G08 / GS6 重启分支；用例冻结；实现只改业务代码）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-RESTART-01 | restart | 库中有 CREATED/QUEUED/RUNNING/VERIFYING 任务 | 关闭 Runtime 后同库重启 | 四类任务均 FAILED；每任务新增含「重启中断」原因的 StatusChanged 事件 |
+| RT-RESTART-02 | restart | 库中有中断任务 | 同库重启 | 各会话收到绑定 `task_id` 的助理失败交付，正文含「任务因服务重启中断，可重新委派」 |
+| RT-RESTART-03 | approval / restart | 待验收（NEEDS_HUMAN 有 result）跨重启 | 重启后 `POST .../review-verdict` accept | **200**；COMPLETED；事件含人工 note；交付照常 |
+| RT-RESTART-04 | approval / restart | 待验收跨重启；`max_review_rounds=1` | 重启后 reject → 返工 → 再待验收 → 再 reject | 首次 reject 回执行侧且同 `conversation_id`；二次 reject FAILED（返工额度按库扣减） |
+| RT-RESTART-05 | approval / restart | 待批准（NEEDS_HUMAN 无 result）跨重启 | 重启后 `POST .../approve` | **200**；按路由继续执行至终态 |
+| RT-RESTART-06 | restart | 库中有 COMPLETED/FAILED/CANCELLED 任务 | 同库重启 | 状态与 `updated_at` 不变；无新增重启事件 |
+| E2E-RESTART | ai-desktop | 干净浏览器 · 桌面首页；harness 同库重启 | S1 委派任务 A；A 在执行中重启服务；重连回原会话；再委派 B 走到待验收，重启后「判定通过」 | A FAILED 且会话见含重启原因的失败交付；B 重启后判定通过仍 COMPLETED；重连后仍在原会话（GS6 重启分支） |
+
 
 ## World Adapter / DES 实验与运营（M0；DES-UI 已冻结）
 
