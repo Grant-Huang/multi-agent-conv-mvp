@@ -654,6 +654,32 @@ export const api = {
   /** AI Desktop T-82：首页快照（AD-G7 三区卡片读模型） */
   desktopSnapshot: () => request<DesktopSnapshotDto>("/api/desktop/v1/snapshot"),
 
+  /** AI Desktop T-86：工作区草稿上云（服务端权威 + 乐观版本） */
+  desktopDraftGet: (kind: "task" | "conv", id: string) =>
+    request<{ draft: DesktopDraftDto }>(
+      `/api/desktop/v1/drafts/${kind}/${encodeURIComponent(id)}`,
+    ),
+  desktopDraftSave: (
+    kind: "task" | "conv",
+    id: string,
+    body: {
+      text: string;
+      scope: string;
+      continue_task_id: string | null;
+      version: number;
+      expected_version?: number;
+    },
+  ) =>
+    request<{ draft: DesktopDraftDto }>(
+      `/api/desktop/v1/drafts/${kind}/${encodeURIComponent(id)}`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+  desktopDraftClearAfterSend: (kind: "task" | "conv", id: string, sentVersion: number) =>
+    request<{ draft: DesktopDraftDto }>(
+      `/api/desktop/v1/drafts/${kind}/${encodeURIComponent(id)}?sent_version=${sentVersion}`,
+      { method: "DELETE" },
+    ),
+
   /** AI Desktop C2：Attention 投递 */
   desktopAttentionList: () =>
     request<{ mute_ordinary: boolean; items: DesktopAttentionDto[] }>("/api/desktop/v1/attention"),
@@ -922,6 +948,14 @@ export type DesktopAttentionDto = {
   body: string;
   task_id: string | null;
   created_at: string;
+};
+
+export type DesktopDraftDto = {
+  text: string;
+  version: number;
+  scope: string;
+  continue_task_id: string | null;
+  updated_at: string;
 };
 
 export type DesktopSnapshotCardDto = {

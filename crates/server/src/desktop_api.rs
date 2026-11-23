@@ -11,8 +11,9 @@ use an_core::{
 };
 use an_runtime::store::{
     DesktopAcceptOutcome, DesktopApprovalDecideOutcome, DesktopApprovalExecuteOutcome,
-    DesktopEventCursor, DesktopEventsAfter, DesktopEvidenceAccess, DesktopLinkOutcome,
-    DesktopMemory, DesktopPrefPatchOutcome, DesktopRequestRecord,
+    DesktopDraftRow, DesktopDraftSave, DesktopDraftSaveOutcome, DesktopEventCursor,
+    DesktopEventsAfter, DesktopEvidenceAccess, DesktopLinkOutcome, DesktopMemory,
+    DesktopPrefPatchOutcome, DesktopRequestRecord,
 };
 use an_runtime::Runtime;
 use axum::extract::{Path, Query, State};
@@ -94,6 +95,11 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/desktop/v1/preferences",
             get(get_preferences).patch(patch_preferences),
+        )
+        // T-86 草稿上云：工作区草稿服务端权威（乐观版本防丢失更新）
+        .route(
+            "/api/desktop/v1/drafts/{kind}/{scope_id}",
+            get(get_draft).put(save_draft).delete(clear_draft),
         )
         // T-78：记忆列表与纠错/撤回（SQLite 权威；fixture/reset 仅测试种子复位）
         .route("/api/desktop/v1/memories", get(list_memories))
@@ -1024,6 +1030,152 @@ async fn snapshot_fixture_reset(State(rt): State<AppState>) -> Response {
     }
     // 不种 attention：关注区是真实读模型，空区照常渲染；避免污染 ADATTN 等队列断言
     (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response()
+}
+
+// ===== T-86 草稿上云 =====
+
+const DESKTOP_DRAFT_USER: &str = "local";
+
+fn draft_json(d: &DesktopDraftRow) -> serde_json::Value {
+    json!({
+        "text": d.text,
+        "version": d.version,
+        "scope": d.scope,
+        "continue_task_id": d.continue_task_id,
+        "updated_at": d.updated_at,
+    })
+}
+
+fn empty_draft_json() -> serde_json::Value {
+    json!({
+        "text": "",
+        "version": 0,
+        "scope": "auto",
+        "continue_task_id": null,
+        "updated_at": ""
+    })
+}
+
+fn drafts_internal_err(e: anyhow::Error) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+    )
+        .into_response()
+}
+
+type DraftKindRejection = (StatusCode, Json<serde_json::Value>);
+
+fn validate_draft_kind(kind: &str) -> Result<(), DraftKindRejection> {
+    if kind != "task" && kind != "conv" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "invalid_request",
+                "message": "kind 必须为 task 或 conv",
+                "retryable": false
+            })),
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveDraftBody {
+    #[serde(default)]
+    text: String,
+    #[serde(default = "default_draft_scope")]
+    scope: String,
+    #[serde(default)]
+    continue_task_id: Option<String>,
+    version: i64,
+    #[serde(default)]
+    expected_version: Option<i64>,
+}
+
+fn default_draft_scope() -> String {
+    "auto".into()
+}
+
+async fn get_draft(
+    State(rt): State<AppState>,
+    Path((kind, scope_id)): Path<(String, String)>,
+) -> Response {
+    if let Err(rejection) = validate_draft_kind(&kind) {
+        return rejection.into_response();
+    }
+    match rt
+        .store
+        .get_desktop_draft(DESKTOP_DRAFT_USER, &kind, &scope_id)
+    {
+        Ok(Some(row)) => {
+            (StatusCode::OK, Json(json!({ "draft": draft_json(&row) }))).into_response()
+        }
+        Ok(None) => (StatusCode::OK, Json(json!({ "draft": empty_draft_json() }))).into_response(),
+        Err(e) => drafts_internal_err(e),
+    }
+}
+
+async fn save_draft(
+    State(rt): State<AppState>,
+    Path((kind, scope_id)): Path<(String, String)>,
+    Json(body): Json<SaveDraftBody>,
+) -> Response {
+    if let Err(rejection) = validate_draft_kind(&kind) {
+        return rejection.into_response();
+    }
+    match rt.store.save_desktop_draft(DesktopDraftSave {
+        user_id: DESKTOP_DRAFT_USER,
+        kind: &kind,
+        scope_id: &scope_id,
+        text: &body.text,
+        scope: &body.scope,
+        continue_task_id: body.continue_task_id.as_deref(),
+        version: body.version,
+        expected_version: body.expected_version,
+    }) {
+        Ok(DesktopDraftSaveOutcome::Ok(row)) => {
+            (StatusCode::OK, Json(json!({ "draft": draft_json(&row) }))).into_response()
+        }
+        Ok(DesktopDraftSaveOutcome::Conflict(row)) => (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "code": "version_conflict",
+                "message": "草稿已被其他设备更新，以服务端为准",
+                "draft": draft_json(&row),
+                "retryable": false
+            })),
+        )
+            .into_response(),
+        Err(e) => drafts_internal_err(e),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ClearDraftQuery {
+    sent_version: i64,
+}
+
+async fn clear_draft(
+    State(rt): State<AppState>,
+    Path((kind, scope_id)): Path<(String, String)>,
+    Query(q): Query<ClearDraftQuery>,
+) -> Response {
+    if let Err(rejection) = validate_draft_kind(&kind) {
+        return rejection.into_response();
+    }
+    match rt.store.clear_desktop_draft_after_send(
+        DESKTOP_DRAFT_USER,
+        &kind,
+        &scope_id,
+        q.sent_version,
+    ) {
+        Ok(Some(row)) => {
+            (StatusCode::OK, Json(json!({ "draft": draft_json(&row) }))).into_response()
+        }
+        Ok(None) => (StatusCode::OK, Json(json!({ "draft": empty_draft_json() }))).into_response(),
+        Err(e) => drafts_internal_err(e),
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

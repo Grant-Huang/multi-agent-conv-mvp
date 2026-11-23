@@ -707,6 +707,15 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADSNAP-02 | ai-desktop | fixture reset 后经 B1 受理建真任务 | 再 `GET /snapshot` | 真实任务以卡片出现在快照且 `simulated=false`；fixture 卡保持 `simulated=true`（真实/模拟可辨） |
 | RT-ADSNAP-03 | ai-desktop | harness | `POST .../snapshot/fixture/reset` 连续两次，各自再 `GET /snapshot` | 每次均含 `card-smt-03`（种子可复现、reset 幂等） |
 | RT-ADSNAP-04 | ai-desktop | 全新库未播种 | `GET /api/desktop/v1/snapshot` | **200**；`cards` 为数组（可为空）、`counts` 结构有效、`cursor` 非空（空库不报错、不静默回退静态卡） |
+
+### AI Desktop T-86 草稿上云（运行时 / HTTP）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-ADDRAFTS-01 | ai-desktop | 空库 | `PUT /api/desktop/v1/drafts/task/TASK-X` 带 `{text,scope,continue_task_id,version}`；再 `GET` 同路径 | **200**；GET 返回同正文/scope/continue_task_id 与 PUT 的 version |
+| RT-ADDRAFTS-02 | ai-desktop | 已存 version=2 的草稿 | 用 `expected_version=1` 再 PUT | **409** `version_conflict`；body 含当前草稿；原内容不被覆盖 |
+| RT-ADDRAFTS-03 | ai-desktop | 已存 version=2、text=草稿A | `DELETE ...?sent_version=2`；再用 `sent_version=2` 重复 DELETE | 第一次：text 清空、version=3、scope 保留；第二次：幂等不变化（仍是清空后状态） |
+| RT-ADDRAFTS-04 | ai-desktop | 草稿含 scope=continue 与 continue_task_id；关闭 Runtime 后同库重开 | `GET` 同路径；另对 kind=other PUT | 重启后草稿仍在（持久）；kind 非法 **400** `invalid_request` |
 | RT-ADACL-01 | ai-desktop | 种子证据；alice 有授权 | `GET .../evidence/{id}?view=summary|source` + 头 | **200**；可读摘要/原文 |
 | RT-ADACL-02 | ai-desktop | bob 无授权 | 同上带 bob | **403**；body 不泄露原文/摘要 |
 | RT-ADACL-03 | ai-desktop | 撤权 alice | 读各视图 + 列表 + 搜索 | 全拒或列表/搜索不含该条；撤权幂等 |

@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import {
   appendTaskLinkAudit,
   clearDraftAfterSend,
+  clearDraftAfterSendRemote,
   draftStorageKey,
   listTaskLinkAudits,
   loadDraft,
+  loadDraftRemote,
   saveDraft,
+  scheduleDraftSync,
   type DraftScope,
 } from "./draftStore";
 import { ScopeControls } from "./ScopeControls";
@@ -69,12 +72,21 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
     setContinueTaskId(d.continueTaskId ?? taskId);
     setLocalReply(null);
     setLate(loadLate(taskId));
+    // T-84：以服务端草稿为准刷新（跨设备/清存储后不丢）；失败保留本地缓存
+    void loadDraftRemote(key).then((remote) => {
+      if (!aliveRef.current || taskRef.current !== taskId) return;
+      setText(remote.text);
+      setVersion(remote.version);
+      setScope(remote.scope === "auto" ? "continue" : remote.scope);
+      setContinueTaskId(remote.continueTaskId ?? taskId);
+    });
   }, [key, taskId]);
 
   const writeText = (next: string) => {
     const d = saveDraft(key, { text: next });
     setText(d.text);
     setVersion(d.version);
+    scheduleDraftSync(key);
   };
 
   const onScope = (s: DraftScope, tid: string | null) => {
@@ -85,6 +97,7 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
     });
     setScope(d.scope);
     setContinueTaskId(d.continueTaskId);
+    scheduleDraftSync(key);
   };
 
   const reason =
@@ -108,6 +121,7 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
       const d = clearDraftAfterSend(key, sentVersion);
       setText(d.text);
       setVersion(d.version);
+      clearDraftAfterSendRemote(key, sentVersion);
       setLocalReply(note);
       setSending(false);
     } else {
