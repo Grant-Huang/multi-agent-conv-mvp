@@ -1,6 +1,6 @@
 # 记忆、画像与业务内省（docs/memory）
 
-本目录只服务两件事：**业务内省（INT，已开干）** 与 **个人风格 / 画像 / taste（尚未开干）**。
+本目录保留业务内省（INT）的设计、验收和执行说明。第 5 线的分层记忆、会话上下文与内省联动从[特性档案](../features/conversation-memory/README.md)进入，排期见[实施计划](../features/conversation-memory/PLAN.md)。
 
 | 文件 | 用途 | 谁读 |
 |---|---|---|

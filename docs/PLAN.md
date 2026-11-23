@@ -8,6 +8,15 @@
 > 规则：按里程碑逐步推进；每完成一步更新本文件（勾选进度、做必要的最小调整），用户确认后再进入下一步。
 > 新功能先写测试（TDD），测试冻结后只改业务代码；Python 部分覆盖率 ≥ 80%，通过 flake8。
 
+## 近期五线安排
+
+按[五线分工决定](decisions/2026-11-22-five-workstreams.md)推进。**近期没有确定的工厂试点窗口**，优先交付真实桌面委派；DES 和第 5 线可并行。跨组责任和验收见[集成计划](INTEGRATION_PLAN.md)。
+
+- [ ] 第 1、4 线：首页正常入口接入可靠受理。先验丢回执后按同一操作回读及重连，再验人工验收与结果回传。
+- [ ] 第 2 线：独立复跑真实桌面委派和运营频道远程 DES 场景，分别记录合入基线、运行模式和证据。
+- [ ] 第 3 线：沿用 M2-6 准出及 T-63 独立复验，维护远程 DES 基线；以已合入的 M3-2/3 桩数据服务层为基础准备候选站点与数据源。
+- [ ] 第 5 线：确认 REQ-conversation-memory-01 并建立会话注入验收，沿用业务内省基线。分期见[第 5 线计划](features/conversation-memory/PLAN.md)。
+
 ## 0. 当前环境
 
 | 项目 | 配置 |
@@ -1002,8 +1011,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环（WA-03/04/05/08；服务层 `/api/world/des`；套件 `wa-m2-suite`）
 - [x] **M3-0** 冻结生产只读用例与任务卡（[mom/WA_M3_TASKS.md](mom/WA_M3_TASKS.md)；证据 `testing/evidence/wa-m3-0.md`；#209）
 - [x] **M3-1** 正式 CASES + Red 空壳；生产读合同方案（[mom/WA_M3_1_PLAN.md](mom/WA_M3_1_PLAN.md)；证据 `testing/evidence/wa-m3-1-red.md`；#213）
-- [x] **M3-2** Bind / Observe / 水位服务层 Green（`RT-WAPROD-01`/`02`；证据 `testing/evidence/wa-m3-2-green.md`；#218）
-- [ ] **M3-3** 权限 / 续读 / 延迟 / 写关闭（`RT-WAPROD-03`～`06`；证据 `testing/evidence/wa-m3-3-green.md`）
+- [x] **M3-2** Bind / Observe / 水位服务层 Green（桩数据，`RT-WAPROD-01`/`02`；证据 `testing/evidence/wa-m3-2-green.md`；#218）
+- [x] **M3-3** 权限 / 续读 / 延迟 / 写关闭（桩数据，`RT-WAPROD-03`～`06`；证据 `testing/evidence/wa-m3-3-green.md`；#220）
 - [ ] **M3** 生产只读（写仍 Mock；接站点权威源/水位/权限/断点恢复）
 - [ ] **M4** 首个可查证生产写动作（维修工单）
 
@@ -1012,6 +1021,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 ---
 
 ## 业务内省（INT）
+
+本节记录第 5 线已经开展的内省工作；分层记忆、会话上下文与后续联动见[第 5 线计划](features/conversation-memory/PLAN.md)。
 
 > 授权：2026-11-18 用户批准 `docs/memory/INTROSPECTION_PLAN.md`（决策第 55 条）。验收用例见 `docs/memory/ACCEPTANCE.md`（业务内省部分已冻结）。
 > **可执行说明书（弱 agent 入口）**：`docs/memory/INTROSPECTION_PLAYBOOK.md`；目录说明见 `docs/memory/README.md`。
