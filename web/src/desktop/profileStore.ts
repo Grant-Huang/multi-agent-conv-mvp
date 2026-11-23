@@ -1,4 +1,6 @@
-/** 个人助理身份与设置（A4 / M3 Mock）；本地版本号用于冲突演示。 */
+/** 个人助理身份与设置（A4 / T-70 接 B3 preferences）。记忆列表仍为本地种子。 */
+import { api, type DesktopPreferencesDto } from "../api";
+
 export type AssistantProfile = {
   name: string;
   avatar: string;
@@ -17,8 +19,6 @@ export type MemoryEntry = {
   body: string;
   expires: string;
 };
-
-const PROFILE_KEY = "an.desktop.assistantProfile.v1";
 
 export const DEFAULT_PROFILE: AssistantProfile = {
   name: "我的助理",
@@ -48,38 +48,65 @@ export const MEMORY_SEED: MemoryEntry[] = [
   },
 ];
 
+export function fromPreferencesDto(p: DesktopPreferencesDto): AssistantProfile {
+  return {
+    name: p.name,
+    avatar: p.avatar,
+    role: p.role,
+    soul: p.soul,
+    taste: p.taste,
+    memoryPrinciple: p.memory_principle,
+    proactivity: p.proactivity,
+    version: p.version,
+  };
+}
+
+/** 从 B3 拉取当前配置（无行时服务端返回默认 version=1） */
+export async function fetchProfile(): Promise<AssistantProfile> {
+  const p = await api.desktopPreferencesGet();
+  return fromPreferencesDto(p);
+}
+
+/** @deprecated 同步本地读已移除；请用 fetchProfile。保留默认值供首屏占位。 */
 export function loadProfile(): AssistantProfile {
-  try {
-    const raw = localStorage.getItem(PROFILE_KEY);
-    if (!raw) return { ...DEFAULT_PROFILE };
-    const p = JSON.parse(raw) as Partial<AssistantProfile>;
-    return { ...DEFAULT_PROFILE, ...p, version: typeof p.version === "number" ? p.version : 1 };
-  } catch {
-    return { ...DEFAULT_PROFILE };
-  }
+  return { ...DEFAULT_PROFILE };
 }
 
-export function saveProfile(next: AssistantProfile, expectedVersion: number): { ok: true; profile: AssistantProfile } | { ok: false; current: AssistantProfile; reason: string } {
-  const current = loadProfile();
-  if (current.version !== expectedVersion) {
-    return { ok: false, current, reason: "版本冲突：设置已被更新，请基于当前值重新编辑" };
+export async function saveProfile(
+  next: AssistantProfile,
+  expectedVersion: number,
+): Promise<
+  { ok: true; profile: AssistantProfile } | { ok: false; current: AssistantProfile; reason: string }
+> {
+  const r = await api.desktopPreferencesPatch({
+    expected_version: expectedVersion,
+    name: next.name,
+    avatar: next.avatar,
+    role: next.role,
+    soul: next.soul,
+    taste: next.taste,
+    memory_principle: next.memoryPrinciple,
+    proactivity: next.proactivity,
+  });
+  if (!r.ok) {
+    return {
+      ok: false,
+      current: r.current ? fromPreferencesDto(r.current) : { ...DEFAULT_PROFILE },
+      reason:
+        r.code === "version_conflict"
+          ? "版本冲突：设置已被更新，请基于当前值重新编辑"
+          : r.message,
+    };
   }
-  const saved = { ...next, version: expectedVersion + 1 };
-  try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(saved));
-  } catch {
-    return { ok: false, current, reason: "保存失败：本地存储不可用" };
-  }
-  return { ok: true, profile: saved };
+  return { ok: true, profile: fromPreferencesDto(r.body) };
 }
 
-/** 测试夹具：抬高已存版本，使下次保存冲突 */
-export function bumpProfileVersionForConflict(): void {
-  const p = loadProfile();
-  try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify({ ...p, version: p.version + 1 }));
-  } catch {
-    /* 忽略 */
+/** 测试夹具：服务端升版，使下次带旧 expected_version 的保存冲突 */
+export async function bumpProfileVersionForConflict(): Promise<void> {
+  const cur = await api.desktopPreferencesGet();
+  const r = await api.desktopPreferencesPatch({ expected_version: cur.version });
+  if (!r.ok) {
+    throw new Error(r.message);
   }
 }
 

@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   MEMORY_SEED,
   SETTINGS_CATEGORIES,
   bumpProfileVersionForConflict,
-  loadProfile,
+  fetchProfile,
   saveProfile,
   type AssistantProfile,
   type MemoryEntry,
@@ -17,25 +17,61 @@ type Props = {
   categoryId: SettingsCategoryId | null;
   memoryId: string | null;
   search: string;
-  onNavigate: (next: { layer: SettingsLayer; categoryId: SettingsCategoryId | null; memoryId: string | null; search?: string }) => void;
+  onNavigate: (next: {
+    layer: SettingsLayer;
+    categoryId: SettingsCategoryId | null;
+    memoryId: string | null;
+    search?: string;
+  }) => void;
   onClose: () => void;
   onProfileSaved: (profile: AssistantProfile) => void;
 };
 
-export function SettingsPanel({ layer, categoryId: _categoryId, memoryId, search, onNavigate, onClose, onProfileSaved }: Props) {
-  const [profile, setProfile] = useState(() => loadProfile());
-  const [draft, setDraft] = useState<AssistantProfile>(() => loadProfile());
-  const [baseVersion, setBaseVersion] = useState(() => loadProfile().version);
+export function SettingsPanel({
+  layer,
+  categoryId: _categoryId,
+  memoryId,
+  search,
+  onNavigate,
+  onClose,
+  onProfileSaved,
+}: Props) {
+  const [profile, setProfile] = useState<AssistantProfile | null>(null);
+  const [draft, setDraft] = useState<AssistantProfile | null>(null);
+  const [baseVersion, setBaseVersion] = useState(1);
+  const [storedVersion, setStoredVersion] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [injecting, setInjecting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   useEffect(() => {
     if (layer !== "assistant") return;
-    const p = loadProfile();
-    setProfile(p);
-    setDraft(p);
-    setBaseVersion(p.version);
-    setError(null);
+    // 已有编辑态时不重拉（从记忆返回不得覆盖未保存草稿）
+    if (draftRef.current !== null) return;
+    let cancelled = false;
+    setLoading(true);
+    void fetchProfile()
+      .then((p) => {
+        if (cancelled) return;
+        setProfile(p);
+        setDraft(p);
+        setBaseVersion(p.version);
+        setStoredVersion(p.version);
+        setError(null);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [layer]);
 
   useEffect(() => {
@@ -56,20 +92,27 @@ export function SettingsPanel({ layer, categoryId: _categoryId, memoryId, search
   const memory = MEMORY_SEED.find((m) => m.id === memoryId) ?? null;
 
   const save = () => {
-    const result = saveProfile(draft, baseVersion);
-    if (!result.ok) {
-      setError(result.reason);
-      setProfile(result.current);
-      // 冲突不覆盖用户正在编辑的草稿字段（DESIGN A05）
-      return;
-    }
-    setProfile(result.profile);
-    setDraft(result.profile);
-    setBaseVersion(result.profile.version);
-    setError(null);
-    setSavedFlash(true);
-    onProfileSaved(result.profile);
-    window.setTimeout(() => setSavedFlash(false), 1200);
+    if (!draft || saving || injecting) return;
+    setSaving(true);
+    void saveProfile(draft, baseVersion)
+      .then((result) => {
+        if (!result.ok) {
+          setError(result.reason);
+          setProfile(result.current);
+          setStoredVersion(result.current.version);
+          // 冲突不覆盖用户正在编辑的草稿字段（DESIGN A05）
+          return;
+        }
+        setProfile(result.profile);
+        setDraft(result.profile);
+        setBaseVersion(result.profile.version);
+        setStoredVersion(result.profile.version);
+        setError(null);
+        setSavedFlash(true);
+        onProfileSaved(result.profile);
+        window.setTimeout(() => setSavedFlash(false), 1200);
+      })
+      .finally(() => setSaving(false));
   };
 
   return (
@@ -98,7 +141,9 @@ export function SettingsPanel({ layer, categoryId: _categoryId, memoryId, search
               data-testid="settings-search"
               aria-label="设置搜索"
               value={search}
-              onChange={(e) => onNavigate({ layer: "categories", categoryId: null, memoryId: null, search: e.target.value })}
+              onChange={(e) =>
+                onNavigate({ layer: "categories", categoryId: null, memoryId: null, search: e.target.value })
+              }
               placeholder="助理 / 免打扰 / 记忆…"
             />
           </label>
@@ -137,69 +182,91 @@ export function SettingsPanel({ layer, categoryId: _categoryId, memoryId, search
           <p className="settings-crumb" data-testid="settings-crumb">
             设置 → 我的 AI 助理
           </p>
-          <form
-            className="settings-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              save();
-            }}
-          >
-            {(
-              [
-                ["name", "名称"],
-                ["avatar", "头像"],
-                ["role", "工作定位"],
-                ["soul", "沟通原则（Soul）"],
-                ["taste", "质量偏好（Taste）"],
-                ["memoryPrinciple", "记忆原则"],
-                ["proactivity", "主动性"],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key} className="settings-field">
-                {label}
-                <input
-                  data-testid={`profile-${key}`}
-                  aria-label={label}
-                  value={draft[key]}
-                  onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-                />
-              </label>
-            ))}
-            <div className="settings-actions">
-              <button type="submit" className="btn primary" data-testid="profile-save">
-                保存
-              </button>
-              <button
-                type="button"
-                className="btn small"
-                data-testid="profile-inject-conflict"
-                onClick={() => bumpProfileVersionForConflict()}
-              >
-                注入冲突（测试）
-              </button>
-              <button
-                type="button"
-                className="btn small"
-                data-testid="profile-open-memory"
-                onClick={() => onNavigate({ layer: "memory", categoryId: "assistant", memoryId: MEMORY_SEED[0].id })}
-              >
-                查看记忆
-              </button>
-            </div>
-            {error && (
-              <p className="evidence-error" data-testid="profile-save-error" role="alert">
-                {error}
+          {loading || !draft || !profile ? (
+            <p className="muted">加载配置…</p>
+          ) : (
+            <form
+              className="settings-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                save();
+              }}
+            >
+              {(
+                [
+                  ["name", "名称"],
+                  ["avatar", "头像"],
+                  ["role", "工作定位"],
+                  ["soul", "沟通原则（Soul）"],
+                  ["taste", "质量偏好（Taste）"],
+                  ["memoryPrinciple", "记忆原则"],
+                  ["proactivity", "主动性"],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key} className="settings-field">
+                  {label}
+                  <input
+                    data-testid={`profile-${key}`}
+                    aria-label={label}
+                    value={draft[key]}
+                    onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+                  />
+                </label>
+              ))}
+              <div className="settings-actions">
+                <button
+                  type="submit"
+                  className="btn primary"
+                  data-testid="profile-save"
+                  disabled={saving || injecting || loading}
+                >
+                  保存
+                </button>
+                <button
+                  type="button"
+                  className="btn small"
+                  data-testid="profile-inject-conflict"
+                  disabled={injecting || saving}
+                  onClick={() => {
+                    setInjecting(true);
+                    void bumpProfileVersionForConflict()
+                      .then(async () => {
+                        const p = await fetchProfile();
+                        setStoredVersion(p.version);
+                        setError(null);
+                      })
+                      .catch((e: Error) => setError(e.message))
+                      .finally(() => setInjecting(false));
+                  }}
+                >
+                  注入冲突（测试）
+                </button>
+                <button
+                  type="button"
+                  className="btn small"
+                  data-testid="profile-open-memory"
+                  onClick={() =>
+                    onNavigate({ layer: "memory", categoryId: "assistant", memoryId: MEMORY_SEED[0].id })
+                  }
+                >
+                  查看记忆
+                </button>
+              </div>
+              {error && (
+                <p className="evidence-error" data-testid="profile-save-error" role="alert">
+                  {error}
+                </p>
+              )}
+              {savedFlash && (
+                <p className="settings-saved" data-testid="profile-saved" role="status">
+                  已保存 · 版本 {profile.version}
+                </p>
+              )}
+              <p className="muted" data-testid="profile-version">
+                编辑基线版本 {baseVersion} · 当前存档版本 {storedVersion}
               </p>
-            )}
-            {savedFlash && (
-              <p className="settings-saved" data-testid="profile-saved" role="status">
-                已保存 · 版本 {profile.version}
-              </p>
-            )}
-            <p className="muted" data-testid="profile-version">
-              编辑基线版本 {baseVersion} · 当前存档版本 {loadProfile().version}
-            </p>
-          </form>
+            </form>
+          )}
         </div>
       )}
 
