@@ -57,7 +57,7 @@ flowchart TB
 | **AD-G8** | 无 Run/Artifact/Approval 独立模型 | 中 | 执行态投影自 TaskRecord + TaskEvent | AD-RESUME、产物版本、审批版本 | Mock **M2/M5** → **B2/C2** |
 | **AD-G9** | Personal Agent / 统一设置中心缺失 | 中 | 助手页签≠助理身份；无记忆界面 | AD-PROFILE | Desktop **A4** → **B3/C2** |
 | **AD-G10** | 主动消息策略（去重/静音/不抢焦点）未产品化 | 中 | 内省有闸门但非通用 Attention | AD-ATTENTION | Mock **M3/M5** → **C2** |
-| **AD-G11** | 语音与跨端仅设计 | 低（相对 A） | 无麦克风链路 | D 里程碑 | Desktop **A5 Mock** → **D** |
+| **AD-G11** | 真机麦克风链路未实现 | 中（相对 D） | fixture 已接；无 getUserMedia | 确认 [MIC_REAL_PLAN](MIC_REAL_PLAN.md) 后实现卡 | Desktop **D fixture** → **真机** |
 | **AD-G12** | Feature Map / 清单逐条追溯未建 | 高（门禁） | `docs/testing` 无 AD-* Case；check-map 未登记 | A 出口被阻断 | Desktop **A0**（A 开发前） |
 
 ## 4. 与原 SYSTEM_GAPS / 黄金场景的关系
