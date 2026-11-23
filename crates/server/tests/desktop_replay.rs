@@ -192,6 +192,9 @@ async fn rt_adreplay_02_duplicate_event_ids_deduped_snapshot_stable() {
             required_tools: vec![],
             risk_level: an_core::Risk::Low,
             reason: "test".into(),
+            template_id: String::new(),
+            deliverable: String::new(),
+            slots_ok: String::new(),
         },
         policy: an_core::PolicyVerdict {
             auto_execute: true,
@@ -202,6 +205,10 @@ async fn rt_adreplay_02_duplicate_event_ids_deduped_snapshot_stable() {
         result: None,
         review: None,
         assignment: None,
+        parent_id: None,
+        fanout_kind: None,
+        branch_id: None,
+        template_id: None,
         created_at: an_core::now(),
         updated_at: an_core::now(),
     };

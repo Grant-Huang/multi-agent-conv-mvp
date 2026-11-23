@@ -39,6 +39,13 @@ struct RouteAnswer {
     required_tools: Vec<String>,
     risk_level: Risk,
     reason: String,
+    /// WP4：与 RouteDecision 同名三字段；不适用时为空 / no
+    #[serde(default)]
+    template_id: String,
+    #[serde(default)]
+    deliverable: String,
+    #[serde(default)]
+    slots_ok: String,
 }
 
 impl RouteAnswer {
@@ -49,6 +56,9 @@ impl RouteAnswer {
             required_tools: self.required_tools,
             risk_level: self.risk_level,
             reason: self.reason,
+            template_id: self.template_id,
+            deliverable: self.deliverable,
+            slots_ok: self.slots_ok,
         }
     }
 }
@@ -210,11 +220,16 @@ impl Router {
                     "task_class": { "type": "string", "enum": ["L1", "L2", "L3", "L4"] },
                     "execution_role": { "type": "string", "enum": role_enum },
                     "required_tools": { "type": "array", "items": { "type": "string", "enum": self.tool_names } },
-                    "risk_level": { "type": "string", "enum": ["low", "medium", "high"] }
+                    "risk_level": { "type": "string", "enum": ["low", "medium", "high"] },
+                    "template_id": { "type": "string" },
+                    "deliverable": { "type": "string" },
+                    "slots_ok": { "type": "string" }
                 },
                 "required": ["reason", "task_class", "execution_role", "required_tools", "risk_level"]
             });
+            // reason 已在首位（RT-FT-02）；模板三字段可选
         }
+        // reason 保持为最后一个属性（RT-FT-01/03：基线 schema 末字段是 reason）
         json!({
             "type": "object",
             "properties": {
@@ -222,6 +237,9 @@ impl Router {
                 "execution_role": { "type": "string", "enum": role_enum },
                 "required_tools": { "type": "array", "items": { "type": "string", "enum": self.tool_names } },
                 "risk_level": { "type": "string", "enum": ["low", "medium", "high"] },
+                "template_id": { "type": "string" },
+                "deliverable": { "type": "string" },
+                "slots_ok": { "type": "string" },
                 "reason": { "type": "string" }
             },
             "required": ["task_class", "execution_role", "required_tools", "risk_level", "reason"]
@@ -256,8 +274,15 @@ impl Router {
         if !reason_first {
             props.insert("reason".into(), json!({ "type": "string" }));
         }
-        // required 与属性顺序一致
-        let required: Vec<String> = props.keys().cloned().collect();
+        props.insert("template_id".into(), json!({ "type": "string" }));
+        props.insert("deliverable".into(), json!({ "type": "string" }));
+        props.insert("slots_ok".into(), json!({ "type": "string" }));
+        // required 与属性顺序一致（模板三字段可选，不进 required）
+        let required: Vec<String> = props
+            .keys()
+            .filter(|k| !matches!(k.as_str(), "template_id" | "deliverable" | "slots_ok"))
+            .cloned()
+            .collect();
         json!({ "type": "object", "properties": props, "required": required })
     }
 
@@ -315,7 +340,9 @@ impl Router {
              4. required_tools 只列 general 真正需要的工具，其他角色留空数组；\n\
              5. risk_level：只读操作为 low；会写文件或改代码为 medium；删除数据、对外发送、涉及生产环境为 high；\n\
              {web}\
-             6. reason 用一句中文说明理由。{corrections}",
+             6. reason 用一句中文说明理由；\n\
+             7. 模板拆分（吃不准就整单）：仅当目标明确匹配已注册交付物时填写 template_id / deliverable，并把 slots_ok 设为 yes；\
+否则 template_id 与 deliverable 填空字符串、slots_ok 填 no。已知模板示例：quote→报价单、stop_line→停线清单、release→放行单。{corrections}",
             tools = if self.tool_names.is_empty() { "无".into() } else { self.tool_names.join(", ") },
             class_section = self.class_section(),
             web = self.web_rule(),

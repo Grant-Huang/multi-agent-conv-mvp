@@ -182,6 +182,10 @@ mod tests {
                 required_tools: vec![],
                 risk_level: Risk::Medium,
                 reason: "".into(),
+
+                template_id: String::new(),
+                deliverable: String::new(),
+                slots_ok: String::new(),
             },
             policy: PolicyVerdict {
                 auto_execute: true,
@@ -192,6 +196,10 @@ mod tests {
             result: None,
             review: None,
             assignment: None,
+            parent_id: None,
+            fanout_kind: None,
+            branch_id: None,
+            template_id: None,
             created_at: "".into(),
             updated_at: "".into(),
         }

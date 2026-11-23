@@ -601,6 +601,10 @@ async fn rt_agcfg_14_failed_delivery_plain_language() {
         required_tools: vec![],
         risk_level: Risk::Medium,
         reason: "测试".into(),
+
+        template_id: String::new(),
+        deliverable: String::new(),
+        slots_ok: String::new(),
     };
     let policy = PolicyVerdict {
         auto_execute: true,

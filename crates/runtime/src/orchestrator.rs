@@ -37,6 +37,41 @@ use crate::composer::Composer;
 use crate::registry::{display_name, AgentRegistry};
 use crate::run_progress::{run_phase_label, spawn_orchestrator_heartbeat};
 use crate::store::{Store, ACTIVE_STATUSES};
+use crate::template::{
+    assemble_join, decide_split, validate_envelope, BranchEnvelope, JoinInput, RouteSlots,
+    SplitDecision, Template, TemplateRegistry, STATUS_FAILED, STATUS_MISSING, STATUS_OK,
+};
+use serde::{Deserialize, Serialize};
+
+/// 写入 join 任务 context 的汇合快照（由 [`JoinInput`] 生成）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JoinInputCtx {
+    complete: bool,
+    missing_branches: Vec<String>,
+    summary: String,
+}
+
+fn join_input_for_ctx(j: &JoinInput) -> JoinInputCtx {
+    let mut parts = Vec::new();
+    for b in &j.branches {
+        if b.status == STATUS_OK {
+            let fields: Vec<_> = b.payload.iter().map(|(k, v)| format!("{k}={v}")).collect();
+            parts.push(format!("[{}] {}", b.branch_id, fields.join(", ")));
+        } else {
+            let reason = if b.missing.is_empty() {
+                b.status.clone()
+            } else {
+                format!("{}: {}", b.status, b.missing)
+            };
+            parts.push(format!("[{}] {reason}", b.branch_id));
+        }
+    }
+    JoinInputCtx {
+        complete: j.complete,
+        missing_branches: j.missing_branches.clone(),
+        summary: parts.join("\n"),
+    }
+}
 
 /// 结束任务时允许的起点：执行中、审查中，或排队时就出错（例如没有可用 agent）
 const FINISH_FROM: [TaskStatus; 3] = [
@@ -77,6 +112,8 @@ pub struct Orchestrator {
     composer: Composer,
     max_review_rounds: u32,
     task_timeout: Duration,
+    /// WP4：已注册模板；空表则永不拆分
+    templates: Arc<TemplateRegistry>,
     /// 正在执行的任务，用于取消
     running: Mutex<HashMap<String, AbortHandle>>,
     /// 任务 → 正在执行它的 agent（撤权时据此中止）。拿到 agent 后、开始执行前登记，执行返回后移除
@@ -98,6 +135,7 @@ impl Orchestrator {
         composer: Composer,
         max_review_rounds: u32,
         task_timeout: Duration,
+        templates: Arc<TemplateRegistry>,
     ) -> Self {
         Self {
             store,
@@ -107,6 +145,7 @@ impl Orchestrator {
             composer,
             max_review_rounds,
             task_timeout,
+            templates,
             running: Mutex::new(HashMap::new()),
             running_agents: Mutex::new(HashMap::new()),
             admission: std::sync::OnceLock::new(),
@@ -254,8 +293,39 @@ impl Orchestrator {
         }
     }
 
-    /// 创建任务并（在 Policy 允许时）开始执行
+    /// 创建任务并（在 Policy 允许时）开始执行；命中模板则走 WP4 拆分。
     pub fn submit(
+        self: &Arc<Self>,
+        conversation_id: &str,
+        goal: &str,
+        context: &str,
+        route: RouteDecision,
+        policy: PolicyVerdict,
+    ) -> Result<TaskRecord> {
+        let slots = RouteSlots {
+            template_id: route.template_id.clone(),
+            deliverable: route.deliverable.clone(),
+            slots_ok: route.slots_ok.clone(),
+        };
+        match decide_split(&slots, &self.templates) {
+            SplitDecision::Split { template_id } => {
+                self.submit_split(conversation_id, goal, context, route, policy, &template_id)
+            }
+            SplitDecision::Single { reason } => {
+                if !route.template_id.is_empty() {
+                    tracing::info!(
+                        event = "task.template_split",
+                        decision = "single",
+                        reason = %reason,
+                        "模板未拆分，整单执行"
+                    );
+                }
+                self.submit_single(conversation_id, goal, context, route, policy)
+            }
+        }
+    }
+
+    fn submit_single(
         self: &Arc<Self>,
         conversation_id: &str,
         goal: &str,
@@ -275,6 +345,10 @@ impl Orchestrator {
             result: None,
             review: None,
             assignment: None,
+            parent_id: None,
+            fanout_kind: None,
+            branch_id: None,
+            template_id: None,
             created_at: ts.clone(),
             updated_at: ts,
         };
@@ -313,20 +387,173 @@ impl Orchestrator {
         })
     }
 
-    /// 人工审批通过后开始执行。并发批准时只有一个成功，其余返回错误。
+    fn submit_split(
+        self: &Arc<Self>,
+        conversation_id: &str,
+        goal: &str,
+        context: &str,
+        route: RouteDecision,
+        policy: PolicyVerdict,
+        template_id: &str,
+    ) -> Result<TaskRecord> {
+        let tmpl = self
+            .templates
+            .get(template_id)
+            .context("拆分时模板应已注册")?
+            .clone();
+        let ts = now();
+        let parent = TaskRecord {
+            id: an_core::new_id("task"),
+            conversation_id: conversation_id.into(),
+            goal: goal.into(),
+            role: route.execution_role,
+            status: TaskStatus::Created,
+            route,
+            policy,
+            result: None,
+            review: None,
+            assignment: None,
+            parent_id: None,
+            fanout_kind: Some("root".into()),
+            branch_id: None,
+            template_id: Some(template_id.into()),
+            created_at: ts.clone(),
+            updated_at: ts,
+        };
+        self.store.insert_task(&parent, context)?;
+        self.bus.status(
+            &parent.conversation_id,
+            &parent.id,
+            TaskStatus::Created,
+            format!(
+                "模板任务已创建：{template_id}（{} 路）",
+                tmpl.branches.len()
+            ),
+        );
+        tracing::info!(
+            event = "task.template_split",
+            task_id = %parent.id,
+            parent_task_id = %parent.id,
+            template_id = %template_id,
+            branches = tmpl.branches.len(),
+            "决定按模板拆分"
+        );
+
+        if parent.policy.auto_execute {
+            self.transition(
+                &parent,
+                &[TaskStatus::Created],
+                TaskStatus::Running,
+                format!("模板 {template_id} 并行执行中"),
+            );
+            self.start_fanout(&parent, &tmpl, context)?;
+        } else {
+            self.transition(
+                &parent,
+                &[TaskStatus::Created],
+                TaskStatus::NeedsHuman,
+                format!("等待人工审批后再拆分：{}", parent.policy.notes.join("；")),
+            );
+        }
+        Ok(TaskRecord {
+            status: self
+                .store
+                .get_task(&parent.id)?
+                .map(|t| t.status)
+                .unwrap_or(parent.status),
+            ..parent
+        })
+    }
+
+    fn start_fanout(
+        self: &Arc<Self>,
+        parent: &TaskRecord,
+        tmpl: &Template,
+        context: &str,
+    ) -> Result<()> {
+        let template_id = tmpl.id.as_str();
+        for b in &tmpl.branches {
+            let ts = now();
+            let steps = b.serial_steps.join(" → ");
+            let branch_ctx = format!(
+                "{context}\n\n## 模板分支 `{branch}`（能力 {cap}）\n请按步骤完成：{steps}\n\
+                 完成后**只**输出一个 JSON 信封（不要 Markdown 围栏），字段：\
+                 branch_id, status, missing, payload（字符串值）。\n\
+                 branch_id 必须是 `{branch}`；成功时 status=ok 且 payload 含：{outs}",
+                branch = b.id,
+                cap = b.capability.as_str(),
+                outs = b.output_required.join(", "),
+            );
+            let mut route = parent.route.clone();
+            route.execution_role = b.capability;
+            route.required_tools.clear();
+            let mut policy = parent.policy.clone();
+            policy.needs_review = false;
+            policy.auto_execute = true;
+            policy.candidates = self.registry.candidates(b.capability);
+            let child = TaskRecord {
+                id: an_core::new_id("task"),
+                conversation_id: parent.conversation_id.clone(),
+                goal: format!("{} · 分支 {}", parent.goal, b.id),
+                role: b.capability,
+                status: TaskStatus::Created,
+                route,
+                policy,
+                result: None,
+                review: None,
+                assignment: None,
+                parent_id: Some(parent.id.clone()),
+                fanout_kind: Some("branch".into()),
+                branch_id: Some(b.id.clone()),
+                template_id: Some(template_id.into()),
+                created_at: ts.clone(),
+                updated_at: ts,
+            };
+            self.store.insert_task(&child, &branch_ctx)?;
+            self.bus.status(
+                &child.conversation_id,
+                &child.id,
+                TaskStatus::Created,
+                format!("分支 {} 已创建", b.id),
+            );
+            if self.transition(
+                &child,
+                &[TaskStatus::Created],
+                TaskStatus::Queued,
+                self.queue_message(&child.id),
+            ) {
+                self.spawn(child);
+            }
+        }
+        Ok(())
+    }
+
+    /// 人工审批通过后开始执行。父模板任务则拉起分支；普通任务 spawn 执行。
     pub fn approve(self: &Arc<Self>, task_id: &str) -> Result<()> {
         let task = self.store.get_task(task_id)?.context("任务不存在")?;
-        // 判断和修改在一条 UPDATE 里：不会出现两个请求都通过检查、任务被执行两次
+        let is_root = task.fanout_kind.as_deref() == Some("root");
         let approved = {
             let _guard = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
             let approved = self.store.approve_task(task_id)?;
             if approved {
-                self.bus.status(
-                    &task.conversation_id,
-                    &task.id,
-                    TaskStatus::Queued,
-                    self.queue_message(task_id),
-                );
+                let next = if is_root {
+                    TaskStatus::Running
+                } else {
+                    TaskStatus::Queued
+                };
+                let msg = if is_root {
+                    format!(
+                        "已获批准，开始模板拆分：{}",
+                        task.template_id.as_deref().unwrap_or("?")
+                    )
+                } else {
+                    self.queue_message(task_id)
+                };
+                // approve_task 已写成 QUEUED；root 再升到 RUNNING
+                if is_root {
+                    let _ = self.store.set_task_status(task_id, TaskStatus::Running);
+                }
+                self.bus.status(&task.conversation_id, &task.id, next, msg);
             }
             approved
         };
@@ -343,10 +570,20 @@ impl Orchestrator {
         }
         EventSink::new(self.bus.clone(), &task.conversation_id, &task.id)
             .progress("已获人工批准，开始执行");
-        self.spawn(TaskRecord {
-            status: TaskStatus::Queued,
-            ..task
-        });
+        if is_root {
+            let tid = task
+                .template_id
+                .as_deref()
+                .context("root 缺少 template_id")?;
+            let tmpl = self.templates.get(tid).context("模板未注册")?.clone();
+            let ctx = self.store.get_task_context(task_id)?.unwrap_or_default();
+            self.start_fanout(&task, &tmpl, &ctx)?;
+        } else {
+            self.spawn(TaskRecord {
+                status: TaskStatus::Queued,
+                ..task
+            });
+        }
         Ok(())
     }
 
@@ -402,13 +639,18 @@ impl Orchestrator {
             } else {
                 format!("人工验收通过：{note}")
             });
-            self.deliver(
-                &task,
-                TaskStatus::Completed,
-                task.result.as_ref(),
-                task.review.as_ref(),
-            )
-            .await;
+            // WP4：分支不向用户交付，改走汇合；顶层任务照常交付
+            if let Some(pid) = &task.parent_id {
+                let _ = self.try_join(pid).await;
+            } else {
+                self.deliver(
+                    &task,
+                    TaskStatus::Completed,
+                    task.result.as_ref(),
+                    task.review.as_ref(),
+                )
+                .await;
+            }
             return Ok(());
         }
 
@@ -509,13 +751,18 @@ impl Orchestrator {
         } else {
             format!("人工验收未通过：{note}")
         });
-        self.deliver(
-            &task,
-            TaskStatus::Failed,
-            task.result.as_ref(),
-            task.review.as_ref(),
-        )
-        .await;
+        if let Some(pid) = &task.parent_id {
+            // 分支失败终态后尝试汇合（该路记 missing/failed）
+            let _ = self.try_join(pid).await;
+        } else {
+            self.deliver(
+                &task,
+                TaskStatus::Failed,
+                task.result.as_ref(),
+                task.review.as_ref(),
+            )
+            .await;
+        }
         Ok(())
     }
 
@@ -540,9 +787,19 @@ impl Orchestrator {
     }
 
     /// 取消任务。返回 true 表示确实取消了一个未结束的任务。
-    /// 先在数据库里改成 CANCELLED，成功了才中止后台执行：已经完成的任务不会被取消，交付照常进行。
-    pub fn cancel(&self, task_id: &str) -> Result<bool> {
+    /// 父模板任务取消时，一并取消 ACTIVE 子任务（WP4）。
+    pub fn cancel(self: &Arc<Self>, task_id: &str) -> Result<bool> {
         let task = self.store.get_task(task_id)?.context("任务不存在")?;
+        let child_ids: Vec<String> = if task.fanout_kind.as_deref() == Some("root") {
+            self.store
+                .list_children(task_id)?
+                .into_iter()
+                .filter(|c| !c.status.is_terminal())
+                .map(|c| c.id)
+                .collect()
+        } else {
+            vec![]
+        };
         {
             let _guard = self.status_lock.lock().unwrap_or_else(|e| e.into_inner());
             if !self
@@ -557,10 +814,27 @@ impl Orchestrator {
                 TaskStatus::Cancelled,
                 "任务已取消",
             );
+            for cid in &child_ids {
+                if self
+                    .store
+                    .transition_task(cid, &ACTIVE_STATUSES, TaskStatus::Cancelled)?
+                {
+                    self.bus.status(
+                        &task.conversation_id,
+                        cid,
+                        TaskStatus::Cancelled,
+                        "父任务取消，分支一并取消",
+                    );
+                }
+            }
         }
-        // abort 执行中的 tokio 任务；子进程由各 agent 的清理逻辑（kill_on_drop / 进程组）一起结束
         if let Some(h) = self.running.lock().unwrap().remove(task_id) {
             h.abort();
+        }
+        for cid in &child_ids {
+            if let Some(h) = self.running.lock().unwrap().remove(cid) {
+                h.abort();
+            }
         }
         Ok(true)
     }
@@ -580,6 +854,12 @@ impl Orchestrator {
     }
 
     async fn execute(self: &Arc<Self>, task: TaskRecord) {
+        // WP4 join：不跑 agent，直接物化汇合结果
+        if task.fanout_kind.as_deref() == Some("join") {
+            self.execute_join(task).await;
+            return;
+        }
+
         let (status, result, review) = match self.run_with_review(&task).await {
             Ok(Outcome::Finished(s, r, v)) => (s, r, v),
             Ok(Outcome::Stopped) => return,
@@ -589,7 +869,6 @@ impl Orchestrator {
                 None,
             ),
         };
-        // 状态和结果一起写；已被取消时什么都不写，也不交付
         if !self.finish(
             &task,
             &FINISH_FROM,
@@ -600,7 +879,24 @@ impl Orchestrator {
             return;
         }
 
-        // 交付：由 Composer 生成回复，写入会话
+        let is_child = task.parent_id.is_some();
+        if is_child {
+            if let Some(bid) = &task.branch_id {
+                tracing::info!(
+                    event = "task.template_branch_done",
+                    task_id = %task.id,
+                    branch_id = %bid,
+                    status = status.as_str(),
+                    "模板分支结束"
+                );
+            }
+            // 子任务不向用户交付；尝试汇合
+            if let Some(pid) = &task.parent_id {
+                let _ = self.try_join(pid).await;
+            }
+            return;
+        }
+
         let reply = self
             .composer
             .compose(&task, status, result.as_ref(), review.as_ref())
@@ -614,6 +910,260 @@ impl Orchestrator {
                 .assistant_message(&task.conversation_id, Some(&task.id), &reply),
             Err(e) => tracing::error!(error = %e, "写入交付消息失败"),
         }
+    }
+
+    /// 从分支结果解析信封；失败则记 missing
+    fn branch_envelope(tmpl: &Template, child: &TaskRecord) -> BranchEnvelope {
+        let bid = child.branch_id.clone().unwrap_or_default();
+        let spec = tmpl.branches.iter().find(|b| b.id == bid);
+        let Some(spec) = spec else {
+            return BranchEnvelope {
+                branch_id: bid,
+                status: STATUS_MISSING.into(),
+                missing: "未知分支".into(),
+                payload: Default::default(),
+            };
+        };
+        if child.status == TaskStatus::Cancelled {
+            return BranchEnvelope {
+                branch_id: bid,
+                status: STATUS_MISSING.into(),
+                missing: "整路未返回".into(),
+                payload: Default::default(),
+            };
+        }
+        if child.status == TaskStatus::Failed {
+            return BranchEnvelope {
+                branch_id: bid,
+                status: STATUS_FAILED.into(),
+                missing: String::new(),
+                payload: Default::default(),
+            };
+        }
+        let summary = child
+            .result
+            .as_ref()
+            .map(|r| r.summary.trim())
+            .unwrap_or("");
+        // 允许答案前后有说明：取第一个 { ... } JSON 对象
+        let json_slice = summary
+            .find('{')
+            .and_then(|i| summary[i..].rfind('}').map(|j| &summary[i..=i + j]));
+        let parsed = json_slice.and_then(|s| serde_json::from_str::<BranchEnvelope>(s).ok());
+        match parsed {
+            Some(env) => match validate_envelope(spec, &env) {
+                Ok(()) => env,
+                Err(reason) => BranchEnvelope {
+                    branch_id: bid,
+                    status: STATUS_MISSING.into(),
+                    missing: reason,
+                    payload: Default::default(),
+                },
+            },
+            None => BranchEnvelope {
+                branch_id: bid,
+                status: STATUS_MISSING.into(),
+                missing: "无法解析分支信封 JSON".into(),
+                payload: Default::default(),
+            },
+        }
+    }
+
+    /// 全部 branch 终态且无 NEEDS_HUMAN 时创建 join 并 spawn
+    async fn try_join(self: &Arc<Self>, parent_id: &str) -> Result<()> {
+        let parent = self.store.get_task(parent_id)?.context("父任务不存在")?;
+        if parent.status.is_terminal() {
+            return Ok(());
+        }
+        if parent.fanout_kind.as_deref() != Some("root") {
+            return Ok(());
+        }
+        let children = self.store.list_children(parent_id)?;
+        let branches: Vec<_> = children
+            .iter()
+            .filter(|c| c.fanout_kind.as_deref() == Some("branch"))
+            .cloned()
+            .collect();
+        if branches.is_empty() {
+            return Ok(());
+        }
+        if branches.iter().any(|c| c.status == TaskStatus::NeedsHuman) {
+            return Ok(()); // 等人验收（WP2）
+        }
+        if branches.iter().any(|c| !c.status.is_terminal()) {
+            return Ok(());
+        }
+        if children
+            .iter()
+            .any(|c| c.fanout_kind.as_deref() == Some("join"))
+        {
+            return Ok(()); // 已建 join
+        }
+        let tid = parent
+            .template_id
+            .as_deref()
+            .context("root 无 template_id")?;
+        let tmpl = self.templates.get(tid).context("模板未注册")?.clone();
+        let envs: Vec<_> = branches
+            .iter()
+            .map(|c| Self::branch_envelope(&tmpl, c))
+            .collect();
+        let join_input = match assemble_join(&tmpl, &envs) {
+            Ok(j) => j,
+            Err(e) => {
+                tracing::error!(
+                    event = "task.template_join",
+                    task_id = %parent_id,
+                    error = %e,
+                    "汇合失败"
+                );
+                let _ = self.finish(
+                    &parent,
+                    &[
+                        TaskStatus::Running,
+                        TaskStatus::Queued,
+                        TaskStatus::NeedsHuman,
+                    ],
+                    TaskStatus::Failed,
+                    Some(&TaskResult::failed(format!("模板汇合失败：{e}"))),
+                    format!("模板汇合失败：{e}"),
+                );
+                return Ok(());
+            }
+        };
+        tracing::info!(
+            event = "task.template_join",
+            task_id = %parent_id,
+            complete = join_input.complete,
+            missing = ?join_input.missing_branches,
+            "开始汇合"
+        );
+        let ts = now();
+        let join_ctx = serde_json::to_string(&join_input_for_ctx(&join_input))?;
+        let mut route = parent.route.clone();
+        route.execution_role = tmpl.join.capability;
+        let mut policy = parent.policy.clone();
+        policy.needs_review = false;
+        policy.auto_execute = true;
+        let join_task = TaskRecord {
+            id: an_core::new_id("task"),
+            conversation_id: parent.conversation_id.clone(),
+            goal: format!("{} · 汇合", parent.goal),
+            role: tmpl.join.capability,
+            status: TaskStatus::Created,
+            route,
+            policy,
+            result: None,
+            review: None,
+            assignment: None,
+            parent_id: Some(parent.id.clone()),
+            fanout_kind: Some("join".into()),
+            branch_id: Some("__join__".into()),
+            template_id: Some(tid.into()),
+            created_at: ts.clone(),
+            updated_at: ts,
+        };
+        self.store.insert_task(&join_task, &join_ctx)?;
+        if self.transition(
+            &join_task,
+            &[TaskStatus::Created],
+            TaskStatus::Queued,
+            "汇合任务排队",
+        ) {
+            self.spawn(join_task);
+        }
+        Ok(())
+    }
+
+    async fn execute_join(self: &Arc<Self>, task: TaskRecord) {
+        let ctx = self
+            .store
+            .get_task_context(&task.id)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let join: JoinInputCtx = serde_json::from_str(&ctx).unwrap_or(JoinInputCtx {
+            complete: false,
+            missing_branches: vec!["汇合上下文损坏".into()],
+            summary: "汇合失败".into(),
+        });
+        let mut summary = join.summary.clone();
+        if !join.complete {
+            summary.push_str("\n\n（有缺失分支：");
+            summary.push_str(&join.missing_branches.join(", "));
+            summary.push(')');
+        }
+        let result = TaskResult {
+            status: WorkerStatus::Succeeded,
+            summary,
+            artifacts: vec![],
+            evidence: vec![],
+            errors: vec![],
+        };
+        if !self.transition(
+            &task,
+            &[TaskStatus::Queued, TaskStatus::Running],
+            TaskStatus::Running,
+            "汇合中",
+        ) {
+            // 可能已是 Queued；继续 finish
+        }
+        if !self.finish(
+            &task,
+            &[
+                TaskStatus::Queued,
+                TaskStatus::Running,
+                TaskStatus::Verifying,
+            ],
+            TaskStatus::Completed,
+            Some(&result),
+            "汇合完成",
+        ) {
+            return;
+        }
+        tracing::info!(
+            event = "task.template_join",
+            task_id = %task.id,
+            complete = join.complete,
+            "汇合结束"
+        );
+        if let Some(pid) = &task.parent_id {
+            let _ = self.complete_parent(pid, &result, join.complete).await;
+        }
+    }
+
+    async fn complete_parent(
+        self: &Arc<Self>,
+        parent_id: &str,
+        join_result: &TaskResult,
+        complete: bool,
+    ) -> Result<()> {
+        let parent = self.store.get_task(parent_id)?.context("父任务不存在")?;
+        if parent.status.is_terminal() {
+            return Ok(());
+        }
+        let msg = if complete {
+            "模板任务完成（各路齐全）"
+        } else {
+            "模板任务完成（有缺失分支）"
+        };
+        if !self.finish(
+            &parent,
+            &[
+                TaskStatus::Running,
+                TaskStatus::Queued,
+                TaskStatus::NeedsHuman,
+            ],
+            TaskStatus::Completed,
+            Some(join_result),
+            msg,
+        ) {
+            return Ok(());
+        }
+        // 只对父任务交付一次
+        self.deliver(&parent, TaskStatus::Completed, Some(join_result), None)
+            .await;
+        Ok(())
     }
 
     /// 从执行组中分配一个 agent 执行一轮。
@@ -962,6 +1512,7 @@ mod tests {
             Composer::new(llm),
             0,
             timeout,
+            Arc::new(TemplateRegistry::default()),
         ));
         Env {
             orch,
@@ -978,6 +1529,9 @@ mod tests {
             required_tools: vec![],
             risk_level: Risk::Low,
             reason: String::new(),
+            template_id: String::new(),
+            deliverable: String::new(),
+            slots_ok: String::new(),
         }
     }
 

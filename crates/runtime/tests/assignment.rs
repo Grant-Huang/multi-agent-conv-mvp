@@ -95,6 +95,7 @@ fn env(agents: Vec<Arc<FakeAgent>>, assign: &[&str]) -> (Env, Arc<AgentRegistry>
         Composer::new(llm),
         0,
         Duration::from_secs(10),
+        Arc::new(an_runtime::template::TemplateRegistry::default()),
     ));
     (Env { orch, store }, registry)
 }
@@ -106,6 +107,9 @@ fn route(risk: Risk) -> RouteDecision {
         required_tools: vec![],
         risk_level: risk,
         reason: String::new(),
+        template_id: String::new(),
+        deliverable: String::new(),
+        slots_ok: String::new(),
     }
 }
 

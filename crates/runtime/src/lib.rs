@@ -16,6 +16,7 @@ pub mod agent_chat;
 pub mod agent_config;
 pub mod agent_diagnose;
 pub mod backends;
+pub mod builtin_templates;
 pub mod bus;
 pub mod composer;
 pub mod config;
@@ -385,6 +386,11 @@ impl Runtime {
             .with_class_questions(config.conversation.route_class_questions)
             .with_class_from_tools(config.conversation.route_class_from_tools),
         );
+        // WP4：内置模板；容量与后台槽位对齐（至少 4，覆盖 quote/release 三路）
+        let templates = Arc::new(
+            builtin_templates::builtin_registry(4)
+                .map_err(|errs| anyhow::anyhow!("内置模板加载失败：{}", errs.join("；")))?,
+        );
         let orchestrator = Arc::new(Orchestrator::new(
             store.clone(),
             bus.clone(),
@@ -393,6 +399,7 @@ impl Runtime {
             Composer::new(llm_for(LlmRole::Conversation)),
             o.max_review_rounds,
             Duration::from_secs(o.task_timeout_secs),
+            templates,
         ));
         if let Some(l) = &admission {
             orchestrator.set_admission(l.clone());

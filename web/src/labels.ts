@@ -43,16 +43,42 @@ export function roleLabel(role: string): string {
  * rank 为排队位置（从 1 开始），非排队状态或未知时传 null。
  */
 export function taskStatusLine(
-  task: Pick<TaskRecord, "status" | "role" | "result">,
+  task: Pick<TaskRecord, "status" | "role" | "result" | "fanout_kind" | "template_id" | "branch_id">,
   rank: number | null,
 ): string {
   switch (task.status) {
     case "QUEUED":
       return rank ? `排队中（第 ${rank} 位）` : "排队中";
     case "RUNNING":
+      if (task.fanout_kind === "root") {
+        const tid = task.template_id?.trim();
+        return tid ? `模板 ${tid} 并行执行中` : "模板并行执行中";
+      }
+      if (task.fanout_kind === "branch" && task.branch_id) {
+        return `分支 ${task.branch_id} 执行中`;
+      }
+      if (task.fanout_kind === "join") {
+        return "汇合中";
+      }
       return `${roleLabel(task.role)}执行中`;
     default:
       return statusLabel(task);
+  }
+}
+
+/** 任务卡标题旁的模板/分支角标文案；非模板任务返回空 */
+export function fanoutLabel(
+  task: Pick<TaskRecord, "fanout_kind" | "template_id" | "branch_id">,
+): string {
+  switch (task.fanout_kind) {
+    case "root":
+      return task.template_id ? `模板·${task.template_id}` : "模板";
+    case "branch":
+      return task.branch_id ? `分支·${task.branch_id}` : "分支";
+    case "join":
+      return "汇合";
+    default:
+      return "";
   }
 }
 

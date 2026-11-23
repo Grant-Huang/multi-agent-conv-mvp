@@ -83,6 +83,9 @@ fn route() -> RouteDecision {
         required_tools: vec![],
         risk_level: Risk::Low,
         reason: String::new(),
+        template_id: String::new(),
+        deliverable: String::new(),
+        slots_ok: String::new(),
     }
 }
 
@@ -159,6 +162,7 @@ async fn main() -> Result<()> {
             Composer::new(llm),
             0,
             Duration::from_secs(30),
+            Arc::new(an_runtime::template::TemplateRegistry::default()),
         ));
         orch.set_admission(ledger.clone());
         let conv = store.create_conversation("bench")?.id;

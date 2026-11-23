@@ -8,6 +8,15 @@
 > 规则：按里程碑逐步推进；每完成一步更新本文件（勾选进度、做必要的最小调整），用户确认后再进入下一步。
 > 新功能先写测试（TDD），测试冻结后只改业务代码；Python 部分覆盖率 ≥ 80%，通过 flake8。
 
+## 近期五线安排
+
+按[五线分工决定](decisions/2026-11-22-five-workstreams.md)推进。**近期没有确定的工厂试点窗口**，优先交付真实桌面委派；DES 和第 5 线可并行。跨组责任和验收见[集成计划](INTEGRATION_PLAN.md)。
+
+- [ ] 第 1、4 线：首页正常入口接入可靠受理。先验丢回执后按同一操作回读及重连，再验人工验收与结果回传。
+- [ ] 第 2 线：独立复跑真实桌面委派和运营频道远程 DES 场景，分别记录合入基线、运行模式和证据。
+- [ ] 第 3 线：沿用 M2-6 准出及 T-63 独立复验，维护远程 DES 基线；以已合入的 M3-2/3 桩数据服务层为基础准备候选站点与数据源。
+- [ ] 第 5 线：确认 REQ-conversation-memory-01 并建立会话注入验收，沿用业务内省基线。分期见[第 5 线计划](features/conversation-memory/PLAN.md)。
+
 ## 0. 当前环境
 
 | 项目 | 配置 |
@@ -433,8 +442,8 @@ pre-M3.3 之后，M5 里"9B vs 35B"的结论只作留档，不再影响部署。
 
 - [x] **4.1 评测样本**：F 组 5 条（`mq-01` 到 `mq-03` 全是直接回答，`mq-mix-01` / `mq-mix-02` 含必须委派的子问题）。4.3 之前混合样本仍是整条一个动作
 - [x] **4.2 直接回答**：回答提示词要求按编号逐条回答、不遗漏。`reply_prompt_numbers_each_question`、`multi_question_reply_is_numbered`
-- [ ] **4.3 混合情况**：按 `docs/DESIGN.md` 第 9.6 节实现。能串行的不拆；只有写死的模板才并行。Router 只输出 `template_id`、`deliverable`、`slots_ok`。分支和汇合的输入输出用 JSON 信封校验，缺一路记 `missing`，Composer 只转述汇合结果
-  - 设计已写入第 9.6 节；模板校验与 RT-TPL-01～10 已实现，模板并行执行和 Composer 汇合尚未接入编排器
+- [x] **4.3 混合情况**：按 `docs/DESIGN.md` 第 9.6 节实现。能串行的不拆；只有写死的模板才并行。Router 只输出 `template_id`、`deliverable`、`slots_ok`。分支和汇合的输入输出用 JSON 信封校验，缺一路记 `missing`，Composer 只转述汇合结果
+  - 设计见第 9.6 节；校验 RT-TPL-01～10；编排接入 RT-TPL-11～16 / E2E-TPL（WP4 / #216 方案批后实现）。**不做**动态 DAG；M4.4 评测门槛另卡
 - [ ] **4.4 验收**：F 组样本逐条覆盖率 ≥ 95%
 
 ## M5 9B vs 35B A/B
@@ -868,7 +877,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 1. ~~M2 的第三方依赖~~（已确认：核心 ddgs + httpx；trafilatura、mcp 为可选安装）
 2. M6 的压测门槛和话题集
 3. 用 35B 作评委打分是否可接受（会占用 8200 槽位）
-4. M4.3 按 `docs/DESIGN.md` 第 9.6 节接入编排器（校验已实现，执行与汇合待实现）
+4. ~~M4.3 按 `docs/DESIGN.md` 第 9.6 节接入编排器~~（#216 方案批；实现卡 WP4 / T-76）
 5. ~~M7 是否排在 M3 之前 / 统一流式 / 槽位数~~（已确认：提前并改名 pre-M3；统一流式；35B 槽位 5→6 见第 6 项；9B 下线）
 6. ~~前台借用后台槽位~~（已确认 2026-11-05：**不借用**，改为 6 槽位 = 前台 2 + 后台 4；`borrow_idle` 默认 false）
 7. ~~pre-M3.5 怎样固定 pi 的槽位~~（已确认 2026-11-05：选 A，pi 扩展 + 环境变量 `AN_LLM_SLOT`；其他 coding agent 以后各自适配，通用代理方案 C 留到连接器设计评审时再议）
@@ -963,6 +972,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **T-70 preferences 面板接 B3**（2026-11-22）：profileStore → `GET/PATCH /preferences`；E2E-ADPROF 真实路径；证据 `testing/evidence/ai-desktop-t70-preferences.md`
 - [x] **T-71 记忆列表接服务**（2026-11-22）：`GET /memories` 夹具权威 + SettingsPanel 列表/详情；E2E-ADMEM；证据 `testing/evidence/ai-desktop-t71-memory-list.md`
 - [x] **T-72 记忆纠错/撤回写路径**（2026-11-22）：PATCH/DELETE 夹具 + UI；E2E-ADMEMW；证据 `testing/evidence/ai-desktop-t72-memory-write.md`
+- [x] **T-73 已读跨端接服务**（2026-11-22）：`assistant/messages` 读状态夹具 + 面板；E2E-ADXR / RT-ADXR；证据 `testing/evidence/ai-desktop-t73-read-cross.md`
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`
@@ -1002,9 +1012,9 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环（WA-03/04/05/08；服务层 `/api/world/des`；套件 `wa-m2-suite`）
 - [x] **M3-0** 冻结生产只读用例与任务卡（[mom/WA_M3_TASKS.md](mom/WA_M3_TASKS.md)；证据 `testing/evidence/wa-m3-0.md`；#209）
 - [x] **M3-1** 正式 CASES + Red 空壳；生产读合同方案（[mom/WA_M3_1_PLAN.md](mom/WA_M3_1_PLAN.md)；证据 `testing/evidence/wa-m3-1-red.md`；#213）
-- [x] **M3-2** Bind / Observe / 水位服务层 Green（`RT-WAPROD-01`/`02`；证据 `testing/evidence/wa-m3-2-green.md`；#218）
-- [x] **M3-3** 权限 / 续读 / 延迟 / 写关闭（`RT-WAPROD-03`～`06`；证据 `testing/evidence/wa-m3-3-green.md`；#220）
-- [ ] **M3-4** 浏览器生产读 + M0～M2 回归（`E2E-WAPROD*`；证据 `testing/evidence/wa-m3-4-browser.md`）
+- [x] **M3-2** Bind / Observe / 水位服务层 Green（桩数据，`RT-WAPROD-01`/`02`；证据 `testing/evidence/wa-m3-2-green.md`；#218）
+- [x] **M3-3** 权限 / 续读 / 延迟 / 写关闭（桩数据，`RT-WAPROD-03`～`06`；证据 `testing/evidence/wa-m3-3-green.md`；#220）
+- [ ] **M3-4** 浏览器生产读 + M0～M2 回归（桩数据，`E2E-WAPROD*`；证据 `testing/evidence/wa-m3-4-browser.md`）
 - [ ] **M3** 生产只读（写仍 Mock；接站点权威源/水位/权限/断点恢复）
 - [ ] **M4** 首个可查证生产写动作（维修工单）
 
@@ -1013,6 +1023,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 ---
 
 ## 业务内省（INT）
+
+本节记录第 5 线已经开展的内省工作；分层记忆、会话上下文与后续联动见[第 5 线计划](features/conversation-memory/PLAN.md)。
 
 > 授权：2026-11-18 用户批准 `docs/memory/INTROSPECTION_PLAN.md`（决策第 55 条）。验收用例见 `docs/memory/ACCEPTANCE.md`（业务内省部分已冻结）。
 > **可执行说明书（弱 agent 入口）**：`docs/memory/INTROSPECTION_PLAYBOOK.md`；目录说明见 `docs/memory/README.md`。

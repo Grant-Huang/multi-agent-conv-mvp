@@ -203,10 +203,17 @@
     "document": "docs/feature-map/features/research-and-tools.md",
     "sources": [
       "crates/runtime/src/template.rs",
-      "crates/llm/src/backend.rs"
+      "crates/runtime/src/builtin_templates.rs",
+      "crates/runtime/src/orchestrator.rs",
+      "crates/runtime/src/store.rs",
+      "crates/llm/src/backend.rs",
+      "web/src/components/TaskPanel.tsx",
+      "web/src/labels.ts"
     ],
-    "coverage": "backend",
-    "cases": [],
+    "coverage": "browser",
+    "cases": [
+      "E2E-TPL"
+    ],
     "runtime_cases": [
       "RT-TPL-01",
       "RT-TPL-02",
@@ -217,7 +224,13 @@
       "RT-TPL-07",
       "RT-TPL-08",
       "RT-TPL-09",
-      "RT-TPL-10"
+      "RT-TPL-10",
+      "RT-TPL-11",
+      "RT-TPL-12",
+      "RT-TPL-13",
+      "RT-TPL-14",
+      "RT-TPL-15",
+      "RT-TPL-16"
     ]
   },
   {
@@ -771,6 +784,7 @@
       "docs/testing/evidence/ai-desktop-t70-preferences.md",
       "docs/testing/evidence/ai-desktop-t71-memory-list.md",
       "docs/testing/evidence/ai-desktop-t72-memory-write.md",
+      "docs/testing/evidence/ai-desktop-t73-read-cross.md",
       "docs/testing/evidence/ai-desktop-c1.md",
       "docs/testing/evidence/ai-desktop-c2.md",
       "docs/testing/evidence/ai-desktop-d.md",
@@ -790,6 +804,7 @@
       "E2E-ADPROF",
       "E2E-ADMEM",
       "E2E-ADMEMW",
+      "E2E-ADXR",
       "E2E-ADINPUT",
       "E2E-ADREAD",
       "E2E-ADASK",
@@ -823,6 +838,10 @@
       "RT-ADMEM-04",
       "RT-ADMEM-05",
       "RT-ADMEM-06",
+      "RT-ADXR-01",
+      "RT-ADXR-02",
+      "RT-ADXR-03",
+      "RT-ADXR-04",
       "RT-ADACL-01",
       "RT-ADACL-02",
       "RT-ADACL-03",
@@ -980,6 +999,55 @@
       "RT-WAPROD-04",
       "RT-WAPROD-05",
       "RT-WAPROD-06"
+    ]
+  },
+  {
+    "id": "conversation-memory",
+    "document": "docs/features/conversation-memory/README.md",
+    "dossier": "docs/features/conversation-memory/README.md",
+    "status": "设计中",
+    "sources": [
+      "crates/runtime/src/conversation.rs",
+      "crates/llm/src/budget.rs"
+    ],
+    "coverage": "manual",
+    "cases": [],
+    "requirements": [
+      {
+        "id": "REQ-conversation-memory-01",
+        "title": "会话续接与来源可查",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-02",
+        "title": "个人记忆可控",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-03",
+        "title": "共享知识和组织判断标准按授权使用",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-04",
+        "title": "内省发现按需进入会话",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      }
+    ],
+    "contracts": [
+      "docs/contracts/identity-and-approval.md",
+      "docs/contracts/events-and-trace.md"
+    ],
+    "decisions": [
+      "docs/decisions/2026-11-22-five-workstreams.md"
     ]
   },
   {

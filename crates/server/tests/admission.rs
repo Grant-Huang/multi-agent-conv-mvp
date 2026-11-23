@@ -181,6 +181,10 @@ async fn rt_adm_14_admission_http_end_to_end() {
                 required_tools: vec![],
                 risk_level: Risk::Low,
                 reason: String::new(),
+
+                template_id: String::new(),
+                deliverable: String::new(),
+                slots_ok: String::new(),
             },
             PolicyVerdict {
                 auto_execute: true,

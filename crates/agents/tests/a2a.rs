@@ -40,6 +40,10 @@ fn task() -> TaskSpec {
             required_tools: vec![],
             risk_level: Risk::Medium,
             reason: String::new(),
+
+            template_id: String::new(),
+            deliverable: String::new(),
+            slots_ok: String::new(),
         },
     }
 }

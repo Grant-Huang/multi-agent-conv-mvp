@@ -220,6 +220,10 @@ fn fake_task(t: &ActiveTask) -> TaskRecord {
             required_tools: vec![],
             risk_level: Risk::Low,
             reason: String::new(),
+
+            template_id: String::new(),
+            deliverable: String::new(),
+            slots_ok: String::new(),
         },
         policy: PolicyVerdict {
             auto_execute: true,
@@ -230,6 +234,10 @@ fn fake_task(t: &ActiveTask) -> TaskRecord {
         result: None,
         review: None,
         assignment: None,
+        parent_id: None,
+        fanout_kind: None,
+        branch_id: None,
+        template_id: None,
         created_at: an_core::now(),
         updated_at: an_core::now(),
     }
