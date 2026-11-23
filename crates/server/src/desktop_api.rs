@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use std::convert::Infallible;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use an_core::EventPublisher;
@@ -92,9 +92,16 @@ pub fn routes() -> Router<AppState> {
             "/api/desktop/v1/preferences",
             get(get_preferences).patch(patch_preferences),
         )
-        // T-71：记忆列表服务权威（夹具种子，无新表；完整记忆抽取另卡）
+        // T-71/T-72：记忆列表与纠错/撤回（进程内夹具，无新表）
         .route("/api/desktop/v1/memories", get(list_memories))
-        .route("/api/desktop/v1/memories/{id}", get(get_memory))
+        .route(
+            "/api/desktop/v1/memories/fixture/reset",
+            post(reset_memories_fixture),
+        )
+        .route(
+            "/api/desktop/v1/memories/{id}",
+            get(get_memory).patch(patch_memory).delete(delete_memory),
+        )
         .route("/api/desktop/v1/tasks/{id}/evidence", get(list_evidence))
         .route("/api/desktop/v1/evidence/search", get(search_evidence))
         .route("/api/desktop/v1/evidence/{id}", get(get_evidence))
@@ -673,9 +680,11 @@ struct DesktopMemoryItem {
     source: String,
     body: String,
     expires: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    revoked: bool,
 }
 
-fn fixture_memories() -> Vec<DesktopMemoryItem> {
+fn seed_memories() -> Vec<DesktopMemoryItem> {
     vec![
         DesktopMemoryItem {
             id: "mem-1".into(),
@@ -683,6 +692,7 @@ fn fixture_memories() -> Vec<DesktopMemoryItem> {
             source: "用户确认 · 2026-11-18".into(),
             body: "先给结论，再列证据条目与待核实项。".into(),
             expires: "2027-11-18".into(),
+            revoked: false,
         },
         DesktopMemoryItem {
             id: "mem-2".into(),
@@ -690,17 +700,47 @@ fn fixture_memories() -> Vec<DesktopMemoryItem> {
             source: "设置 · 通知与主动性".into(),
             body: "工作日 22:00–08:00 不推普通建议。".into(),
             expires: "长期".into(),
+            revoked: false,
         },
     ]
 }
 
+fn memory_fixture() -> &'static Mutex<Vec<DesktopMemoryItem>> {
+    static STORE: OnceLock<Mutex<Vec<DesktopMemoryItem>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(seed_memories()))
+}
+
+#[derive(Debug, Deserialize)]
+struct PatchMemoryBody {
+    title: Option<String>,
+    body: Option<String>,
+    expires: Option<String>,
+}
+
 async fn list_memories() -> Response {
-    (StatusCode::OK, Json(json!({ "items": fixture_memories() }))).into_response()
+    let items: Vec<_> = memory_fixture()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .filter(|m| !m.revoked)
+        .cloned()
+        .collect();
+    (StatusCode::OK, Json(json!({ "items": items }))).into_response()
 }
 
 async fn get_memory(Path(id): Path<String>) -> Response {
-    match fixture_memories().into_iter().find(|m| m.id == id) {
-        Some(item) => (StatusCode::OK, Json(item)).into_response(),
+    let guard = memory_fixture().lock().unwrap_or_else(|e| e.into_inner());
+    match guard.iter().find(|m| m.id == id) {
+        Some(item) if !item.revoked => (StatusCode::OK, Json(item.clone())).into_response(),
+        Some(_) => (
+            StatusCode::GONE,
+            Json(json!({
+                "code": "revoked",
+                "message": "记忆已撤回",
+                "retryable": false
+            })),
+        )
+            .into_response(),
         None => (
             StatusCode::NOT_FOUND,
             Json(json!({
@@ -711,6 +751,71 @@ async fn get_memory(Path(id): Path<String>) -> Response {
         )
             .into_response(),
     }
+}
+
+async fn patch_memory(Path(id): Path<String>, Json(body): Json<PatchMemoryBody>) -> Response {
+    let mut guard = memory_fixture().lock().unwrap_or_else(|e| e.into_inner());
+    match guard.iter_mut().find(|m| m.id == id) {
+        Some(item) if item.revoked => (
+            StatusCode::GONE,
+            Json(json!({
+                "code": "revoked",
+                "message": "记忆已撤回，无法纠错",
+                "retryable": false
+            })),
+        )
+            .into_response(),
+        Some(item) => {
+            if let Some(v) = body.title {
+                item.title = v;
+            }
+            if let Some(v) = body.body {
+                item.body = v;
+            }
+            if let Some(v) = body.expires {
+                item.expires = v;
+            }
+            (StatusCode::OK, Json(item.clone())).into_response()
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "code": "not_found",
+                "message": "记忆条目不存在",
+                "retryable": false
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_memory(Path(id): Path<String>) -> Response {
+    let mut guard = memory_fixture().lock().unwrap_or_else(|e| e.into_inner());
+    match guard.iter_mut().find(|m| m.id == id) {
+        Some(item) => {
+            item.revoked = true;
+            (
+                StatusCode::OK,
+                Json(json!({ "ok": true, "id": id, "revoked": true })),
+            )
+                .into_response()
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "code": "not_found",
+                "message": "记忆条目不存在",
+                "retryable": false
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn reset_memories_fixture() -> Response {
+    let mut guard = memory_fixture().lock().unwrap_or_else(|e| e.into_inner());
+    *guard = seed_memories();
+    (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response()
 }
 
 #[derive(Debug, Deserialize)]

@@ -749,6 +749,21 @@ export const api = {
     request<{ items: DesktopMemoryDto[] }>("/api/desktop/v1/memories"),
   desktopMemoryGet: (id: string) =>
     request<DesktopMemoryDto>(`/api/desktop/v1/memories/${encodeURIComponent(id)}`),
+  desktopMemoryPatch: (id: string, body: { title?: string; body?: string; expires?: string }) =>
+    request<DesktopMemoryDto>(`/api/desktop/v1/memories/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  desktopMemoryDelete: (id: string) =>
+    request<{ ok: boolean; id: string; revoked: boolean }>(
+      `/api/desktop/v1/memories/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    ),
+  desktopMemoriesReset: () =>
+    request<{ ok: boolean; reset: boolean }>("/api/desktop/v1/memories/fixture/reset", {
+      method: "POST",
+      body: "{}",
+    }),
   desktopPreferencesPatch: async (body: {
     expected_version: number;
     name?: string;
