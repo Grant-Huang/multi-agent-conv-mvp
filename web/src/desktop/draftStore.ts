@@ -1,4 +1,6 @@
-/** 草稿按 Conversation / Task 隔离（A2）；首版本地命名空间，见 DESIGN §3。 */
+/** 草稿按 Conversation / Task 隔离（A2）；T-84 起服务端权威 + 本地缓存镜像，见 DESIGN §3。 */
+import { api } from "../api";
+
 export type DraftScope = "auto" | "continue" | "independent";
 
 export type DraftRecord = {
@@ -87,4 +89,128 @@ export function appendTaskLinkAudit(entry: Omit<TaskLinkAudit, "id" | "at">): Ta
     /* 忽略 */
   }
   return full;
+}
+
+// ===== T-84 草稿上云：服务端权威 + 本地缓存镜像 =====
+
+/** 每个草稿键最近一次确认的服务端版本（expected_version 防丢失更新） */
+const serverVersion = new Map<string, number>();
+const syncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function parseDraftKey(key: string): { kind: "task" | "conv"; id: string } | null {
+  const m = key.match(/^an\.desktop\.draft\.v1:(task|conv):(.+)$/);
+  if (!m) return null;
+  return { kind: m[1] as "task" | "conv", id: m[2] };
+}
+
+/** 打开工作区时：以服务端为准刷新本地缓存。合并口径（版本号跨会话不可比）：
+ *  - 本会话从未同步过该键且本地已有输入 → 本地是更新的意图，立即回推服务端；
+ *  - 本地为空 → 采纳服务端草稿（跨设备/清存储恢复）；
+ *  - 本会话已同步过 → 版本新者胜。
+ *  服务端不可达时保留本地——那是用户自己的草稿数据，不是 Mock 回退（宪章原则 8）。 */
+export async function loadDraftRemote(key: string): Promise<DraftRecord> {
+  const k = parseDraftKey(key);
+  if (!k) return loadDraft(key);
+  try {
+    const r = await api.desktopDraftGet(k.kind, k.id);
+    const everSynced = serverVersion.has(key);
+    const local = loadDraft(key);
+    const localTyped = local.text.length > 0 && local.version > 0;
+    if (!everSynced) {
+      if (localTyped) {
+        serverVersion.set(key, r.draft.version);
+        scheduleDraftSync(key, 0);
+        return loadDraft(key);
+      }
+      if (r.draft.version > 0 || r.draft.text) {
+        saveDraft(key, {
+          text: r.draft.text,
+          version: r.draft.version,
+          scope: (r.draft.scope as DraftScope) || "auto",
+          continueTaskId: r.draft.continue_task_id,
+        });
+      }
+      serverVersion.set(key, r.draft.version);
+      return loadDraft(key);
+    }
+    if (r.draft.version >= local.version) {
+      saveDraft(key, {
+        text: r.draft.text,
+        version: r.draft.version,
+        scope: (r.draft.scope as DraftScope) || "auto",
+        continueTaskId: r.draft.continue_task_id,
+      });
+    } else {
+      scheduleDraftSync(key, 0);
+    }
+    serverVersion.set(key, r.draft.version);
+  } catch {
+    /* 服务端不可达：保留本地缓存 */
+  }
+  return loadDraft(key);
+}
+
+/** 编辑后防抖推送到服务端（expected_version 防丢失更新）；
+ *  失败/冲突时回读服务端，服务端版本较新则覆盖本地。 */
+export function scheduleDraftSync(key: string, delayMs = 500): void {
+  if (!parseDraftKey(key)) return;
+  const prev = syncTimers.get(key);
+  if (prev) clearTimeout(prev);
+  syncTimers.set(
+    key,
+    setTimeout(() => {
+      syncTimers.delete(key);
+      void pushDraft(key);
+    }, delayMs),
+  );
+}
+
+async function pushDraft(key: string): Promise<void> {
+  const k = parseDraftKey(key);
+  if (!k) return;
+  const rec = loadDraft(key);
+  const expected = serverVersion.get(key);
+  try {
+    const r = await api.desktopDraftSave(k.kind, k.id, {
+      text: rec.text,
+      scope: rec.scope,
+      continue_task_id: rec.continueTaskId,
+      version: rec.version,
+      expected_version: expected,
+    });
+    serverVersion.set(key, r.draft.version);
+  } catch {
+    try {
+      const g = await api.desktopDraftGet(k.kind, k.id);
+      serverVersion.set(key, g.draft.version);
+      const local = loadDraft(key);
+      if (g.draft.version > local.version) {
+        saveDraft(key, {
+          text: g.draft.text,
+          version: g.draft.version,
+          scope: (g.draft.scope as DraftScope) || "auto",
+          continueTaskId: g.draft.continue_task_id,
+        });
+      }
+    } catch {
+      /* 服务端不可达：保留本地 */
+    }
+  }
+}
+
+/** 发送后：按 sent_version 本地规则清空 + 同步服务端（语义一致，幂等）。 */
+export function clearDraftAfterSendRemote(key: string, sentVersion: number): void {
+  const k = parseDraftKey(key);
+  clearDraftAfterSend(key, sentVersion);
+  if (!k) return;
+  const rec = loadDraft(key);
+  void api
+    .desktopDraftClearAfterSend(k.kind, k.id, sentVersion)
+    .then((r) => {
+      serverVersion.set(key, r.draft.version);
+      if (rec.text) scheduleDraftSync(key);
+    })
+    .catch(() => {
+      /* 离线：本地清空已生效，恢复联网后由下次编辑推送 */
+    });
 }

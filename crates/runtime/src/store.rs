@@ -175,6 +175,38 @@ pub enum DesktopPrefPatchOutcome {
     Conflict(DesktopPreferences),
 }
 
+/// AI Desktop T-84：工作区草稿（服务端权威）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopDraftRow {
+    pub kind: String,
+    pub scope_id: String,
+    pub text: String,
+    pub scope: String,
+    pub continue_task_id: Option<String>,
+    pub version: i64,
+    #[serde(skip_serializing)]
+    pub updated_at: String,
+}
+
+/// 草稿保存参数（避免长参数列表）
+#[derive(Debug, Clone, Copy)]
+pub struct DesktopDraftSave<'a> {
+    pub user_id: &'a str,
+    pub kind: &'a str,
+    pub scope_id: &'a str,
+    pub text: &'a str,
+    pub scope: &'a str,
+    pub continue_task_id: Option<&'a str>,
+    pub version: i64,
+    pub expected_version: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub enum DesktopDraftSaveOutcome {
+    Ok(DesktopDraftRow),
+    Conflict(DesktopDraftRow),
+}
+
 /// AI Desktop C1：证据记录
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DesktopEvidence {
@@ -521,6 +553,18 @@ CREATE TABLE IF NOT EXISTS desktop_memories (
 );
 CREATE INDEX IF NOT EXISTS idx_desktop_memories_user
     ON desktop_memories(user_id, revoked);
+-- AI Desktop T-84：工作区草稿上云（服务端权威；version 由客户端携带，expected_version 防丢失更新）
+CREATE TABLE IF NOT EXISTS desktop_drafts (
+    user_id TEXT NOT NULL DEFAULT 'local',
+    kind TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    text TEXT NOT NULL DEFAULT '',
+    scope TEXT NOT NULL DEFAULT 'auto',
+    continue_task_id TEXT,
+    version INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, kind, scope_id)
+);
 "#;
 
 fn tune(conn: &Connection) -> Result<()> {
@@ -2650,6 +2694,113 @@ impl Store {
             Self::insert_desktop_memory(&conn, &m)?;
         }
         Ok(())
+    }
+
+    /// AI Desktop T-84：草稿读取；无记录返回 None（API 层转为空草稿）。
+    pub fn get_desktop_draft(
+        &self,
+        user_id: &str,
+        kind: &str,
+        scope_id: &str,
+    ) -> Result<Option<DesktopDraftRow>> {
+        let conn = self.read();
+        Ok(conn
+            .query_row(
+                "SELECT kind, scope_id, text, scope, continue_task_id, version, updated_at
+                 FROM desktop_drafts WHERE user_id = ?1 AND kind = ?2 AND scope_id = ?3",
+                params![user_id, kind, scope_id],
+                Self::map_desktop_draft,
+            )
+            .optional()?)
+    }
+
+    /// 保存草稿。expected_version 与现存版本不符时返回 Conflict（带当前行），不覆盖；
+    /// version 由客户端携带（本地编辑计数），服务端不递增。
+    pub fn save_desktop_draft(&self, p: DesktopDraftSave<'_>) -> Result<DesktopDraftSaveOutcome> {
+        let conn = self.write();
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT version FROM desktop_drafts WHERE user_id = ?1 AND kind = ?2 AND scope_id = ?3",
+                params![p.user_id, p.kind, p.scope_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(cur) = existing {
+            if let Some(expected) = p.expected_version {
+                if expected != cur {
+                    let cur_row = Self::fetch_desktop_draft(&conn, p.user_id, p.kind, p.scope_id)?
+                        .ok_or_else(|| anyhow::anyhow!("草稿行在冲突读取时消失"))?;
+                    return Ok(DesktopDraftSaveOutcome::Conflict(cur_row));
+                }
+            }
+            conn.execute(
+                "UPDATE desktop_drafts SET text=?4, scope=?5, continue_task_id=?6, version=?7, updated_at=?8
+                 WHERE user_id=?1 AND kind=?2 AND scope_id=?3",
+                params![p.user_id, p.kind, p.scope_id, p.text, p.scope, p.continue_task_id, p.version, now()],
+            )?;
+        } else {
+            conn.execute(
+                "INSERT INTO desktop_drafts (user_id, kind, scope_id, text, scope, continue_task_id, version, updated_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![p.user_id, p.kind, p.scope_id, p.text, p.scope, p.continue_task_id, p.version, now()],
+            )?;
+        }
+        let row = Self::fetch_desktop_draft(&conn, p.user_id, p.kind, p.scope_id)?
+            .ok_or_else(|| anyhow::anyhow!("草稿保存后不可读"))?;
+        Ok(DesktopDraftSaveOutcome::Ok(row))
+    }
+
+    /// 发送后清空正文：仅当现存 version == sent_version 才清（version+1，scope 保留）；
+    /// 否则原样返回当前行（幂等，保护发送期间追加的输入）。无记录返回 None。
+    pub fn clear_desktop_draft_after_send(
+        &self,
+        user_id: &str,
+        kind: &str,
+        scope_id: &str,
+        sent_version: i64,
+    ) -> Result<Option<DesktopDraftRow>> {
+        let conn = self.write();
+        let cur = Self::fetch_desktop_draft(&conn, user_id, kind, scope_id)?;
+        let Some(row) = cur else {
+            return Ok(None);
+        };
+        if row.version == sent_version {
+            conn.execute(
+                "UPDATE desktop_drafts SET text='', version=?4, updated_at=?5
+                 WHERE user_id=?1 AND kind=?2 AND scope_id=?3",
+                params![user_id, kind, scope_id, sent_version + 1, now()],
+            )?;
+            return Self::fetch_desktop_draft(&conn, user_id, kind, scope_id);
+        }
+        Ok(Some(row))
+    }
+
+    fn fetch_desktop_draft(
+        conn: &Connection,
+        user_id: &str,
+        kind: &str,
+        scope_id: &str,
+    ) -> Result<Option<DesktopDraftRow>> {
+        Ok(conn
+            .query_row(
+                "SELECT kind, scope_id, text, scope, continue_task_id, version, updated_at
+                 FROM desktop_drafts WHERE user_id = ?1 AND kind = ?2 AND scope_id = ?3",
+                params![user_id, kind, scope_id],
+                Self::map_desktop_draft,
+            )
+            .optional()?)
+    }
+
+    fn map_desktop_draft(r: &Row<'_>) -> rusqlite::Result<DesktopDraftRow> {
+        Ok(DesktopDraftRow {
+            kind: r.get(0)?,
+            scope_id: r.get(1)?,
+            text: r.get(2)?,
+            scope: r.get(3)?,
+            continue_task_id: r.get(4)?,
+            version: r.get(5)?,
+            updated_at: r.get(6)?,
+        })
     }
 
     /// 按时间顺序返回消息；`last` 为 Some(n) 时只返回最近 n 条
