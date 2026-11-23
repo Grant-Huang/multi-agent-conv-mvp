@@ -23,10 +23,10 @@
 | WAM-01 | 实验控制与消息 | 试跑/正式分登记；时钟；幂等启动；事项投递 | **M1** 读与观察；**M2** 真实回执 | `wa-m0-suite` + `wa-m1-suite` | **写：M0 Mock**；**读：M1 + T-50**（`/api/world/des`；主应用可 `with_des`） |
 | WAM-02 | 世界与权限 | 两身份、两世界、跨范围拒绝 | **M1** DES 绑定；**M3** 生产权限 | 列表/详情/计数/隔离合同不变 | **M0 Mock** + **M1** `E2E-WADES` / `RT-WADES-01`（含 live bind） |
 | WAM-03 | 读与事件 | 快照、有序事件、游标过期 | **M1** MOM 投递；**M3** 多源水位 | 续读无漏、无重复业务应用 | **M0 Mock** + **M1/T-50** 正式投递水位（桩 + tick 投影；`RT-WADES-02/03/05/06`、`E2E-WAREAD`） |
-| WAM-04 | 方案与批准 | 版本、角色；审批走运营频道卡 | **M2** 复用 MOM；**M4** 真实审批 | 过期批准零写入 | **M0 Mock** + **M2 服务层**（`/api/world/des` Propose/批准；`ops/approve-execute`；见 `wa-m2-2-green.md` / `wa-m2-5-browser.md`）；真实审批 **M4** |
-| WAM-05 | 写入、回执、取消 | 稳定 execution_id、丢回执、部分失败 | **M2** DES；**M4** MES | 重复执行、终态保护 | **M0 Mock** + **M2 DES 写**（Execute/Confirm；`RT-WADES-09～17`；E2E-WAEXEC/WARECV；见 `wa-m2-3-recovery.md` / `wa-m2-5-browser.md`）；MES **M4** |
+| WAM-04 | 方案与批准 | 版本、角色；审批走运营频道卡 | **M2** 复用 MOM；**M4** 真实审批 | 过期批准零写入 | **M0 Mock** + **M2 服务层**；真实审批属 M4（**写侧未开**；准入见 [WA_M4_TASKS.md](WA_M4_TASKS.md) §1 G5） |
+| WAM-05 | 写入、回执、取消 | 稳定 execution_id、丢回执、部分失败 | **M2** DES；**M4** MES | 重复执行、终态保护 | **M0 Mock** + **M2 DES 写**；MES **M4**（**写侧未开**；准入 G6；保持 prod `WRITE_DISABLED`） |
 | WAM-06 | 审核与诊断 | 标准答案仅审核可见 | **M2** DES 审核源 | 访问边界、刷新失败恢复 | **M0 Mock** + **M2 DES 审核**（`RT-WADES-18～19`；E2E-WADYN/WALOOP；见 `wa-m2-4-closed-loop.md` / `wa-m2-5-browser.md`） |
-| WAM-07 | 生产来源 | 模拟站点/延迟（种子标识） | **M3** 读；**M4** 写 | 对账可复验 | **读路径已定稿（桩数据）**：`/api/world/prod` + `RT-WAPROD-01`～`06` + `E2E-WAPROD*`；套件 `wa-m3-suite`；准出 [wa-m3-5.md](../testing/evidence/wa-m3-5.md)。真站点只读另验；写 **M4** |
+| WAM-07 | 生产来源 | 模拟站点/延迟（种子标识） | **M3** 读；**M4** 写 | 对账可复验 | **读（桩）已定稿**：`wa-m3-5.md`。**写未开**：须过 [WA_M4_TASKS](WA_M4_TASKS.md) 准入；下一待授权卡 **M4-1 候选站只读浏览器**；MES 写在准入齐后 |
 
 退役真实路径上的 Mock 路由时：关掉 `world_mock`、保留隔离套件作回归、更新本表状态为「已替换」并附 PR。
 
