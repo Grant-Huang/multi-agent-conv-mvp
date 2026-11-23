@@ -695,11 +695,7 @@ fn fixture_memories() -> Vec<DesktopMemoryItem> {
 }
 
 async fn list_memories() -> Response {
-    (
-        StatusCode::OK,
-        Json(json!({ "items": fixture_memories() })),
-    )
-        .into_response()
+    (StatusCode::OK, Json(json!({ "items": fixture_memories() }))).into_response()
 }
 
 async fn get_memory(Path(id): Path<String>) -> Response {

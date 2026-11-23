@@ -61,10 +61,7 @@ async fn rt_admem_01_list_returns_fixture_items() {
     assert_eq!(s, 200, "{v}");
     let items = v["items"].as_array().expect("items array");
     assert!(items.len() >= 2, "{v}");
-    let ids: Vec<&str> = items
-        .iter()
-        .filter_map(|i| i["id"].as_str())
-        .collect();
+    let ids: Vec<&str> = items.iter().filter_map(|i| i["id"].as_str()).collect();
     assert!(ids.contains(&"mem-1"), "{v}");
     assert!(ids.contains(&"mem-2"), "{v}");
     let mem1 = items.iter().find(|i| i["id"] == "mem-1").unwrap();
