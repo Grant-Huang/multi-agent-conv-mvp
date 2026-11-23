@@ -150,8 +150,9 @@ async fn main() -> Result<()> {
             };
             app = app.merge(an_server::mom_world_des::router(world_des));
             // M3：生产只读 stub（权威源登记；无真实凭据/egress）
+            // world_mock 演示门控下开启测试控件（与 DES 内存桩一致）；真站点路径另案。
             app = app.merge(an_server::mom_world_prod::router(
-                an_server::mom_world_prod::WorldProdState::new(),
+                an_server::mom_world_prod::WorldProdState::with_test_controls(),
             ));
         }
         app = app

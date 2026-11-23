@@ -11,8 +11,8 @@
 | M3-0 | 冻结用例草案与任务卡；同步 PLAN / Feature Map / 注册表 | **完成**（#209） | M2 准出 |
 | M3-1 | 正式 CASES + Red 空壳；生产读合同（高风险先方案） | **完成**（#213） | M3-0 |
 | M3-2 | 绑定 / Observe / 水位服务层 Green | **完成**（#218） | M3-1 |
-| M3-3 | 权限、跨范围、延迟与多源 | **进行中**（本 PR） | M3-2 |
-| M3-4 | 浏览器生产读场景 + M0～M2 全量回归 | 排队 | M3-3 |
+| M3-3 | 权限、跨范围、延迟与多源 | **完成**（#220） | M3-2 |
+| M3-4 | 浏览器生产读场景 + M0～M2 全量回归 | **进行中**（本 PR） | M3-3 |
 | M3-5 | 证据、WAM-07 读路径状态、准出检查 | 排队 | M3-4 |
 
 一张卡 ≈ 一个 PR。每卡先 Red 再 Green；断言冻结后不得弱化。
@@ -47,20 +47,23 @@
 
 见 `docs/testing/evidence/wa-m3-2-green.md`。
 
-## 2d. M3-3：权限 / 续读 / 延迟 / 写关闭（本卡）
+## 2d. M3-3：权限 / 续读 / 延迟 / 写关闭（已完成，#220）
 
-1. 扩展 `mom_world_prod`：跨站/无授权 → `ACCESS_DENIED`；`test/expire-cursor` → `CURSOR_EXPIRED` 与恢复续读；`test/inject-delay` → 多源 `as_of`；`propose`/`execute` → `WRITE_DISABLED`（Mock 写仍可用）。
-2. 合同测试入库：`crates/server/tests/mom_world_prod.rs` → `RT-WAPROD-03`～`06` Green（01/02 回归绿）。
-3. `features.json` `runtime_cases` 挂入；证据 `wa-m3-3-green.md`。
-4. **仍不改** engine / store / orchestrator / 凭据 egress；浏览器留给 M3-4。
+见 `docs/testing/evidence/wa-m3-3-green.md`。
 
-## 3. M3-4～M3-5：纲要
+## 2e. M3-4：浏览器生产读 + M0～M2 回归（本卡）
+
+1. 工作台生产世界种子「华东精加工 · 生产」；`MomWorkbench` 接 `/api/world/prod` Bind/Observe/Subscribe；水位 / `as_of` / 续读 / 写关闭控件。
+2. Playwright Green：`web/e2e/wa-prod-read.spec.ts` → `E2E-WAPROD`/`WAPISO`/`WAPREAD`/`WAPDELAY`。
+3. 套件：`scripts/wa-m3-suite.sh` = 上述 Playwright + `wa-m2-suite`（含 M0/M1）。
+4. 证据 `wa-m3-4-browser.md`；**仍不改** engine / store / orchestrator / 真站点凭据；WAM-07 准出收口留给 M3-5。
+
+## 3. M3-5：纲要
 
 - **优先服务层**：`/api/world/prod`（字段对齐 `/api/world/des`）；生产 stub 先于真站点。
 - **高风险**：若需改 `engine.rs`、`store` 表结构、对外凭据/egress、或生产身份映射，**先出方案等人批准**。
-- 故障与延迟测试控件不得在生产配置默认打开。
+- 故障与延迟测试控件不得在生产配置默认打开（`world_mock` 演示门控下可开，与 DES 内存桩一致）。
 - 写路径：生产世界不开放 MES 写；演示写继续 Mock/DES。
-- **M3-4**：Playwright `E2E-WAPROD`/`WAPISO`/`WAPREAD`/`WAPDELAY` + M0～M2 全量回归。
 - **M3-5**：证据 / WAM-07 读路径状态 / 准出检查。
 
 ## 4. 不做（M3）

@@ -107,17 +107,22 @@ export function MomWorkbench({
   const [caseId, setCaseId] = useState<string | null>(
     () => initialCaseId ?? null,
   );
-  /** DES 读水位：经 `/api/world/des` Observe/Subscribe（E2E-WAREAD） */
+  /** DES / 生产读水位：Observe/Subscribe（E2E-WAREAD / E2E-WAPREAD） */
   const [appliedEventIds, setAppliedEventIds] = useState<string[]>([
     "evt-des-seed-1",
   ]);
   const [eventWatermark, setEventWatermark] = useState("wm-1");
+  const [sourceAsOf, setSourceAsOf] = useState<string>("");
   const [cursorExpired, setCursorExpired] = useState(false);
   const [forceExpiredCursor, setForceExpiredCursor] = useState(false);
   const [desReadReady, setDesReadReady] = useState(false);
+  const [prodReadReady, setProdReadReady] = useState(false);
   const desWorldIdRef = useRef<string | null>(null);
   const desCursorRef = useRef<string | null>(null);
+  const prodWorldIdRef = useRef<string | null>(null);
+  const prodCursorRef = useRef<string | null>(null);
   const desSyncGen = useRef(0);
+  const prodSyncGen = useRef(0);
 
   const world = MOM_WORLDS.find((w) => w.world_id === worldId) ?? MOM_WORLDS[0];
   const cases = casesForWorld(world.world_id);
@@ -125,6 +130,9 @@ export function MomWorkbench({
     caseId && cases.some((c) => c.case_id === caseId)
       ? findCase(caseId)
       : undefined;
+  const liveReadReady =
+    (world.provenance === "des" && desReadReady) ||
+    (world.provenance === "production" && prodReadReady);
 
   useEffect(() => {
     if (world.provenance !== "des") {
@@ -161,7 +169,9 @@ export function MomWorkbench({
         const ids = obs.events.map((e) => e.event_id).filter(Boolean);
         setAppliedEventIds(ids.length > 0 ? ids : ["evt-des-seed-1"]);
         setEventWatermark(String(obs.publish_seq));
+        setSourceAsOf("");
         setCursorExpired(false);
+        setForceExpiredCursor(false);
       } catch {
         /* DES 未挂载时保留种子水位，不阻断工作台 */
         setAppliedEventIds(["evt-des-seed-1"]);
@@ -175,19 +185,78 @@ export function MomWorkbench({
     };
   }, [world.provenance, world.world_id]);
 
+  useEffect(() => {
+    if (world.provenance !== "production") {
+      prodWorldIdRef.current = null;
+      prodCursorRef.current = null;
+      setProdReadReady(false);
+      return;
+    }
+    setProdReadReady(false);
+    const gen = ++prodSyncGen.current;
+    let cancelled = false;
+    (async () => {
+      try {
+        const bound = await api.worldProd.bind({
+          site_id: "plant-east",
+          authority: "mes-stub",
+          request_id: "wb-prod-bind",
+          sources: ["mes", "erp", "gateway"],
+        });
+        if (cancelled || gen !== prodSyncGen.current) return;
+        prodWorldIdRef.current = bound.world_id;
+        const obs = await api.worldProd.observe({
+          world_id: bound.world_id,
+          request_id: "wb-prod-observe",
+        });
+        if (cancelled || gen !== prodSyncGen.current) return;
+        prodCursorRef.current = obs.cursor;
+        const ids = obs.events.map((e) => e.event_id).filter(Boolean);
+        setAppliedEventIds(ids.length > 0 ? ids : ["evt-prod-seed-1"]);
+        setEventWatermark(String(obs.publish_seq ?? obs.as_of ?? "wm-prod"));
+        setSourceAsOf(obs.as_of ?? "");
+        setCursorExpired(false);
+        setForceExpiredCursor(false);
+      } catch {
+        setAppliedEventIds(["evt-prod-seed-1"]);
+        setEventWatermark("wm-prod");
+        setSourceAsOf("");
+      } finally {
+        if (!cancelled && gen === prodSyncGen.current) setProdReadReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [world.provenance, world.world_id]);
+
   async function rereadEvents() {
+    const isProd = world.provenance === "production";
+    const wid = isProd ? prodWorldIdRef.current : desWorldIdRef.current;
+    const cursor = isProd ? prodCursorRef.current : desCursorRef.current;
     if (forceExpiredCursor) {
-      const wid = desWorldIdRef.current;
       if (wid) {
         try {
-          await api.worldDes.subscribe({
-            world_id: wid,
-            cursor: "expired-cursor",
-            request_id: "wb-des-expired",
-          });
+          if (isProd) {
+            await api.worldProd.subscribe({
+              world_id: wid,
+              cursor: "expired-cursor",
+              request_id: "wb-prod-expired",
+            });
+          } else {
+            await api.worldDes.subscribe({
+              world_id: wid,
+              cursor: "expired-cursor",
+              request_id: "wb-des-expired",
+            });
+          }
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          if (msg.includes("过期") || msg.includes("CURSOR") || msg.includes("409")) {
+          if (
+            msg.includes("过期") ||
+            msg.includes("CURSOR") ||
+            msg.includes("409")
+          ) {
             setCursorExpired(true);
             return;
           }
@@ -197,10 +266,25 @@ export function MomWorkbench({
       return;
     }
     setCursorExpired(false);
-    const wid = desWorldIdRef.current;
-    const cursor = desCursorRef.current;
     if (wid && cursor) {
       try {
+        if (isProd) {
+          const sub = await api.worldProd.subscribe({
+            world_id: wid,
+            cursor,
+            request_id: "wb-prod-reread",
+          });
+          prodCursorRef.current = sub.cursor;
+          if (typeof sub.publish_seq === "number") {
+            setEventWatermark(String(sub.publish_seq));
+          }
+          if (sub.as_of) setSourceAsOf(sub.as_of);
+          setAppliedEventIds((prev) => {
+            const next = [...prev, ...sub.events.map((e) => e.event_id)];
+            return Array.from(new Set(next.filter(Boolean)));
+          });
+          return;
+        }
         const sub = await api.worldDes.subscribe({
           world_id: wid,
           cursor,
@@ -303,9 +387,28 @@ export function MomWorkbench({
         <span className="mom-wb-ids" aria-label="当前世界标识">
           world_id={world.world_id}
         </span>
-        {world.provenance === "des" && desReadReady && (
-          <div className="mom-des-readout" aria-label="DES 读水位">
+        {liveReadReady && (
+          <div
+            className="mom-des-readout"
+            aria-label={
+              world.provenance === "production" ? "生产读观测" : "DES 读水位"
+            }
+          >
             <span data-testid="event-watermark">水位 {eventWatermark}</span>
+            {world.provenance === "production" && (
+              <>
+                <span
+                  data-testid="source-as-of"
+                  aria-label="截至水位"
+                  className="muted small"
+                >
+                  as_of {sourceAsOf || "—"}
+                </span>
+                <span data-testid="formal-observation" className="muted small">
+                  正式观测：生产 stub 设备状态（只读）
+                </span>
+              </>
+            )}
             <span data-testid="applied-event-ids" className="muted small">
               {appliedEventIds.join(",")}
             </span>
@@ -432,13 +535,29 @@ export function MomWorkbench({
                   正式观测：设备振动偏高，Cpk 下滑（投递后可见）。
                 </p>
               )}
+              {world.provenance === "production" && (
+                <p>
+                  生产只读观测；Propose / Execute 已关闭，写演示请切 Mock/DES
+                  世界。
+                </p>
+              )}
               {selected.resource_gaps.length > 0 && (
                 <p>
                   资源缺口：{selected.resource_gaps.join("、")}
                 </p>
               )}
               <div className="mom-case-actions">
-                {onOpenOpsChannel && (
+                {world.provenance === "production" && (
+                  <>
+                    <button type="button" disabled aria-label="Propose">
+                      Propose
+                    </button>
+                    <button type="button" disabled aria-label="Execute">
+                      Execute
+                    </button>
+                  </>
+                )}
+                {onOpenOpsChannel && world.provenance !== "production" && (
                   <button
                     type="button"
                     className="primary"
