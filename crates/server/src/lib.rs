@@ -31,6 +31,7 @@ pub mod mom_relos;
 pub mod mom_sim;
 pub mod mom_world_des;
 pub mod mom_world_mock;
+pub mod mom_world_prod;
 
 use std::convert::Infallible;
 use std::sync::Arc;

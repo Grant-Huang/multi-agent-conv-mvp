@@ -3,7 +3,7 @@
 承接 [WA_M3_TASKS.md](WA_M3_TASKS.md) M3-1、[WORLD_ADAPTER.md](WORLD_ADAPTER.md) §3 / §4.1～4.2 / §7、CASES 已冻结的 `E2E-WAPROD`/`WAPISO`/`WAPREAD`/`WAPDELAY` 与 `RT-WAPROD-01`～`06`。  
 **本文件定 Green 路径；M3-1 Red 卡只冻结表格与空壳，不实现。** 改 `engine` / `store` 表结构 / `orchestrator` / 对外凭据与 egress / 生产身份映射前须再批。
 
-**状态：助手建议「服务层 `/api/world/prod` + 生产 stub 先于真站点」为 Green 默认路径（2026-11-22）；待用户确认。偏离该路径须先对照规范说明。M3-1 本卡仍只到 Red，实现另开 M3-2+。**
+**状态：用户确认「服务层 `/api/world/prod` + 生产 stub 先于真站点」为 Green 默认路径（2026-11-22，合入 #213 视为批准）。偏离该路径须先对照规范说明。M3-1 已只到 Red；实现自 M3-2 起。**
 
 ## 1. 现状缺口
 

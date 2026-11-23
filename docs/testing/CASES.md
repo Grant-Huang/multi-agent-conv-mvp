@@ -906,9 +906,9 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WADES-18 | world-adapter | 已 Execute 维修干预 | 审核员读 ground_truth；运营员 Confirm | `sync_status=synced`；`intervention_id`/`execution_id`/`answer` 与干预一致；Confirm 无标准答案字段 |
 | RT-WADES-19 | world-adapter | 已干预；答案同步失败（测试控件） | `fail-answer-sync` 后 `retry-answer-sync` | 先 `pending`；重试后 `synced` 且答案/intervention_id 与原干预一致 |
 
-### M3 生产只读（断言已冻结；M3-1 Red）
+### M3 生产只读（断言已冻结；M3-2 Bind/Observe Green）
 
-执行卡：[WA_M3_TASKS.md](../mom/WA_M3_TASKS.md)；Green 方案：[WA_M3_1_PLAN.md](../mom/WA_M3_1_PLAN.md)。设计：[WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md) §7、§9（WA-02/07 生产源；WA-06 写属 M4）；里程碑：[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) M3；替换台账 WAM-07。浏览器用例：`web/e2e/wa-prod-read.spec.ts`。合同：拟 `crates/server/tests/mom_world_prod.rs`（**Green 卡入库**；本卡仅本地 Red 证据，见 `docs/testing/evidence/wa-m3-1-red.md`）。路由前缀 `/api/world/prod`。M0～M2 已冻结用例不得弱化。生产写属 M4。
+执行卡：[WA_M3_TASKS.md](../mom/WA_M3_TASKS.md)；Green 方案：[WA_M3_1_PLAN.md](../mom/WA_M3_1_PLAN.md)。设计：[WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md) §7、§9（WA-02/07 生产源；WA-06 写属 M4）；里程碑：[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) M3；替换台账 WAM-07。浏览器用例：`web/e2e/wa-prod-read.spec.ts`（浏览器 Green 属 M3-4）。合同：`crates/server/tests/mom_world_prod.rs`（`RT-WAPROD-01`/`02` 已 Green；`03`～`06` 待 M3-3）。路由前缀 `/api/world/prod`。M0～M2 已冻结用例不得弱化。生产写属 M4。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
