@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  MEMORY_SEED,
   SETTINGS_CATEGORIES,
   bumpProfileVersionForConflict,
+  fetchMemories,
+  fetchMemory,
   fetchProfile,
   saveProfile,
   type AssistantProfile,
@@ -45,6 +46,10 @@ export function SettingsPanel({
   const [loading, setLoading] = useState(false);
   const [injecting, setInjecting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [memories, setMemories] = useState<MemoryEntry[]>([]);
+  const [memoryDetail, setMemoryDetail] = useState<MemoryEntry | null>(null);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [memoryLoading, setMemoryLoading] = useState(false);
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
@@ -75,21 +80,60 @@ export function SettingsPanel({
   }, [layer]);
 
   useEffect(() => {
+    if (layer !== "memory") return;
+    let cancelled = false;
+    setMemoryLoading(true);
+    setMemoryError(null);
+    if (memoryId) {
+      void fetchMemory(memoryId)
+        .then((m) => {
+          if (!cancelled) setMemoryDetail(m);
+        })
+        .catch((e: Error) => {
+          if (!cancelled) {
+            setMemoryDetail(null);
+            setMemoryError(e.message);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setMemoryLoading(false);
+        });
+    } else {
+      void fetchMemories()
+        .then((items) => {
+          if (!cancelled) {
+            setMemories(items);
+            setMemoryDetail(null);
+          }
+        })
+        .catch((e: Error) => {
+          if (!cancelled) setMemoryError(e.message);
+        })
+        .finally(() => {
+          if (!cancelled) setMemoryLoading(false);
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [layer, memoryId]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (layer === "memory") onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null });
-      else if (layer === "assistant") onNavigate({ layer: "categories", categoryId: null, memoryId: null });
+      if (layer === "memory") {
+        if (memoryId) onNavigate({ layer: "memory", categoryId: "assistant", memoryId: null });
+        else onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null });
+      } else if (layer === "assistant") onNavigate({ layer: "categories", categoryId: null, memoryId: null });
       else onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [layer, onClose, onNavigate]);
+  }, [layer, memoryId, onClose, onNavigate]);
 
   const filtered = SETTINGS_CATEGORIES.filter(
     (c) => !search.trim() || c.title.includes(search.trim()) || c.id.includes(search.trim().toLowerCase()),
   );
-
-  const memory = MEMORY_SEED.find((m) => m.id === memoryId) ?? null;
 
   const save = () => {
     if (!draft || saving || injecting) return;
@@ -123,8 +167,10 @@ export function SettingsPanel({
           className="btn small"
           data-testid="settings-back"
           onClick={() => {
-            if (layer === "memory") onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null });
-            else if (layer === "assistant") onNavigate({ layer: "categories", categoryId: null, memoryId: null });
+            if (layer === "memory") {
+              if (memoryId) onNavigate({ layer: "memory", categoryId: "assistant", memoryId: null });
+              else onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null });
+            } else if (layer === "assistant") onNavigate({ layer: "categories", categoryId: null, memoryId: null });
             else onClose();
           }}
         >
@@ -246,7 +292,7 @@ export function SettingsPanel({
                   className="btn small"
                   data-testid="profile-open-memory"
                   onClick={() =>
-                    onNavigate({ layer: "memory", categoryId: "assistant", memoryId: MEMORY_SEED[0].id })
+                    onNavigate({ layer: "memory", categoryId: "assistant", memoryId: null })
                   }
                 >
                   查看记忆
@@ -270,32 +316,85 @@ export function SettingsPanel({
         </div>
       )}
 
-      {layer === "memory" && memory && (
-        <MemoryDetail
-          entry={memory}
-          onBack={() => onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null })}
-        />
+      {layer === "memory" && (
+        <div data-testid="settings-memory">
+          <p className="settings-crumb" data-testid="memory-crumb">
+            设置 → 我的 AI 助理 → 记忆
+            {memoryId ? " → 详情" : ""}
+          </p>
+          {memoryLoading ? (
+            <p className="muted">加载记忆…</p>
+          ) : memoryError ? (
+            <p className="evidence-error" role="alert" data-testid="memory-error">
+              {memoryError}
+            </p>
+          ) : memoryId && memoryDetail ? (
+            <MemoryDetail
+              entry={memoryDetail}
+              onBack={() => onNavigate({ layer: "memory", categoryId: "assistant", memoryId: null })}
+            />
+          ) : (
+            <MemoryList
+              items={memories}
+              onOpen={(id) => onNavigate({ layer: "memory", categoryId: "assistant", memoryId: id })}
+              onBack={() => onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null })}
+            />
+          )}
+        </div>
       )}
+    </div>
+  );
+}
+
+function MemoryList({
+  items,
+  onOpen,
+  onBack,
+}: {
+  items: MemoryEntry[];
+  onOpen: (id: string) => void;
+  onBack: () => void;
+}) {
+  return (
+    <div data-testid="memory-list">
+      {items.length === 0 ? (
+        <p className="desktop-panel-empty">暂无记忆条目</p>
+      ) : (
+        <ul className="settings-cat-list">
+          {items.map((m) => (
+            <li key={m.id}>
+              <button
+                type="button"
+                className="settings-cat"
+                data-testid={`memory-item-${m.id}`}
+                onClick={() => onOpen(m.id)}
+              >
+                {m.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" className="btn small" data-testid="memory-back" onClick={onBack}>
+        返回助理分类
+      </button>
     </div>
   );
 }
 
 function MemoryDetail({ entry, onBack }: { entry: MemoryEntry; onBack: () => void }) {
   return (
-    <div data-testid="settings-memory">
-      <p className="settings-crumb" data-testid="memory-crumb">
-        设置 → 我的 AI 助理 → 记忆
-      </p>
+    <div data-testid="memory-detail">
       <h3>{entry.title}</h3>
       <dl className="evidence-dl">
         <dt>来源</dt>
-        <dd>{entry.source}</dd>
+        <dd data-testid="memory-source">{entry.source}</dd>
         <dt>有效期</dt>
-        <dd>{entry.expires}</dd>
+        <dd data-testid="memory-expires">{entry.expires}</dd>
       </dl>
       <p data-testid="memory-body">{entry.body}</p>
-      <button type="button" className="btn small" data-testid="memory-back" onClick={onBack}>
-        返回助理分类
+      <button type="button" className="btn small" data-testid="memory-detail-back" onClick={onBack}>
+        返回记忆列表
       </button>
     </div>
   );

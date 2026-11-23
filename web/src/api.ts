@@ -744,6 +744,11 @@ export const api = {
   /** AI Desktop B3 / T-70：个人助理 preferences */
   desktopPreferencesGet: () =>
     request<DesktopPreferencesDto>("/api/desktop/v1/preferences"),
+  /** AI Desktop T-71：记忆列表（服务夹具权威） */
+  desktopMemoriesList: () =>
+    request<{ items: DesktopMemoryDto[] }>("/api/desktop/v1/memories"),
+  desktopMemoryGet: (id: string) =>
+    request<DesktopMemoryDto>(`/api/desktop/v1/memories/${encodeURIComponent(id)}`),
   desktopPreferencesPatch: async (body: {
     expected_version: number;
     name?: string;
@@ -866,6 +871,14 @@ export type DesktopPreferencesDto = {
   memory_principle: string;
   proactivity: string;
   updated_at: string;
+};
+
+export type DesktopMemoryDto = {
+  id: string;
+  title: string;
+  source: string;
+  body: string;
+  expires: string;
 };
 
 export type DesktopResumeRunDto = {

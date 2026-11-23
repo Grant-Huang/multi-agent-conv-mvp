@@ -1,4 +1,4 @@
-/** 个人助理身份与设置（A4 / T-70 接 B3 preferences）。记忆列表仍为本地种子。 */
+/** 个人助理身份与设置（A4 / T-70 B3 preferences；T-71 记忆列表接服务）。 */
 import { api, type DesktopPreferencesDto } from "../api";
 
 export type AssistantProfile = {
@@ -30,23 +30,6 @@ export const DEFAULT_PROFILE: AssistantProfile = {
   proactivity: "克制：重要事项可提醒，不抢焦点",
   version: 1,
 };
-
-export const MEMORY_SEED: MemoryEntry[] = [
-  {
-    id: "mem-1",
-    title: "质量报告偏好摘要格式",
-    source: "用户确认 · 2026-11-18",
-    body: "先给结论，再列证据条目与待核实项。",
-    expires: "2027-11-18",
-  },
-  {
-    id: "mem-2",
-    title: "免打扰时段",
-    source: "设置 · 通知与主动性",
-    body: "工作日 22:00–08:00 不推普通建议。",
-    expires: "长期",
-  },
-];
 
 export function fromPreferencesDto(p: DesktopPreferencesDto): AssistantProfile {
   return {
@@ -108,6 +91,29 @@ export async function bumpProfileVersionForConflict(): Promise<void> {
   if (!r.ok) {
     throw new Error(r.message);
   }
+}
+
+/** T-71：从服务拉取记忆列表 */
+export async function fetchMemories(): Promise<MemoryEntry[]> {
+  const r = await api.desktopMemoriesList();
+  return r.items.map((m) => ({
+    id: m.id,
+    title: m.title,
+    source: m.source,
+    body: m.body,
+    expires: m.expires,
+  }));
+}
+
+export async function fetchMemory(id: string): Promise<MemoryEntry> {
+  const m = await api.desktopMemoryGet(id);
+  return {
+    id: m.id,
+    title: m.title,
+    source: m.source,
+    body: m.body,
+    expires: m.expires,
+  };
 }
 
 export const SETTINGS_CATEGORIES = [

@@ -92,6 +92,9 @@ pub fn routes() -> Router<AppState> {
             "/api/desktop/v1/preferences",
             get(get_preferences).patch(patch_preferences),
         )
+        // T-71：记忆列表服务权威（夹具种子，无新表；完整记忆抽取另卡）
+        .route("/api/desktop/v1/memories", get(list_memories))
+        .route("/api/desktop/v1/memories/{id}", get(get_memory))
         .route("/api/desktop/v1/tasks/{id}/evidence", get(list_evidence))
         .route("/api/desktop/v1/evidence/search", get(search_evidence))
         .route("/api/desktop/v1/evidence/{id}", get(get_evidence))
@@ -656,6 +659,54 @@ async fn patch_preferences(
                 "code": "internal",
                 "message": format!("{e:#}"),
                 "retryable": true
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// 桌面记忆条目（夹具；字段对齐 DESIGN Memory：来源、正文、有效期）
+#[derive(Debug, Clone, Serialize)]
+struct DesktopMemoryItem {
+    id: String,
+    title: String,
+    source: String,
+    body: String,
+    expires: String,
+}
+
+fn fixture_memories() -> Vec<DesktopMemoryItem> {
+    vec![
+        DesktopMemoryItem {
+            id: "mem-1".into(),
+            title: "质量报告偏好摘要格式".into(),
+            source: "用户确认 · 2026-11-18".into(),
+            body: "先给结论，再列证据条目与待核实项。".into(),
+            expires: "2027-11-18".into(),
+        },
+        DesktopMemoryItem {
+            id: "mem-2".into(),
+            title: "免打扰时段".into(),
+            source: "设置 · 通知与主动性".into(),
+            body: "工作日 22:00–08:00 不推普通建议。".into(),
+            expires: "长期".into(),
+        },
+    ]
+}
+
+async fn list_memories() -> Response {
+    (StatusCode::OK, Json(json!({ "items": fixture_memories() }))).into_response()
+}
+
+async fn get_memory(Path(id): Path<String>) -> Response {
+    match fixture_memories().into_iter().find(|m| m.id == id) {
+        Some(item) => (StatusCode::OK, Json(item)).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "code": "not_found",
+                "message": "记忆条目不存在",
+                "retryable": false
             })),
         )
             .into_response(),

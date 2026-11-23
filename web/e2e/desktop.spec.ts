@@ -227,6 +227,35 @@ test('E2E-ADPROF: 助理设置保存、记忆返回与冲突不覆盖草稿', as
   await expect(page.getByTestId('home-assistant-name')).toContainText('桌面测试助理');
 });
 
+test('E2E-ADMEM: 记忆列表来自服务并可打开详情', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-input').fill('记忆页应保留的草稿');
+  await page.getByTestId('workspace-open-settings').click();
+  await expect(page.getByTestId('settings-assistant')).toBeVisible();
+
+  await page.getByTestId('profile-open-memory').click();
+  await expect(page.getByTestId('settings-memory')).toBeVisible();
+  await expect(page.getByTestId('memory-list')).toBeVisible();
+  await expect(page.getByTestId('memory-item-mem-1')).toContainText('质量报告偏好摘要格式');
+  await expect(page.getByTestId('memory-item-mem-2')).toContainText('免打扰时段');
+
+  await page.getByTestId('memory-item-mem-1').click();
+  await expect(page.getByTestId('memory-detail')).toBeVisible();
+  await expect(page.getByTestId('memory-body')).toContainText('先给结论');
+  await expect(page.getByTestId('memory-source')).toContainText('用户确认');
+  await expect(page.getByTestId('memory-expires')).toContainText('2027');
+
+  await page.getByTestId('memory-detail-back').click();
+  await expect(page.getByTestId('memory-list')).toBeVisible();
+  await page.getByTestId('memory-back').click();
+  await expect(page.getByTestId('settings-assistant')).toBeVisible();
+
+  await page.getByTestId('settings-back').click();
+  await page.getByTestId('settings-back').click();
+  await expect(page.getByTestId('workspace-input')).toHaveValue('记忆页应保留的草稿');
+});
+
 test('E2E-ADINPUT: 响应式设置入口、Escape、IME 与减少动态效果', async ({ page }) => {
   const widths = [360, 768, 1024, 1440] as const;
   for (const w of widths) {
