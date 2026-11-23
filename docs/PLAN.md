@@ -15,7 +15,7 @@
 - [ ] 第 1、4 线：首页正常入口接入可靠受理。先验丢回执后按同一操作回读及重连，再验人工验收与结果回传。
 - [ ] 第 2 线：独立复跑真实桌面委派和运营频道远程 DES 场景，分别记录合入基线、运行模式和证据。
 - [ ] 第 3 线：沿用 M2-6 准出及 T-63 独立复验，维护远程 DES 基线；M3 桩数据已准出；M4 写须过 [WA_M4_TASKS](mom/WA_M4_TASKS.md) 准入（候选站 / 身份 / 只读浏览器前置）；下一步待授权 **M4-1 候选站只读**。
-- [ ] 第 5 线：确认 REQ-conversation-memory-01 并建立会话注入验收，沿用业务内省基线。分期见[第 5 线计划](features/conversation-memory/PLAN.md)。
+- [ ] 第 5 线：~~确认 REQ-conversation-memory-01 并建立会话注入验收~~（2026-11-23 完成：验收冻结、回答路径注入落地，证据 `testing/evidence/convmem-s1-session-materials.md`）。下一步 5.2 个人记忆（以 T-71/T-72 交互基线 + T-78 Store 持久为地基）。分期见[第 5 线计划](features/conversation-memory/PLAN.md)。
 
 ## 0. 当前环境
 

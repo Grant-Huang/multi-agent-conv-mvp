@@ -33,6 +33,7 @@ pub mod prompts;
 pub mod registry;
 pub mod router;
 pub mod run_progress;
+pub mod session_materials;
 pub mod store;
 pub mod template;
 
@@ -427,6 +428,9 @@ impl Runtime {
             tools: tool_listing,
             review_mode: config.conversation.review_requests,
             stream_replies: config.conversation.stream_replies,
+            session_materials: config.conversation.session_materials,
+            session_materials_max_tokens: config.conversation.session_materials_max_tokens,
+            session_materials_timeout_ms: config.conversation.session_materials_timeout_ms,
         }));
         tracing::info!(
             event = "conversation.config",

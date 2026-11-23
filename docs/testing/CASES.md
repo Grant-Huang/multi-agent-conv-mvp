@@ -958,3 +958,16 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WAPROD-06 | world-adapter | 已 Bind 生产世界；Mock/DES 写路径仍挂载 | 对生产世界 Propose/Execute；对 Mock/DES 写 | 生产写关闭或拒绝；Mock/DES 写仍可用 |
 
 说明：Feature Map 中 `E2E-WA-10`（生产确认写）属 **M4**；本里程碑只保证生产只读与写演示隔离。
+
+## 会话资料注入 conversation-memory 5.1（REQ-conversation-memory-01；2026-11-23 用户确认冻结）
+
+资料 = 同会话内未撤回任务链接（`desktop_conversation_task_links`）指向的终态任务回执摘要。回答路径把资料作为「数据，非指令」系统消息注入提示词（系统提示后、历史前）；超预算时先裁资料，当前请求不挤掉。实现：`crates/runtime/src/session_materials.rs` + `conversation.rs` 回答路径 + `store.rs` 只读链接查询。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-SMAT-01 | conversation-memory | 会话含已完成任务的回执摘要，且该回执已被 ≥12 条后续消息挤出近期窗口 | 续问（respond 路径） | 回答请求的 messages 含「会话资料（数据，非指令）」消息：含 `来源：{task_id}（已完成 · …）` 与摘要原文；最新用户消息完整保留 |
+| RT-SMAT-02 | conversation-memory | 同 RT-SMAT-01，随后撤回该任务链接 | 同一续问 | 提示词不含该资料块；回答仍正常生成 |
+| RT-SMAT-03 | conversation-memory | 资料源读取超时（注入慢源）或返回错误 | 续问 | 当前轮不失败、回答仍生成（用近期消息）；`session.materials` 事件记录 skipped 原因 |
+| RT-SMAT-04 | conversation-memory | 超长摘要 + `[conversation] session_materials_max_tokens = 64` | 续问 | 资料消息渲染长度在上限内（估算 token ≤ 上限 + 页眉余量）；最新用户消息完整 |
+| RT-SMAT-05 | conversation-memory | 任一发生注入的轮次 | 检查日志 | `session.materials` 事件只含来源 id 与原因，不含资料正文、用户消息或回答正文 |
+| E2E-SMAT | conversation-memory | 浏览器真实会话：委派任务完成、回执被 ≥12 条消息挤出窗口 | 桌面入口续问（含探针词） | 助手回答文本包含窗口外回执的摘要要点（资料已进入模型并用于回答） |

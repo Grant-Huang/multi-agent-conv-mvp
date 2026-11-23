@@ -1046,19 +1046,35 @@
     "id": "conversation-memory",
     "document": "docs/features/conversation-memory/README.md",
     "dossier": "docs/features/conversation-memory/README.md",
-    "status": "设计中",
+    "status": "开发中",
     "sources": [
       "crates/runtime/src/conversation.rs",
-      "crates/llm/src/budget.rs"
+      "crates/runtime/src/session_materials.rs",
+      "crates/llm/src/budget.rs",
+      "web/e2e/session-materials.spec.ts"
     ],
-    "coverage": "manual",
-    "cases": [],
+    "coverage": "browser",
+    "cases": ["E2E-SMAT"],
+    "runtime_cases": [
+      "RT-SMAT-01",
+      "RT-SMAT-02",
+      "RT-SMAT-03",
+      "RT-SMAT-04",
+      "RT-SMAT-05"
+    ],
     "requirements": [
       {
         "id": "REQ-conversation-memory-01",
         "title": "会话续接与来源可查",
-        "status": "提出",
-        "cases": [],
+        "status": "已确认",
+        "cases": [
+          "RT-SMAT-01",
+          "RT-SMAT-02",
+          "RT-SMAT-03",
+          "RT-SMAT-04",
+          "RT-SMAT-05",
+          "E2E-SMAT"
+        ],
         "since": null
       },
       {
