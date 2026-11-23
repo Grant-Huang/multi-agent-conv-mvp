@@ -158,7 +158,8 @@ export async function tryStartRemoteLiveAsr(
           window.clearTimeout(t);
           try {
             if (cfg.token) {
-              ws?.send(JSON.stringify({ type: "auth", token: cfg.token }));
+              const authFrame = JSON.stringify({ type: "auth", token: cfg.token });
+              ws?.send(authFrame);
             }
             ws?.send(startPayload);
             resolve();
