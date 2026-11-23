@@ -28,7 +28,7 @@ HTTP：`GET /api/diagnostics`、`GET /api/route-logs?limit=`、`POST /api/feedba
 ## Verify（判据）
 
 - 诊断页显示真实后端地址/状态，不是占位符；路由日志里能匹配本次消息，展开能看到模型原文。
-- 反馈：`POST /api/feedback` 返回统一信封并持久化；非法动作/角色被拒。导出仅为草稿，不改评测集。
+- 反馈：`POST /api/feedback` 返回统一信封并持久化；非法动作/角色被拒。导出仅为草稿，不改评测集。任务卡「派错了」经 `taskMessageIds` 关联用户消息（优先 `message.task_id`，否则 goal===content；委派尚未回写 user.task_id）。
 - Host 防护：恶意 Host 返回 403 且无写入副作用；静态页、API、SSE、同源 MOM、合法 IPv6 authority 正常；Host 最多记 100 字符，路径最多 200 字符，不记请求体/其他头/查询串；合法请求不新增拒绝事件。
 
 ## Gotchas
@@ -43,5 +43,5 @@ HTTP：`GET /api/diagnostics`、`GET /api/route-logs?limit=`、`POST /api/feedba
 ## Backed by
 
 源码：`web/src/components/DiagnosticsPanel.tsx`、`RouteLogPanel.tsx`、`TaskPanel.tsx`（misroute）、`crates/observe/`、`crates/server/src/host_guard.rs`
-用例：E2E-DIAG；RT-HOST-01～11（`crates/server/tests/host_guard.rs`、`host_diagnostics.rs`、`host_log_limits.rs`）；misroute 组件与 Rust HTTP 测试
-验证状态：诊断/路由日志浏览器已覆盖；剪贴板复制未完整验证。
+用例：E2E-DIAG；E2E-FEEDBACK（`web/e2e/codeflow.spec.ts`）；RT-HOST-01～11（`crates/server/tests/host_guard.rs`、`host_diagnostics.rs`、`host_log_limits.rs`）；misroute 组件与 Rust HTTP 测试
+验证状态：诊断/路由日志与反馈写入浏览器已覆盖；反馈→评测仍缺（G06）；剪贴板复制未完整验证。

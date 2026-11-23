@@ -14,12 +14,12 @@
 | S02 | 高风险任务：待批准 → 看说明 → 批准 → 执行 → 审查 → 完成 | approval → assignment → tasks | ✅ APPROVE/APPROVEINFO | — |
 | S03 | 审查不通过 → 自动返工 → 通过 | tasks → reviewer → 返工 | ◐ 后端（`crates/server/tests/review_rework.rs`） | E2E-REWORK |
 | S04 | 审查结论“需人工” → 用户处理 | tasks → reviewer → approval | ✗ ⚠（G07） | E2E-REVIEWHUMAN（先定产品行为） |
-| S05 | 没有写代码助手 → 对话接入 → 改代码 → 看 diff → 审查 | agents → conversation → tasks → git-evidence | ◐ 分段：接入 ✅、改代码“无助手”回复 ✅、**接入后真正跑完 coding 任务 ✗** | E2E-CODEFLOW |
+| S05 | 没有写代码助手 → 对话接入 → 改代码 → 看 diff → 审查 | agents → conversation → tasks → git-evidence | ✅ E2E-CODEFLOW（WP3；harness 临时 git workdir + mock ACP） | E2E-CODEFLOW |
 | S06 | 任务进行中补充/取消要求 | conversation(follow_up) → tasks | ◐ RT-CONV-01/02，浏览器 ✗ | E2E-SUPPLEMENT |
 | S07 | 联网研究报告（检索 + 章节并行） | conversation → reports → tools → artifacts | ◐ RT-REP；浏览器 ✗（受控模型可模拟） | E2E-REPORT |
-| S08 | 任务失败/无结果 → 诊断 → 路由日志 → “派错了”反馈 | tasks → observability → feedback | 失败卡片 ✅、诊断 ✅、**反馈 UI ✗**、反馈→评测 ✗ ⚠（G06） | E2E-FEEDBACK |
+| S08 | 任务失败/无结果 → 诊断 → 路由日志 → “派错了”反馈 | tasks → observability → feedback | 失败卡片 ✅、诊断 ✅、**反馈 UI ✅**（E2E-FEEDBACK）；反馈→评测 ✗ ⚠（G06 / WP5） | E2E-FEEDBACK |
 | S09 | 助手连不上 → 排查 → 诊断包 → 请帮手（经外发脱敏） | agents → egress-dlp | ✅ AGDIAG/AGHELP（模拟 DLP） | — |
-| S10 | 第二台电脑接入 → 配对 → 执行组主力/备份接手 | nodes → assignment → tasks | ◐ 后端；浏览器 ✗ | E2E-NODES（测试节点） |
+| S10 | 第二台电脑接入 → 配对 → 执行组主力/备份接手 | nodes → assignment → tasks | ◐ 后端；浏览器 ✗（本卡未交付） | E2E-NODES（测试节点） |
 | S11 | 开启外发检查 → 联网工具/云端 LLM 请求被脱敏或拒绝 | egress-dlp → tools/backends | ◐ RT-EGR（替身）；整链浏览器 ✗ | E2E-EGRESS |
 | S12 | 外部 agent 准入：S1→S7 → 激活 → 接任务 → 撤权 | admission → registry → tasks | ◐ HTTP；无界面 ⚠（G03） | HTTP-ADM 已有；界面待产品定 |
 | S13 | 服务重启：进行中任务、待批准任务、会话 | store → orchestrator → UI | ✗（G08：运行中任务不能续跑） | E2E-RESTART |
@@ -41,15 +41,17 @@
 ### S05 改代码全链路（最值得补）
 - **步骤**：“助手”页签接入 `claude`（E2E 环境已有指向 `an-mock-acp` 的包装脚本）→ 发“改代码验证：…”（受控路由到 coding）→ 任务执行 → 时间线有工具调用/权限请求 → git diff 作为证据 → Reviewer → COMPLETED。
 - **断言**：执行者为 `claude`；证据里有 diff；工作目录是 git 仓库且用户暂存区未变；审查结论在时间线。
-- **前提**：现有 `harness.mjs` 的配置里没有 `[agents.coding]` / coding workdir 设置，需新增一个临时 git 仓库作为工作目录（并在 `ACP` 包装脚本里让模拟 agent 真的改一个文件）。
+- **覆盖**：✅ `web/e2e/codeflow.spec.ts`（E2E-CODEFLOW）；WP0-2 夹具：`harness.mjs` 临时 git workdir 写入 `[agents.coding].workdir`，`an-mock-acp` 写 `hello.txt`。
 
 ### S06 补充要求
 - **步骤**：发慢任务 → 在执行中再发“补充：……”（受控模型返回 `follow_up: supplement`）→ 旧任务 CANCELLED，新任务出现且目标合并。
 - **断言**：路由失败（受控 500）时旧任务不变；成功时只有一个活跃任务。
+- **本卡（WP3）**：未交付（仍仅 RT-CONV）。
 
 ### S08 反馈闭环
 - **步骤**：展开任务 → “派错了” → 选动作/角色 → “一句说明” → “保存”→ 提示“已记下” → `POST /api/feedback` 持久化。
-- **缺口**：反馈之后**没有任何消费者**（不进评测集、不影响路由）；用例只能断言写入，不能断言“系统变好”。
+- **覆盖**：✅ 写入路径 `E2E-FEEDBACK`（`web/e2e/codeflow.spec.ts`）。
+- **缺口**：反馈之后**没有任何消费者**（不进评测集、不影响路由）；用例只能断言写入，不能断言“系统变好”（G06 / WP5）。
 
 ### S13 重启
 - **步骤**：创建待批准任务 + 一个运行中任务 → 重启 `agentnexus`（同一数据库）→ 刷新页面。

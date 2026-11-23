@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskRecord } from "./bindings/TaskRecord";
-import { TaskPanel } from "./components/TaskPanel";
+import { TaskPanel, taskMessageIds } from "./components/TaskPanel";
 import { api } from "./api";
 
 vi.mock("./api", () => ({
@@ -40,5 +40,27 @@ describe("派错了", () => {
       correct_role: "",
       note: "",
     });
+  });
+
+  it("taskMessageIds：无 task_id 时按 goal 匹配用户消息", () => {
+    const ids = taskMessageIds(
+      [
+        { id: "m-local", role: "user", content: "写个函数", task_id: null },
+        { id: "a1", role: "assistant", content: "明白", task_id: "t1" },
+      ],
+      [{ id: "t1", goal: "写个函数" }],
+    );
+    expect(ids).toEqual({ t1: "m-local" });
+  });
+
+  it("taskMessageIds：已有 task_id 时优先用它", () => {
+    const ids = taskMessageIds(
+      [
+        { id: "m1", role: "user", content: "写个函数", task_id: "t1" },
+        { id: "m2", role: "user", content: "写个函数", task_id: null },
+      ],
+      [{ id: "t1", goal: "写个函数" }],
+    );
+    expect(ids).toEqual({ t1: "m1" });
   });
 });

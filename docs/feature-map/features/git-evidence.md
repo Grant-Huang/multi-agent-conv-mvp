@@ -18,22 +18,23 @@ ACP / Coding 执行后收集 git diff 作为审查证据，无界面入口。覆
 CARGO_TARGET_DIR=target cargo test --locked -p an-agents --test git_evidence    # RT-GIT-01～05
 ```
 
-界面侧可用模拟 ACP agent（`an-mock-acp`，说“帮我改代码”）观察 diff 出现在任务证据中。
+界面侧：E2E-CODEFLOW（`web/e2e/codeflow.spec.ts`）接入模拟 ACP（`an-mock-acp`），发“改代码验证：…”，在 harness 临时 git workdir 写 `hello.txt` 并断言 git/diff 证据与审查通过。
 
 ## Verify（判据）
 
 - 采集前后用户暂存区（index）不变。
 - 每条 Git 命令有 30 秒期限；超时/取消后进程组被终止并回收，临时目录已清理。
 - 失败时证据字段明确标记不可用。
+- 浏览器：执行者 claude、review pass、证据含 `git_diff_stat` 或 diff 产物。
 
 ## Gotchas
 
 - 修改 `crates/agents/src/util.rs` 的子进程和 git 操作属于**高风险**，须先给方案（AGENTS.md）。
-- 这是后端测试，不是浏览器测试。
+- RT-GIT-* 是后端测试；整链浏览器见 E2E-CODEFLOW。
 - `workdir` 应指向独立 git 仓库，否则没有可收集的 diff。
 
 ## Backed by
 
-源码：`crates/agents/src/util.rs`
-用例：RT-GIT-01～05（`crates/agents/tests/git_evidence.rs`）；证据 [R-FIRST-06](../../testing/evidence/r-first-06.md)
-验证状态：后端自动化覆盖。
+源码：`crates/agents/src/util.rs`；夹具 `web/e2e/harness.mjs`
+用例：RT-GIT-01～05（`crates/agents/tests/git_evidence.rs`）；E2E-CODEFLOW；证据 [R-FIRST-06](../../testing/evidence/r-first-06.md)
+验证状态：后端 + 浏览器整链（WP3）。

@@ -12,6 +12,15 @@ await mkdir(evidence,{recursive:true});
 const dir=await mkdtemp(path.join(tmpdir(),'agentnexus-verify-'));
 const workspace=path.join(dir,'files');
 await mkdir(workspace,{recursive:true});
+// WP0-2 / E2E-CODEFLOW：coding/ACP 默认 workdir 指向临时 git 仓库，便于收集 git diff 证据
+const codeRepo=path.join(dir,'code');
+await mkdir(codeRepo,{recursive:true});
+execFileSync('git',['init'],{cwd:codeRepo});
+execFileSync('git',['config','user.email','e2e@agentnexus.test'],{cwd:codeRepo});
+execFileSync('git',['config','user.name','e2e'],{cwd:codeRepo});
+await writeFile(path.join(codeRepo,'README.md'),'# verification code repo\n');
+execFileSync('git',['add','README.md'],{cwd:codeRepo});
+execFileSync('git',['commit','-m','init'],{cwd:codeRepo});
 const log=createWriteStream(path.join(evidence,'backend.log'));
 const modelLog=createWriteStream(path.join(evidence,'model.jsonl'));
 const model=http.createServer(async(req,res)=>{
@@ -92,12 +101,12 @@ const broken=path.join(bin,'broken-agent');
 await writeFile(broken,`#!/bin/sh\necho "启动失败：客户 ACME 的配置不对" >&2\nexit 1\n`,{mode:0o755});
 const dlpFixture=path.join(root,'crates/server/tests/fixtures/dlp_server.py');
 const config=path.join(dir,'config.toml');
-const configText=`[server]\nbind="127.0.0.1:18787"\ndb_path=${JSON.stringify(path.join(dir,'app.db'))}\nstatic_dir=${JSON.stringify(path.join(root,'web/dist'))}\n[llm]\nbase_url="http://127.0.0.1:${modelPort}/v1"\nmodel="verification-model"\nmax_retries=0\ntimeout_secs=120\n[agents.general]\nworkspace_dir=${JSON.stringify(workspace)}\nwebsearch_command=""\n[agents.coding]\nenabled=false\n[acp]\nauto_detect=false\n[[acp.agents]]\nid="hand"\nname="hand"\ncommand=${JSON.stringify(mockAcp)}\nrole="reviewer"\nenv={AN_MOCK_ACP_REPLY="建议检查 [CUSTOMER_001] 的配置文件"}\n[[acp.agents]]\nid="broken"\nname="broken"\ncommand=${JSON.stringify(broken)}\nrole="reviewer"\n[egress]\nmode="audit"\ndlp_command="python3"\ndlp_args=[${JSON.stringify(dlpFixture)}]\ntimeout_ms=5000\n[nodes]\ndiscovery=false\n[conversation]\nagent_management=true\n[mom]\nworld_mock=true\n[logging]\ndir=${JSON.stringify(path.join(dir,'logs'))}\n`;
+const configText=`[server]\nbind="127.0.0.1:18787"\ndb_path=${JSON.stringify(path.join(dir,'app.db'))}\nstatic_dir=${JSON.stringify(path.join(root,'web/dist'))}\n[llm]\nbase_url="http://127.0.0.1:${modelPort}/v1"\nmodel="verification-model"\nmax_retries=0\ntimeout_secs=120\n[agents.general]\nworkspace_dir=${JSON.stringify(workspace)}\nwebsearch_command=""\n[agents.coding]\nenabled=false\nworkdir=${JSON.stringify(codeRepo)}\n[agents.reviewer]\nenabled=true\n[acp]\nauto_detect=false\n[[acp.agents]]\nid="hand"\nname="hand"\ncommand=${JSON.stringify(mockAcp)}\nrole="reviewer"\nenv={AN_MOCK_ACP_REPLY="建议检查 [CUSTOMER_001] 的配置文件"}\n[[acp.agents]]\nid="broken"\nname="broken"\ncommand=${JSON.stringify(broken)}\nrole="reviewer"\n[egress]\nmode="audit"\ndlp_command="python3"\ndlp_args=[${JSON.stringify(dlpFixture)}]\ntimeout_ms=5000\n[nodes]\ndiscovery=false\n[conversation]\nagent_management=true\n[mom]\nworld_mock=true\n[logging]\ndir=${JSON.stringify(path.join(dir,'logs'))}\n`;
 await writeFile(config,configText);
 const binary=path.join(root,'target/debug',process.platform==='win32'?'agentnexus.exe':'agentnexus');
 const child=spawn(binary,[config],{cwd:root,env:{...process.env,RUST_LOG:'info',PATH:`${bin}${path.delimiter}${process.env.PATH??''}`},stdio:['ignore','pipe','pipe']});
 child.stdout.pipe(log,{end:false});child.stderr.pipe(log,{end:false});
-await writeFile(path.join(evidence,'state.json'),JSON.stringify({workspace,directory:dir,pid:child.pid,baseline:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim()},null,2));
+await writeFile(path.join(evidence,'state.json'),JSON.stringify({workspace,codeRepo,directory:dir,pid:child.pid,baseline:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim()},null,2));
 let closing=false;
 function shutdown(code=0){
   if(closing)return;closing=true;
