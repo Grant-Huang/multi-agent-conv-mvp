@@ -386,6 +386,7 @@ struct SendMessage {
 
 async fn send_message(
     State(rt): State<AppState>,
+    headers: axum::http::HeaderMap,
     Path(id): Path<String>,
     Json(body): Json<SendMessage>,
 ) -> ApiResult<an_runtime::conversation::TurnOutcome> {
@@ -399,8 +400,14 @@ async fn send_message(
     // 请求被丢弃时回合也会中途终止（LLM 调用被断开，助手消息不落库）。
     // 独立任务不受请求生命周期影响，回合会照常完成；请求还连着时仍同步返回结果。
     let text = body.text.trim().to_string();
+    let user = desktop_api::principal_or_local(&headers);
     let turn_rt = rt.clone();
-    let turn = tokio::spawn(async move { turn_rt.conversation.handle_message(&id, &text).await });
+    let turn = tokio::spawn(async move {
+        turn_rt
+            .conversation
+            .handle_message_as(&user, &id, &text)
+            .await
+    });
     let outcome = turn.await.map_err(|e| {
         AppError(
             StatusCode::INTERNAL_SERVER_ERROR,

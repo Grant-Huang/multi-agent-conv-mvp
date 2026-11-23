@@ -261,10 +261,23 @@ async fn rt_smat_03_source_timeout_or_error_degrades_current_turn() {
             std::thread::sleep(Duration::from_millis(200));
             Ok(vec!["task-smat-03".into()])
         }
+        fn personal_memories(
+            &self,
+            _: &str,
+        ) -> anyhow::Result<Vec<an_runtime::store::DesktopMemory>> {
+            std::thread::sleep(Duration::from_millis(200));
+            Ok(vec![])
+        }
     }
     struct Broken;
     impl MaterialSource for Broken {
         fn linked_task_ids(&self, _: &str) -> anyhow::Result<Vec<String>> {
+            Err(anyhow::anyhow!("受控故障"))
+        }
+        fn personal_memories(
+            &self,
+            _: &str,
+        ) -> anyhow::Result<Vec<an_runtime::store::DesktopMemory>> {
             Err(anyhow::anyhow!("受控故障"))
         }
     }
