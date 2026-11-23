@@ -820,7 +820,7 @@ export const api = {
   /** AI Desktop B3 / T-70：个人助理 preferences */
   desktopPreferencesGet: () =>
     request<DesktopPreferencesDto>("/api/desktop/v1/preferences"),
-  /** AI Desktop T-71：记忆列表（服务夹具权威） */
+  /** AI Desktop T-78：记忆列表（SQLite 权威；fixture/reset 仅测试） */
   desktopMemoriesList: () =>
     request<{ items: DesktopMemoryDto[] }>("/api/desktop/v1/memories"),
   desktopMemoryGet: (id: string) =>

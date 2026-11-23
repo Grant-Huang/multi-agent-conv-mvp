@@ -146,6 +146,22 @@ pub struct DesktopPreferences {
     pub updated_at: String,
 }
 
+/// AI Desktop T-78：个人记忆条目（SQLite 权威）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopMemory {
+    pub id: String,
+    #[serde(skip_serializing)]
+    pub user_id: String,
+    pub title: String,
+    pub source: String,
+    pub body: String,
+    pub expires: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub revoked: bool,
+    #[serde(skip_serializing)]
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone)]
 pub enum DesktopPrefPatchOutcome {
     Ok(DesktopPreferences),
@@ -484,6 +500,19 @@ CREATE TABLE IF NOT EXISTS desktop_handoff (
     voice_shared INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
 );
+-- AI Desktop T-78：个人记忆（夹具 → SQLite）
+CREATE TABLE IF NOT EXISTS desktop_memories (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL DEFAULT 'local',
+    title TEXT NOT NULL,
+    source TEXT NOT NULL,
+    body TEXT NOT NULL,
+    expires TEXT NOT NULL,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_desktop_memories_user
+    ON desktop_memories(user_id, revoked);
 "#;
 
 fn tune(conn: &Connection) -> Result<()> {
@@ -2309,6 +2338,207 @@ impl Store {
         h.voice_shared = shared;
         Self::save_handoff(&conn, &h)?;
         Ok(Some(h))
+    }
+
+    fn map_desktop_memory(r: &Row<'_>) -> rusqlite::Result<DesktopMemory> {
+        let revoked: i64 = r.get(6)?;
+        Ok(DesktopMemory {
+            id: r.get(0)?,
+            user_id: r.get(1)?,
+            title: r.get(2)?,
+            source: r.get(3)?,
+            body: r.get(4)?,
+            expires: r.get(5)?,
+            revoked: revoked != 0,
+            updated_at: r.get(7)?,
+        })
+    }
+
+    fn desktop_memory_seeds(user_id: &str) -> Vec<DesktopMemory> {
+        let ts = now();
+        vec![
+            DesktopMemory {
+                id: "mem-1".into(),
+                user_id: user_id.into(),
+                title: "质量报告偏好摘要格式".into(),
+                source: "用户确认 · 2026-11-18".into(),
+                body: "先给结论，再列证据条目与待核实项。".into(),
+                expires: "2027-11-18".into(),
+                revoked: false,
+                updated_at: ts.clone(),
+            },
+            DesktopMemory {
+                id: "mem-2".into(),
+                user_id: user_id.into(),
+                title: "免打扰时段".into(),
+                source: "设置 · 通知与主动性".into(),
+                body: "工作日 22:00–08:00 不推普通建议。".into(),
+                expires: "长期".into(),
+                revoked: false,
+                updated_at: ts,
+            },
+        ]
+    }
+
+    fn insert_desktop_memory(conn: &Connection, m: &DesktopMemory) -> Result<()> {
+        conn.execute(
+            "INSERT OR IGNORE INTO desktop_memories
+             (id, user_id, title, source, body, expires, revoked, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                m.id,
+                m.user_id,
+                m.title,
+                m.source,
+                m.body,
+                m.expires,
+                if m.revoked { 1 } else { 0 },
+                m.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// 空表时写入与 T-71/T-72 相同的种子；已有行不覆盖。
+    pub fn ensure_desktop_memory_seed(&self, user_id: &str) -> Result<()> {
+        let conn = self.write();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM desktop_memories WHERE user_id = ?1",
+            params![user_id],
+            |r| r.get(0),
+        )?;
+        if count > 0 {
+            return Ok(());
+        }
+        for m in Self::desktop_memory_seeds(user_id) {
+            Self::insert_desktop_memory(&conn, &m)?;
+        }
+        Ok(())
+    }
+
+    pub fn list_desktop_memories(&self, user_id: &str) -> Result<Vec<DesktopMemory>> {
+        self.ensure_desktop_memory_seed(user_id)?;
+        let _timer = ReadTimer::new("list_desktop_memories");
+        let conn = self.read();
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, title, source, body, expires, revoked, updated_at
+             FROM desktop_memories
+             WHERE user_id = ?1 AND revoked = 0
+             ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![user_id], Self::map_desktop_memory)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    /// 含已撤回行（供 410）；不存在则 None。
+    pub fn get_desktop_memory(&self, user_id: &str, id: &str) -> Result<Option<DesktopMemory>> {
+        self.ensure_desktop_memory_seed(user_id)?;
+        let _timer = ReadTimer::new("get_desktop_memory");
+        let conn = self.read();
+        conn.query_row(
+            "SELECT id, user_id, title, source, body, expires, revoked, updated_at
+             FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
+            params![user_id, id],
+            Self::map_desktop_memory,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn patch_desktop_memory(
+        &self,
+        user_id: &str,
+        id: &str,
+        title: Option<&str>,
+        body: Option<&str>,
+        expires: Option<&str>,
+    ) -> Result<Option<DesktopMemory>> {
+        self.ensure_desktop_memory_seed(user_id)?;
+        let conn = self.write();
+        let Some(mut m) = conn
+            .query_row(
+                "SELECT id, user_id, title, source, body, expires, revoked, updated_at
+                 FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
+                params![user_id, id],
+                Self::map_desktop_memory,
+            )
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        if m.revoked {
+            return Ok(Some(m));
+        }
+        if let Some(v) = title {
+            m.title = v.into();
+        }
+        if let Some(v) = body {
+            m.body = v.into();
+        }
+        if let Some(v) = expires {
+            m.expires = v.into();
+        }
+        m.updated_at = now();
+        conn.execute(
+            "UPDATE desktop_memories
+             SET title = ?3, source = ?4, body = ?5, expires = ?6, revoked = ?7, updated_at = ?8
+             WHERE user_id = ?1 AND id = ?2",
+            params![
+                user_id,
+                id,
+                m.title,
+                m.source,
+                m.body,
+                m.expires,
+                if m.revoked { 1 } else { 0 },
+                m.updated_at,
+            ],
+        )?;
+        Ok(Some(m))
+    }
+
+    /// 软删；未知 id → None；已撤回再删仍返回 Some（幂等）。
+    pub fn revoke_desktop_memory(&self, user_id: &str, id: &str) -> Result<Option<DesktopMemory>> {
+        self.ensure_desktop_memory_seed(user_id)?;
+        let conn = self.write();
+        let Some(mut m) = conn
+            .query_row(
+                "SELECT id, user_id, title, source, body, expires, revoked, updated_at
+                 FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
+                params![user_id, id],
+                Self::map_desktop_memory,
+            )
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        if !m.revoked {
+            m.revoked = true;
+            m.updated_at = now();
+            conn.execute(
+                "UPDATE desktop_memories SET revoked = 1, updated_at = ?3
+                 WHERE user_id = ?1 AND id = ?2",
+                params![user_id, id, m.updated_at],
+            )?;
+        }
+        Ok(Some(m))
+    }
+
+    /// 测试专用：清空该用户记忆并重播种子。
+    pub fn reset_desktop_memories(&self, user_id: &str) -> Result<()> {
+        let conn = self.write();
+        conn.execute(
+            "DELETE FROM desktop_memories WHERE user_id = ?1",
+            params![user_id],
+        )?;
+        for m in Self::desktop_memory_seeds(user_id) {
+            Self::insert_desktop_memory(&conn, &m)?;
+        }
+        Ok(())
     }
 
     /// 按时间顺序返回消息；`last` 为 Some(n) 时只返回最近 n 条

@@ -9,7 +9,7 @@ use an_core::EventPublisher;
 use an_runtime::store::{
     DesktopAcceptOutcome, DesktopApprovalDecideOutcome, DesktopApprovalExecuteOutcome,
     DesktopEventCursor, DesktopEventsAfter, DesktopEvidenceAccess, DesktopLinkOutcome,
-    DesktopPrefPatchOutcome, DesktopRequestRecord,
+    DesktopMemory, DesktopPrefPatchOutcome, DesktopRequestRecord,
 };
 use an_runtime::Runtime;
 use axum::extract::{Path, Query, State};
@@ -92,7 +92,7 @@ pub fn routes() -> Router<AppState> {
             "/api/desktop/v1/preferences",
             get(get_preferences).patch(patch_preferences),
         )
-        // T-71/T-72：记忆列表与纠错/撤回（进程内夹具，无新表）
+        // T-78：记忆列表与纠错/撤回（SQLite 权威；fixture/reset 仅测试种子复位）
         .route("/api/desktop/v1/memories", get(list_memories))
         .route(
             "/api/desktop/v1/memories/fixture/reset",
@@ -685,43 +685,7 @@ async fn patch_preferences(
     }
 }
 
-/// 桌面记忆条目（夹具；字段对齐 DESIGN Memory：来源、正文、有效期）
-#[derive(Debug, Clone, Serialize)]
-struct DesktopMemoryItem {
-    id: String,
-    title: String,
-    source: String,
-    body: String,
-    expires: String,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    revoked: bool,
-}
-
-fn seed_memories() -> Vec<DesktopMemoryItem> {
-    vec![
-        DesktopMemoryItem {
-            id: "mem-1".into(),
-            title: "质量报告偏好摘要格式".into(),
-            source: "用户确认 · 2026-11-18".into(),
-            body: "先给结论，再列证据条目与待核实项。".into(),
-            expires: "2027-11-18".into(),
-            revoked: false,
-        },
-        DesktopMemoryItem {
-            id: "mem-2".into(),
-            title: "免打扰时段".into(),
-            source: "设置 · 通知与主动性".into(),
-            body: "工作日 22:00–08:00 不推普通建议。".into(),
-            expires: "长期".into(),
-            revoked: false,
-        },
-    ]
-}
-
-fn memory_fixture() -> &'static Mutex<Vec<DesktopMemoryItem>> {
-    static STORE: OnceLock<Mutex<Vec<DesktopMemoryItem>>> = OnceLock::new();
-    STORE.get_or_init(|| Mutex::new(seed_memories()))
-}
+const DESKTOP_MEMORY_USER: &str = "local";
 
 #[derive(Debug, Deserialize)]
 struct PatchMemoryBody {
@@ -730,22 +694,40 @@ struct PatchMemoryBody {
     expires: Option<String>,
 }
 
-async fn list_memories() -> Response {
-    let items: Vec<_> = memory_fixture()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .iter()
-        .filter(|m| !m.revoked)
-        .cloned()
-        .collect();
-    (StatusCode::OK, Json(json!({ "items": items }))).into_response()
+fn memory_json(m: &DesktopMemory) -> serde_json::Value {
+    json!({
+        "id": m.id,
+        "title": m.title,
+        "source": m.source,
+        "body": m.body,
+        "expires": m.expires,
+    })
 }
 
-async fn get_memory(Path(id): Path<String>) -> Response {
-    let guard = memory_fixture().lock().unwrap_or_else(|e| e.into_inner());
-    match guard.iter().find(|m| m.id == id) {
-        Some(item) if !item.revoked => (StatusCode::OK, Json(item.clone())).into_response(),
-        Some(_) => (
+fn memory_store_err(e: anyhow::Error) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+    )
+        .into_response()
+}
+
+async fn list_memories(State(rt): State<AppState>) -> Response {
+    match rt.store.list_desktop_memories(DESKTOP_MEMORY_USER) {
+        Ok(items) => {
+            let items: Vec<_> = items.iter().map(memory_json).collect();
+            (StatusCode::OK, Json(json!({ "items": items }))).into_response()
+        }
+        Err(e) => memory_store_err(e),
+    }
+}
+
+async fn get_memory(State(rt): State<AppState>, Path(id): Path<String>) -> Response {
+    match rt.store.get_desktop_memory(DESKTOP_MEMORY_USER, &id) {
+        Ok(Some(item)) if !item.revoked => {
+            (StatusCode::OK, Json(memory_json(&item))).into_response()
+        }
+        Ok(Some(_)) => (
             StatusCode::GONE,
             Json(json!({
                 "code": "revoked",
@@ -754,7 +736,7 @@ async fn get_memory(Path(id): Path<String>) -> Response {
             })),
         )
             .into_response(),
-        None => (
+        Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(json!({
                 "code": "not_found",
@@ -763,13 +745,23 @@ async fn get_memory(Path(id): Path<String>) -> Response {
             })),
         )
             .into_response(),
+        Err(e) => memory_store_err(e),
     }
 }
 
-async fn patch_memory(Path(id): Path<String>, Json(body): Json<PatchMemoryBody>) -> Response {
-    let mut guard = memory_fixture().lock().unwrap_or_else(|e| e.into_inner());
-    match guard.iter_mut().find(|m| m.id == id) {
-        Some(item) if item.revoked => (
+async fn patch_memory(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<PatchMemoryBody>,
+) -> Response {
+    match rt.store.patch_desktop_memory(
+        DESKTOP_MEMORY_USER,
+        &id,
+        body.title.as_deref(),
+        body.body.as_deref(),
+        body.expires.as_deref(),
+    ) {
+        Ok(Some(item)) if item.revoked => (
             StatusCode::GONE,
             Json(json!({
                 "code": "revoked",
@@ -778,19 +770,8 @@ async fn patch_memory(Path(id): Path<String>, Json(body): Json<PatchMemoryBody>)
             })),
         )
             .into_response(),
-        Some(item) => {
-            if let Some(v) = body.title {
-                item.title = v;
-            }
-            if let Some(v) = body.body {
-                item.body = v;
-            }
-            if let Some(v) = body.expires {
-                item.expires = v;
-            }
-            (StatusCode::OK, Json(item.clone())).into_response()
-        }
-        None => (
+        Ok(Some(item)) => (StatusCode::OK, Json(memory_json(&item))).into_response(),
+        Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(json!({
                 "code": "not_found",
@@ -799,21 +780,18 @@ async fn patch_memory(Path(id): Path<String>, Json(body): Json<PatchMemoryBody>)
             })),
         )
             .into_response(),
+        Err(e) => memory_store_err(e),
     }
 }
 
-async fn delete_memory(Path(id): Path<String>) -> Response {
-    let mut guard = memory_fixture().lock().unwrap_or_else(|e| e.into_inner());
-    match guard.iter_mut().find(|m| m.id == id) {
-        Some(item) => {
-            item.revoked = true;
-            (
-                StatusCode::OK,
-                Json(json!({ "ok": true, "id": id, "revoked": true })),
-            )
-                .into_response()
-        }
-        None => (
+async fn delete_memory(State(rt): State<AppState>, Path(id): Path<String>) -> Response {
+    match rt.store.revoke_desktop_memory(DESKTOP_MEMORY_USER, &id) {
+        Ok(Some(_)) => (
+            StatusCode::OK,
+            Json(json!({ "ok": true, "id": id, "revoked": true })),
+        )
+            .into_response(),
+        Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(json!({
                 "code": "not_found",
@@ -822,13 +800,15 @@ async fn delete_memory(Path(id): Path<String>) -> Response {
             })),
         )
             .into_response(),
+        Err(e) => memory_store_err(e),
     }
 }
 
-async fn reset_memories_fixture() -> Response {
-    let mut guard = memory_fixture().lock().unwrap_or_else(|e| e.into_inner());
-    *guard = seed_memories();
-    (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response()
+async fn reset_memories_fixture(State(rt): State<AppState>) -> Response {
+    match rt.store.reset_desktop_memories(DESKTOP_MEMORY_USER) {
+        Ok(()) => (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response(),
+        Err(e) => memory_store_err(e),
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

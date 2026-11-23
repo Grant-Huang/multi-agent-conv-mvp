@@ -1,5 +1,6 @@
-//! RT-ADMEM：记忆列表与纠错/撤回夹具 HTTP。用例见 docs/testing/CASES.md。
+//! RT-ADMEM：记忆列表与纠错/撤回（T-78 SQLite 权威）。用例见 docs/testing/CASES.md。
 
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -200,4 +201,45 @@ async fn rt_admem_06_patch_unknown_not_found() {
         .await;
     assert_eq!(s, 404, "{v}");
     assert_eq!(v["code"], "not_found");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_admem_07_patch_survives_runtime_restart() {
+    let _gate = mem_test_gate().lock().await;
+    let dir = std::env::temp_dir().join(an_core::new_id("an-desktop-mem-restart"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db: PathBuf = dir.join("an.db");
+    let rt = Arc::new(Runtime::new(config(), Store::open(&db).unwrap()).unwrap());
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap(),
+    };
+    let (s, v) = api
+        .post("/api/desktop/v1/memories/fixture/reset", json!({}))
+        .await;
+    assert_eq!(s, 200, "reset: {v}");
+    let (s2, v2) = api
+        .patch(
+            "/api/desktop/v1/memories/mem-1",
+            json!({ "body": "纠错后持久化正文" }),
+        )
+        .await;
+    assert_eq!(s2, 200, "{v2}");
+    assert_eq!(v2["body"], "纠错后持久化正文");
+    drop(rt);
+
+    let rt2 = Arc::new(Runtime::new(config(), Store::open(&db).unwrap()).unwrap());
+    let api2 = Api {
+        base: serve(an_server::api(rt2)).await,
+        http: reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap(),
+    };
+    let (s3, v3) = api2.get("/api/desktop/v1/memories/mem-1").await;
+    assert_eq!(s3, 200, "{v3}");
+    assert_eq!(v3["body"], "纠错后持久化正文");
 }
