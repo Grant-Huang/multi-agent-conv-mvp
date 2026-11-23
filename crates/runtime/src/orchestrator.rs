@@ -1142,12 +1142,16 @@ impl Orchestrator {
         if parent.status.is_terminal() {
             return Ok(());
         }
+        // 先写入交付消息，再标 COMPLETED：避免观测到终态时会话尚无助理交付
+        // （Composer 对不可达 LLM 回退有连接耗时，finish→deliver 会竞态）
+        self.deliver(&parent, TaskStatus::Completed, Some(join_result), None)
+            .await;
         let msg = if complete {
             "模板任务完成（各路齐全）"
         } else {
             "模板任务完成（有缺失分支）"
         };
-        if !self.finish(
+        let _ = self.finish(
             &parent,
             &[
                 TaskStatus::Running,
@@ -1157,12 +1161,7 @@ impl Orchestrator {
             TaskStatus::Completed,
             Some(join_result),
             msg,
-        ) {
-            return Ok(());
-        }
-        // 只对父任务交付一次
-        self.deliver(&parent, TaskStatus::Completed, Some(join_result), None)
-            .await;
+        );
         Ok(())
     }
 
