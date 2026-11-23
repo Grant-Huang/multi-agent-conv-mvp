@@ -298,7 +298,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<Health>("/api/health"),
   conversations: () => request<Conversation[]>("/api/conversations"),
-  createConversation: () => request<Conversation>("/api/conversations", { method: "POST", body: "{}" }),
+  createConversation: (title?: string) =>
+    request<Conversation>("/api/conversations", {
+      method: "POST",
+      body: JSON.stringify(title ? { title } : {}),
+    }),
   /** 消息列表：每条消息多一个 card（AG.4 对话里的卡片） */
   messages: (cid: string) => request<MessageView[]>(`/api/conversations/${cid}/messages`),
   /** 在会话里生成确认卡（选择卡点选、结果卡撤销时用） */

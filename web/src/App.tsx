@@ -26,6 +26,7 @@ import { fetchProfile, loadProfile, type AssistantProfile, type SettingsCategory
 import { AttentionToast, type AttentionItem } from "./desktop/AttentionToast";
 import { AssistantReadPanel } from "./desktop/AssistantReadPanel";
 import type { S1BgJob } from "./desktop/S1AskBar";
+import { durableHomeAccept, waitForConversationTask } from "./desktop/homeDelegate";
 import {
   SMT03_TASK_ID,
   readDesktopView,
@@ -680,12 +681,53 @@ export default function App() {
             }}
             onS1Delegate={(text) => {
               setS1Reply(null);
-              setS1BgJob({ taskId: SMT03_TASK_ID, label: text, status: "submitting" });
-              window.setTimeout(() => {
-                setS1BgJob({ taskId: SMT03_TASK_ID, label: text, status: "accepted" });
-              }, 400);
+              setS1BgJob({
+                taskId: "pending",
+                conversationId: "",
+                requestId: null,
+                label: text,
+                status: "submitting",
+                error: null,
+              });
+              void (async () => {
+                try {
+                  const acc = await durableHomeAccept({ text });
+                  writeCurrentConv(acc.conversationId);
+                  setS1BgJob({
+                    taskId: "pending",
+                    conversationId: acc.conversationId,
+                    requestId: acc.requestId,
+                    label: text,
+                    status: "submitting",
+                    error: null,
+                  });
+                  const taskId = await waitForConversationTask(acc.conversationId, text);
+                  setS1BgJob({
+                    taskId,
+                    conversationId: acc.conversationId,
+                    requestId: acc.requestId,
+                    label: text,
+                    status: "accepted",
+                    error: null,
+                  });
+                  await loadConversations().catch(() => {});
+                } catch (e) {
+                  setS1BgJob((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          status: "failed",
+                          error: e instanceof Error ? e.message : String(e),
+                        }
+                      : prev,
+                  );
+                }
+              })();
             }}
-            onOpenBgTask={(id) => openWorkspace(id)}
+            onOpenBgTask={(job) => {
+              if (!job.conversationId) return;
+              selectConversation(job.conversationId);
+            }}
           />
         )}
         {(mainView === "home" || mainView === "chat") && (

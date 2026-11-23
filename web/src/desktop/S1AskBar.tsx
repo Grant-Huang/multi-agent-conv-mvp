@@ -1,20 +1,23 @@
 import { useState } from "react";
-import { SMT03_TASK_ID } from "./mockData";
 
 export type S1BgJob = {
+  /** 分流后的真实任务 id；受理中可为占位 pending */
   taskId: string;
+  conversationId: string;
+  requestId: string | null;
   label: string;
-  status: "submitting" | "accepted";
+  status: "submitting" | "accepted" | "failed";
+  error?: string | null;
 };
 
 type Props = {
   bgJob: S1BgJob | null;
   onAsk: (text: string) => void;
   onDelegate: (text: string) => void;
-  onOpenBgTask: (taskId: string) => void;
+  onOpenBgTask: (job: S1BgJob) => void;
 };
 
-/** S1 桌面问答：不强制进工作区；委派后仅显示后台芯片（A5.1 / E2E-ADASK）。 */
+/** S1 桌面问答：不强制进工作区；委派走真实 B1 受理（首页真实委派切片）。 */
 export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask }: Props) {
   const [text, setText] = useState("");
 
@@ -26,10 +29,17 @@ export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask }: Props) {
   };
 
   const submitDelegate = () => {
-    const t = text.trim() || "继续调查 SMT-03 质量根因";
+    const t = text.trim() || "继续调查并整理证据链";
     onDelegate(t);
     setText("");
   };
+
+  const statusLabel =
+    bgJob?.status === "submitting"
+      ? "提交中…"
+      : bgJob?.status === "failed"
+        ? "受理失败"
+        : "后台处理中（已受理）";
 
   return (
     <div className="s1-ask" data-testid="s1-ask-bar">
@@ -60,18 +70,32 @@ export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask }: Props) {
       </div>
       {bgJob && (
         <div className="s1-bg-chip" data-testid="s1-bg-chip" role="status">
-          <span data-testid="s1-bg-status">
-            {bgJob.status === "submitting" ? "提交中…" : "后台处理中（已受理）"}
-          </span>
+          <span data-testid="s1-bg-status">{statusLabel}</span>
           <span className="muted" data-testid="s1-bg-task">
             {bgJob.taskId}
           </span>
-          <button type="button" className="btn small" data-testid="s1-bg-open" onClick={() => onOpenBgTask(bgJob.taskId)}>
+          {bgJob.conversationId && (
+            <span className="muted" data-testid="s1-bg-conv">
+              {bgJob.conversationId}
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn small"
+            data-testid="s1-bg-open"
+            disabled={bgJob.status !== "accepted"}
+            onClick={() => onOpenBgTask(bgJob)}
+          >
             打开任务
           </button>
+          {bgJob.error && (
+            <p className="bad-text" data-testid="s1-bg-error" role="alert">
+              {bgJob.error}
+            </p>
+          )}
         </div>
       )}
-      <p className="muted s1-ask-hint">委派默认关联 {SMT03_TASK_ID}；不强制离开桌面。</p>
+      <p className="muted s1-ask-hint">委派经可靠受理写入会话；打开后回到发起会话，不强制离开桌面。</p>
     </div>
   );
 }
