@@ -8,7 +8,10 @@ use serde_json::{json, Value};
 const PROD_API: &str = "/api/world/prod";
 
 async fn prod_server() -> (String, tokio::task::JoinHandle<()>) {
-    let app = router(WorldProdState::with_test_controls());
+    spawn_router(router(WorldProdState::with_test_controls())).await
+}
+
+async fn spawn_router(app: axum::Router) -> (String, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let task = tokio::spawn(async move {
@@ -508,4 +511,246 @@ async fn rt_waprod_06_write_closed_on_prod_mock_still_works() {
         "Mock Propose 仍须可用，got {}",
         mock_prop.status()
     );
+}
+
+#[tokio::test]
+async fn rt_waprod_07_selected_work_order_needs_explicit_fixture_injection() {
+    let (url, task) = prod_server().await;
+    let client = reqwest::Client::new();
+    let world = bind_east(&client, &url, "fixture-disabled").await;
+    let response = client
+        .post(format!("{url}{PROD_API}/observe"))
+        .headers(operator_site("plant-east"))
+        .json(&json!({
+            "world_id":world, "request_id":"fixture-disabled",
+            "selection":{"type":"work_order","id":"opaque"}
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 403);
+    assert_eq!(
+        response.json::<Value>().await.unwrap()["code"],
+        "TEST_CONTROLS_DISABLED"
+    );
+    task.abort();
+}
+
+#[tokio::test]
+async fn rt_waprod_08_selected_work_order_reads_only_its_bound_loopback_adapter() {
+    use an_server::mom_world_prod::{WorkOrderFixture, WorkOrderFixtureError};
+    use axum::{
+        extract::{Path, Query, State},
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post},
+        Json, Router,
+    };
+    use mom_external_adapter::{
+        external_http::{HttpSource, HttpSourceKind},
+        external_observe::{
+            AuthorizedWorkOrder, ExternalObserve, ObserveError, SourceScope, WorkOrderSelection,
+        },
+    };
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
+    type Calls = Arc<Mutex<Vec<&'static str>>>;
+
+    async fn odoo(State(calls): State<Calls>, Json(body): Json<Value>) -> Json<Value> {
+        calls.lock().unwrap().push("odoo");
+        Json(if body["domain"][0][2] == 42 {
+            json!([{"id":42,"name":"WO-42","state":"confirmed"}])
+        } else {
+            json!([])
+        })
+    }
+    async fn openmes(State(calls): State<Calls>, Path(id): Path<u64>) -> impl IntoResponse {
+        calls.lock().unwrap().push("openmes");
+        match id {
+            42 => Json(json!({"data":{"id":42,"order_no":"WO-42","status":"PENDING"}}))
+                .into_response(),
+            43 => StatusCode::NOT_FOUND.into_response(),
+            _ => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        }
+    }
+    async fn carbon(
+        State(calls): State<Calls>,
+        Query(query): Query<HashMap<String, String>>,
+    ) -> Json<Value> {
+        calls.lock().unwrap().push("carbon");
+        assert_eq!(query["companyId"], "eq.company-a");
+        Json(if query["id"] == "eq.job-42" {
+            json!([{"id":"job-42","jobId":"WO-42","status":"Ready","companyId":"company-a"}])
+        } else {
+            json!([])
+        })
+    }
+
+    let calls: Calls = Arc::default();
+    let (source_url, source_task) = spawn_router(
+        Router::new()
+            .route("/json/2/mrp.production/search_read", post(odoo))
+            .route("/api/v1/work-orders/{id}", get(openmes))
+            .route("/rest/v1/jobs", get(carbon))
+            .with_state(calls.clone()),
+    )
+    .await;
+    let bindings: Arc<Mutex<HashMap<String, &'static str>>> = Arc::default();
+    let state = WorldProdState::with_work_order_fixture({
+        let bindings = bindings.clone();
+        move |world, site, reference| {
+            let instance = bindings.lock().unwrap().get(&world).copied();
+            let origin = source_url.clone();
+            Box::pin(async move {
+                let instance = instance.ok_or(WorkOrderFixtureError::AccessDenied)?;
+                let kind = match instance {
+                    "odoo" => HttpSourceKind::Odoo {
+                        database: "fixture",
+                    },
+                    "openmes" => HttpSourceKind::OpenMes,
+                    "carbon" => HttpSourceKind::CarbonRest {
+                        company: "company-a",
+                        project_key: "fixture",
+                    },
+                    _ => unreachable!("fixture sources are fixed"),
+                };
+                let source_id = match (reference.as_str(), instance) {
+                    ("opaque-visible", "carbon") => "job-42",
+                    ("opaque-hidden", "carbon") => "job-43",
+                    ("opaque-visible", _) => "42",
+                    ("opaque-hidden", _) => "43",
+                    ("opaque-failure", "openmes") => "44",
+                    _ => return Err(WorkOrderFixtureError::AccessDenied),
+                };
+                let scope = SourceScope {
+                    tenant: "fixture-tenant",
+                    site: &site,
+                    instance,
+                };
+                let adapter = ExternalObserve::new([HttpSource {
+                    kind,
+                    base_url: &origin,
+                    token: "fixture-token",
+                    tenant: scope.tenant,
+                    site: scope.site,
+                    instance: scope.instance,
+                }])
+                .map_err(|_| WorkOrderFixtureError::SourceUnavailable)?;
+                let order = adapter
+                    .observe(
+                        WorkOrderSelection {
+                            world_id: &world,
+                            object_ref: &reference,
+                        },
+                        |_| async { Some(AuthorizedWorkOrder { scope, source_id }) },
+                    )
+                    .await
+                    .map_err(|error| match error {
+                        ObserveError::AccessDenied => WorkOrderFixtureError::AccessDenied,
+                        ObserveError::NotVisible => WorkOrderFixtureError::NotVisible,
+                        ObserveError::SourceUnavailable => WorkOrderFixtureError::SourceUnavailable,
+                        ObserveError::InvalidSourceResponse => {
+                            WorkOrderFixtureError::InvalidSourceResponse
+                        }
+                    })?;
+                Ok(WorkOrderFixture {
+                    source: order.source_instance.to_owned(),
+                    observed_at: order.observed_at,
+                    state: json!({
+                        "display_number": order.display_number, "source_status": order.source_status,
+                        "normalized_status": order.normalized_status, "mapping_version": order.mapping_version,
+                    }),
+                })
+            })
+        }
+    });
+    let (origin, task) = spawn_router(router(state)).await;
+    let client = reqwest::Client::new();
+    let endpoint = format!("{origin}{PROD_API}/observe");
+    let mut expected_calls = Vec::new();
+    for (vendor, source_status) in [
+        ("odoo", "confirmed"),
+        ("openmes", "PENDING"),
+        ("carbon", "Ready"),
+    ] {
+        let world = bind_east(&client, &origin, vendor).await;
+        bindings.lock().unwrap().insert(world.clone(), vendor);
+        let read = |headers, id| {
+            client.post(&endpoint).headers(headers).json(&json!({
+            "world_id": world, "request_id": "fixture-read", "selection":{"type":"work_order","id":id},
+        })).send()
+        };
+
+        for headers in [Default::default(), operator(), operator_site("plant-west")] {
+            let result = read(headers, "opaque-visible").await.unwrap();
+            assert_eq!(result.status(), 403);
+            assert_eq!(
+                result.json::<Value>().await.unwrap()["code"],
+                "ACCESS_DENIED"
+            );
+        }
+        let invalid = client
+            .post(&endpoint)
+            .headers(operator_site("plant-east"))
+            .json(&json!({
+                "world_id": world,
+                "selection": {"type":"work_order","id":"opaque-visible","source_url":"fixture-override"}
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), 422);
+        let unknown = read(operator_site("plant-east"), "unbound").await.unwrap();
+        assert_eq!(unknown.status(), 403);
+        assert_eq!(*calls.lock().unwrap(), expected_calls);
+
+        let visible = read(operator_site("plant-east"), "opaque-visible")
+            .await
+            .unwrap();
+        assert_eq!(visible.status(), 200);
+        let body = visible.json::<Value>().await.unwrap();
+        assert_eq!(body["provenance"], "fixture");
+        assert_eq!(body["request_id"], "fixture-read");
+        assert!(body["cursor"].is_null());
+        assert!(body["publish_seq"].is_null());
+        assert_eq!(body["events"], json!([]));
+        assert_eq!(body["objects"][0]["source"], vendor);
+        assert_eq!(
+            body["objects"][0]["ref"],
+            json!({"type":"work_order","id":"opaque-visible"})
+        );
+        assert_eq!(body["objects"][0]["state"]["source_status"], source_status);
+        assert_eq!(body["objects"][0]["observed_at"], body["as_of"]);
+        let serialized = body.to_string();
+        for private in ["fixture-tenant", "fixture-token", "company-a", "job-42"] {
+            assert!(!serialized.contains(private));
+        }
+
+        let hidden = read(operator_site("plant-east"), "opaque-hidden")
+            .await
+            .unwrap();
+        assert_eq!(hidden.status(), 404);
+        assert_eq!(
+            hidden.json::<Value>().await.unwrap()["code"],
+            "ORDER_NOT_VISIBLE"
+        );
+        expected_calls.extend([vendor, vendor]);
+
+        if vendor == "openmes" {
+            let failed = read(operator_site("plant-east"), "opaque-failure")
+                .await
+                .unwrap();
+            assert_eq!(failed.status(), 503);
+            assert_eq!(
+                failed.json::<Value>().await.unwrap()["code"],
+                "SOURCE_UNAVAILABLE"
+            );
+            expected_calls.push(vendor);
+        }
+        assert_eq!(*calls.lock().unwrap(), expected_calls);
+    }
+    task.abort();
+    source_task.abort();
 }

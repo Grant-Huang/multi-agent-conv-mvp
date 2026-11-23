@@ -13,6 +13,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use axum::{Json, Router};
+use futures::future::BoxFuture;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -32,6 +33,7 @@ pub struct WorldProdState {
     /// site_id → authority id
     authorities: HashMap<String, String>,
     allow_test_controls: bool,
+    work_order_fixture: Option<Arc<WorkOrderFixtureReader>>,
 }
 
 impl WorldProdState {
@@ -40,6 +42,7 @@ impl WorldProdState {
             inner: Arc::new(Mutex::new(Store::default())),
             authorities: default_authorities(),
             allow_test_controls: false,
+            work_order_fixture: None,
         }
     }
 
@@ -48,6 +51,47 @@ impl WorldProdState {
             inner: Arc::new(Mutex::new(Store::default())),
             authorities: default_authorities(),
             allow_test_controls: true,
+            work_order_fixture: None,
+        }
+    }
+}
+
+type WorkOrderFixtureReader = dyn Fn(
+        String,
+        String,
+        String,
+    ) -> BoxFuture<'static, Result<WorkOrderFixture, WorkOrderFixtureError>>
+    + Send
+    + Sync;
+
+pub struct WorkOrderFixture {
+    pub source: String,
+    pub observed_at: String,
+    pub state: Value,
+}
+
+pub enum WorkOrderFixtureError {
+    AccessDenied,
+    NotVisible,
+    SourceUnavailable,
+    InvalidSourceResponse,
+}
+
+impl WorldProdState {
+    /// Explicit injection for in-process acceptance using loopback fixture sources.
+    pub fn with_work_order_fixture(
+        reader: impl Fn(
+                String,
+                String,
+                String,
+            ) -> BoxFuture<'static, Result<WorkOrderFixture, WorkOrderFixtureError>>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
+        Self {
+            work_order_fixture: Some(Arc::new(reader)),
+            ..Self::new()
         }
     }
 }
@@ -349,6 +393,105 @@ struct ObserveBody {
     world_id: String,
     #[serde(default)]
     request_id: Option<String>,
+    #[serde(default)]
+    selection: Option<ObserveSelection>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum ObserveSelection {
+    WorkOrder { id: String },
+}
+
+async fn observe_work_order_fixture(
+    state: &WorldProdState,
+    headers: &HeaderMap,
+    world_id: &str,
+    request_id: Option<&str>,
+    object_ref: String,
+) -> ApiResult {
+    let world = state
+        .inner
+        .lock()
+        .map_err(|_| lock_err())?
+        .worlds
+        .get(world_id)
+        .cloned();
+    let Some(world) = world else {
+        return err(
+            StatusCode::NOT_FOUND,
+            "WORLD_NOT_FOUND",
+            "世界不存在或未绑定",
+            request_id,
+        );
+    };
+    authorize_read(headers, &world, request_id)?;
+    if header_site(headers) != Some(world.site_id.as_str()) {
+        return err(
+            StatusCode::FORBIDDEN,
+            "ACCESS_DENIED",
+            "工单查询须匹配绑定站点",
+            request_id,
+        );
+    }
+    let Some(read) = &state.work_order_fixture else {
+        return err(
+            StatusCode::FORBIDDEN,
+            "TEST_CONTROLS_DISABLED",
+            "工单验收夹具未配置",
+            request_id,
+        );
+    };
+    if object_ref.trim().is_empty() {
+        return err(
+            StatusCode::BAD_REQUEST,
+            "INVALID_WORK_ORDER_SELECTION",
+            "工单引用为空",
+            request_id,
+        );
+    }
+
+    let observed = match read(world_id.to_owned(), world.site_id, object_ref.clone()).await {
+        Ok(observed) => observed,
+        Err(error) => {
+            let (status, code, message) = match error {
+                WorkOrderFixtureError::AccessDenied => {
+                    (StatusCode::FORBIDDEN, "ACCESS_DENIED", "工单引用未授权")
+                }
+                WorkOrderFixtureError::NotVisible => {
+                    (StatusCode::NOT_FOUND, "ORDER_NOT_VISIBLE", "工单不可见")
+                }
+                WorkOrderFixtureError::SourceUnavailable => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "SOURCE_UNAVAILABLE",
+                    "来源不可用",
+                ),
+                WorkOrderFixtureError::InvalidSourceResponse => (
+                    StatusCode::BAD_GATEWAY,
+                    "INVALID_SOURCE_RESPONSE",
+                    "来源响应无效",
+                ),
+            };
+            return err(status, code, message, request_id);
+        }
+    };
+    Ok(Json(json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": request_id,
+        "world_id": world_id,
+        "provenance": "fixture",
+        "cursor": null,
+        "publish_seq": null,
+        "events": [],
+        "as_of": observed.observed_at,
+        "consistency": "per_source",
+        "objects": [{
+            "ref": { "type": "work_order", "id": object_ref },
+            "source": observed.source,
+            "observed_at": observed.observed_at,
+            "state": observed.state
+        }],
+    })))
 }
 
 async fn observe(
@@ -356,6 +499,16 @@ async fn observe(
     headers: HeaderMap,
     Json(body): Json<ObserveBody>,
 ) -> ApiResult {
+    if let Some(ObserveSelection::WorkOrder { id }) = body.selection {
+        return observe_work_order_fixture(
+            &state,
+            &headers,
+            &body.world_id,
+            body.request_id.as_deref(),
+            id,
+        )
+        .await;
+    }
     let mut store = state.inner.lock().map_err(|_| lock_err())?;
     let Some(world) = store.worlds.get(&body.world_id).cloned() else {
         return err(

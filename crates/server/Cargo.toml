@@ -40,6 +40,7 @@ an-des.workspace = true
 rmcp = { version = "=3.10.0", default-features = false, features = ["client", "transport-async-rw"] }
 
 [dev-dependencies]
+mom-external-adapter = { git = "https://github.com/Grant-Huang/MOM-MCP.git", rev = "5aa312939df2110ff3dda401b9021a0c1ad5a67f" }
 an-node.workspace = true
 # E3 撤权实测示例直接构造外部 agent 适配器
 an-agents.workspace = true
