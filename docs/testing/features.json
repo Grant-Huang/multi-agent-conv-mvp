@@ -882,8 +882,10 @@
       "web/e2e/wa-des-write.spec.ts",
       "web/e2e/wa-prod-read.spec.ts",
       "crates/server/src/mom_world_des.rs",
+      "crates/server/src/mom_world_prod.rs",
       "crates/server/tests/mom_world_des.rs",
       "crates/server/tests/mom_world_des_write.rs",
+      "crates/server/tests/mom_world_prod.rs",
       "docs/mom/WA_M2_TASKS.md",
       "docs/mom/WA_M2_1_PLAN.md",
       "docs/testing/evidence/wa-m2-0.md",
@@ -901,6 +903,7 @@
       "docs/mom/WA_M3_1_PLAN.md",
       "docs/testing/evidence/wa-m3-0.md",
       "docs/testing/evidence/wa-m3-1-red.md",
+      "docs/testing/evidence/wa-m3-2-green.md",
       "scripts/wa-m2-regression.sh",
       "scripts/wa-m2-suite.sh",
       "docs/decisions/2026-11-21-wa-m2-1-green-service-layer.md",
@@ -956,7 +959,9 @@
       "RT-WADES-16",
       "RT-WADES-17",
       "RT-WADES-18",
-      "RT-WADES-19"
+      "RT-WADES-19",
+      "RT-WAPROD-01",
+      "RT-WAPROD-02"
     ]
   },
   {

@@ -149,6 +149,10 @@ async fn main() -> Result<()> {
                 }
             };
             app = app.merge(an_server::mom_world_des::router(world_des));
+            // M3：生产只读 stub（权威源登记；无真实凭据/egress）
+            app = app.merge(an_server::mom_world_prod::router(
+                an_server::mom_world_prod::WorldProdState::new(),
+            ));
         }
         app = app
             .route(
