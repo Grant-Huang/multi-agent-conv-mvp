@@ -156,10 +156,17 @@ pub struct DesktopMemory {
     pub source: String,
     pub body: String,
     pub expires: String,
+    /// fact（可注入）/ preference / style（5.2b 生效闸门用）；旧行迁移为 fact
+    #[serde(default = "default_memory_kind")]
+    pub kind: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub revoked: bool,
     #[serde(skip_serializing)]
     pub updated_at: String,
+}
+
+fn default_memory_kind() -> String {
+    "fact".into()
 }
 
 #[derive(Debug, Clone)]
@@ -508,6 +515,7 @@ CREATE TABLE IF NOT EXISTS desktop_memories (
     source TEXT NOT NULL,
     body TEXT NOT NULL,
     expires TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'fact',
     revoked INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
 );
@@ -723,6 +731,17 @@ impl Store {
             conn.execute_batch("ALTER TABLE messages ADD COLUMN card_json TEXT")?;
         }
         // 内存库不能跨连接共享，读写仍走同一条。文件库另开只读连接，写的时候读不用等。
+        // conversation-memory 5.2a：desktop_memories 补 kind 列（fact / preference / style；旧行为 fact）
+        let has_kind: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('desktop_memories') WHERE name = 'kind'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_kind == 0 {
+            conn.execute_batch(
+                "ALTER TABLE desktop_memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact'",
+            )?;
+        }
         let read = if path == Path::new(":memory:") {
             None
         } else {
@@ -2364,6 +2383,9 @@ impl Store {
             source: r.get(3)?,
             body: r.get(4)?,
             expires: r.get(5)?,
+            kind: r
+                .get::<_, Option<String>>(8)?
+                .unwrap_or_else(|| "fact".into()),
             revoked: revoked != 0,
             updated_at: r.get(7)?,
         })
@@ -2379,6 +2401,7 @@ impl Store {
                 source: "用户确认 · 2026-11-18".into(),
                 body: "先给结论，再列证据条目与待核实项。".into(),
                 expires: "2027-11-18".into(),
+                kind: "fact".into(),
                 revoked: false,
                 updated_at: ts.clone(),
             },
@@ -2389,6 +2412,7 @@ impl Store {
                 source: "设置 · 通知与主动性".into(),
                 body: "工作日 22:00–08:00 不推普通建议。".into(),
                 expires: "长期".into(),
+                kind: "fact".into(),
                 revoked: false,
                 updated_at: ts,
             },
@@ -2398,8 +2422,8 @@ impl Store {
     fn insert_desktop_memory(conn: &Connection, m: &DesktopMemory) -> Result<()> {
         conn.execute(
             "INSERT OR IGNORE INTO desktop_memories
-             (id, user_id, title, source, body, expires, revoked, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             (id, user_id, title, source, body, expires, kind, revoked, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 m.id,
                 m.user_id,
@@ -2407,6 +2431,7 @@ impl Store {
                 m.source,
                 m.body,
                 m.expires,
+                m.kind,
                 if m.revoked { 1 } else { 0 },
                 m.updated_at,
             ],
@@ -2431,12 +2456,83 @@ impl Store {
         Ok(())
     }
 
+    /// conversation-memory 5.2a：用户主动保存（可查/可纠正/可撤回生命周期起点）。
+    /// 校验：title/body 非空；kind ∈ {fact, preference, style}；id 服务端生成；来源记「用户保存 · 日期」。
+    pub fn create_desktop_memory(
+        &self,
+        user_id: &str,
+        title: &str,
+        body: &str,
+        expires: &str,
+        kind: &str,
+    ) -> Result<DesktopMemory> {
+        let title = title.trim();
+        let body = body.trim();
+        if title.is_empty() {
+            return Err(anyhow!("title 不能为空"));
+        }
+        if body.is_empty() {
+            return Err(anyhow!("body 不能为空"));
+        }
+        if !matches!(kind, "fact" | "preference" | "style") {
+            return Err(anyhow!("kind 只能是 fact / preference / style"));
+        }
+        let m = DesktopMemory {
+            id: an_core::new_id("mem"),
+            user_id: user_id.into(),
+            title: title.into(),
+            source: format!("用户保存 · {}", &now()[..10]),
+            body: body.into(),
+            expires: if expires.trim().is_empty() {
+                "长期".into()
+            } else {
+                expires.trim().into()
+            },
+            kind: kind.into(),
+            revoked: false,
+            updated_at: now(),
+        };
+        let conn = self.write();
+        conn.execute(
+            "INSERT INTO desktop_memories
+             (id, user_id, title, source, body, expires, kind, revoked, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
+            params![
+                m.id,
+                m.user_id,
+                m.title,
+                m.source,
+                m.body,
+                m.expires,
+                m.kind,
+                m.updated_at,
+            ],
+        )?;
+        Ok(m)
+    }
+
+    /// conversation-memory 5.2a：注入侧读取（未撤回；过期与 kind 过滤在调用方做，避免 SQL 里解析自由文本日期）。
+    pub fn list_unrevoked_desktop_memories(&self, user_id: &str) -> Result<Vec<DesktopMemory>> {
+        let _timer = ReadTimer::new("list_unrevoked_desktop_memories");
+        let conn = self.read();
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind
+             FROM desktop_memories
+             WHERE user_id = ?1 AND revoked = 0
+             ORDER BY updated_at DESC, rowid DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![user_id], Self::map_desktop_memory)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     pub fn list_desktop_memories(&self, user_id: &str) -> Result<Vec<DesktopMemory>> {
         self.ensure_desktop_memory_seed(user_id)?;
         let _timer = ReadTimer::new("list_desktop_memories");
         let conn = self.read();
         let mut stmt = conn.prepare(
-            "SELECT id, user_id, title, source, body, expires, revoked, updated_at
+            "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind
              FROM desktop_memories
              WHERE user_id = ?1 AND revoked = 0
              ORDER BY id",
@@ -2455,7 +2551,7 @@ impl Store {
         let _timer = ReadTimer::new("get_desktop_memory");
         let conn = self.read();
         conn.query_row(
-            "SELECT id, user_id, title, source, body, expires, revoked, updated_at
+            "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind
              FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
             params![user_id, id],
             Self::map_desktop_memory,
@@ -2476,7 +2572,7 @@ impl Store {
         let conn = self.write();
         let Some(mut m) = conn
             .query_row(
-                "SELECT id, user_id, title, source, body, expires, revoked, updated_at
+                "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind
                  FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
                 params![user_id, id],
                 Self::map_desktop_memory,
@@ -2522,7 +2618,7 @@ impl Store {
         let conn = self.write();
         let Some(mut m) = conn
             .query_row(
-                "SELECT id, user_id, title, source, body, expires, revoked, updated_at
+                "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind
                  FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
                 params![user_id, id],
                 Self::map_desktop_memory,

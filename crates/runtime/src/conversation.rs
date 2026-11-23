@@ -430,22 +430,51 @@ impl ConversationRuntime {
         *slot = source;
     }
 
-    /// 处理用户的一条消息
-    pub async fn handle_message(&self, conversation_id: &str, text: &str) -> Result<TurnOutcome> {
-        self.run_turn(conversation_id, text, true).await
+    /// 处理用户的一条消息。按调用方 principal 作用域注入个人记忆（5.2a）。
+    pub async fn handle_message_as(
+        &self,
+        user: &str,
+        conversation_id: &str,
+        text: &str,
+    ) -> Result<TurnOutcome> {
+        self.run_turn_as(user, conversation_id, text, true).await
     }
 
-    /// 可靠受理已写入用户消息后继续分流（不再插入 user 消息）。B1；不改 orchestrator。
+    /// 受控单用户默认作用域（无 principal 时）。
+    pub async fn handle_message(&self, conversation_id: &str, text: &str) -> Result<TurnOutcome> {
+        self.handle_message_as(crate::session_materials::LOCAL_USER, conversation_id, text)
+            .await
+    }
+
+    /// 可靠受理已写入用户消息后继续分流（不再插入用户消息）。B1；不改 orchestrator。
+    /// 按调用方 principal 作用域注入个人记忆（5.2a）。
+    pub async fn continue_after_accepted_as(
+        &self,
+        user: &str,
+        conversation_id: &str,
+        text: &str,
+    ) -> Result<TurnOutcome> {
+        self.run_turn_as(user, conversation_id, text, false).await
+    }
+
+    /// 同上，受控单用户默认作用域（见 `session_materials::LOCAL_USER`）。
     pub async fn continue_after_accepted(
         &self,
         conversation_id: &str,
         text: &str,
     ) -> Result<TurnOutcome> {
-        self.run_turn(conversation_id, text, false).await
+        self.run_turn_as(
+            crate::session_materials::LOCAL_USER,
+            conversation_id,
+            text,
+            false,
+        )
+        .await
     }
 
-    async fn run_turn(
+    async fn run_turn_as(
         &self,
+        user: &str,
         conversation_id: &str,
         text: &str,
         insert_user: bool,
@@ -551,7 +580,7 @@ impl ConversationRuntime {
         match &decision {
             TurnDecision::Respond { .. } => {
                 let reply_id = an_core::new_id("msg");
-                let materials = self.session_materials_block(conversation_id).await;
+                let materials = self.session_materials_block(conversation_id, user).await;
                 let reply = self
                     .generate_reply(conversation_id, &reply_id, &history, materials.as_deref())
                     .await;
@@ -763,7 +792,7 @@ impl ConversationRuntime {
     /// 流式失败时退回一次性生成；都失败时给出带错误码的说明。
     /// conversation-memory 5.1：收集并渲染回答路径的会话资料；关闭 / 为空 / 降级 → None。
     /// `session.materials` 事件只记来源 id 与原因，不记资料正文与用户正文。
-    async fn session_materials_block(&self, conversation_id: &str) -> Option<String> {
+    async fn session_materials_block(&self, conversation_id: &str, user: &str) -> Option<String> {
         if !self.session_materials {
             return None;
         }
@@ -776,6 +805,7 @@ impl ConversationRuntime {
         let materials = collector
             .collect(
                 conversation_id,
+                user,
                 Duration::from_millis(self.session_materials_timeout_ms),
             )
             .await;

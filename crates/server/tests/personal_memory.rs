@@ -1,0 +1,391 @@
+//! RT-UMEM：个人记忆生命周期与隔离（conversation-memory 5.2a，REQ-conversation-memory-02）。
+//! 用例定义见 docs/testing/CASES.md「个人记忆生命周期与隔离」。
+//! 口径（2026-11-23 用户确认）：保存走新增 POST；多用户隔离用 `x-desktop-principal`
+//! 夹具头（无头回退 `local`）；过期条目不进回答注入；注入按说话人作用域。
+
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+use an_runtime::config::AppConfig;
+use an_runtime::session_materials::MATERIALS_MARKER;
+use an_runtime::store::Store;
+use an_runtime::Runtime;
+use axum::response::IntoResponse;
+use axum::routing::post;
+use axum::Json;
+use serde_json::{json, Value};
+
+async fn serve(app: axum::Router) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}")
+}
+
+struct Api {
+    base: String,
+    http: reqwest::Client,
+}
+
+impl Api {
+    fn with_principal(
+        &self,
+        principal: Option<&str>,
+        req: reqwest::RequestBuilder,
+    ) -> reqwest::RequestBuilder {
+        match principal {
+            Some(p) => req.header("x-desktop-principal", p),
+            None => req,
+        }
+    }
+    async fn send(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<Value>,
+        principal: Option<&str>,
+    ) -> (u16, Value) {
+        let req = match body {
+            Some(b) => self
+                .http
+                .request(method, format!("{}{path}", self.base))
+                .json(&b),
+            None => self.http.request(method, format!("{}{path}", self.base)),
+        };
+        let r = self.with_principal(principal, req).send().await.unwrap();
+        (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
+    }
+    async fn get_as(&self, path: &str, principal: Option<&str>) -> (u16, Value) {
+        self.send(reqwest::Method::GET, path, None, principal).await
+    }
+    async fn post_as(&self, path: &str, body: Value, principal: Option<&str>) -> (u16, Value) {
+        self.send(reqwest::Method::POST, path, Some(body), principal)
+            .await
+    }
+    async fn patch_as(&self, path: &str, body: Value, principal: Option<&str>) -> (u16, Value) {
+        self.send(reqwest::Method::PATCH, path, Some(body), principal)
+            .await
+    }
+    async fn delete_as(&self, path: &str, principal: Option<&str>) -> (u16, Value) {
+        self.send(reqwest::Method::DELETE, path, None, principal)
+            .await
+    }
+}
+
+fn config(base: &str) -> AppConfig {
+    toml::from_str(&format!(
+        "[llm]\nbase_url = \"{base}/v1\"\nmodel = \"scripted\"\nmax_retries = 0\ntimeout_secs = 5\n\
+         [backends.local]\nkind = \"openai\"\nbase_url = \"{base}/v1\"\n\
+         [routing]\nconversation = \"local\"\nrouter = \"local\"\ngeneral = \"local\"\nreviewer = \"local\"\n\
+         [agents.general]\nenabled = false\n[agents.coding]\nenabled = false\n"
+    ))
+    .unwrap()
+}
+
+/// 假模型：turn_decision → respond；文本 → 固定回答（SSE）
+struct MockLlm {
+    base: String,
+    requests: Arc<Mutex<Vec<Value>>>,
+}
+
+impl MockLlm {
+    async fn start() -> Self {
+        let requests: Arc<Mutex<Vec<Value>>> = Arc::default();
+        let log = requests.clone();
+        let app = axum::Router::new().route(
+            "/v1/chat/completions",
+            post(move |Json(req): Json<Value>| {
+                let log = log.clone();
+                async move {
+                    let schema = req["response_format"]["json_schema"]["name"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
+                    log.lock().unwrap().push(req);
+                    let content = if schema == "turn_decision" {
+                        json!({"action":"respond","question":"","task_goal":"","task_id":"","follow_up_kind":"","change":""})
+                            .to_string()
+                    } else {
+                        "你好，验证成功。".to_string()
+                    };
+                    let chunk =
+                        json!({"choices":[{"delta":{"content":content},"finish_reason":"stop"}]});
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                        format!("data: {chunk}\n\ndata: [DONE]\n\n"),
+                    )
+                        .into_response()
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        Self {
+            base: format!("http://{addr}"),
+            requests,
+        }
+    }
+
+    fn plain_calls(&self) -> Vec<Value> {
+        self.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r["response_format"]["json_schema"]["name"].is_null())
+            .cloned()
+            .collect()
+    }
+}
+
+fn materials_of(req: &Value) -> String {
+    req["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|m| {
+            let c = m["content"].as_str()?;
+            c.contains(MATERIALS_MARKER).then(|| c.to_string())
+        })
+        .unwrap_or_default()
+}
+
+/// RT-UMEM-01：用户主动保存 → 可查（列表 + 详情），来源记「用户保存」
+#[tokio::test]
+async fn rt_umem_01_user_saved_memory_is_queryable() {
+    let rt = Arc::new(
+        Runtime::new(
+            config("http://127.0.0.1:9"),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "CPK 阅读口径", "body": "只看最近 30 天子组。", "expires": "2027-06-01", "kind": "fact"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 201, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    assert!(id.starts_with("mem-"), "{v}");
+    assert_eq!(v["kind"], "fact", "{v}");
+    assert!(v["source"].as_str().unwrap().contains("用户保存"), "{v}");
+    let (s, list) = api.get_as("/api/desktop/v1/memories", None).await;
+    assert_eq!(s, 200);
+    assert!(
+        list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["id"] == json!(id) && i["title"] == json!("CPK 阅读口径")),
+        "{list}"
+    );
+    let (s, detail) = api
+        .get_as(&format!("/api/desktop/v1/memories/{id}"), None)
+        .await;
+    assert_eq!(s, 200, "{detail}");
+    assert_eq!(detail["body"], "只看最近 30 天子组。");
+}
+
+/// RT-UMEM-02：自建条目可纠正、可撤回（撤回后 410、列表排除）
+#[tokio::test]
+async fn rt_umem_02_saved_memory_lifecycle_revise_revoke() {
+    let rt = Arc::new(
+        Runtime::new(
+            config("http://127.0.0.1:9"),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "会议纪要口径", "body": "按决议清单记录。", "kind": "fact"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 201, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    assert_eq!(v["expires"], "长期", "缺省有效期按「长期」处理：{v}");
+    let (s, patched) = api
+        .patch_as(
+            &format!("/api/desktop/v1/memories/{id}"),
+            json!({"body": "按决议清单记录，附责任人。"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 200, "{patched}");
+    let (_, detail) = api
+        .get_as(&format!("/api/desktop/v1/memories/{id}"), None)
+        .await;
+    assert_eq!(detail["body"], "按决议清单记录，附责任人。");
+    let (s, del) = api
+        .delete_as(&format!("/api/desktop/v1/memories/{id}"), None)
+        .await;
+    assert_eq!(s, 200, "{del}");
+    assert_eq!(del["revoked"], true);
+    let (s, gone) = api
+        .get_as(&format!("/api/desktop/v1/memories/{id}"), None)
+        .await;
+    assert_eq!(s, 410, "{gone}");
+    assert_eq!(gone["code"], "revoked");
+    let (_, list) = api.get_as("/api/desktop/v1/memories", None).await;
+    assert!(
+        !list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["id"] == json!(id)),
+        "撤回后不得出现在列表：{list}"
+    );
+}
+
+/// RT-UMEM-03：另一用户不可召回（列表 / 详情 / 纠正 / 撤回全拒绝）
+#[tokio::test]
+async fn rt_umem_03_other_user_cannot_recall() {
+    let rt = Arc::new(
+        Runtime::new(
+            config("http://127.0.0.1:9"),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "甲的口径", "body": "甲的专属结论。", "kind": "fact"}),
+            Some("user-a"),
+        )
+        .await;
+    assert_eq!(s, 201, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    let (s, list_b) = api.get_as("/api/desktop/v1/memories", Some("user-b")).await;
+    assert_eq!(s, 200);
+    assert!(
+        !list_b["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["id"] == json!(id)),
+        "乙的列表不得含甲的条目：{list_b}"
+    );
+    let (s, _) = api
+        .get_as(&format!("/api/desktop/v1/memories/{id}"), Some("user-b"))
+        .await;
+    assert_eq!(s, 404, "乙查甲的详情应 404");
+    let (s, _) = api
+        .patch_as(
+            &format!("/api/desktop/v1/memories/{id}"),
+            json!({"body": "乙篡改"}),
+            Some("user-b"),
+        )
+        .await;
+    assert_eq!(s, 404, "乙纠正甲的条目应 404");
+    let (s, _) = api
+        .delete_as(&format!("/api/desktop/v1/memories/{id}"), Some("user-b"))
+        .await;
+    assert_eq!(s, 404, "乙撤回甲的条目应 404");
+    let (s, _) = api
+        .get_as(&format!("/api/desktop/v1/memories/{id}"), Some("user-a"))
+        .await;
+    assert_eq!(s, 200, "甲本人仍可查");
+}
+
+/// RT-UMEM-04：过期记忆不进回答注入；未过期记忆进（含来源行）
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_umem_04_expired_memory_not_injected() {
+    let llm = MockLlm::start().await;
+    let rt = Arc::new(
+        Runtime::new(
+            config(&llm.base),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let conv = rt.store.create_conversation("t").unwrap();
+    rt.store
+        .create_desktop_memory(
+            "local",
+            "过期记忆",
+            "已失效的口径XYZ。",
+            "2020-01-01",
+            "fact",
+        )
+        .unwrap();
+    rt.store
+        .create_desktop_memory("local", "现行记忆", "现行的口径ABC。", "2099-01-01", "fact")
+        .unwrap();
+    rt.conversation
+        .handle_message(&conv.id, "你好，现在的口径是什么？")
+        .await
+        .unwrap();
+    let last = llm.plain_calls().last().unwrap().clone();
+    let c = materials_of(&last);
+    assert!(c.contains("现行记忆"), "未过期记忆应注入：{c}");
+    assert!(c.contains("来源：mem-"), "记忆应带来源行：{c}");
+    assert!(c.contains("个人记忆"), "记忆段应标注：{c}");
+    assert!(!c.contains("过期记忆"), "过期记忆不得注入：{c}");
+    assert!(!c.contains("XYZ"), "过期记忆正文不得注入：{c}");
+}
+
+/// RT-UMEM-05：注入按说话人作用域——甲保存的条目只进甲的回答提示词
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_umem_05_injection_scoped_to_speaker() {
+    let llm = MockLlm::start().await;
+    let rt = Arc::new(
+        Runtime::new(
+            config(&llm.base),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let conv = rt.store.create_conversation("t").unwrap();
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let (s, _) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "甲的口径", "body": "甲的专属结论甲乙丙。", "kind": "fact"}),
+            Some("user-a"),
+        )
+        .await;
+    assert_eq!(s, 201);
+    // 甲续问：注入甲的条目
+    let (s, out_a) = api
+        .post_as(
+            &format!("/api/conversations/{}/messages", conv.id),
+            json!({"text": "你好，我的口径是什么？"}),
+            Some("user-a"),
+        )
+        .await;
+    assert_eq!(s, 200, "{out_a}");
+    let c_a = materials_of(llm.plain_calls().last().unwrap());
+    assert!(c_a.contains("甲乙丙"), "甲的提示词应含甲的记忆：{c_a}");
+    // 乙续问：不注入甲的条目
+    let (s, out_b) = api
+        .post_as(
+            &format!("/api/conversations/{}/messages", conv.id),
+            json!({"text": "你好，我的口径是什么？"}),
+            Some("user-b"),
+        )
+        .await;
+    assert_eq!(s, 200, "{out_b}");
+    let c_b = materials_of(llm.plain_calls().last().unwrap());
+    assert!(!c_b.contains("甲乙丙"), "乙的提示词不得含甲的记忆：{c_b}");
+}

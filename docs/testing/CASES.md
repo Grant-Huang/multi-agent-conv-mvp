@@ -996,3 +996,15 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-SMAT-04 | conversation-memory | 超长摘要 + `[conversation] session_materials_max_tokens = 64` | 续问 | 资料消息渲染长度在上限内（估算 token ≤ 上限 + 页眉余量）；最新用户消息完整 |
 | RT-SMAT-05 | conversation-memory | 任一发生注入的轮次 | 检查日志 | `session.materials` 事件只含来源 id 与原因，不含资料正文、用户消息或回答正文 |
 | E2E-SMAT | conversation-memory | 浏览器真实会话：委派任务完成、回执被 ≥12 条消息挤出窗口 | 桌面入口续问（含探针词） | 助手回答文本包含窗口外回执的摘要要点（资料已进入模型并用于回答） |
+
+## 个人记忆生命周期与隔离 conversation-memory 5.2a（REQ-conversation-memory-02；2026-11-23 用户确认：POST 端点 + kind 补列 + 夹具头隔离口径）
+
+`POST /api/desktop/v1/memories`（title/body 必填；expires 缺省「长期」；kind ∈ fact/preference/style，缺省 fact）；作用域按 `x-desktop-principal` 夹具头（无头回退 `local`，沿用 T-78 契约）；`desktop_memories` 补 `kind` 列（沿 store.rs 补列先例，无破坏性 DDL）。注入侧：本人未撤回、未过期、kind=fact 的记忆进回答资料块「个人记忆」段，按说话人作用域。E2E 待第 1 线保存入口 UI 后补录。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-UMEM-01 | conversation-memory | 无头（local） | `POST /memories`（title/body/expires/kind=fact） | **201**；`id` 以 `mem-` 开头；`kind=fact`；`source` 含「用户保存」；列表与详情可见 |
+| RT-UMEM-02 | conversation-memory | 自建条目 | PATCH body → GET → DELETE → GET → 列表 | **200** 纠正生效；**200** 撤回；详情 **410** `revoked`；列表不含 |
+| RT-UMEM-03 | conversation-memory | 甲（`x-desktop-principal: user-a`）保存条目 | 乙（`user-b`）列表 / 详情 / PATCH / DELETE；甲自查 | 乙列表不含、详情 **404**、纠正 **404**、撤回 **404**；甲本人 **200** |
+| RT-UMEM-04 | conversation-memory | local 存过期（2020-01-01）与未过期（2099-01-01）记忆各一条 | 续问（respond 路径） | 资料块含未过期条（来源行 + 「个人记忆」段标注）；不含过期条 id 与正文 |
+| RT-UMEM-05 | conversation-memory | 甲保存记忆；同会话 | 甲、乙先后续问（chat 接口带头） | 甲的提示词含甲的记忆；乙的提示词不含（按说话人作用域） |

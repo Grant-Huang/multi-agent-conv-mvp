@@ -1077,7 +1077,12 @@
       "RT-SMAT-02",
       "RT-SMAT-03",
       "RT-SMAT-04",
-      "RT-SMAT-05"
+      "RT-SMAT-05",
+      "RT-UMEM-01",
+      "RT-UMEM-02",
+      "RT-UMEM-03",
+      "RT-UMEM-04",
+      "RT-UMEM-05"
     ],
     "requirements": [
       {
@@ -1097,8 +1102,14 @@
       {
         "id": "REQ-conversation-memory-02",
         "title": "个人记忆可控",
-        "status": "提出",
-        "cases": [],
+        "status": "已确认",
+        "cases": [
+          "RT-UMEM-01",
+          "RT-UMEM-02",
+          "RT-UMEM-03",
+          "RT-UMEM-04",
+          "RT-UMEM-05"
+        ],
         "since": null
       },
       {

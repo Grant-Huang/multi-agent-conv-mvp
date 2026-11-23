@@ -96,7 +96,10 @@ pub fn routes() -> Router<AppState> {
             get(get_preferences).patch(patch_preferences),
         )
         // T-78：记忆列表与纠错/撤回（SQLite 权威；fixture/reset 仅测试种子复位）
-        .route("/api/desktop/v1/memories", get(list_memories))
+        .route(
+            "/api/desktop/v1/memories",
+            get(list_memories).post(create_memory),
+        )
         .route(
             "/api/desktop/v1/memories/fixture/reset",
             post(reset_memories_fixture),
@@ -217,7 +220,7 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-fn principal_from(headers: &HeaderMap) -> String {
+pub(crate) fn principal_from(headers: &HeaderMap) -> String {
     headers
         .get("x-desktop-principal")
         .and_then(|v| v.to_str().ok())
@@ -227,8 +230,21 @@ fn principal_from(headers: &HeaderMap) -> String {
         .to_string()
 }
 
+/// conversation-memory 5.2a：记忆与回答注入的作用域（沿用 T-78 的 `local` 契约；
+/// 夹具头 `x-desktop-principal` 提供多用户测试口径，无头回退 `LOCAL_USER`）。
+pub(crate) fn principal_or_local(headers: &HeaderMap) -> String {
+    headers
+        .get("x-desktop-principal")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(an_runtime::session_materials::LOCAL_USER)
+        .to_string()
+}
+
 async fn create_request(
     State(rt): State<AppState>,
+    headers: HeaderMap,
     Path(conversation_id): Path<String>,
     Json(body): Json<CreateRequestBody>,
 ) -> Response {
@@ -281,11 +297,12 @@ async fn create_request(
             // 后台继续分流；失败不影响已返回的 202 受理
             let text = rec.text.clone();
             let conv = rec.conversation_id.clone();
+            let user = principal_or_local(&headers);
             let turn_rt = rt.clone();
             tokio::spawn(async move {
                 if let Err(e) = turn_rt
                     .conversation
-                    .continue_after_accepted(&conv, &text)
+                    .continue_after_accepted_as(&user, &conv, &text)
                     .await
                 {
                     tracing::warn!(
@@ -694,13 +711,48 @@ async fn patch_preferences(
     }
 }
 
-const DESKTOP_MEMORY_USER: &str = "local";
+/// 受控单用户默认作用域已移至 `an_runtime::session_materials::LOCAL_USER`（5.2a 起按 principal 作用域）
 
 #[derive(Debug, Deserialize)]
 struct PatchMemoryBody {
     title: Option<String>,
     body: Option<String>,
     expires: Option<String>,
+}
+
+/// conversation-memory 5.2a：用户主动保存个人记忆（REQ-conversation-memory-02）。
+#[derive(Debug, Deserialize)]
+struct CreateMemoryBody {
+    title: String,
+    body: String,
+    /// ISO 日期或自由文本（如「长期」）；空值按「长期」处理
+    #[serde(default)]
+    expires: Option<String>,
+    /// fact（默认，可注入）/ preference / style（5.2b 生效闸门用）
+    #[serde(default)]
+    kind: Option<String>,
+}
+
+async fn create_memory(
+    State(rt): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CreateMemoryBody>,
+) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.create_desktop_memory(
+        &user,
+        &body.title,
+        &body.body,
+        body.expires.as_deref().unwrap_or("长期"),
+        body.kind.as_deref().unwrap_or("fact"),
+    ) {
+        Ok(m) => (StatusCode::CREATED, Json(memory_json(&m))).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "code": "invalid", "message": format!("{e:#}"), "retryable": false })),
+        )
+            .into_response(),
+    }
 }
 
 fn memory_json(m: &DesktopMemory) -> serde_json::Value {
@@ -710,6 +762,7 @@ fn memory_json(m: &DesktopMemory) -> serde_json::Value {
         "source": m.source,
         "body": m.body,
         "expires": m.expires,
+        "kind": m.kind,
     })
 }
 
@@ -721,8 +774,9 @@ fn memory_store_err(e: anyhow::Error) -> Response {
         .into_response()
 }
 
-async fn list_memories(State(rt): State<AppState>) -> Response {
-    match rt.store.list_desktop_memories(DESKTOP_MEMORY_USER) {
+async fn list_memories(State(rt): State<AppState>, headers: HeaderMap) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.list_desktop_memories(&user) {
         Ok(items) => {
             let items: Vec<_> = items.iter().map(memory_json).collect();
             (StatusCode::OK, Json(json!({ "items": items }))).into_response()
@@ -731,8 +785,13 @@ async fn list_memories(State(rt): State<AppState>) -> Response {
     }
 }
 
-async fn get_memory(State(rt): State<AppState>, Path(id): Path<String>) -> Response {
-    match rt.store.get_desktop_memory(DESKTOP_MEMORY_USER, &id) {
+async fn get_memory(
+    State(rt): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.get_desktop_memory(&user, &id) {
         Ok(Some(item)) if !item.revoked => {
             (StatusCode::OK, Json(memory_json(&item))).into_response()
         }
@@ -760,11 +819,13 @@ async fn get_memory(State(rt): State<AppState>, Path(id): Path<String>) -> Respo
 
 async fn patch_memory(
     State(rt): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Json(body): Json<PatchMemoryBody>,
 ) -> Response {
+    let user = principal_or_local(&headers);
     match rt.store.patch_desktop_memory(
-        DESKTOP_MEMORY_USER,
+        &user,
         &id,
         body.title.as_deref(),
         body.body.as_deref(),
@@ -793,8 +854,13 @@ async fn patch_memory(
     }
 }
 
-async fn delete_memory(State(rt): State<AppState>, Path(id): Path<String>) -> Response {
-    match rt.store.revoke_desktop_memory(DESKTOP_MEMORY_USER, &id) {
+async fn delete_memory(
+    State(rt): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.revoke_desktop_memory(&user, &id) {
         Ok(Some(_)) => (
             StatusCode::OK,
             Json(json!({ "ok": true, "id": id, "revoked": true })),
@@ -813,8 +879,9 @@ async fn delete_memory(State(rt): State<AppState>, Path(id): Path<String>) -> Re
     }
 }
 
-async fn reset_memories_fixture(State(rt): State<AppState>) -> Response {
-    match rt.store.reset_desktop_memories(DESKTOP_MEMORY_USER) {
+async fn reset_memories_fixture(State(rt): State<AppState>, headers: HeaderMap) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.reset_desktop_memories(&user) {
         Ok(()) => (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response(),
         Err(e) => memory_store_err(e),
     }
