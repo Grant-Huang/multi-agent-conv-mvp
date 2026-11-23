@@ -252,7 +252,36 @@ export interface WorldDesObserveResult {
   events: WorldDesEvent[];
 }
 
+/** World Adapter M3 生产只读（`/api/world/prod`） */
+export interface WorldProdBindResult {
+  protocol_version: number;
+  world_id: string;
+  provenance: string;
+  site_id?: string;
+  authority?: string;
+  capabilities?: { write?: boolean; observations?: boolean; actions?: boolean };
+}
+export interface WorldProdObject {
+  source?: string;
+  delayed?: boolean;
+  observed_at?: string;
+  state?: { delay_ms?: number; status?: string; publish_seq?: number };
+}
+export interface WorldProdObserveResult {
+  protocol_version: number;
+  world_id: string;
+  provenance: string;
+  cursor: string;
+  publish_seq?: number;
+  as_of?: string;
+  source?: string;
+  consistency?: string;
+  events: WorldDesEvent[];
+  objects?: WorldProdObject[];
+}
+
 const WA_ROLE = { "X-WA-Role": "experimenter" };
+const WA_OPERATOR = { "X-WA-Role": "operator", "X-WA-Site": "plant-east" };
 
 /** 统一的请求函数：非 2xx 时抛出后端返回的错误信息 */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -474,6 +503,49 @@ export const api = {
       }>("/api/world/des/confirm", {
         method: "POST",
         headers: { "X-WA-Role": "operator" },
+        body: JSON.stringify(body),
+      }),
+  },
+  /** World Adapter M3 生产只读；未开 world_mock 时 404 */
+  worldProd: {
+    bind: (body: {
+      site_id: string;
+      authority: string;
+      request_id?: string;
+      sources?: string[];
+    }) =>
+      request<WorldProdBindResult>("/api/world/prod/bind", {
+        method: "POST",
+        headers: WA_OPERATOR,
+        body: JSON.stringify(body),
+      }),
+    observe: (body: { world_id: string; request_id?: string }) =>
+      request<WorldProdObserveResult>("/api/world/prod/observe", {
+        method: "POST",
+        headers: WA_OPERATOR,
+        body: JSON.stringify(body),
+      }),
+    subscribe: (body: { world_id: string; cursor: string; request_id?: string }) =>
+      request<WorldProdObserveResult>("/api/world/prod/subscribe", {
+        method: "POST",
+        headers: WA_OPERATOR,
+        body: JSON.stringify(body),
+      }),
+    expireCursor: (body: { world_id: string; request_id?: string }) =>
+      request<{ cursor_generation?: number }>("/api/world/prod/test/expire-cursor", {
+        method: "POST",
+        headers: WA_OPERATOR,
+        body: JSON.stringify(body),
+      }),
+    injectDelay: (body: {
+      world_id: string;
+      source: string;
+      delay_ms: number;
+      request_id?: string;
+    }) =>
+      request<{ as_of?: string }>("/api/world/prod/test/inject-delay", {
+        method: "POST",
+        headers: { "X-WA-Role": "experimenter" },
         body: JSON.stringify(body),
       }),
   },

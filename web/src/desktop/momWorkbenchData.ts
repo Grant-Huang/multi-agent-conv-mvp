@@ -24,6 +24,11 @@ export type MomCase = {
 export const MOM_WORLDS: MomWorld[] = [
   { world_id: "world-demo-east", label: "华东精加工 · 模拟", provenance: "mock" },
   { world_id: "world-des-toolwear", label: "刀具磨损演练 · DES", provenance: "des" },
+  {
+    world_id: "world-prod-east",
+    label: "华东精加工 · 生产",
+    provenance: "production",
+  },
 ];
 
 export const MOM_CASES: MomCase[] = [
@@ -74,6 +79,18 @@ export const MOM_CASES: MomCase[] = [
     task_group: "mine",
     resource_gaps: ["机"],
     summary: "与正式运行/运营频道共用 case_id / world_id 约定。",
+  },
+  {
+    case_id: "case-prod-east-1",
+    world_id: "world-prod-east",
+    title: "华东生产 · CNC-1 状态观测",
+    stage: "OBSERVING",
+    owner: "调度",
+    impact: "生产只读",
+    next_step: "只读观测水位；写走隔离 Mock/DES",
+    task_group: "mine",
+    resource_gaps: [],
+    summary: "生产 stub 观测；provenance=production；写入口关闭。",
   },
 ];
 

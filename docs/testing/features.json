@@ -935,8 +935,10 @@
       "docs/testing/evidence/wa-m3-1-red.md",
       "docs/testing/evidence/wa-m3-2-green.md",
       "docs/testing/evidence/wa-m3-3-green.md",
+      "docs/testing/evidence/wa-m3-4-browser.md",
       "scripts/wa-m2-regression.sh",
       "scripts/wa-m2-suite.sh",
+      "scripts/wa-m3-suite.sh",
       "docs/decisions/2026-11-21-wa-m2-1-green-service-layer.md",
       "docs/decisions/2026-11-22-wa-m3-1-prod-read-service-layer.md"
     ],

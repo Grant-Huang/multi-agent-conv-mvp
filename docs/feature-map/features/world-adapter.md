@@ -1,12 +1,12 @@
 # World Adapter 与 MOM 工作台 Feature Map
 
 Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`docs/mom/DES_EXPERIMENT_OPS_SPLIT.md`、`docs/mom/WA_MOCK_REGISTRY.md`、`web/e2e/des-experiment.spec.ts`、`web/e2e/mom-workbench.spec.ts`、`web/e2e/wa-integration.spec.ts`、`web/e2e/wa-des-remote.spec.ts`、`web/e2e/wa-des-write.spec.ts`、`web/e2e/wa-prod-read.spec.ts`、`scripts/wa-m0-suite.sh`、`scripts/wa-m1-suite.sh`、`scripts/wa-m2-suite.sh`、`web/src/desktop/DesExperiment.tsx`、`web/src/desktop/MomWorkbench.tsx`、`web/src/components/OpsCards.tsx`；用例 `E2E-DESTRIAL`～`E2E-DESLOOP`、`E2E-WABIND`、`E2E-WACHANNEL`、`E2E-WADES`/`WAREAD`/`WAOBS`、`E2E-WAEXEC`/`WARECV`/`WADYN`/`WALOOP`、`E2E-WAPROD`/`WAPISO`/`WAPREAD`/`WAPDELAY`；合同 `RT-WA-01～09`、`RT-WADES-01～19`、拟 `RT-WAPROD-01～06`；准出证据 `docs/testing/evidence/wa-m0-6.md`、`docs/testing/evidence/wa-m1-5.md`、`docs/testing/evidence/wa-m2-6.md`；M3-1 Red `wa-m3-1-red.md`。  
-现有路径见 [MOM Feature Map](mom.md)。表中其余 `E2E-WA-*` 为设计编号，登记进 CASES/`features.json` 前须换成 `E2E-[A-Z]+`；控件名是 Playwright 定位契约。M0 H4 覆盖矩阵见 [WA_MOCK_REGISTRY.md](../../mom/WA_MOCK_REGISTRY.md) §4。M0 已准出（#175）；**M1** 读路径准出见 [WA_M1_TASKS.md](../../mom/WA_M1_TASKS.md) / `wa-m1-5.md`；**M2** 写路径准出见 [WA_M2_TASKS.md](../../mom/WA_M2_TASKS.md) / `wa-m2-6.md`（#207）；**M3** 生产只读见 [WA_M3_TASKS.md](../../mom/WA_M3_TASKS.md) / [WA_M3_1_PLAN.md](../../mom/WA_M3_1_PLAN.md)（`RT-WAPROD-01`～`06` Green；E2E 浏览器待 M3-4；写仍 Mock/DES，真 MES 写属 M4）。
+现有路径见 [MOM Feature Map](mom.md)。表中其余 `E2E-WA-*` 为设计编号，登记进 CASES/`features.json` 前须换成 `E2E-[A-Z]+`；控件名是 Playwright 定位契约。M0 H4 覆盖矩阵见 [WA_MOCK_REGISTRY.md](../../mom/WA_MOCK_REGISTRY.md) §4。M0 已准出（#175）；**M1** 读路径准出见 [WA_M1_TASKS.md](../../mom/WA_M1_TASKS.md) / `wa-m1-5.md`；**M2** 写路径准出见 [WA_M2_TASKS.md](../../mom/WA_M2_TASKS.md) / `wa-m2-6.md`（#207）；**M3** 生产只读见 [WA_M3_TASKS.md](../../mom/WA_M3_TASKS.md) / [WA_M3_1_PLAN.md](../../mom/WA_M3_1_PLAN.md)（`RT-WAPROD-01`～`06` + `E2E-WAPROD*` Green；准出收口待 M3-5；写仍 Mock/DES，真 MES 写属 M4）。
 
 | 拟用例 | 正式 E2E id | 操作路径与定位 | UI 和业务断言 | 追溯 |
 |---|---|---|---|---|
 | E2E-WA-01 世界绑定 | `E2E-WABIND`（M0 Mock）；`E2E-WADES`（M1 远程，Green） | 「MOM 工作台」→「选择世界」→「看板」「任务」「资源」分别打开同一事项 | 同一 world/case；返回保持世界与入口；跨世界列表不泄露 | WA-01、08 / UI01、02、16 / P-MOM-ENTRY、SCOPE、RETURN |
-| E2E-WA-02 续读 | `E2E-WAREAD`（M1，Green）；`E2E-WAPREAD`（M3 Red） | 「看板」断线，重连或点「重新读取」 | 从提交边界补事件，同 ID 只应用一次；过期和水位单独显示；生产源同断言 | WA-02、07 / UI03、15 |
+| E2E-WA-02 续读 | `E2E-WAREAD`（M1，Green）；`E2E-WAPREAD`（M3，Green） | 「看板」断线，重连或点「重新读取」 | 从提交边界补事件，同 ID 只应用一次；过期和水位单独显示；生产源同断言 | WA-02、07 / UI03、15 |
 | E2E-WA-03 条件 | （待登记） | 「任务」→「受阻」→「刀具调拨」，从「资源」→「料」再次定位 | 受理后待实物交接，首件未通过不能放行；冲突引用同一资源并无重复预留 | WA-08 / UI03、05、06、11 / P-MOM-STATE、VIEWS |
 | E2E-WA-04 节点和来源 | （待登记） | 「处理进展」→「维护初筛」→「证据与记录」「通俗解释」，打开「流程选择依据」 | 一次点击可见结论，候选假设仍待验证，草稿流程不可执行，证据来源可查 | WA-07、08 / UI04、07、08、15 |
 | E2E-WA-05 审批 | `E2E-WACHANNEL`（入口切片）；`E2E-WAEXEC`（M2 Green） | 「方案与决定」→「前往运营频道」→同案例卡「批准」；模拟同时修改版本 | 工作台可进运营频道；远程 DES 授权/并发/取消守卫 Green | WA-03 / UI07、09 |
@@ -14,7 +14,7 @@ Backed by：`docs/mom/WORLD_ADAPTER.md`、`docs/mom/WORLD_ADAPTER_PLAN.md`、`do
 | E2E-WA-07 动态 DES | `E2E-WAOBS`（M1，Green）；`E2E-WADYN` / `E2E-WALOOP`（M2 Green） | 会话进入动态 DES → 推进 → 观测/事项 → 干预 | M1：正式投递观测可见且无标准答案；M2：批准维修后未来事件改变；双角色同一正式运行 | WA-05、07、08 / UI07、14、15 / RT-DES-08～11、RT-DESC |
 | E2E-WA-08 会话和小屏 | （待登记） | 「与 AI 讨论」写 A 草稿 → 切 C → 回 A；节点证据页按 Escape | 草稿和上下文隔离，焦点恢复，小屏无横溢，模型离线时已有证据可查 | WA-07、08 / UI12、16 / P-MOM-CONTEXT |
 | E2E-WA-09 客诉与移交 | （待登记） | C101 →「承诺与交接」→检查冻结、回复、8D 与接责 | 缺依据不能关闭。4 小时回复、24 小时报告与关闭各自验证。移交保留风险 | WA-08 / UI13、14 |
-| E2E-WA-10 生产确认 | （M4 写）；M3 只读 `E2E-WAPROD`/`WAPISO`/`WAPREAD`/`WAPDELAY`（Red） | 选择「华东精加工 · 生产」→ 看板/观测水位；M4 再「创建维修工单」→批准→「查证结果」 | M3：`provenance=production`、权限隔离、续读与多源 `as_of`；M4：按工单号核对站点、设备与状态 | WA-06、07 / UI02、09、10、15 |
+| E2E-WA-10 生产确认 | （M4 写）；M3 只读 `E2E-WAPROD`/`WAPISO`/`WAPREAD`/`WAPDELAY`（Green） | 选择「华东精加工 · 生产」→ 看板/观测水位；M4 再「创建维修工单」→批准→「查证结果」 | M3：`provenance=production`、权限隔离、续读与多源 `as_of`；M4：按工单号核对站点、设备与状态 | WA-06、07 / UI02、09、10、15 |
 
 Playwright 先用 Harness 装载场景和时钟，再从产品首页开始。以拥有明确名称的导航、事项区、对话框或频道卡限定定位范围。重复业务动作使用案例或执行 ID 定位，例如在对应 OpsCase 内定位角色 button 和精确名称「批准」。故障准备可以调用测试入口，正常操作经 UI。通过正常业务 API 核对副作用和版本。
 
