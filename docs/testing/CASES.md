@@ -648,6 +648,10 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-ADAPPR | ai-desktop | 打开 SMT-03 工作区 | 批准 → 改参数升版 → 用旧版意图执行失败；再批准并执行两次；拒绝后不可执行；未知回执可查证 | 升版后提示原审批失效；执行次数为 1；拒绝后错误可见；未知回执经查证变为 applied |
 | E2E-ADRESUME | ai-desktop | 打开 SMT-03 工作区 | 种子双任务 Run；对 A 断线重放含重复事件；对 B 补充输入继续 | A/B 状态不串；A 事件去重后进度更新；B 从 waiting_input 变为 running |
 | E2E-ADVOICE | ai-desktop | 打开 SMT-03 工作区 | 拒绝麦克风后改文字；开启后注入部分转写再确认最终并关联；播报中插话；断线后改文字 | 部分转写不关联任务；确认后关联 SMT-03；插话停止播报并保留最终转写；拒麦/断线均可文字继续 |
+| E2E-ADMIC-01 | ai-desktop | media=real；干净上下文；getUserMedia 拒绝 | 点「开启麦克风」 | permission=denied；可见改文字入口；无 Task 关联 |
+| E2E-ADMIC-02 | ai-desktop | media=real；Playwright fake device 可授权 | 授权开麦 → ASR 注入部分 → 确认最终并关联 | partial 非空且未关联；finalize 后 final 非空且关联当前 Task |
+| E2E-ADMIC-03 | ai-desktop | media=real；已有最终转写并可播报 | 开始播报后插话 | playing=false；phase=listening；final 保留 |
+| E2E-ADMIC-04 | ai-desktop | media=real；听写后 offline | 改用文字继续 | final_text 与服务一致；可继续 |
 | E2E-ADHAND | ai-desktop | 打开 SMT-03 工作区 | 手机与桌面各写不同草稿；选手机稿解决冲突；默认未共享转写，授权后再关闭 | 同一 Task/Run/阅读锚点；冲突可选后两端一致；未授权显示不共享 |
 | E2E-ADACCEPT | ai-desktop | 打开 SMT-03 工作区 | 现有模式丢回执→须回读；可靠模式丢回执后原操作 ID 重试；同 ID 改正文 | 待确认可见；派发次数保持 1；改正文得 409 冲突且不二次派发 |
 

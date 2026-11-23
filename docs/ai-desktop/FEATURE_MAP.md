@@ -27,6 +27,7 @@
 | AD-APPROVE / E2E-ADAPPR、RT-ADAPPR | 审批后改参数；分别验证拒绝、超时、结果未知和重复执行请求 | 原审批失效；拒绝不执行；结果未知先查证；有效动作副作用只发生一次 |
 | AD-ATTENTION / E2E-ADATTN | 正在输入时送普通建议、聚合消息和紧急事件，暂缓并静音；接受或撤回记忆建议 | 普通事件不抢焦点，静音改变实际投递，告警规则生效，偏好变更可追踪 |
 | AD-VOICE / E2E-ADVOICE | 开启麦克风、插话、实时转写、纠正归属，断线切文字；另测拒绝麦克风权限 | 播报可停止，部分转写不执行，确认后关联正确，可继续同一会话 |
+| AD-MIC / E2E-ADMIC-01～04 | media=real；拒麦 / fake device 开麦+ASR 注入 / 插话 / offline 改文字 | 权限与转写经 `/voice/*`；partial 不关联；finalize 关联；与 fixture ADVOICE 并存 |
 | AD-HANDOFF / E2E-ADHAND | 手机发起工作，桌面打开并续写；两端各编辑草稿，再处理冲突 | 同一 Task/Run 与读取位置，草稿冲突可选，未授权转写不共享 |
 
 ## 清单追溯入口

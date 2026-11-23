@@ -13,7 +13,11 @@ export default defineConfig({
     baseURL:'http://127.0.0.1:18787',
     browserName:'chromium',
     viewport:{width:1440,height:1000},
-    launchOptions:{executablePath},
+    launchOptions:{
+      executablePath,
+      // T-75 E2E-ADMIC：假设备；ADMIC-01 仍可 stub getUserMedia 拒绝
+      args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+    },
     trace:'retain-on-failure',
     screenshot:'only-on-failure',
   },

@@ -551,6 +551,85 @@ test('E2E-ADVOICE: 拒麦、部分转写、插话与断线改文字', async ({ p
   await expect(page.getByTestId('voice-final')).toContainText('SMT-03');
 });
 
+async function openVoiceReal(page: import('@playwright/test').Page) {
+  await page.addInitScript(() => {
+    (window as unknown as { __AN_DESKTOP_VOICE_MEDIA__: string }).__AN_DESKTOP_VOICE_MEDIA__ =
+      'real';
+  });
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-voice').click();
+  await expect(page.getByTestId('voice-mock-panel')).toBeVisible();
+  await expect(page.getByTestId('voice-media-mode')).toHaveText('media=real');
+  await page.getByTestId('voice-reset').click();
+}
+
+test('E2E-ADMIC-01: 真机路径拒麦后可改文字', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as unknown as { __AN_DESKTOP_VOICE_MEDIA__: string }).__AN_DESKTOP_VOICE_MEDIA__ =
+      'real';
+    const deny = () => Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: deny },
+    });
+  });
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-voice').click();
+  await expect(page.getByTestId('voice-media-mode')).toHaveText('media=real');
+  await page.getByTestId('voice-reset').click();
+  await page.getByTestId('voice-open-mic').click();
+  await expect(page.getByTestId('voice-permission')).toHaveText('denied');
+  await expect(page.getByTestId('voice-fallback')).toContainText('文字');
+  await expect(page.getByTestId('voice-link')).toHaveText('未关联');
+  await page.getByTestId('voice-as-text').click();
+  await expect(page.getByTestId('voice-final')).toContainText('改用文字继续');
+});
+
+test('E2E-ADMIC-02: 授权开麦、部分不关联、确认后关联', async ({ page }) => {
+  await openVoiceReal(page);
+  await page.getByTestId('voice-open-mic').click();
+  await expect(page.getByTestId('voice-permission')).toHaveText('granted');
+  await expect(page.getByTestId('voice-phase')).toHaveText('listening');
+  await page.getByTestId('voice-asr-partial').click();
+  await expect(page.getByTestId('voice-partial')).toContainText('SMT');
+  await expect(page.getByTestId('voice-link')).toHaveText('未关联');
+  await page.getByTestId('voice-commit').click();
+  await expect(page.getByTestId('voice-final')).toContainText('SMT');
+  await expect(page.getByTestId('voice-link')).toHaveText(SMT03_TASK_ID);
+});
+
+test('E2E-ADMIC-03: 播报中插话停播报并保留最终转写', async ({ page }) => {
+  await openVoiceReal(page);
+  await page.getByTestId('voice-open-mic').click();
+  await expect(page.getByTestId('voice-permission')).toHaveText('granted');
+  await page.getByTestId('voice-asr-partial').click();
+  await page.getByTestId('voice-commit').click();
+  await expect(page.getByTestId('voice-final')).not.toHaveText('—');
+  const finalBefore = await page.getByTestId('voice-final').innerText();
+  await page.getByTestId('voice-play').click();
+  await expect(page.getByTestId('voice-playing')).toHaveText('播放中');
+  await page.getByTestId('voice-barge').click();
+  await expect(page.getByTestId('voice-playing')).toHaveText('已停');
+  await expect(page.getByTestId('voice-phase')).toHaveText('listening');
+  await expect(page.getByTestId('voice-final')).toHaveText(finalBefore);
+});
+
+test('E2E-ADMIC-04: offline 后改用文字保留最终转写', async ({ page }) => {
+  await openVoiceReal(page);
+  await page.getByTestId('voice-open-mic').click();
+  await page.getByTestId('voice-asr-partial').click();
+  await page.getByTestId('voice-commit').click();
+  await expect(page.getByTestId('voice-final')).not.toHaveText('—');
+  const finalBefore = await page.getByTestId('voice-final').innerText();
+  await page.getByTestId('voice-offline').click();
+  await expect(page.getByTestId('voice-phase')).toHaveText('offline');
+  await expect(page.getByTestId('voice-fallback')).toBeVisible();
+  await page.getByTestId('voice-as-text').click();
+  await expect(page.getByTestId('voice-final')).toHaveText(finalBefore);
+});
+
 test('E2E-ADHAND: 跨端草稿冲突与未授权转写不共享', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('card-smt-03').click();
