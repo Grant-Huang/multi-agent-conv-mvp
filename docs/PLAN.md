@@ -962,6 +962,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **T-64 Resume 面板接 B2 SSE**（2026-11-22）：ResumeMockPanel → `/events`；E2E-ADRESUME 真实路径；证据 `testing/evidence/ai-desktop-t64-resume.md`
 - [x] **T-70 preferences 面板接 B3**（2026-11-22）：profileStore → `GET/PATCH /preferences`；E2E-ADPROF 真实路径；证据 `testing/evidence/ai-desktop-t70-preferences.md`
 - [x] **T-71 记忆列表接服务**（2026-11-22）：`GET /memories` 夹具权威 + SettingsPanel 列表/详情；E2E-ADMEM；证据 `testing/evidence/ai-desktop-t71-memory-list.md`
+- [x] **T-72 记忆纠错/撤回写路径**（2026-11-22）：PATCH/DELETE 夹具 + UI；E2E-ADMEMW；证据 `testing/evidence/ai-desktop-t72-memory-write.md`
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`

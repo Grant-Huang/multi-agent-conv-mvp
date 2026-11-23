@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import {
   SETTINGS_CATEGORIES,
   bumpProfileVersionForConflict,
+  correctMemory,
   fetchMemories,
   fetchMemory,
   fetchProfile,
   saveProfile,
+  withdrawMemory,
   type AssistantProfile,
   type MemoryEntry,
   type SettingsCategoryId,
@@ -331,6 +333,10 @@ export function SettingsPanel({
           ) : memoryId && memoryDetail ? (
             <MemoryDetail
               entry={memoryDetail}
+              onSaved={(m) => setMemoryDetail(m)}
+              onWithdrawn={() =>
+                onNavigate({ layer: "memory", categoryId: "assistant", memoryId: null })
+              }
               onBack={() => onNavigate({ layer: "memory", categoryId: "assistant", memoryId: null })}
             />
           ) : (
@@ -382,7 +388,31 @@ function MemoryList({
   );
 }
 
-function MemoryDetail({ entry, onBack }: { entry: MemoryEntry; onBack: () => void }) {
+function MemoryDetail({
+  entry,
+  onSaved,
+  onWithdrawn,
+  onBack,
+}: {
+  entry: MemoryEntry;
+  onSaved: (m: MemoryEntry) => void;
+  onWithdrawn: () => void;
+  onBack: () => void;
+}) {
+  const [draftBody, setDraftBody] = useState(entry.body);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraftBody(entry.body);
+    setErr(null);
+  }, [entry.id, entry.body]);
+
+  useEffect(() => {
+    setMsg(null);
+  }, [entry.id]);
+
   return (
     <div data-testid="memory-detail">
       <h3>{entry.title}</h3>
@@ -392,10 +422,69 @@ function MemoryDetail({ entry, onBack }: { entry: MemoryEntry; onBack: () => voi
         <dt>有效期</dt>
         <dd data-testid="memory-expires">{entry.expires}</dd>
       </dl>
-      <p data-testid="memory-body">{entry.body}</p>
-      <button type="button" className="btn small" data-testid="memory-detail-back" onClick={onBack}>
-        返回记忆列表
-      </button>
+      <label className="settings-field">
+        正文（可纠错）
+        <textarea
+          data-testid="memory-body-input"
+          aria-label="记忆正文"
+          rows={3}
+          value={draftBody}
+          onChange={(e) => setDraftBody(e.target.value)}
+        />
+      </label>
+      <p className="muted" data-testid="memory-body">
+        当前存档：{entry.body}
+      </p>
+      <div className="settings-actions">
+        <button
+          type="button"
+          className="btn primary"
+          data-testid="memory-correct-save"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            setErr(null);
+            void correctMemory(entry.id, { body: draftBody })
+              .then((m) => {
+                onSaved(m);
+                setMsg("已纠错保存");
+              })
+              .catch((e: Error) => setErr(e.message))
+              .finally(() => setBusy(false));
+          }}
+        >
+          保存纠错
+        </button>
+        <button
+          type="button"
+          className="btn small"
+          data-testid="memory-withdraw"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            setErr(null);
+            void withdrawMemory(entry.id)
+              .then(() => onWithdrawn())
+              .catch((e: Error) => setErr(e.message))
+              .finally(() => setBusy(false));
+          }}
+        >
+          撤回此记忆
+        </button>
+        <button type="button" className="btn small" data-testid="memory-detail-back" onClick={onBack}>
+          返回记忆列表
+        </button>
+      </div>
+      {msg && (
+        <p className="settings-saved" data-testid="memory-correct-saved" role="status">
+          {msg}
+        </p>
+      )}
+      {err && (
+        <p className="evidence-error" data-testid="memory-write-error" role="alert">
+          {err}
+        </p>
+      )}
     </div>
   );
 }
