@@ -403,6 +403,7 @@ test('E2E-ADINPUT: 响应式设置入口、Escape、IME 与减少动态效果', 
 });
 
 test('E2E-ADASK: S1 问答与委派不强制导航', async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto('/');
   await expect(page.getByTestId('s1-ask-bar')).toBeVisible();
   await page.getByTestId('s1-ask-input').fill('SMT-03 概况如何');
@@ -415,8 +416,11 @@ test('E2E-ADASK: S1 问答与委派不强制导航', async ({ page }) => {
   await page.getByTestId('s1-delegate').click();
   await expect(page.getByTestId('s1-bg-chip')).toBeVisible();
   await expect(page.getByTestId('s1-bg-status')).toContainText(/提交中|已受理/);
-  await expect.poll(async () => page.getByTestId('s1-bg-status').innerText()).toContain('已受理');
-  await expect(page.getByTestId('s1-bg-task')).toHaveText(SMT03_TASK_ID);
+  await expect
+    .poll(async () => page.getByTestId('s1-bg-status').innerText(), { timeout: 60_000 })
+    .toContain('已受理');
+  const taskId = (await page.getByTestId('s1-bg-task').innerText()).trim();
+  expect(taskId).toMatch(/^task-/);
   await expect(page.getByTestId('desktop-home')).toBeVisible();
 
   await page.getByTestId('s1-ask-input').fill('后台跑着时继续问');
@@ -425,7 +429,71 @@ test('E2E-ADASK: S1 问答与委派不强制导航', async ({ page }) => {
   await expect(page.getByTestId('s1-bg-chip')).toBeVisible();
 
   await page.getByTestId('s1-bg-open').click();
-  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
+  await expect(page.locator('.task-card').filter({ hasText: '深入调查并整理证据链' })).toBeVisible();
+});
+
+test('E2E-HOMEACCEPT: 首页委派丢回执回读与重连原会话', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto('/');
+  const goal = '首页可靠受理验证：整理 SMT 调查提纲';
+  await page.getByTestId('s1-ask-input').fill(goal);
+  await page.getByTestId('s1-delegate').click();
+  await expect
+    .poll(async () => page.getByTestId('s1-bg-status').innerText(), { timeout: 60_000 })
+    .toContain('已受理');
+  const taskId = (await page.getByTestId('s1-bg-task').innerText()).trim();
+  const convId = (await page.getByTestId('s1-bg-conv').innerText()).trim();
+  expect(taskId).toMatch(/^task-/);
+  expect(convId.length).toBeGreaterThan(3);
+
+  // 同会话可查任务
+  const listed = await (await page.request.get(`/api/tasks?conversation_id=${convId}`)).json();
+  expect(listed.some((t: { id: string }) => t.id === taskId)).toBeTruthy();
+
+  await page.getByTestId('s1-bg-open').click();
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
+  await expect(page.locator('.task-card').filter({ hasText: goal })).toBeVisible();
+
+  // 重连：刷新后仍能回到原会话（标题来自委派正文前缀）
+  await page.reload();
+  await expect(page.getByRole('button', { name: /首页可靠受理验证|整理 SMT/ }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.getByRole('button', { name: /首页可靠受理验证|整理 SMT/ }).first().click();
+  await expect(page.getByRole('textbox', { name: '输入消息' })).toBeVisible();
+  await expect(page.locator('.task-card').filter({ hasText: goal })).toBeVisible();
+});
+
+test('E2E-HOMEREV: 首页委派审查待验收后判定通过', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('/');
+  const goal = '人工验收验证报告：从桌面首页委派';
+  await page.getByTestId('s1-ask-input').fill(goal);
+  await page.getByTestId('s1-delegate').click();
+  await expect
+    .poll(async () => page.getByTestId('s1-bg-status').innerText(), { timeout: 60_000 })
+    .toContain('已受理');
+  const taskId = (await page.getByTestId('s1-bg-task').innerText()).trim();
+  await expect
+    .poll(async () => (await (await page.request.get(`/api/tasks/${taskId}`)).json()).task.status, {
+      timeout: 60_000,
+    })
+    .toBe('NEEDS_HUMAN');
+  const before = (await (await page.request.get(`/api/tasks/${taskId}`)).json()).task;
+  expect(before.result).not.toBeNull();
+
+  await page.getByTestId('s1-bg-open').click();
+  await expect(page.locator('main')).toContainText('待验收');
+  await page.locator('main').getByRole('button', { name: '判定通过', exact: true }).click();
+  await expect
+    .poll(async () => (await (await page.request.get(`/api/tasks/${taskId}`)).json()).task.status, {
+      timeout: 60_000,
+    })
+    .toBe('COMPLETED');
+  await expect(page.locator('main')).toContainText(/已完成|任务已完成/);
+  // 终态交付回发起会话
+  await expect(page.locator('main .msg.assistant').last()).toBeVisible();
 });
 
 test('E2E-ADATTN: 输入中普通建议不抢焦点且可静音', async ({ page }) => {

@@ -13,7 +13,7 @@
 | S01 | 第一次使用：看状态 → 提问 → 委派写文件 → 下载 | conversation → tasks → artifacts | ✅（分散在 CONV/FILE/TICKER） | — |
 | S02 | 高风险任务：待批准 → 看说明 → 批准 → 执行 → 审查 → 完成 | approval → assignment → tasks | ✅ APPROVE/APPROVEINFO | — |
 | S03 | 审查不通过 → 自动返工 → 通过 | tasks → reviewer → 返工 | ◐ 后端（`crates/server/tests/review_rework.rs`） | E2E-REWORK |
-| S04 | 审查结论“需人工” → 用户处理 | tasks → reviewer → approval | ✗ ⚠（G07） | E2E-REVIEWHUMAN（先定产品行为） |
+| S04 | 审查结论“需人工” → 用户处理 | tasks → reviewer → approval | ✅ 经典 E2E-REV；**日常入口 E2E-HOMEREV**（首页委派切片） | E2E-HOMEREV |
 | S05 | 没有写代码助手 → 对话接入 → 改代码 → 看 diff → 审查 | agents → conversation → tasks → git-evidence | ✅ E2E-CODEFLOW（WP3；harness 临时 git workdir + mock ACP） | E2E-CODEFLOW |
 | S06 | 任务进行中补充/取消要求 | conversation(follow_up) → tasks | ◐ RT-CONV-01/02，浏览器 ✗ | E2E-SUPPLEMENT |
 | S07 | 联网研究报告（检索 + 章节并行） | conversation → reports → tools → artifacts | ◐ RT-REP；浏览器 ✗（受控模型可模拟） | E2E-REPORT |

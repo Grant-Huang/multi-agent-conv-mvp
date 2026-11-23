@@ -645,7 +645,9 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-ADMEMW | ai-desktop | 打开 SMT-03；夹具已 reset | 打开 mem-1 纠错正文并保存；撤回 mem-2；回列表 | mem-1 正文已更新；列表不再含 mem-2；工作区草稿仍在 |
 | E2E-ADXR | ai-desktop | 干净浏览器；夹具 reset；双上下文同服务 | 端 A 见未读≥2 并标记 asst-msg-1 已读；端 B 刷新后 asst-msg-1 已读且未读减 1；端 B 再标其余；端 A 刷新未读为 0；重复提交已读 | 服务权威跨端一致；重复提交幂等；未读徽标来自 HTTP |
 | E2E-ADINPUT | ai-desktop | 干净浏览器 | 在 360/768/1024/1440 宽检查关键控件可达；设置中 Escape 关闭；会话输入 composition 期间 Enter 不发请求；`prefers-reduced-motion` 时根节点标注 | 各宽度可见「设置与管理」或抽屉入口；Esc 关掉设置；composition 中无 POST /messages；`html[data-reduced-motion]` 为 1 |
-| E2E-ADASK | ai-desktop | 干净浏览器 · 桌面首页 | S1 先问答；再委派复杂任务；后台芯片出现后继续问答；手动打开任务 | 问答后仍在桌面；委派先「提交中」再「已受理」且不强制进工作区；打开任务进入 SMT-03 |
+| E2E-ADASK | ai-desktop | 干净浏览器 · 桌面首页 | S1 先问答；再委派复杂任务；后台芯片出现后继续问答；手动打开任务 | 问答后仍在桌面；委派先「提交中」再「已受理」且不强制进工作区；芯片为真实 task id；打开进入发起会话（聊天）并可看见该任务 |
+| E2E-HOMEACCEPT | ai-desktop | 干净浏览器 · 桌面首页 | S1「委派任务」走 B1 可靠受理（POST 后按丢回执只信 GET）；同 `client_operation_id` 再 POST；打开任务；刷新后再进该会话 | 202/回读 status=accepted；dispatch_count=1；同 op 幂等；芯片 task id 可查；重连后仍在原会话 |
+| E2E-HOMEREV | ai-desktop / approval | 桌面首页；受控模型「人工验收」→ needs_human+result | S1 委派 → 打开原会话 →「判定通过」 | 任务 COMPLETED；会话出现助理交付；证据/产物可在任务卡或对话区看见（GS3 日常入口；对齐 T1/S7） |
 | E2E-ADATTN | ai-desktop | 干净浏览器 · 会话输入聚焦 | 输入中注入普通建议；静音后再注入普通建议；注入紧急 | 输入框保持焦点；普通建议可见但不抢焦点；静音后普通建议不新增；紧急仍可见 |
 | E2E-ADAPPR | ai-desktop | 打开 SMT-03 工作区 | 批准 → 改参数升版 → 用旧版意图执行失败；再批准并执行两次；拒绝后不可执行；未知回执可查证 | 升版后提示原审批失效；执行次数为 1；拒绝后错误可见；未知回执经查证变为 applied |
 | E2E-ADRESUME | ai-desktop | 打开 SMT-03 工作区 | 种子双任务 Run；对 A 断线重放含重复事件；对 B 补充输入继续 | A/B 状态不串；A 事件去重后进度更新；B 从 waiting_input 变为 running |

@@ -13,7 +13,7 @@ type Props = {
   s1BgJob?: S1BgJob | null;
   onS1Ask?: (text: string) => void;
   onS1Delegate?: (text: string) => void;
-  onOpenBgTask?: (taskId: string) => void;
+  onOpenBgTask?: (job: S1BgJob) => void;
   s1Reply?: string | null;
 };
 

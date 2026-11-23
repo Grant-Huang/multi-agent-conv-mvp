@@ -52,7 +52,8 @@
     "cases": [
       "E2E-APPROVE",
       "E2E-APPROVEINFO",
-      "E2E-REV"
+      "E2E-REV",
+      "E2E-HOMEREV"
     ],
     "runtime_cases": [
       "RT-ASSIGN-05",
@@ -754,6 +755,7 @@
       "web/src/desktop/readAnchorStore.ts",
       "web/src/desktop/attentionStore.ts",
       "web/src/desktop/S1AskBar.tsx",
+      "web/src/desktop/homeDelegate.ts",
       "web/src/desktop/AttentionToast.tsx",
       "web/src/desktop/approvalMock.ts",
       "web/src/desktop/ApprovalMockPanel.tsx",
@@ -841,7 +843,9 @@
       "E2E-ADD01-01",
       "E2E-ADD01-02",
       "E2E-ADD01-03",
-      "E2E-ADACCEPT"
+      "E2E-ADACCEPT",
+      "E2E-HOMEACCEPT",
+      "E2E-HOMEREV"
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",
