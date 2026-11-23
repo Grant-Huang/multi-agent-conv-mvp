@@ -2502,11 +2502,7 @@ impl Store {
     }
 
     /// 软删；未知 id → None；已撤回再删仍返回 Some（幂等）。
-    pub fn revoke_desktop_memory(
-        &self,
-        user_id: &str,
-        id: &str,
-    ) -> Result<Option<DesktopMemory>> {
+    pub fn revoke_desktop_memory(&self, user_id: &str, id: &str) -> Result<Option<DesktopMemory>> {
         self.ensure_desktop_memory_seed(user_id)?;
         let conn = self.write();
         let Some(mut m) = conn

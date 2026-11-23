@@ -724,7 +724,9 @@ async fn list_memories(State(rt): State<AppState>) -> Response {
 
 async fn get_memory(State(rt): State<AppState>, Path(id): Path<String>) -> Response {
     match rt.store.get_desktop_memory(DESKTOP_MEMORY_USER, &id) {
-        Ok(Some(item)) if !item.revoked => (StatusCode::OK, Json(memory_json(&item))).into_response(),
+        Ok(Some(item)) if !item.revoked => {
+            (StatusCode::OK, Json(memory_json(&item))).into_response()
+        }
         Ok(Some(_)) => (
             StatusCode::GONE,
             Json(json!({
