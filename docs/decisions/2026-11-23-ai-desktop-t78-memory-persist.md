@@ -3,12 +3,12 @@
 | 项目 | 内容 |
 |---|---|
 | 日期 | 2026-11-23（America/Vancouver） |
-| 来源 | **助手建议**（授权开方案卡；**待用户/协调员确认后**才改 `store.rs`） |
-| 状态 | **待用户确认** |
+| 来源 | **用户确认**（#236 合入视为批准方案、允许改 store） |
+| 状态 | **有效** |
 | 影响范围 | 特性 ai-desktop / MOCK M3；`crates/runtime/src/store.rs` DDL；`desktop_api` memories 路由；RT-ADMEM / E2E-ADMEM/ADMEMW |
 | 相关设计 | [ai-desktop/DESIGN.md](../ai-desktop/DESIGN.md) §5 memories；[MOCK_REGISTRY](../ai-desktop/MOCK_REGISTRY.md) M3；T-71/T-72 证据 |
 
-**一句话结论（待批）**：把 `/api/desktop/v1/memories*` 从进程内 `OnceLock` 夹具迁到 SQLite 表 `desktop_memories`；**HTTP 契约与 ADMEM/ADMEMW 断言不变**；真实模式以 Store 为权威；CI 保留 `fixture/reset` 仅作种子复位，不另起权威源。
+**一句话结论**：把 `/api/desktop/v1/memories*` 从进程内 `OnceLock` 夹具迁到 SQLite 表 `desktop_memories`；**HTTP 契约与 ADMEM/ADMEMW 断言不变**；真实模式以 Store 为权威；CI 保留 `fixture/reset` 仅作种子复位，不另起权威源。
 
 ## 背景
 
@@ -26,7 +26,7 @@ T-71/T-72 已冻结列表/纠错/撤回合同，实现为 `desktop_api` 内 `Mut
 3. 既有 RT-ADMEM-01～06、E2E-ADMEM/ADMEMW：**不得弱化断言**；种子文案（`mem-1`/`mem-2`）保持。
 4. 同路径先例：`desktop_preferences` / `desktop_evidence` 用 `CREATE TABLE IF NOT EXISTS` 兼容建表，无独立迁移工具。
 
-## 定了什么（待确认）
+## 定了什么
 
 ### 1. 表结构
 
@@ -126,3 +126,4 @@ CREATE INDEX IF NOT EXISTS idx_desktop_memories_user
 | 日期 | 变化 | 关联 |
 |---|---|---|
 | 2026-11-23 | 新建方案（待确认）；未改 store | T-78 授权开方案 |
+| 2026-11-23 | #236 合入 → 用户确认；开实现 | 允许改 store |

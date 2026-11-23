@@ -97,8 +97,8 @@ S2 任务栏展示标题、状态、ID、业务对象、来源、负责 Agent �
 | `POST /runs/{id}/actions` | 请求动作、操作 ID、预期版本及所需输入；返回当前状态及允许的后续动作 |
 | `POST /approvals/{id}/decision` | 请求批准或拒绝及参数版本。授权和实际执行分别校验 |
 | `GET /preferences`、`PATCH /preferences` | 读取和修改当前用户配置。修改带预期版本 |
-| `GET /memories`、`GET /memories/{id}` | 个人记忆列表与详情（来源、正文、有效期）。首版可由服务夹具权威 |
-| `PATCH /memories/{id}`、`DELETE /memories/{id}` | 纠正正文/标题/有效期；撤回（默认列表隐藏，幂等）。首版进程内夹具；持久化表另卡 |
+| `GET /memories`、`GET /memories/{id}` | 个人记忆列表与详情（来源、正文、有效期）。**T-78**：SQLite `desktop_memories` 权威 |
+| `PATCH /memories/{id}`、`DELETE /memories/{id}` | 纠正正文/标题/有效期；撤回（默认列表隐藏，幂等）。**T-78** 写 Store；`fixture/reset` 仅测试种子复位 |
 | `GET /assistant/messages`、`GET|POST /assistant/messages/read` | 列表含 `read`/`unread_count`；POST 接收消息 ID 列表，幂等记录当前用户已读（首版进程内夹具；跨端同服务可见） |
 | `GET /events?after=…` | 按游标回放并续接授权增量。游标失效返回明确的重取快照信号 |
 
