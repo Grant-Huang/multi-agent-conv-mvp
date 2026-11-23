@@ -936,6 +936,8 @@
       "docs/testing/evidence/wa-m3-2-green.md",
       "docs/testing/evidence/wa-m3-3-green.md",
       "docs/testing/evidence/wa-m3-4-browser.md",
+      "docs/mom/WA_M3_5_PLAN.md",
+      "docs/testing/evidence/wa-m3-5.md",
       "scripts/wa-m2-regression.sh",
       "scripts/wa-m2-suite.sh",
       "scripts/wa-m3-suite.sh",

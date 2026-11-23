@@ -8,7 +8,7 @@
 |---|---|---|
 | `[mom] world_mock`（默认 `false`） | `true` 且 loopback 时 `main` 挂载 `/api/world/mock/*`；关闭则路由不存在（404） | `RT-WA-09`；浏览器套件经 `waMockServer` 写 `world_mock=true` |
 | `/api/world/des`（同门控） | `world_mock=true` 时挂载；`[mom] des_mcp` / `AN_MOM_DES_MCP` 非空则真 `DesConnector`+`with_des`，否则内存桩 | `RT-WADES-*`（含 live）、`E2E-WADES*`；`wa-m1-suite` |
-| `/api/world/prod`（同门控） | `world_mock=true` 时挂载；内存权威源登记 stub（无真实凭据） | `RT-WAPROD-01`～`06`（M3-2/M3-3）；`E2E-WAPROD*`（M3-4；`wa-m3-4-browser.md`）；准出收口待 M3-5 |
+| `/api/world/prod`（同门控） | `world_mock=true` 时挂载；内存权威源登记 stub（无真实凭据） | `RT-WAPROD-01`～`06` + `E2E-WAPROD*`；套件 `wa-m3-suite`；准出 `wa-m3-5.md`（M3-5） |
 | `[mom] des_mcp`（默认空） | 主应用 MOM `with_des`；与 `/api/world/des` 共用 Engine | T-50 / `WA_DES_CONNECTOR_PLAN`；`rt_wades_*_live_*` |
 | 响应 `protocol_version` | Mock 与未来真实适配器共用合同字段 | `RT-WA-01～08` / `RT-WADES-*` 响应含 `protocol_version=1` |
 | 卡片 `provenance` | Mock 正式运行 `OpsCase.provenance=world_mock`；DES 正式运行 `provenance=des`；工作台种子区分 `mock` / `des` / `production` | `E2E-DES*`、`E2E-WABIND`、`RT-WADES-08`；UI 来源标签 |
@@ -26,7 +26,7 @@
 | WAM-04 | 方案与批准 | 版本、角色；审批走运营频道卡 | **M2** 复用 MOM；**M4** 真实审批 | 过期批准零写入 | **M0 Mock** + **M2 服务层**（`/api/world/des` Propose/批准；`ops/approve-execute`；见 `wa-m2-2-green.md` / `wa-m2-5-browser.md`）；真实审批 **M4** |
 | WAM-05 | 写入、回执、取消 | 稳定 execution_id、丢回执、部分失败 | **M2** DES；**M4** MES | 重复执行、终态保护 | **M0 Mock** + **M2 DES 写**（Execute/Confirm；`RT-WADES-09～17`；E2E-WAEXEC/WARECV；见 `wa-m2-3-recovery.md` / `wa-m2-5-browser.md`）；MES **M4** |
 | WAM-06 | 审核与诊断 | 标准答案仅审核可见 | **M2** DES 审核源 | 访问边界、刷新失败恢复 | **M0 Mock** + **M2 DES 审核**（`RT-WADES-18～19`；E2E-WADYN/WALOOP；见 `wa-m2-4-closed-loop.md` / `wa-m2-5-browser.md`） |
-| WAM-07 | 生产来源 | 模拟站点/延迟（种子标识） | **M3** 读；**M4** 写 | 对账可复验 | **M0 种子标识**；**M3-2/3** 合同 RT-01～06；**M3-4** 浏览器 `E2E-WAPROD*`（`wa-m3-4-browser.md`）；准出状态收口待 M3-5；写 **M4** |
+| WAM-07 | 生产来源 | 模拟站点/延迟（种子标识） | **M3** 读；**M4** 写 | 对账可复验 | **读路径已定稿（桩数据）**：`/api/world/prod` + `RT-WAPROD-01`～`06` + `E2E-WAPROD*`；套件 `wa-m3-suite`；准出 [wa-m3-5.md](../testing/evidence/wa-m3-5.md)。真站点只读另验；写 **M4** |
 
 退役真实路径上的 Mock 路由时：关掉 `world_mock`、保留隔离套件作回归、更新本表状态为「已替换」并附 PR。
 

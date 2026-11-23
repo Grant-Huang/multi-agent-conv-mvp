@@ -924,7 +924,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 
 ### M3 生产只读（断言已冻结；合同 + 浏览器 Green）
 
-执行卡：[WA_M3_TASKS.md](../mom/WA_M3_TASKS.md)；Green 方案：[WA_M3_1_PLAN.md](../mom/WA_M3_1_PLAN.md)。设计：[WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md) §7、§9（WA-02/07 生产源；WA-06 写属 M4）；里程碑：[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) M3；替换台账 WAM-07。浏览器用例：`web/e2e/wa-prod-read.spec.ts`（`E2E-WAPROD*` Green；证据 `wa-m3-4-browser.md`）。合同：`crates/server/tests/mom_world_prod.rs`（`RT-WAPROD-01`～`06`；证据 `wa-m3-2-green.md` / `wa-m3-3-green.md`）。路由前缀 `/api/world/prod`。套件 `scripts/wa-m3-suite.sh`。M0～M2 已冻结用例不得弱化。生产写属 M4；WAM-07 准出收口属 M3-5。
+执行卡：[WA_M3_TASKS.md](../mom/WA_M3_TASKS.md)；Green 方案：[WA_M3_1_PLAN.md](../mom/WA_M3_1_PLAN.md)；准出：[WA_M3_5_PLAN.md](../mom/WA_M3_5_PLAN.md) / 证据 `wa-m3-5.md`。设计：[WORLD_ADAPTER.md](../mom/WORLD_ADAPTER.md) §7、§9（WA-02/07 生产源；WA-06 写属 M4）；里程碑：[WORLD_ADAPTER_PLAN.md](../mom/WORLD_ADAPTER_PLAN.md) M3；替换台账 WAM-07（**读**路径桩数据已定稿）。浏览器用例：`web/e2e/wa-prod-read.spec.ts`（`E2E-WAPROD*`；`wa-m3-4-browser.md`）。合同：`crates/server/tests/mom_world_prod.rs`（`RT-WAPROD-01`～`06`）。路由前缀 `/api/world/prod`。套件 `scripts/wa-m3-suite.sh`。M0～M2 已冻结用例不得弱化。生产写属 M4；真站点只读另验。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
