@@ -99,7 +99,7 @@ S2 任务栏展示标题、状态、ID、业务对象、来源、负责 Agent �
 | `GET /preferences`、`PATCH /preferences` | 读取和修改当前用户配置。修改带预期版本 |
 | `GET /memories`、`GET /memories/{id}` | 个人记忆列表与详情（来源、正文、有效期）。首版可由服务夹具权威 |
 | `PATCH /memories/{id}`、`DELETE /memories/{id}` | 纠正正文/标题/有效期；撤回（默认列表隐藏，幂等）。首版进程内夹具；持久化表另卡 |
-| `POST /assistant/messages/read` | 接收消息 ID 列表，幂等记录当前用户已读 |
+| `GET /assistant/messages`、`GET|POST /assistant/messages/read` | 列表含 `read`/`unread_count`；POST 接收消息 ID 列表，幂等记录当前用户已读（首版进程内夹具；跨端同服务可见） |
 | `GET /events?after=…` | 按游标回放并续接授权增量。游标失效返回明确的重取快照信号 |
 
 新增错误返回 `code,message,retryable,request_id`。校验失败为 400，认证缺失为 401，当前用户权限不足为 403；需要避免泄露对象是否存在时统一返回 404。状态、版本或幂等冲突为 409。相同操作的唯一键是服务端解析的租户、用户与客户端操作 ID；消息、操作记录与待派发项在同一次持久化提交中建立。客户端重试和 Worker 重领均复用这组关联。

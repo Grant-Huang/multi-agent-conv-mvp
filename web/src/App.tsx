@@ -24,6 +24,7 @@ import { HistoryPanel } from "./desktop/HistoryPanel";
 import { SettingsPanel, type SettingsLayer } from "./desktop/SettingsPanel";
 import { fetchProfile, loadProfile, type AssistantProfile, type SettingsCategoryId } from "./desktop/profileStore";
 import { AttentionToast, type AttentionItem } from "./desktop/AttentionToast";
+import { AssistantReadPanel } from "./desktop/AssistantReadPanel";
 import type { S1BgJob } from "./desktop/S1AskBar";
 import {
   SMT03_TASK_ID,
@@ -688,15 +689,18 @@ export default function App() {
           />
         )}
         {(mainView === "home" || mainView === "chat") && (
-          <AttentionToast
-            items={attnItems}
-            muted={attnMuted}
-            composing={composingInput}
-            onChange={({ items, muted }) => {
-              setAttnItems(items);
-              setAttnMuted(muted);
-            }}
-          />
+          <>
+            <AttentionToast
+              items={attnItems}
+              muted={attnMuted}
+              composing={composingInput}
+              onChange={({ items, muted }) => {
+                setAttnItems(items);
+                setAttnMuted(muted);
+              }}
+            />
+            <AssistantReadPanel />
+          </>
         )}
         {mainView === "mom-workbench" && (
           <MomWorkbench
