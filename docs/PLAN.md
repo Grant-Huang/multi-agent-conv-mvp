@@ -1022,7 +1022,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M3-4** 浏览器生产读 + M0～M2 回归（桩数据，`E2E-WAPROD*`；证据 `testing/evidence/wa-m3-4-browser.md`；#224）
 - [x] **M3-5** 证据 / WAM-07 / 准出检查（[mom/WA_M3_5_PLAN.md](mom/WA_M3_5_PLAN.md)；证据 `testing/evidence/wa-m3-5.md`；#228）
 - [x] **M3** 生产只读 · 桩数据准出（写仍 Mock/DES；`wa-m3-5.md`；真站点只读另验）
-- [ ] **M4-0** 方案与准入清单（[mom/WA_M4_TASKS.md](mom/WA_M4_TASKS.md)；证据 `testing/evidence/wa-m4-0.md`；本 PR）
+- [x] **M4-0** 方案与准入清单（[mom/WA_M4_TASKS.md](mom/WA_M4_TASKS.md)；证据 `testing/evidence/wa-m4-0.md`；#230）
 - [ ] **M4** 首个可查证生产写动作（维修工单；**准入齐后**才开写实现；见 `WA_M4_TASKS` §1）
 
 入口拆分设计：[mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md)。产品壳与通用前门见 [ai-desktop/PLAN.md](ai-desktop/PLAN.md)（与 WA 切片并行，硬约束一致）。
