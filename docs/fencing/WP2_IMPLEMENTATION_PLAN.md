@@ -4,7 +4,7 @@
 |---|---|
 | 任务 | T-65（方案卡）；实现另卡 |
 | 日期 | 2026-11-22 |
-| 状态 | **待用户批准后另卡实现**；本文件与决策 PR **只含文档** |
+| 状态 | **★已批准**（#210）；实现卡 T-69 |
 | 缺口 | G04；黄金场景 GS3 |
 | 契约 | [state-and-cancellation](../contracts/state-and-cancellation.md) **T1**、**S7**；宪章原则 4（执行者不当自己的裁判） |
 | 既有摘要 | [REVIEW_VERDICT_DESIGN.md](REVIEW_VERDICT_DESIGN.md)（API/用例已冻结进 CASES） |
@@ -123,7 +123,7 @@ ALTER TABLE tasks ADD COLUMN wait_reason TEXT;
 
 1. **Red**：`crates/server/tests`（或 runtime）落地 RT-REV-01～04 业务断言失败；不改断言迎合实现。
 2. **Green**：`store` → `orchestrator` → `server` 路由 → 前端文案与按钮。
-3. **E2E-REV-01**：浏览器点「判定通过」。
+3. **E2E-REV**：浏览器点「判定通过」。
 4. 更新 `features.json` / COVERAGE / DESIGN §6 状态图注「NEEDS_HUMAN 按 result 分等待原因」；DESIGN §15 #4 改为已解决并链到本方案。
 5. 决策状态改为有效；指定实施 PR。
 
@@ -141,7 +141,7 @@ ALTER TABLE tasks ADD COLUMN wait_reason TEXT;
 | RT-REV-04 | 已完成再 verdict | 409，不变 |
 | （拒绝）待批准（无 result）调 review-verdict | 409 |
 | （拒绝）待验收调 approve | 现 SQL 不生效 / 明确错误 |
-| E2E-REV-01 | 浏览器判定通过 | 状态与交付文案正确 |
+| E2E-REV | 浏览器判定通过 | 状态与交付文案正确 |
 | GS3 | 审查 needs_human → 人通过或退回 | 无死胡同（S7） |
 
 证据：真实 HTTP + 内存/临时 SQLite；Mock Reviewer 触发词或现有 harness。标注本地 / CI。

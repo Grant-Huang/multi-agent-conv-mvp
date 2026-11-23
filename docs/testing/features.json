@@ -41,16 +41,25 @@
     "document": "docs/feature-map/features/approval.md",
     "sources": [
       "crates/runtime/src/policy.rs",
+      "crates/runtime/src/orchestrator.rs",
+      "crates/runtime/src/store.rs",
       "web/src/components/ChatView.tsx",
-      "web/src/components/ApprovalInfo.tsx"
+      "web/src/components/TaskPanel.tsx",
+      "web/src/components/ApprovalInfo.tsx",
+      "web/src/labels.ts"
     ],
     "coverage": "browser",
     "cases": [
       "E2E-APPROVE",
-      "E2E-APPROVEINFO"
+      "E2E-APPROVEINFO",
+      "E2E-REV"
     ],
     "runtime_cases": [
-      "RT-ASSIGN-05"
+      "RT-ASSIGN-05",
+      "RT-REV-01",
+      "RT-REV-02",
+      "RT-REV-03",
+      "RT-REV-04"
     ]
   },
   {

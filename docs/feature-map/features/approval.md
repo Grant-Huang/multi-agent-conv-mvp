@@ -1,47 +1,54 @@
-# approval：人工审批
+# approval：人工审批与审查验收
 
-高风险任务先停在“待批准”，没有执行也没有结果；用户点“批准执行”后才开始。
+两类等待共用 `NEEDS_HUMAN`，用 `result` 区分（WP2 / 契约 T1）：
+
+| 等待原因 | 判定 | 文案 | 动作 |
+|---|---|---|---|
+| 待批准 | `NEEDS_HUMAN` 且无 result | 待批准 | `POST .../approve` → 排队执行 |
+| 待验收 | `NEEDS_HUMAN` 且有 result | 待验收 | `POST .../review-verdict` accept/reject |
 
 ## Sub-features
 
-- 触发：Router 风险 ≥ `[orchestrator].approval_risk`（默认 high），或 Policy 规则要求
-- 对话内与任务卡内都有“批准执行”
-- 审批说明（`ApprovalInfo`）：将交给谁（执行组顺序）、预计工具（Router 预估）、为什么要批准（Policy 触发规则）、完成后
-- 批准后进入排队/执行；不批准可取消（两步确认）
+- **执行前批准**：Router 风险 ≥ `[orchestrator].approval_risk`（默认 high），或 Policy 规则要求；对话内与任务卡内有「批准执行」；`ApprovalInfo` 说明将交给谁、预计工具、为什么要批
+- **审查后验收**：Reviewer `needs_human`（或审查失败）后停在待验收；「判定通过」→ COMPLETED；「判定不通过」→ 有额度返工否则 FAILED
+- 两种等待均可取消（两步确认）
 
 ## How to get to it (user POV)
 
-发一条高风险请求（如删除、对外发送、部署）→ 对话区状态显示“待批准” → 点“批准执行”。
+- 批准：发高风险请求 → 「待批准」→ 「批准执行」
+- 验收：任务经审查需人工 → 「待验收」→ 「判定通过」/「判定不通过」
 
 ## Driving it with Playwright / HTTP
 
 ```ts
-const out = await send(page, '审批验证：部署到生产');       // 受控模型：目标含“审批”→ high
-await expect(page.locator('main').getByRole('button', { name: '批准执行', exact: true })).toBeVisible();
-// 此时任务没有 result：
-expect(out.task.status).toBe('NEEDS_HUMAN');                // POST /messages 响应
-const t = (await (await page.request.get(`/api/tasks/${out.task.id}`)).json()).task;
-expect(t.result).toBeNull();
+// 待批准
+const out = await send(page, '审批验证：部署到生产');
+expect(out.task.status).toBe('NEEDS_HUMAN');
+expect((await (await page.request.get(`/api/tasks/${out.task.id}`)).json()).task.result).toBeNull();
 await page.locator('main').getByRole('button', { name: '批准执行', exact: true }).click();
+
+// 待验收（E2E-REV；受控模型：目标含「人工验收」→ review needs_human）
+const rev = await send(page, '人工验收验证报告');
+await expect.poll(async () => (await (await page.request.get(`/api/tasks/${rev.task.id}`)).json()).task.status).toBe('NEEDS_HUMAN');
+await page.locator('main').getByRole('button', { name: '判定通过', exact: true }).click();
 ```
 
-HTTP：`POST /api/tasks/{id}/approve`。**不要在真实环境批准真实危险操作来做验证。**
+HTTP：`POST /api/tasks/{id}/approve`；`POST /api/tasks/{id}/review-verdict` body `{"verdict":"accept"|"reject","note":"..."}`。
 
 ## Verify（判据）
 
-- 批准前：`status === NEEDS_HUMAN`，`result` 为空，没有任何 agent 事件。
-- 点击后才出现 RUNNING/COMPLETED。
-- 批准按钮上方的说明同时包含“将交给”“预计工具”“为什么要批准”，内容与任务的 assignment/policy 记录一致。
+- 批准前：`status === NEEDS_HUMAN`，`result` 为空；点击后才 RUNNING/COMPLETED。
+- 验收前：`status === NEEDS_HUMAN`，`result` 非空；文案「待验收」；判定通过后 COMPLETED 且有交付。
+- RT-REV-01～04：accept/reject/用尽/终态 409。
 
 ## Gotchas
 
-- “预计工具”是 Router **预估**，不是硬限制；agent 执行时可能调用其他工具。
-- Agent 执行中再请求的工具权限默认自动允许（因任务已被批准），逐次记录在证据里；这与“批准执行”是两件事。
-- 风险等级是模型建议，**最终是否审批由 Policy 的确定性规则决定**；开启 `[conversation].risk_rules` 后风险只升不降。
-- 只有一处取消按钮；批准与取消都经 `App.taskAction`，失败显示在顶部红色错误栏（点击关闭），不用 `alert`。
+- 「预计工具」是 Router **预估**，不是硬限制。
+- 待验收任务调 `/approve` 会 409（SQL 要求无 result）；待批准调 `/review-verdict` 同样 409。
+- 批准 / 验收 / 取消都经 `App.taskAction`，失败显示在顶部红色错误栏。
 
 ## Backed by
 
-源码：`crates/runtime/src/policy.rs`、`web/src/components/ChatView.tsx`、`ApprovalInfo.tsx`
-用例：E2E-APPROVE、E2E-APPROVEINFO；RT-ASSIGN-05
+源码：`policy.rs`、`orchestrator.rs`、`store.rs`、`ChatView.tsx`、`TaskPanel.tsx`、`labels.ts`、`ApprovalInfo.tsx`
+用例：E2E-APPROVE、E2E-APPROVEINFO、E2E-REV；RT-ASSIGN-05、RT-REV-01～04
 验证状态：自动化已覆盖。准入接口（`/api/admission`）的审批见 [routing-and-admission.md](routing-and-admission.md)。

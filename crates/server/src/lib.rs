@@ -8,7 +8,7 @@
 //! | GET/POST | /api/conversations/{id}/messages | 消息列表 / 发送消息 |
 //! | GET  | /api/tasks?conversation_id= | 任务列表 |
 //! | GET  | /api/tasks/{id}?after= | 任务详情；`after` 为事件 id 时只返回它之后的新事件 |
-//! | POST | /api/tasks/{id}/cancel、/approve | 取消 / 人工批准 |
+//! | POST | /api/tasks/{id}/cancel、/approve、/review-verdict | 取消 / 人工批准 / 审查验收 |
 //! | POST | /api/feedback | 记下一次派发纠错 |
 //! | GET  | /api/route-logs?limit= | 路由日志 |
 //! | GET  | /api/events?conversation_id= | SSE 事件流 |
@@ -106,6 +106,7 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/tasks/{id}", get(get_task))
         .route("/api/tasks/{id}/cancel", post(cancel_task))
         .route("/api/tasks/{id}/approve", post(approve_task))
+        .route("/api/tasks/{id}/review-verdict", post(review_verdict))
         .route("/api/feedback", post(post_feedback))
         .route("/api/route-logs", get(route_logs))
         .route("/api/events", get(events))
@@ -525,6 +526,38 @@ async fn approve_task(
         .approve(&id)
         .map_err(|e| AppError(StatusCode::CONFLICT, format!("{e:#}")))?;
     Ok(Json(json!({ "approved": true })))
+}
+
+#[derive(Deserialize)]
+struct ReviewVerdictBody {
+    /// `accept` | `reject`
+    verdict: String,
+    #[serde(default)]
+    note: String,
+}
+
+/// 审查后人工验收（WP2）：仅 `NEEDS_HUMAN` 且有 result 可调用。
+async fn review_verdict(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<ReviewVerdictBody>,
+) -> ApiResult<serde_json::Value> {
+    rt.store.get_task(&id)?.ok_or_else(|| not_found("任务"))?;
+    let accept = match body.verdict.as_str() {
+        "accept" => true,
+        "reject" => false,
+        other => {
+            return Err(AppError(
+                StatusCode::BAD_REQUEST,
+                format!("verdict 只能是 accept 或 reject，收到 {other}"),
+            ));
+        }
+    };
+    rt.orchestrator
+        .human_review_verdict(&id, accept, &body.note)
+        .await
+        .map_err(|e| AppError(StatusCode::CONFLICT, format!("{e:#}")))?;
+    Ok(Json(json!({ "ok": true, "verdict": body.verdict })))
 }
 
 #[derive(Deserialize)]

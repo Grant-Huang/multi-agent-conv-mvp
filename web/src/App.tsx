@@ -507,16 +507,23 @@ export default function App() {
   };
 
   /**
-   * 批准 / 取消任务：对话区和任务面板共用这一个入口。
+   * 批准 / 验收 / 取消任务：对话区和任务面板共用这一个入口。
    * 失败时显示在顶部错误栏（行内），不使用 alert；成功后刷新会话，让两处同时更新。
    */
   const taskAction = useCallback(async (kind: TaskActionKind, taskId: string) => {
+    const label =
+      kind === "approve" ? "批准"
+      : kind === "accept_review" ? "判定通过"
+      : kind === "reject_review" ? "判定不通过"
+      : "取消";
     try {
       if (kind === "approve") await api.approve(taskId);
+      else if (kind === "accept_review") await api.reviewVerdict(taskId, "accept");
+      else if (kind === "reject_review") await api.reviewVerdict(taskId, "reject");
       else await api.cancel(taskId);
       setError(null);
     } catch (e) {
-      setError(`${kind === "approve" ? "批准" : "取消"}失败：${e}`);
+      setError(`${label}失败：${e}`);
     }
     const cid = currentRef.current;
     if (cid) refreshConversation(cid).catch(() => {});

@@ -217,3 +217,15 @@ test('E2E-APPROVEINFO: 待批准卡片说明交给谁、预计用什么、为什
   await expect(info).toContainText('风险等级 High');
   await expect(page.locator('main').getByRole('button', { name: '批准执行', exact: true })).toBeVisible();
 });
+
+test('E2E-REV: 审查待验收后判定通过', async ({ page }) => {
+  const out = await send(page, '人工验收验证报告');
+  await expect.poll(async () => (await (await page.request.get(`/api/tasks/${out.task.id}`)).json()).task.status).toBe('NEEDS_HUMAN');
+  const before = (await (await page.request.get(`/api/tasks/${out.task.id}`)).json()).task;
+  expect(before.result).not.toBeNull();
+  await expect(page.locator('main')).toContainText('待验收');
+  await page.locator('main').getByRole('button', { name: '判定通过', exact: true }).click();
+  const task = await complete(page, out.task.id);
+  expect(task.status).toBe('COMPLETED');
+  await expect(page.locator('main')).toContainText(/已完成|任务已完成/);
+});

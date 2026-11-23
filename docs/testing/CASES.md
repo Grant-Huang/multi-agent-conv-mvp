@@ -804,9 +804,9 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | RT-INT-02 | introspection | 多条 Case 共享同一非空 asset（或 batch）；另有不同键与单例；无根因/无 regressed | 跑同设备/同批次共现内省 | 计数与回算一致；证据引用可解析；结论含「描述性共现，非根因」；样本不足只写「样本不足」；单例不产出；同批案例合并为一条；默认仅内省页不主动推送 |
 
 
-## 围栏：审查进待人工的人工判定（实现前定义）
+## 围栏：审查进待人工的人工判定（WP2 / T-69）
 
-设计见 [docs/fencing/REVIEW_VERDICT_DESIGN.md](../fencing/REVIEW_VERDICT_DESIGN.md)。未改 `orchestrator` / `store`，实现前须另批。下列用例冻结后只改业务代码。
+设计见 [docs/fencing/REVIEW_VERDICT_DESIGN.md](../fencing/REVIEW_VERDICT_DESIGN.md)、[WP2_IMPLEMENTATION_PLAN.md](../fencing/WP2_IMPLEMENTATION_PLAN.md)。用例冻结；实现只改业务代码。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -814,7 +814,7 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | RT-REV-02 | approval | 同上，仍有返工轮次 | reject | 回到执行或 VERIFYING，带问题清单 |
 | RT-REV-03 | approval | 返工用尽 | reject | FAILED |
 | RT-REV-04 | approval | 已是 COMPLETED | accept 或 reject | 409，状态不变 |
-| E2E-REV-01 | approval | 浏览器任务卡为有 result 的待人工 | 点「判定通过」 | 状态与交付文案为已完成 |
+| E2E-REV | approval | 浏览器任务卡为有 result 的待人工 | 点「判定通过」 | 状态与交付文案为已完成 |
 
 
 ## World Adapter / DES 实验与运营（M0；DES-UI 已冻结）
