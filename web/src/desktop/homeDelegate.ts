@@ -75,3 +75,21 @@ export async function waitForConversationTask(
   }
   throw new Error(`等待任务超时（${goalIncludes}）`);
 }
+
+/** 等待 Composer 终态交付写入发起会话（assistant 消息绑定 task_id）。 */
+export async function waitForTaskDelivery(
+  conversationId: string,
+  taskId: string,
+  timeoutMs = 60_000,
+): Promise<{ id: string; content: string }> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const msgs = await api.messages(conversationId);
+    const hit = msgs.find((m) => m.role === "assistant" && m.task_id === taskId);
+    if (hit && hit.content.trim()) {
+      return { id: hit.id, content: hit.content };
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`等待任务交付超时（${taskId}）`);
+}

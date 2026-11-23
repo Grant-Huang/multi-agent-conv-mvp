@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { durableHomeAccept, waitForConversationTask } from "./homeDelegate";
+import {
+  durableHomeAccept,
+  waitForConversationTask,
+  waitForTaskDelivery,
+} from "./homeDelegate";
 import { api } from "../api";
 
 vi.mock("../api", () => ({
@@ -8,6 +12,7 @@ vi.mock("../api", () => ({
     desktopAcceptCreate: vi.fn(),
     desktopAcceptGet: vi.fn(),
     tasks: vi.fn(),
+    messages: vi.fn(),
   },
 }));
 
@@ -78,5 +83,26 @@ describe("waitForConversationTask", () => {
       ]);
     const id = await waitForConversationTask("c", "人工验收", 5_000);
     expect(id).toBe("task-9");
+  });
+});
+
+describe("waitForTaskDelivery", () => {
+  it("等到绑定 task_id 的助理交付", async () => {
+    vi.mocked(api.messages)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "m1",
+          conversation_id: "c",
+          role: "assistant",
+          content: "任务已完成：验证报告",
+          task_id: "task-9",
+          created_at: "",
+          card: null,
+        },
+      ]);
+    const d = await waitForTaskDelivery("c", "task-9", 5_000);
+    expect(d.id).toBe("m1");
+    expect(d.content).toContain("已完成");
   });
 });

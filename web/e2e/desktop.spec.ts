@@ -475,6 +475,7 @@ test('E2E-HOMEREV: 首页委派审查待验收后判定通过', async ({ page })
     .poll(async () => page.getByTestId('s1-bg-status').innerText(), { timeout: 60_000 })
     .toContain('已受理');
   const taskId = (await page.getByTestId('s1-bg-task').innerText()).trim();
+  const convId = (await page.getByTestId('s1-bg-conv').innerText()).trim();
   await expect
     .poll(async () => (await (await page.request.get(`/api/tasks/${taskId}`)).json()).task.status, {
       timeout: 60_000,
@@ -482,6 +483,7 @@ test('E2E-HOMEREV: 首页委派审查待验收后判定通过', async ({ page })
     .toBe('NEEDS_HUMAN');
   const before = (await (await page.request.get(`/api/tasks/${taskId}`)).json()).task;
   expect(before.result).not.toBeNull();
+  expect(before.conversation_id).toBe(convId);
 
   await page.getByTestId('s1-bg-open').click();
   await expect(page.locator('main')).toContainText('待验收');
@@ -492,8 +494,134 @@ test('E2E-HOMEREV: 首页委派审查待验收后判定通过', async ({ page })
     })
     .toBe('COMPLETED');
   await expect(page.locator('main')).toContainText(/已完成|任务已完成/);
-  // 终态交付回发起会话
+
+  // Composer 交付 durable 写入发起会话（绑定 task_id）
+  await expect
+    .poll(
+      async () => {
+        const msgs = await (await page.request.get(`/api/conversations/${convId}/messages`)).json();
+        return msgs.some(
+          (m: { role: string; task_id: string | null; content: string }) =>
+            m.role === 'assistant' && m.task_id === taskId && m.content.trim().length > 0,
+        );
+      },
+      { timeout: 60_000 },
+    )
+    .toBeTruthy();
+  const done = (await (await page.request.get(`/api/tasks/${taskId}`)).json()).task;
+  const hasArtifact = (done.result?.artifacts?.length ?? 0) > 0;
+  const hasEvidence = (done.result?.evidence?.length ?? 0) > 0;
+  expect(hasArtifact || hasEvidence).toBeTruthy();
   await expect(page.locator('main .msg.assistant').last()).toBeVisible();
+
+  // 重连后仍可断言交付与证据
+  await page.reload();
+  await expect(page.getByRole('button', { name: /人工验收验证报告|从桌面首页/ }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.getByRole('button', { name: /人工验收验证报告|从桌面首页/ }).first().click();
+  await expect(page.locator('.task-card').filter({ hasText: goal })).toContainText(/已完成|COMPLETED|完成/);
+  const afterReload = await (await page.request.get(`/api/conversations/${convId}/messages`)).json();
+  expect(
+    afterReload.some(
+      (m: { role: string; task_id: string | null }) => m.role === 'assistant' && m.task_id === taskId,
+    ),
+  ).toBeTruthy();
+});
+
+test('E2E-HOMEREJ: 首页委派判定不通过返工后再失败交付', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto('/');
+  const goal = '人工验收失败路径：从桌面首页委派退回';
+  await page.getByTestId('s1-ask-input').fill(goal);
+  await page.getByTestId('s1-delegate').click();
+  await expect
+    .poll(async () => page.getByTestId('s1-bg-status').innerText(), { timeout: 60_000 })
+    .toContain('已受理');
+  const taskId = (await page.getByTestId('s1-bg-task').innerText()).trim();
+  const convId = (await page.getByTestId('s1-bg-conv').innerText()).trim();
+  await expect
+    .poll(async () => (await (await page.request.get(`/api/tasks/${taskId}`)).json()).task.status, {
+      timeout: 60_000,
+    })
+    .toBe('NEEDS_HUMAN');
+
+  await page.getByTestId('s1-bg-open').click();
+  await expect(page.locator('main')).toContainText('待验收');
+  const know = page.getByRole('button', { name: '知道了', exact: true });
+  if (await know.count()) await know.click();
+
+  // ConfirmButton：先武装再确认（限定对话区 task-actions，避免歧义）
+  const actions = page.locator('main .task-actions');
+  const rejectOnce = async () => {
+    await actions.getByRole('button', { name: '判定不通过', exact: true }).click();
+    await actions.getByRole('button', { name: '确认退回', exact: true }).click();
+  };
+  await rejectOnce();
+
+  // 首次 reject → 返工（受控模型可能极快回到待验收；快轮询捕获中间态，或看事件）
+  let sawReworkPhase = false;
+  const reworkDeadline = Date.now() + 60_000;
+  while (Date.now() < reworkDeadline) {
+    const detail = await (await page.request.get(`/api/tasks/${taskId}`)).json();
+    expect(detail.task.conversation_id).toBe(convId);
+    if (['QUEUED', 'RUNNING', 'VERIFYING'].includes(detail.task.status)) {
+      sawReworkPhase = true;
+      break;
+    }
+    const reworkEvt = (detail.events ?? []).some(
+      (e: { message?: string }) =>
+        typeof e.message === 'string' &&
+        (e.message.includes('返工') || e.message.includes('人工验收未通过')),
+    );
+    if (reworkEvt && detail.task.status === 'NEEDS_HUMAN') {
+      sawReworkPhase = true;
+      break;
+    }
+    await page.waitForTimeout(50);
+  }
+  expect(sawReworkPhase).toBeTruthy();
+
+  // 返工后再待验收（若已在待验收则立刻满足）
+  await expect
+    .poll(async () => (await (await page.request.get(`/api/tasks/${taskId}`)).json()).task.status, {
+      timeout: 90_000,
+    })
+    .toBe('NEEDS_HUMAN');
+  await expect(page.locator('main')).toContainText('待验收');
+
+  await rejectOnce();
+  await expect
+    .poll(async () => (await (await page.request.get(`/api/tasks/${taskId}`)).json()).task.status, {
+      timeout: 60_000,
+    })
+    .toBe('FAILED');
+
+  await expect
+    .poll(
+      async () => {
+        const msgs = await (await page.request.get(`/api/conversations/${convId}/messages`)).json();
+        return msgs.some(
+          (m: { role: string; task_id: string | null; content: string }) =>
+            m.role === 'assistant' && m.task_id === taskId && m.content.trim().length > 0,
+        );
+      },
+      { timeout: 60_000 },
+    )
+    .toBeTruthy();
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: /人工验收失败路径|从桌面首页委派退回/ }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.getByRole('button', { name: /人工验收失败路径|从桌面首页委派退回/ }).first().click();
+  await expect(page.locator('.task-card').filter({ hasText: goal })).toContainText(/失败|FAILED/);
+  const afterReload = await (await page.request.get(`/api/conversations/${convId}/messages`)).json();
+  expect(
+    afterReload.some(
+      (m: { role: string; task_id: string | null }) => m.role === 'assistant' && m.task_id === taskId,
+    ),
+  ).toBeTruthy();
 });
 
 test('E2E-ADATTN: 输入中普通建议不抢焦点且可静音', async ({ page }) => {

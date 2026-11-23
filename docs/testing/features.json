@@ -53,7 +53,8 @@
       "E2E-APPROVE",
       "E2E-APPROVEINFO",
       "E2E-REV",
-      "E2E-HOMEREV"
+      "E2E-HOMEREV",
+      "E2E-HOMEREJ"
     ],
     "runtime_cases": [
       "RT-ASSIGN-05",
@@ -846,7 +847,8 @@
       "E2E-ADD01-03",
       "E2E-ADACCEPT",
       "E2E-HOMEACCEPT",
-      "E2E-HOMEREV"
+      "E2E-HOMEREV",
+      "E2E-HOMEREJ"
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",
