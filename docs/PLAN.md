@@ -1002,7 +1002,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M2** 远程 DES 动作与确认；双角色同一正式运行闭环（WA-03/04/05/08；服务层 `/api/world/des`；套件 `wa-m2-suite`）
 - [x] **M3-0** 冻结生产只读用例与任务卡（[mom/WA_M3_TASKS.md](mom/WA_M3_TASKS.md)；证据 `testing/evidence/wa-m3-0.md`；#209）
 - [x] **M3-1** 正式 CASES + Red 空壳；生产读合同方案（[mom/WA_M3_1_PLAN.md](mom/WA_M3_1_PLAN.md)；证据 `testing/evidence/wa-m3-1-red.md`；#213）
-- [ ] **M3-2** Bind / Observe / 水位服务层 Green（`RT-WAPROD-01`/`02`；证据 `testing/evidence/wa-m3-2-green.md`）
+- [x] **M3-2** Bind / Observe / 水位服务层 Green（`RT-WAPROD-01`/`02`；证据 `testing/evidence/wa-m3-2-green.md`；#218）
+- [ ] **M3-3** 权限 / 续读 / 延迟 / 写关闭（`RT-WAPROD-03`～`06`；证据 `testing/evidence/wa-m3-3-green.md`）
 - [ ] **M3** 生产只读（写仍 Mock；接站点权威源/水位/权限/断点恢复）
 - [ ] **M4** 首个可查证生产写动作（维修工单）
 
