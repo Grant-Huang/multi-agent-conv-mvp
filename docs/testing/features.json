@@ -971,6 +971,55 @@
     ]
   },
   {
+    "id": "conversation-memory",
+    "document": "docs/features/conversation-memory/README.md",
+    "dossier": "docs/features/conversation-memory/README.md",
+    "status": "设计中",
+    "sources": [
+      "crates/runtime/src/conversation.rs",
+      "crates/llm/src/budget.rs"
+    ],
+    "coverage": "manual",
+    "cases": [],
+    "requirements": [
+      {
+        "id": "REQ-conversation-memory-01",
+        "title": "会话续接与来源可查",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-02",
+        "title": "个人记忆可控",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-03",
+        "title": "共享知识和组织判断标准按授权使用",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-04",
+        "title": "内省发现按需进入会话",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      }
+    ],
+    "contracts": [
+      "docs/contracts/identity-and-approval.md",
+      "docs/contracts/events-and-trace.md"
+    ],
+    "decisions": [
+      "docs/decisions/2026-11-22-five-workstreams.md"
+    ]
+  },
+  {
     "id": "introspection",
     "document": "docs/memory/INTROSPECTION_PLAN.md",
     "sources": [

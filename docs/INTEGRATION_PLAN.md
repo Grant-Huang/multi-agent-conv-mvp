@@ -21,6 +21,26 @@
 3. GS1 断言链不变；操作路径只认桌面入口。  
 4. A 阶段 SMT-03 **允许纯 Mock**；L1–L3 等真实 MOM 能力在 B/C 与 M4/M5 替换时汇合。
 
+### 五条研发线与近期汇合
+
+当前按[五线分工决定](decisions/2026-11-22-five-workstreams.md)排期，近期没有确定的工厂试点窗口。下表是近期工作范围，后文保留完整黄金场景及工作包。
+
+| 研发线 | 负责的交付 | 近期次序 |
+|---|---|---|
+| 1 AI 桌面产品入口 | 正常入口、交互反馈、任务和证据展示 | 首页真实委派优先。消费第 4 线的请求和任务状态；继续维护第 3 线的运营频道入口 |
+| 2 独立复跑与集成协调 | 跨组场景、复跑环境、验收证据、问题归属和复验 | 输入为任务卡、PR、Feature Map、CASES 和证据；按合入 SHA 复跑，分别记录 fixture、真实服务和未验项。沿用 [T-60](testing/evidence/t60-cross-group-acceptance.md) 和 [T-63](testing/evidence/t63-m2-reverify.md)；T-63 已验合同及 harness，远程 DES MCP 仍待本线独立复跑 |
+| 3 工业业务闭环 | DES、MOM、运营处置与 World Adapter；业务来源核验 | 沿用 M2-6 准出与 [T-63](testing/evidence/t63-m2-reverify.md)，维持远程 DES 回归；M3-2 已用桩数据验证绑定、观测和水位；继续 M3-3 合同和 M3-4 浏览器验证，站点和授权明确后进入真实验收 |
+| 4 执行协议与共享契约 | 通用任务受理、编排、执行组、结果整合及跨模块一致语义 | 先验持久受理、重试去重、可查分流；再把已合入的执行后人工验收（WP2，#215）纳入桌面主路径，并补终态结果可靠回传。运行中恢复按 WP7 分期 |
+| 5 内省、分层记忆与会话上下文 | 内省发现、记忆生命周期及每轮上下文选材 | 先走受控会话上下文切片，并行维持 INT 证据；分期见[特性计划](features/conversation-memory/PLAN.md) |
+
+| 汇合场景 | 交付与独立复跑 |
+|---|---|
+| 首页真实委派 | 第 1、4 线交付，第 2 线从日常入口验「丢回执后只有一次受理、同一任务可查、重连回到原会话」。随后验人工通过或退回，结果和证据仍回原会话 |
+| 运营频道远程 DES | 第 1、3 线交付，第 2 线复跑同一次正式运行的审批、执行、核验和异常对账。MOM 与来源系统的回执分别关联通用任务和业务执行标识 |
+| 会话上下文可追溯 | 第 5 线先交付受控切片，第 1 线承接来源展示，第 4 线确认调用边界，第 2 线复验跨会话隔离、来源失效和超时降级。后续再接内省发现及获授权的共享来源 |
+
+共享契约继续以 [contracts/](contracts/README.md) 为权威入口。工业审批与来源系统核验由第 3 线负责。新出现的跨线语义先提出方案，按研发规范确认后登记。
+
 ## 一、目标与“完成”的定义
 
 **目标**：把对话/任务平台、MOM/DES、治理旁路连成一个系统，并能用多个**跨模块的完整场景**做端到端测试。
@@ -185,8 +205,7 @@ sequenceDiagram
 | WP0-5 | 修正 `docs/DESIGN.md` §15 过时描述 | §15 全文 | 描述与代码一致，评审通过 |
 
 ### WP2 审查“需人工”的出口（**高风险：orchestrator.rs/store.rs，必须先出方案并经用户批准；弱 agent 不得直接实施**）
-方案要写：状态拆分（待批准 / 待验收）、迁移写法（参考 `store.rs` 补列）、验收通过/退回返工的接口、回滚。用例：GS3。  
-**方案文档（T-65）**：[fencing/WP2_IMPLEMENTATION_PLAN.md](fencing/WP2_IMPLEMENTATION_PLAN.md)；决策 [2026-11-22-wp2-review-acceptance-plan](decisions/2026-11-22-wp2-review-acceptance-plan.md)（待确认）。实现另卡。
+T-69（#215）已合入：沿用 `NEEDS_HUMAN`，按是否已有结果区分待批准和待验收；`review-verdict` 提供验收通过、退回返工路径。方案见 [WP2 实施计划](fencing/WP2_IMPLEMENTATION_PLAN.md)，接口用例见 [review_verdict.rs](../crates/server/tests/review_verdict.rs)。后续从首页委派链路验收 GS3。
 
 ### WP3 现有功能整链 E2E（不碰高风险文件）
 按 `docs/feature-map/SCENARIOS.md` 的 S05/S06/S08/S10 逐个补：每个场景一个 `web/e2e/*.spec.ts` 用例，断言跨两个模块以上；依赖 WP0-2/0-3。先读 `web/e2e/features.spec.ts` 的写法，复用其辅助函数。
@@ -197,7 +216,8 @@ sequenceDiagram
 决策：[2026-11-22-wp4-task-split-template-plan](decisions/2026-11-22-wp4-task-split-template-plan.md)（待用户确认后另卡实现）。  
 依赖：WP2 已合入（#215）。校验基线 RT-TPL-01～10 已绿；实现卡接编排与 E2E-TPL / GS4。
 
-### WP5 反馈闭环与会话摘要/知识接入
+### WP5 反馈闭环
+会话摘要与知识接入由第 5 线按[分层记忆计划](features/conversation-memory/PLAN.md)推进。WP5 保留任务反馈到评测的链路。
 先读 `docs/DESIGN.md` 反馈章节，并用 `rg -ln eval` 找评测相关代码（仓库里没有 `crates/eval`，根目录有 `evals/`）；反馈 → 评测集必须**人工确认**后才入库；配置变更要留痕到 DECISIONS。方案是否触碰 `store.rs` 在出方案时确认。
 ### WP6 准入界面与认证；外发保证范围；观测统一
 准入已有后端（`crates/server/tests/admission.rs`）；先做“界面 + 认证”的方案；外发“保证范围”写文档并加出口审计用例（`crates/server/tests/egress.rs` 为基线）。
