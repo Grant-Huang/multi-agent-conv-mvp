@@ -910,6 +910,7 @@
       "docs/testing/evidence/wa-m3-0.md",
       "docs/testing/evidence/wa-m3-1-red.md",
       "docs/testing/evidence/wa-m3-2-green.md",
+      "docs/testing/evidence/wa-m3-3-green.md",
       "scripts/wa-m2-regression.sh",
       "scripts/wa-m2-suite.sh",
       "docs/decisions/2026-11-21-wa-m2-1-green-service-layer.md",
@@ -967,7 +968,11 @@
       "RT-WADES-18",
       "RT-WADES-19",
       "RT-WAPROD-01",
-      "RT-WAPROD-02"
+      "RT-WAPROD-02",
+      "RT-WAPROD-03",
+      "RT-WAPROD-04",
+      "RT-WAPROD-05",
+      "RT-WAPROD-06"
     ]
   },
   {
