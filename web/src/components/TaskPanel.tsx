@@ -28,6 +28,23 @@ export function StatusBadge({
   );
 }
 
+/** 任务 → 触发它的用户消息。优先用消息上的 task_id；委派时目前未回写，再按 goal===content 兜底。 */
+export function taskMessageIds(
+  messages: { id: string; role: string; content: string; task_id: string | null }[],
+  tasks: { id: string; goal: string }[],
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const m of messages) {
+    if (m.role === "user" && m.task_id) map[m.task_id] = m.id;
+  }
+  for (const t of tasks) {
+    if (map[t.id]) continue;
+    const m = messages.find((msg) => msg.role === "user" && msg.content === t.goal);
+    if (m) map[t.id] = m.id;
+  }
+  return map;
+}
+
 export function TaskPanel(props: {
   tasks: TaskRecord[];
   incoming: TaskEvent | null;

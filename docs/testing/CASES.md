@@ -15,6 +15,8 @@
 | E2E-ACK | conversation | 发送超过 80 字、结尾带标记的任务要求 | 等任务完成，检查第一条简短回复 | 简短回复完整包含用户意图（含结尾标记），不出现省略号 |
 | E2E-ASSIGN | assignment | 受控模型让 General 写文件 | 等任务完成，看右侧任务卡标题，再展开 | 标题行含执行者 General Agent；详情“执行者”节显示 General Agent、主力、本机 |
 | E2E-APPROVEINFO | approval | 模型将任务判为 high | 发送后、批准前查看对话区的待批准卡片 | 卡片写明将交给 General Agent、预计工具 write_file、触发规则“风险等级 High”，并有“批准执行”按钮 |
+| E2E-CODEFLOW | agent-ui / git-evidence | harness 临时 git 仓库作 coding workdir；可接入 Claude（模拟 ACP） | 接入助手 → 发「改代码验证：…」→ 等完成 | 执行者为 claude；证据含 git_diff_stat 或 diff 产物含 hello.txt；review pass；workdir 为 git 仓且用户暂存区无残留 |
+| E2E-FEEDBACK | feedback | 已有可展开的完成任务（与用户消息关联） | 任务卡展开 →「派错了」→ 选动作 → 保存 | 显示「已记下」；`POST /api/feedback` 成功 |
 
 每次输出日志、测试结果和截图；失败保留 trace。正向通过只证明这些路径，未覆盖功能在地图中明确标注。另用校验器测试注入重复 ID、未知用例、缺文档和缺测试，确认地图失配确实失败。
 

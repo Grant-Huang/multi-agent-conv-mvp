@@ -8,7 +8,7 @@ import type { MessageView } from "./bindings/MessageView";
 import type { TaskRecord } from "./bindings/TaskRecord";
 import { ChatView, type TaskActionKind } from "./components/ChatView";
 import { RouteLogPanel } from "./components/RouteLogPanel";
-import { TaskPanel } from "./components/TaskPanel";
+import { TaskPanel, taskMessageIds } from "./components/TaskPanel";
 import { NodesPanel } from "./components/NodesPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { AgentsPanel } from "./components/AgentsPanel";
@@ -825,7 +825,7 @@ export default function App() {
                 incoming={incoming}
                 onChanged={() => current && refreshConversation(current)}
                 onTaskAction={taskAction}
-                messageIds={Object.fromEntries(messages.filter((m) => m.role === "user" && m.task_id).map((m) => [m.task_id as string, m.id]))}
+                messageIds={taskMessageIds(messages, tasks)}
               />
             )}
             {activeTab === "intro" && <IntrospectionPanel />}

@@ -123,10 +123,15 @@
     "document": "docs/feature-map/features/observability.md",
     "sources": [
       "web/src/misroute.test.tsx",
+      "web/src/components/TaskPanel.tsx",
+      "web/src/App.tsx",
+      "web/e2e/codeflow.spec.ts",
       "crates/runtime/src/store.rs"
     ],
-    "coverage": "backend",
-    "cases": []
+    "coverage": "browser",
+    "cases": [
+      "E2E-FEEDBACK"
+    ]
   },
   {
     "id": "tools-evals",
@@ -440,10 +445,14 @@
     "document": "docs/feature-map/features/git-evidence.md",
     "sources": [
       "crates/agents/src/util.rs",
-      "crates/agents/tests/git_evidence.rs"
+      "crates/agents/tests/git_evidence.rs",
+      "web/e2e/codeflow.spec.ts",
+      "web/e2e/harness.mjs"
     ],
-    "coverage": "backend",
-    "cases": [],
+    "coverage": "browser",
+    "cases": [
+      "E2E-CODEFLOW"
+    ],
     "runtime_cases": [
       "RT-GIT-01",
       "RT-GIT-02",
@@ -596,7 +605,8 @@
       "web/src/components/AgentCards.tsx",
       "web/src/api.ts",
       "web/src/App.tsx",
-      "crates/server/src/lib.rs"
+      "crates/server/src/lib.rs",
+      "web/e2e/codeflow.spec.ts"
     ],
     "coverage": "browser",
     "cases": [
@@ -610,7 +620,8 @@
       "E2E-AGCHAT",
       "E2E-AGCHOICE",
       "E2E-AGDIAG",
-      "E2E-AGHELP"
+      "E2E-AGHELP",
+      "E2E-CODEFLOW"
     ]
   },
   {
