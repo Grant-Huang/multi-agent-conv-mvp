@@ -690,6 +690,7 @@ test('E2E-ADHAND: 跨端草稿冲突与未授权转写不共享', async ({ page 
   await expect(page.getByTestId('handoff-run')).toHaveText('run-smt-03-1');
   await expect(page.getByTestId('handoff-anchor')).toHaveText('msg-anchor-1');
   await expect(page.getByTestId('handoff-voice-shared')).toHaveText('未授权不共享');
+  await expect(page.getByTestId('handoff-peer-voice')).toHaveText('未授权不共享');
 
   await page.getByTestId('handoff-phone').fill('手机侧草稿 A');
   await page.getByTestId('handoff-desktop').fill('桌面侧草稿 B');
@@ -704,6 +705,117 @@ test('E2E-ADHAND: 跨端草稿冲突与未授权转写不共享', async ({ page 
   await expect(page.getByTestId('handoff-voice-shared')).toHaveText('共享中');
   await page.getByTestId('handoff-voice-share').click();
   await expect(page.getByTestId('handoff-voice-shared')).toHaveText('未授权不共享');
+});
+
+test('E2E-ADD01-01: 双 context 手机发起关联；桌面未授权不共享', async ({
+  page,
+  browser,
+}) => {
+  // 端 A = 手机：语音发起并关联
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-voice').click();
+  await page.getByTestId('voice-reset').click();
+  const t0 = Date.now();
+  await page.getByTestId('voice-start').click();
+  await expect(page.getByTestId('voice-phase')).toHaveText('listening');
+  await page.getByTestId('voice-inject-partial').click();
+  await expect(page.getByTestId('voice-partial')).toContainText('SMT');
+  const firstPartialMs = Date.now() - t0;
+  expect(firstPartialMs).toBeGreaterThanOrEqual(0);
+  await expect(page.getByTestId('voice-link')).toHaveText('未关联');
+  await page.getByTestId('voice-commit').click();
+  await expect(page.getByTestId('voice-final')).toContainText('SMT-03');
+  await expect(page.getByTestId('voice-link')).toHaveText(SMT03_TASK_ID);
+
+  await page.getByTestId('workspace-open-handoff').click();
+  await page.getByTestId('handoff-reset').click();
+  await expect(page.getByTestId('handoff-task')).toHaveText(SMT03_TASK_ID);
+  await expect(page.getByTestId('handoff-run')).toHaveText('run-smt-03-1');
+  await expect(page.getByTestId('handoff-voice-shared')).toHaveText('未授权不共享');
+
+  // 端 B = 桌面：同 Task/Run；对端转写门闩
+  const ctxB = await browser.newContext();
+  const pageB = await ctxB.newPage();
+  await pageB.goto('/');
+  await pageB.getByTestId('card-smt-03').click();
+  await pageB.getByTestId('workspace-open-handoff').click();
+  await expect(pageB.getByTestId('handoff-mock-panel')).toBeVisible();
+  await pageB.getByTestId('handoff-refresh').click();
+  await expect(pageB.getByTestId('handoff-task')).toHaveText(SMT03_TASK_ID);
+  await expect(pageB.getByTestId('handoff-run')).toHaveText('run-smt-03-1');
+  await expect(pageB.getByTestId('handoff-anchor')).toHaveText('msg-anchor-1');
+  await expect(pageB.getByTestId('handoff-voice-shared')).toHaveText('未授权不共享');
+  await expect(pageB.getByTestId('handoff-peer-voice')).toHaveText('未授权不共享');
+  await ctxB.close();
+});
+
+test('E2E-ADD01-02: 授权共享后桌面可见转写并可续写', async ({ page, browser }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-voice').click();
+  await page.getByTestId('voice-reset').click();
+  await page.getByTestId('voice-start').click();
+  await page.getByTestId('voice-inject-partial').click();
+  await page.getByTestId('voice-commit').click();
+  await expect(page.getByTestId('voice-link')).toHaveText(SMT03_TASK_ID);
+  const finalText = await page.getByTestId('voice-final').innerText();
+
+  await page.getByTestId('workspace-open-handoff').click();
+  await page.getByTestId('handoff-reset').click();
+  await page.getByTestId('handoff-voice-share').click();
+  await expect(page.getByTestId('handoff-voice-shared')).toHaveText('共享中');
+  await expect(page.getByTestId('handoff-peer-voice')).toContainText('SMT');
+
+  const ctxB = await browser.newContext();
+  const pageB = await ctxB.newPage();
+  await pageB.goto('/');
+  await pageB.getByTestId('card-smt-03').click();
+  await pageB.getByTestId('workspace-open-handoff').click();
+  await pageB.getByTestId('handoff-refresh').click();
+  await expect(pageB.getByTestId('handoff-voice-shared')).toHaveText('共享中');
+  await expect(pageB.getByTestId('handoff-peer-voice')).toHaveText(finalText);
+  await expect(pageB.getByTestId('handoff-peer-link')).toHaveText(SMT03_TASK_ID);
+
+  await pageB.getByTestId('handoff-desktop').fill('桌面续写草稿');
+  await expect(pageB.getByTestId('handoff-desktop')).toHaveValue('桌面续写草稿');
+
+  // 桌面打开语音只刷新、不重置
+  await pageB.getByTestId('workspace-open-voice').click();
+  await pageB.getByTestId('voice-refresh').click();
+  await expect(pageB.getByTestId('voice-final')).toHaveText(finalText);
+  await expect(pageB.getByTestId('voice-link')).toHaveText(SMT03_TASK_ID);
+  await ctxB.close();
+});
+
+test('E2E-ADD01-03: 先不关联再纠正；共享后对端可见', async ({ page, browser }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-voice').click();
+  await page.getByTestId('voice-reset').click();
+  await page.getByTestId('voice-start').click();
+  await page.getByTestId('voice-inject-partial').click();
+  await page.getByTestId('voice-commit-nolink').click();
+  await expect(page.getByTestId('voice-final')).toContainText('SMT-03');
+  await expect(page.getByTestId('voice-link')).toHaveText('未关联');
+  await page.getByTestId('voice-correct-link').click();
+  await expect(page.getByTestId('voice-link')).toHaveText(SMT03_TASK_ID);
+  const finalText = await page.getByTestId('voice-final').innerText();
+
+  await page.getByTestId('workspace-open-handoff').click();
+  await page.getByTestId('handoff-reset').click();
+  await page.getByTestId('handoff-voice-share').click();
+  await expect(page.getByTestId('handoff-voice-shared')).toHaveText('共享中');
+
+  const ctxB = await browser.newContext();
+  const pageB = await ctxB.newPage();
+  await pageB.goto('/');
+  await pageB.getByTestId('card-smt-03').click();
+  await pageB.getByTestId('workspace-open-handoff').click();
+  await pageB.getByTestId('handoff-refresh').click();
+  await expect(pageB.getByTestId('handoff-peer-voice')).toHaveText(finalText);
+  await expect(pageB.getByTestId('handoff-peer-link')).toHaveText(SMT03_TASK_ID);
+  await ctxB.close();
 });
 
 test('E2E-ADACCEPT: 丢回执回读与同操作 ID 幂等冲突', async ({ page }) => {

@@ -802,6 +802,7 @@
       "docs/testing/evidence/ai-desktop-t73-read-cross.md",
       "docs/testing/evidence/ai-desktop-t75-mic-real.md",
       "docs/testing/evidence/ai-desktop-t76-remote-asr.md",
+      "docs/testing/evidence/ai-desktop-t77-dual-device.md",
       "docs/ai-desktop/ASR_REMOTE_EGRESS.md",
       "docs/testing/evidence/ai-desktop-c1.md",
       "docs/testing/evidence/ai-desktop-c2.md",
@@ -837,6 +838,9 @@
       "E2E-ADASR-01",
       "E2E-ADASR-02",
       "E2E-ADHAND",
+      "E2E-ADD01-01",
+      "E2E-ADD01-02",
+      "E2E-ADD01-03",
       "E2E-ADACCEPT"
     ],
     "runtime_cases": [
