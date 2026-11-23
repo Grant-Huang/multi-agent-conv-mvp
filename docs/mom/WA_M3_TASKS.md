@@ -15,7 +15,7 @@
 | M3-2 | 绑定 / Observe / 水位服务层 Green | **完成**（#218） | M3-1 |
 | M3-3 | 权限、跨范围、延迟与多源 | **完成**（#220） | M3-2 |
 | M3-4 | 浏览器生产读场景 + M0～M2 全量回归 | **完成**（#224） | M3-3 |
-| M3-5 | 证据、WAM-07 读路径状态、准出检查 | **进行中**（本 PR） | M3-4 |
+| M3-5 | 证据、WAM-07 读路径状态、准出检查 | **完成**（#228） | M3-4 |
 
 一张卡 ≈ 一个 PR。每卡先 Red 再 Green；断言冻结后不得弱化。
 
@@ -47,12 +47,9 @@
 | M3-3 | `wa-m3-3-green.md`（#220） |
 | M3-4 | `wa-m3-4-browser.md`；套件 `scripts/wa-m3-suite.sh`（#224） |
 
-## 3. M3-5：证据 / WAM-07 / 准出（本卡）
+## 3. M3-5：证据 / WAM-07 / 准出（已完成，#228）
 
-1. 准出证据 `docs/testing/evidence/wa-m3-5.md`；方案 [`WA_M3_5_PLAN.md`](WA_M3_5_PLAN.md)。
-2. `WA_MOCK_REGISTRY` WAM-07 **读**路径定稿；入口 `wa-m3-suite` / `wa-m3-5.md`。
-3. 同步 PLAN / Feature Map / `features.json` / CASES。
-4. **仍不改** engine / store / orchestrator / 真站点凭据；不自行开 M4。
+见 `docs/testing/evidence/wa-m3-5.md`。生产写与真站点只读见 [WA_M4_TASKS.md](WA_M4_TASKS.md)。
 
 ## 4. 不做（M3）
 
