@@ -111,11 +111,42 @@ await writeFile(config,configText);
 const binary=path.join(root,'target/debug',process.platform==='win32'?'agentnexus.exe':'agentnexus');
 const child=spawn(binary,[config],{cwd:root,env:{...process.env,RUST_LOG:'info',PATH:`${bin}${path.delimiter}${process.env.PATH??''}`},stdio:['ignore','pipe','pipe']});
 child.stdout.pipe(log,{end:false});child.stderr.pipe(log,{end:false});
+// Q-T67-02 深就绪门：/api/health 绿之后，首页挂载期实际依赖的数据接口还要在阈值内
+// 「有响应」（任意状态码——内省关闭时 /api/introspection/unread 合法 403），才对
+// Playwright 放行（webServer 轮询 :18789/ready）。否则冷启动/高负载下首页渲染滞后，
+// 首批用例会表现为「导航 30s 超时」假红；现在表现为明确的 webServer 未就绪。
+const readyPort=Number(process.env.HARNESS_READY_PORT||18789);
+let readyOk=false;
+const ready=http.createServer((req,res)=>{
+  res.writeHead(readyOk?200:503,{'content-type':'text/plain'});
+  res.end(readyOk?'ready':'warming');
+});
+ready.listen(readyPort,'127.0.0.1');
+(()=>{
+  const t0=Date.now();
+  const probe=(p)=>fetch(`http://127.0.0.1:18787${p}`,{signal:AbortSignal.timeout(2000)});
+  (async()=>{
+    for(;;){
+      try{
+        const health=await probe('/api/health');
+        if(health.ok){
+          const responsive=await Promise.all([
+            probe('/api/conversations'),probe('/api/mom/desk/unread'),probe('/api/introspection/unread'),
+          ]);
+          if(responsive.length===3){readyOk=true;console.log(`harness: app deep-ready in ${Date.now()-t0}ms`);return;}
+        }
+      }catch{}
+      if(Date.now()-t0>180000){console.error('harness: deep-ready timeout after 180s');return;}
+      await new Promise(r=>setTimeout(r,300));
+    }
+  })();
+})();
 await writeFile(path.join(evidence,'state.json'),JSON.stringify({workspace,codeRepo,directory:dir,pid:child.pid,baseline:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim()},null,2));
 let closing=false;
 function shutdown(code=0){
   if(closing)return;closing=true;
   model.closeAllConnections();model.close();
+  ready.closeAllConnections();ready.close();
   child.kill('SIGTERM');
   const force=setTimeout(()=>child.kill('SIGKILL'),5000);
   force.unref();
