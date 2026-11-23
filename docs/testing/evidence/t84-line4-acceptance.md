@@ -31,7 +31,7 @@
 | web 单测 / 功能地图 | **VERIFIED / T2** | vitest 31/31；test:map **33 features / 92 browser cases valid** |
 | `E2E-MOBILE` | **仍 FAILED** | `1a9ae70` 上 1 failed（30s 超时同签名）→ Q-T65-01 第 5 轮未修，挂账延续 |
 | PR CI #241～#249 | **VERIFIED** | 全部 8/8 SUCCESS（#245 CLOSED，无未通过项） |
-| master push | 部分 VERIFIED | `cf6b508` success（run 45253023534）；`c2b2be9`/`1a9ae70` 运行中（回填） |
+| master push | **VERIFIED** | `cf6b508`（run 45253023534）、`c2b2be9`（run 45257605418）、`1a9ae70`（run 45257708316）均 **success** |
 | nightly（11-23） | **未触发** | G15 状态不变 |
 
 **总体**：T-81 合并后第 4 线全部链路回归 **PASS**，无新增业务缺陷；E2E-MOBILE 与 nightly 为已知挂账延续。
@@ -102,7 +102,8 @@ harness `runtime/state.json` 记录 baseline = `1a9ae7016c6e…`。
 | 项 | 状态 |
 |---|---|
 | push @ `cf6b508`（#247） | **success**（run 45253023534） |
-| push @ `c2b2be9`（#248）/ `1a9ae70`（#249） | 运行中（run 45257605418 / 45257708316；结论监视回填 PR 正文） |
+| push @ `c2b2be9`（#248） | **success**（run 45257605418） |
+| push @ `1a9ae70`（#249，T-81 合并） | **success**（run 45257708316，rust 作业收尾后全绿） |
 | nightly（11-23，收集时点） | **未触发**；最新 11-22 失败（run 45052408864）；第 2 线监视至 ~21:50Z |
 | G15 / GR-4-NIGHTLY-E2E | 状态**不变**：三连败（11-20/21/22），「连续三晚通过」未满足 |
 
@@ -125,10 +126,10 @@ T-81 合并（含 master 两次前进的 rebase 场景）与 #247 harness 深就
 | 受理→执行→审查→判定→终态回传全链 + 重启明确失败/人工出口保持（WP7） | 断点续跑不做（决策 2026-11-23-wp7-restart-semantics）；QUEUED 重排（方案 C）另卡待授权 |
 | GS6 重启分支浏览器化（E2E-RESTART） | GS6 外发合规部分归 WP6（未开工） |
 | 合同 20/20 + 浏览器 33 绿 + 地图校验通过 | E2E-MOBILE 挂账（Q-T65-01）；nightly 未触发（G15 不变） |
-| PR CI #241～#249 全绿 | master push @ `c2b2be9`/`1a9ae70` 收稿时点运行中 |
+| PR CI #241～#249 全绿 + master push `cf6b508`/`c2b2be9`/`1a9ae70` 全 success | E2E-MOBILE 挂账（Q-T65-01）；nightly 未触发（G15 不变） |
 
 ## 6. 非目标（本卡遵守）
 
 - 未改任何代码、契约、断言、PLAN、GUARDRAIL_REGISTRY（docs-only 验收记录）
 - **不对 #249/T-81 宣称独立验收**（作者=本会话；回归复跑 ≠ 独立验收，独立验收归第 2 线/用户）
-- 未跑远程真站点/真 DES live；未定位 E2E-MOBILE 根因；master push 运行中结论如实标注
+- 未跑远程真站点/真 DES live；未定位 E2E-MOBILE 根因；master push 运行中结论已回填（均 success）
