@@ -50,5 +50,5 @@ HTTP：`POST /api/tasks/{id}/approve`；`POST /api/tasks/{id}/review-verdict` bo
 ## Backed by
 
 源码：`policy.rs`、`orchestrator.rs`、`store.rs`、`ChatView.tsx`、`TaskPanel.tsx`、`labels.ts`、`ApprovalInfo.tsx`
-用例：E2E-APPROVE、E2E-APPROVEINFO、E2E-REV；RT-ASSIGN-05、RT-REV-01～04
+用例：E2E-APPROVE、E2E-APPROVEINFO、E2E-REV；RT-ASSIGN-05、RT-REV-01～04；RT-RESTART-03～05（跨重启判定/返工额度/批准，WP7 T-81）
 验证状态：自动化已覆盖。准入接口（`/api/admission`）的审批见 [routing-and-admission.md](routing-and-admission.md)。
