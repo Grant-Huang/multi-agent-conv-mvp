@@ -15,5 +15,8 @@ destinations:
     trust: external_untrusted
   cloud-llm:
     trust: external_untrusted
+  # Desktop T-76：可选远端 ASR（浏览器适配器；默认不上送 PCM；见 docs/ai-desktop/ASR_REMOTE_EGRESS.md）
+  desktop-asr-stream:
+    trust: external_untrusted
   internal-wiki:
     trust: internal

@@ -654,6 +654,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-ADMIC-02 | ai-desktop | media=real；Playwright fake device 可授权 | 授权开麦 → ASR 注入部分 → 确认最终并关联 | partial 非空且未关联；finalize 后 final 非空且关联当前 Task |
 | E2E-ADMIC-03 | ai-desktop | media=real；已有最终转写并可播报 | 开始播报后插话 | playing=false；phase=listening；final 保留 |
 | E2E-ADMIC-04 | ai-desktop | media=real；听写后 offline | 改用文字继续 | final_text 与服务一致；可继续 |
+| E2E-ADASR-01 | ai-desktop | media=real；asr=remote-stub | 开麦后 stub 自动 partial；确认最终并关联 | asr=remote-stub；partial 含「远端」且未关联；finalize 关联 Task；不上送音频 |
+| E2E-ADASR-02 | ai-desktop | media=real；asr=remote；无 URL/密钥 | 开麦 | 回退 webspeech/harness；可见「真钥另验」提示；仍可 ASR 注入并关联 |
 | E2E-ADHAND | ai-desktop | 打开 SMT-03 工作区 | 手机与桌面各写不同草稿；选手机稿解决冲突；默认未共享转写，授权后再关闭 | 同一 Task/Run/阅读锚点；冲突可选后两端一致；未授权显示不共享 |
 | E2E-ADACCEPT | ai-desktop | 打开 SMT-03 工作区 | 现有模式丢回执→须回读；可靠模式丢回执后原操作 ID 重试；同 ID 改正文 | 待确认可见；派发次数保持 1；改正文得 409 冲突且不二次派发 |
 

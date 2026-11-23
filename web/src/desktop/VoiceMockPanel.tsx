@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type DesktopVoiceSessionDto } from "../api";
-import { startAsr, type AsrSession } from "./voiceAsr";
+import { getAsrBackend, startAsr, type AsrBackendKind, type AsrSession } from "./voiceAsr";
 import {
   getVoiceMediaMode,
   requestMicrophone,
@@ -16,6 +16,8 @@ export function VoiceMockPanel({ taskId }: Props) {
   const [s, setS] = useState<DesktopVoiceSessionDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<VoiceMediaMode>(() => getVoiceMediaMode());
+  const [asrBackend, setAsrBackend] = useState<AsrBackendKind>(() => getAsrBackend());
+  const [asrNote, setAsrNote] = useState<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const asrRef = useRef<AsrSession | null>(null);
   const lastPartialRef = useRef("");
@@ -38,6 +40,7 @@ export function VoiceMockPanel({ taskId }: Props) {
 
   useEffect(() => {
     setMode(getVoiceMediaMode());
+    setAsrBackend(getAsrBackend());
     let cancelled = false;
     api
       .desktopVoiceReset(taskId)
@@ -68,17 +71,35 @@ export function VoiceMockPanel({ taskId }: Props) {
       const started = await api.desktopVoiceStart(taskId);
       apply(started.session);
       lastPartialRef.current = "";
-      asrRef.current = startAsr({
-        onPartial: (text) => {
-          lastPartialRef.current = text;
-          run(api.desktopVoicePartial(taskId, text));
+      setAsrNote(null);
+      asrRef.current = await startAsr(
+        {
+          onPartial: (text) => {
+            lastPartialRef.current = text;
+            run(api.desktopVoicePartial(taskId, text));
+          },
+          onFinal: (text) => {
+            lastPartialRef.current = text;
+            run(api.desktopVoicePartial(taskId, text));
+          },
+          onError: (message) => {
+            if (message === "remote_asr_unconfigured" || message.startsWith("remote_asr_")) {
+              setAsrNote("远端 ASR 未配置或失败，已回退；真钥另验");
+            } else {
+              setError(message);
+            }
+          },
         },
-        onFinal: (text) => {
-          lastPartialRef.current = text;
-          run(api.desktopVoicePartial(taskId, text));
+        {
+          stream: mic.stream,
+          onBackend: (kind, detail) => {
+            setAsrBackend(kind);
+            if (detail === "remote_fallback") {
+              setAsrNote("远端 ASR 未配置或失败，已回退 Web Speech；真钥另验");
+            }
+          },
         },
-        onError: (message) => setError(message),
-      });
+      );
     } catch (e) {
       stopLocalMedia();
       setError(e instanceof Error ? e.message : String(e));
@@ -125,6 +146,14 @@ export function VoiceMockPanel({ taskId }: Props) {
       <p className="muted" data-testid="voice-media-mode">
         media={mode}
       </p>
+      <p className="muted" data-testid="voice-asr-backend">
+        asr={asrBackend}
+      </p>
+      {asrNote && (
+        <p className="muted" data-testid="voice-asr-note">
+          {asrNote}
+        </p>
+      )}
       <dl className="evidence-dl">
         <dt>权限</dt>
         <dd data-testid="voice-permission">{s.permission}</dd>

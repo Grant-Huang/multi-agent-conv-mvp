@@ -630,6 +630,55 @@ test('E2E-ADMIC-04: offline 后改用文字保留最终转写', async ({ page })
   await expect(page.getByTestId('voice-final')).toHaveText(finalBefore);
 });
 
+test('E2E-ADASR-01: remote-stub 自动 partial 并关联', async ({ page }) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as {
+      __AN_DESKTOP_VOICE_MEDIA__: string;
+      __AN_DESKTOP_ASR_BACKEND__: string;
+    };
+    w.__AN_DESKTOP_VOICE_MEDIA__ = 'real';
+    w.__AN_DESKTOP_ASR_BACKEND__ = 'remote-stub';
+  });
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-voice').click();
+  await expect(page.getByTestId('voice-asr-backend')).toHaveText('asr=remote-stub');
+  await page.getByTestId('voice-reset').click();
+  await page.getByTestId('voice-open-mic').click();
+  await expect(page.getByTestId('voice-permission')).toHaveText('granted');
+  await expect(page.getByTestId('voice-asr-backend')).toHaveText('asr=remote-stub');
+  await expect(page.getByTestId('voice-partial')).toContainText('远端', { timeout: 5_000 });
+  await expect(page.getByTestId('voice-link')).toHaveText('未关联');
+  await page.getByTestId('voice-commit').click();
+  await expect(page.getByTestId('voice-final')).toContainText('远端');
+  await expect(page.getByTestId('voice-link')).toHaveText(SMT03_TASK_ID);
+});
+
+test('E2E-ADASR-02: remote 无密钥回退并可继续', async ({ page }) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as {
+      __AN_DESKTOP_VOICE_MEDIA__: string;
+      __AN_DESKTOP_ASR_BACKEND__: string;
+      __AN_DESKTOP_ASR_URL__?: string;
+    };
+    w.__AN_DESKTOP_VOICE_MEDIA__ = 'real';
+    w.__AN_DESKTOP_ASR_BACKEND__ = 'remote';
+    delete w.__AN_DESKTOP_ASR_URL__;
+  });
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-open-voice').click();
+  await page.getByTestId('voice-reset').click();
+  await page.getByTestId('voice-open-mic').click();
+  await expect(page.getByTestId('voice-permission')).toHaveText('granted');
+  await expect(page.getByTestId('voice-asr-note')).toContainText('真钥另验');
+  await expect(page.getByTestId('voice-asr-backend')).toHaveText('asr=webspeech');
+  await page.getByTestId('voice-asr-partial').click();
+  await expect(page.getByTestId('voice-partial')).toContainText('SMT');
+  await page.getByTestId('voice-commit').click();
+  await expect(page.getByTestId('voice-link')).toHaveText(SMT03_TASK_ID);
+});
+
 test('E2E-ADHAND: 跨端草稿冲突与未授权转写不共享', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('card-smt-03').click();
