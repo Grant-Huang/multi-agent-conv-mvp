@@ -255,8 +255,19 @@ async fn rt_tpl_12_all_ok_join_completes_parent() {
             .any(|c| c.fanout_kind.as_deref() == Some("join")),
         "应有 join 子任务"
     );
-    // Composer 模板交付写入会话
-    let msgs = e.store.list_messages(&conv, None).unwrap();
+    // Composer 模板交付写入会话（编排侧先交付再 COMPLETED；此处仍等齐，断言不弱化）
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let msgs = loop {
+        let msgs = e.store.list_messages(&conv, None).unwrap();
+        if msgs.iter().any(|m| m.role == "assistant") {
+            break msgs;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "父任务应有一次交付消息"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
     assert!(
         msgs.iter().any(|m| m.role == "assistant"),
         "父任务应有一次交付消息"
