@@ -191,7 +191,12 @@ sequenceDiagram
 ### WP3 现有功能整链 E2E（不碰高风险文件）
 按 `docs/feature-map/SCENARIOS.md` 的 S05/S06/S08/S10 逐个补：每个场景一个 `web/e2e/*.spec.ts` 用例，断言跨两个模块以上；依赖 WP0-2/0-3。先读 `web/e2e/features.spec.ts` 的写法，复用其辅助函数。
 
-### WP4 任务拆分与模板执行（**高风险：orchestrator.rs，先出方案；依赖 WP2**）
+### WP4 任务拆分与模板执行（**高风险：orchestrator.rs / store.rs，先出方案；依赖 WP2**）
+
+完整实施方按（父子任务、最小 DDL、Router 三字段、汇合与 Composer、验收矩阵、唯一负责人）见 [fencing/WP4_IMPLEMENTATION_PLAN.md](fencing/WP4_IMPLEMENTATION_PLAN.md)。  
+决策：[2026-11-22-wp4-task-split-template-plan](decisions/2026-11-22-wp4-task-split-template-plan.md)（待用户确认后另卡实现）。  
+依赖：WP2 已合入（#215）。校验基线 RT-TPL-01～10 已绿；实现卡接编排与 E2E-TPL / GS4。
+
 ### WP5 反馈闭环与会话摘要/知识接入
 先读 `docs/DESIGN.md` 反馈章节，并用 `rg -ln eval` 找评测相关代码（仓库里没有 `crates/eval`，根目录有 `evals/`）；反馈 → 评测集必须**人工确认**后才入库；配置变更要留痕到 DECISIONS。方案是否触碰 `store.rs` 在出方案时确认。
 ### WP6 准入界面与认证；外发保证范围；观测统一
