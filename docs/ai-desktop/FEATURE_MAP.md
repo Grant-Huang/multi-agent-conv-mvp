@@ -28,6 +28,7 @@
 | AD-ATTENTION / E2E-ADATTN | 正在输入时送普通建议、聚合消息和紧急事件，暂缓并静音；接受或撤回记忆建议 | 普通事件不抢焦点，静音改变实际投递，告警规则生效，偏好变更可追踪 |
 | AD-VOICE / E2E-ADVOICE | 开启麦克风、插话、实时转写、纠正归属，断线切文字；另测拒绝麦克风权限 | 播报可停止，部分转写不执行，确认后关联正确，可继续同一会话 |
 | AD-MIC / E2E-ADMIC-01～04 | media=real；拒麦 / fake device 开麦+ASR 注入 / 插话 / offline 改文字 | 权限与转写经 `/voice/*`；partial 不关联；finalize 关联；与 fixture ADVOICE 并存 |
+| AD-ASR / E2E-ADASR-01～02 | asr=remote-stub 自动 partial；asr=remote 无钥回退 | stub 可辨远端路径；回退提示真钥另验；默认不上送音频 |
 | AD-HANDOFF / E2E-ADHAND | 手机发起工作，桌面打开并续写；两端各编辑草稿，再处理冲突 | 同一 Task/Run 与读取位置，草稿冲突可选，未授权转写不共享 |
 
 ## 清单追溯入口

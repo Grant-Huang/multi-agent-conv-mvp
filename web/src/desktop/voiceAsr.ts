@@ -1,7 +1,15 @@
 /**
- * ASR 适配器：Web Speech 为主；Harness 供 Playwright 在 fake device 下注入转写（T-75）。
+ * ASR 适配器调度（T-75/T-76）：
+ * - webspeech（默认）：浏览器 SpeechRecognition + Harness 注入
+ * - remote-stub：远端合同回放，无密钥
+ * - remote：可选远端；失败回退 webspeech
  * 仅产出文本；服务权威仍由调用方 POST /voice/partial|finalize。
  */
+
+import {
+  startRemoteStubAsr,
+  tryStartRemoteLiveAsr,
+} from "./voiceRemoteAsr";
 
 export type AsrHandlers = {
   onPartial?: (text: string) => void;
@@ -15,6 +23,18 @@ export type AsrSession = {
   injectPartial?: (text: string) => void;
   injectFinal?: (text: string) => void;
 };
+
+export type AsrBackendKind = "webspeech" | "remote" | "remote-stub";
+
+declare global {
+  interface Window {
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    __AN_ASR_ACTIVE__?: AsrSession | null;
+    /** E2E / 调试：webspeech | remote | remote-stub */
+    __AN_DESKTOP_ASR_BACKEND__?: AsrBackendKind;
+  }
+}
 
 type SpeechRecognitionLike = {
   continuous: boolean;
@@ -33,12 +53,14 @@ type SpeechRecognitionEventLike = {
   results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
 };
 
-declare global {
-  interface Window {
-    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-    SpeechRecognition?: new () => SpeechRecognitionLike;
-    __AN_ASR_ACTIVE__?: AsrSession | null;
+export function getAsrBackend(): AsrBackendKind {
+  if (typeof window !== "undefined") {
+    const w = window.__AN_DESKTOP_ASR_BACKEND__;
+    if (w === "webspeech" || w === "remote" || w === "remote-stub") return w;
   }
+  const env = import.meta.env.VITE_DESKTOP_ASR_BACKEND;
+  if (env === "remote" || env === "remote-stub" || env === "webspeech") return env;
+  return "webspeech";
 }
 
 function recognitionCtor(): (new () => SpeechRecognitionLike) | null {
@@ -46,8 +68,7 @@ function recognitionCtor(): (new () => SpeechRecognitionLike) | null {
   return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
 }
 
-/** 启动 ASR；无浏览器 SpeechRecognition 时退化为可注入 Harness。 */
-export function startAsr(handlers: AsrHandlers): AsrSession {
+function startWebSpeechAsr(handlers: AsrHandlers): AsrSession {
   const Ctor = recognitionCtor();
   let stopped = false;
 
@@ -123,4 +144,50 @@ export function startAsr(handlers: AsrHandlers): AsrSession {
   };
   if (typeof window !== "undefined") window.__AN_ASR_ACTIVE__ = session;
   return session;
+}
+
+export type StartAsrOptions = {
+  stream?: MediaStream | null;
+  /** 远端失败时是否回退 Web Speech（默认 true） */
+  fallbackWebSpeech?: boolean;
+  onBackend?: (kind: AsrBackendKind, detail?: string) => void;
+};
+
+/** 按旗标启动 ASR；remote 无配置/失败时回退 webspeech。 */
+export async function startAsr(
+  handlers: AsrHandlers,
+  opts?: StartAsrOptions,
+): Promise<AsrSession> {
+  const kind = getAsrBackend();
+  const fallback = opts?.fallbackWebSpeech !== false;
+
+  if (kind === "remote-stub") {
+    opts?.onBackend?.("remote-stub");
+    return startRemoteStubAsr(handlers);
+  }
+
+  if (kind === "remote") {
+    const live = await tryStartRemoteLiveAsr(handlers, { stream: opts?.stream });
+    if (live) {
+      opts?.onBackend?.("remote");
+      return live;
+    }
+    if (fallback) {
+      opts?.onBackend?.("webspeech", "remote_fallback");
+      return startWebSpeechAsr(handlers);
+    }
+    opts?.onBackend?.("remote", "unavailable");
+    const empty: AsrSession = {
+      stop: () => {
+        if (typeof window !== "undefined") window.__AN_ASR_ACTIVE__ = null;
+      },
+      injectPartial: (t) => handlers.onPartial?.(t.trim()),
+      injectFinal: (t) => handlers.onFinal?.(t.trim()),
+    };
+    if (typeof window !== "undefined") window.__AN_ASR_ACTIVE__ = empty;
+    return empty;
+  }
+
+  opts?.onBackend?.("webspeech");
+  return startWebSpeechAsr(handlers);
 }
