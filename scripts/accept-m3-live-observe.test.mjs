@@ -58,3 +58,21 @@ test("rejects an unsupported origin before using a credential", async () => {
   await assert.rejects(checkLiveObserve({ ...config, origin: "http://example.test" }), /Invalid Observe origin/);
   assert.equal(config.calls.length, 0);
 });
+
+test("single-site mode runs the three checks only for the selected world", async () => {
+  for (const vendor of Object.keys(states)) {
+    const config = fixture();
+    const worlds = config.worlds.filter((world) => world.vendor === vendor);
+    assert.deepEqual(await checkLiveObserve({ ...config, worlds, singleSite: true }), {
+      vendors: [vendor], anonymous: 401, visible: 200, hidden: 404,
+    });
+    assert.deepEqual(config.calls, Array(3).fill(`world-${vendor}`));
+  }
+});
+
+test("rejects an incomplete joint run and a multi-world single-site run before sending credentials", async () => {
+  const config = fixture();
+  await assert.rejects(checkLiveObserve({ ...config, worlds: config.worlds.slice(0, 1) }), /three distinct/);
+  await assert.rejects(checkLiveObserve({ ...config, singleSite: true }), /one supported/);
+  assert.deepEqual(config.calls, []);
+});

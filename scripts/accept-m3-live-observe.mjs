@@ -7,7 +7,7 @@ const endpointPath = "/api/world/prod/observe";
 const vendors = ["carbon", "odoo", "openmes"];
 const present = (value) => typeof value === "string" && value.trim().length > 0;
 
-export async function checkLiveObserve({ origin, token, worlds, request = fetch }) {
+export async function checkLiveObserve({ origin, token, worlds, singleSite = false, request = fetch }) {
   if (!URL.canParse(origin)) throw new AcceptanceError("Invalid Observe origin");
   const url = new URL(origin);
   const loopback = ["127.0.0.1", "[::1]"].includes(url.hostname);
@@ -15,15 +15,18 @@ export async function checkLiveObserve({ origin, token, worlds, request = fetch 
     || url.username || url.password || url.search || url.hash || url.pathname !== "/") {
     throw new AcceptanceError("Invalid Observe origin");
   }
+  const expectedCount = singleSite ? 1 : vendors.length;
   if (!present(token) || !Array.isArray(worlds)
-    || worlds.length !== vendors.length
-    || new Set(worlds.map((world) => world?.vendor)).size !== vendors.length
+    || worlds.length !== expectedCount
+    || new Set(worlds.map((world) => world?.vendor)).size !== expectedCount
     || worlds.some((world) => !vendors.includes(world?.vendor))
     || worlds.some((world) => ![world.world, world.visible, world.hidden, world.source, world.sourceStatus].every(present)
       || world.visible === world.hidden)
-    || new Set(worlds.map((world) => world.world)).size !== vendors.length
-    || new Set(worlds.map((world) => world.source)).size !== vendors.length) {
-    throw new AcceptanceError("Provide three distinct world and source bindings with two references each");
+    || new Set(worlds.map((world) => world.world)).size !== expectedCount
+    || new Set(worlds.map((world) => world.source)).size !== expectedCount) {
+    throw new AcceptanceError(singleSite
+      ? "Provide one supported site binding with two distinct work-order references"
+      : "Provide three distinct world and source bindings with two references each");
   }
 
   async function read(world, ref, authenticated, expectedStatus, expectedCode) {
@@ -71,11 +74,18 @@ export async function checkLiveObserve({ origin, token, worlds, request = fetch 
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const worlds = JSON.parse(await readFile(process.argv[2], "utf8"));
+    const args = process.argv.slice(2);
+    const singleSite = args[0] === "--single-site";
+    const [bindingsPath] = singleSite ? args.slice(1) : args;
+    if (args.length !== (singleSite ? 2 : 1) || !bindingsPath || bindingsPath.startsWith("--")) {
+      throw new AcceptanceError("Usage: node scripts/accept-m3-live-observe.mjs [--single-site] <bindings.json>");
+    }
+    const worlds = JSON.parse(await readFile(bindingsPath, "utf8"));
     console.log(JSON.stringify(await checkLiveObserve({
       origin: process.env.AN_M3_OBSERVE_ORIGIN,
       token: process.env.AN_M3_OBSERVE_TOKEN,
       worlds,
+      singleSite,
     })));
   } catch (error) {
     console.error(error instanceof AcceptanceError ? error.message : "M3 Observe acceptance failed without safe diagnostics");

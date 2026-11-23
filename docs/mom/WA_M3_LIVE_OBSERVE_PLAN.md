@@ -46,3 +46,9 @@
 AgentNexus `c69c9e5` 已合入本方案。夹具切片仅在测试构造宿主时显式注入工单读取器。服务入口默认加载的 M3 桩无工单读取器，有选择的请求返回 `TEST_CONTROLS_DISABLED`。认证使用测试角色和绑定站点头，缺少任一项或站点不匹配时拒绝。成功响应标明 `provenance=fixture`，其工单、来源、状态与空游标字段供正式接线复用。生产身份和凭据验证仍按上节方案验收。
 
 运行 `cargo test --locked -p an-server --test mom_world_prod`。正式路径测试按 Git SHA 引入 MOM-MCP `5aa3129` 的 adapter，使用 Odoo JSON-2、OpenMES HTTP 和 Carbon 社区 REST 回环响应。RT-WAPROD-07 验证默认关闭工单夹具。RT-WAPROD-08 验证一世界一来源读取、权限／引用拒绝零调用、范围外不可见，以及 OpenMES 故障只访问已绑定连接器。原有 6 项桩合同随同回归。
+
+## 单站点联调探针
+
+首个站点获批后，在联调宿主设置上文的两个环境变量，并运行 `node scripts/accept-m3-live-observe.mjs --single-site <bindings.json>`。文件沿用上文的数组格式，只填该站点的一项绑定。探针对同一世界验证匿名拒绝、授权工单读取和源端范围外不可见。省略 `--single-site` 后，联合验收仍要求三个不同世界及来源，且三个系统均须通过。两种模式均在发请求前校验完整绑定，输出只包含已检查的系统及 HTTP 状态。
+
+AgentNexus PR #248 已合入正式路由夹具。单站点探针的自动化测试覆盖三个系统的独立调用及两种模式的输入边界。真实联调需要批准服务主体、工单绑定、源端凭据和出站范围，仍按服务层、单站点、三源的顺序记录结果。
