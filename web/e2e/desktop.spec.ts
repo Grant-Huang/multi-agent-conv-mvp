@@ -256,6 +256,38 @@ test('E2E-ADMEM: 记忆列表来自服务并可打开详情', async ({ page }) =
   await expect(page.getByTestId('workspace-input')).toHaveValue('记忆页应保留的草稿');
 });
 
+test('E2E-ADMEMW: 记忆纠错与撤回', async ({ page, request }) => {
+  const reset = await request.post('/api/desktop/v1/memories/fixture/reset', { data: {} });
+  expect(reset.ok()).toBeTruthy();
+
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-input').fill('纠错时应保留的草稿');
+  await page.getByTestId('workspace-open-settings').click();
+  await page.getByTestId('profile-open-memory').click();
+  await expect(page.getByTestId('memory-list')).toBeVisible();
+
+  await page.getByTestId('memory-item-mem-1').click();
+  await expect(page.getByTestId('memory-detail')).toBeVisible();
+  await page.getByTestId('memory-body-input').fill('纠错后的摘要格式说明');
+  await page.getByTestId('memory-correct-save').click();
+  await expect(page.getByTestId('memory-correct-saved')).toBeVisible();
+  await expect(page.getByTestId('memory-body')).toContainText('纠错后的摘要格式说明');
+
+  await page.getByTestId('memory-detail-back').click();
+  await expect(page.getByTestId('memory-item-mem-2')).toBeVisible();
+  await page.getByTestId('memory-item-mem-2').click();
+  await page.getByTestId('memory-withdraw').click();
+  await expect(page.getByTestId('memory-list')).toBeVisible();
+  await expect(page.getByTestId('memory-item-mem-2')).toHaveCount(0);
+  await expect(page.getByTestId('memory-item-mem-1')).toBeVisible();
+
+  await page.getByTestId('memory-back').click();
+  await page.getByTestId('settings-back').click();
+  await page.getByTestId('settings-back').click();
+  await expect(page.getByTestId('workspace-input')).toHaveValue('纠错时应保留的草稿');
+});
+
 test('E2E-ADINPUT: 响应式设置入口、Escape、IME 与减少动态效果', async ({ page }) => {
   const widths = [360, 768, 1024, 1440] as const;
   for (const w of widths) {

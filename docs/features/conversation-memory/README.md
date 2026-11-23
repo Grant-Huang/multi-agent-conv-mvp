@@ -6,7 +6,7 @@
 | 状态 | 设计中 |
 | 所属层 | 横切 · 第 5 研发线 |
 | 服务宪章 | [PRODUCT.md](../../PRODUCT.md) 第 3 节第 4 条及第 5 节的事实来源和可追查原则 |
-| 核对基线 | c74b144 |
+| 核对基线 | 47d8557 |
 | 当前版本 | 未发布 |
 
 ## 1. 意图
@@ -41,7 +41,7 @@
 
 ## 4. 实现入口
 
-当前基线的近期消息读取与任务背景拼装位于 `crates/runtime/src/conversation.rs`，预算位于 `crates/llm/src/budget.rs`，业务内省位于 `crates/runtime/src/introspect/`。桌面已有 [T-71 记忆列表与详情](../../testing/evidence/ai-desktop-t71-memory-list.md)，使用服务端夹具。分层检索、生命周期及会话注入尚待实现。
+当前基线的近期消息读取与任务背景拼装位于 `crates/runtime/src/conversation.rs`，预算位于 `crates/llm/src/budget.rs`，业务内省位于 `crates/runtime/src/introspect/`。桌面已有 [T-71 记忆列表与详情](../../testing/evidence/ai-desktop-t71-memory-list.md)及 [T-72 纠错与撤回](../../testing/evidence/ai-desktop-t72-memory-write.md)，均使用进程内服务夹具。分层检索、生命周期及会话注入尚待实现。
 
 ## 5. 质量
 

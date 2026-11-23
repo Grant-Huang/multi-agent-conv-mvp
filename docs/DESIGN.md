@@ -117,13 +117,13 @@ flowchart TB
 | Agent 准入 | 横切 | 无独立设计文档；本文末尾附节 + 第 10.3、10.4 节 | — | `runtime/src/admission.rs`、`server/src/admission_api.rs` | — | 已实现；调用者身份认证未做 |
 | 外发脱敏（DLP） | 横切 | [dlp/CONTRACT.md](dlp/CONTRACT.md)、[mcp/DLP_EGRESS_DEPLOYMENT.md](mcp/DLP_EGRESS_DEPLOYMENT.md) | [PLAN.md](PLAN.md)「DLP 外发脱敏」、[mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md](mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md) | `tools/dlp-egress/`、`agents/src/egress.rs` | 12、15–17、41、42（R-20261118-M2）、DECISIONS 第八节 D-n | 部分实现：只检查登记过的出口 |
 | 业务内省 | 横切 · 第 5 线 | [memory/INTROSPECTION_PLAN.md](memory/INTROSPECTION_PLAN.md) | [PLAN.md](PLAN.md)「INT」、[INTROSPECTION_PLAYBOOK.md](memory/INTROSPECTION_PLAYBOOK.md) | `runtime/src/introspect/`、`server/src/introspection_api.rs` | 45、49、51–55、64、65 | 已实现 S0–S8；默认关闭 |
-| 分层记忆与会话上下文（含个人画像、风格和组织 taste） | 横切 · 第 5 线 | [conversation-memory 特性档案](features/conversation-memory/README.md)（服务宪章 §3 第 4 条及 §5） | [第 5 线计划](features/conversation-memory/PLAN.md) | `runtime/src/conversation.rs` 为现有接点；桌面记忆列表已接服务端夹具（T-71） | 45–48、50；[五线分工](decisions/2026-11-22-five-workstreams.md) | 设计中，分层记忆与注入未实现 |
+| 分层记忆与会话上下文（含个人画像、风格和组织 taste） | 横切 · 第 5 线 | [conversation-memory 特性档案](features/conversation-memory/README.md)（服务宪章 §3 第 4 条及 §5） | [第 5 线计划](features/conversation-memory/PLAN.md) | `runtime/src/conversation.rs` 为现有接点；桌面记忆列表、纠错和撤回已接服务端夹具（T-71/72） | 45–48、50；[五线分工](decisions/2026-11-22-five-workstreams.md) | 设计中，分层记忆与注入未实现 |
 | 组织知识（RelOS） | 横切 | 无设计文档；散见 [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) 第 6 节 | AI 桌面 C 阶段 | `server/src/mom_relos.rs`（仅 MOM 诊断调用） | — | 无设计 |
 | 业务执行网关（NexusOps） | 横切 | 无设计文档；散见 ai-desktop 设计第 6 节、[mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M4 | — | — | 无设计 |
 | 日志与诊断 | 横切 | 本文第 10 节 | — | `crates/observe` | — | 已实现 |
 | MOM 案例、方案与审批 | 工业业务 | [mom/DESIGN.md](mom/DESIGN.md)、[mom/IMPLEMENTATION.md](mom/IMPLEMENTATION.md) | [mom/MOCK_REGISTER.md](mom/MOCK_REGISTER.md) | `runtime/src/mom/`、`server/src/mom.rs`、`server/src/bin/an-mom.rs` | DES-n | 已实现（模拟沙盘，未接生产） |
 | 运营桌面与运营频道 | 工业业务 | [mom/OPS_DESK.md](mom/OPS_DESK.md) | [PLAN.md](PLAN.md)「D0–D3」、[OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md) | `runtime/src/mom/ops_desk.rs`、`server/src/mom_ops.rs` | 56–58、60 | 已实现 D0–D2；D3 并入 World Adapter M0 |
-| World Adapter | 工业业务 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | [mom/WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)、`mom/WA_M*_TASKS.md` | `server/src/mom_world_des.rs`、`mom_world_mock.rs` | 61（World Adapter）、DES-31、DES-32 | 部分实现：M0–M2 已准出；M3-2 桩数据服务层已合入，真实站点验收待办 |
+| World Adapter | 工业业务 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | [mom/WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)、`mom/WA_M*_TASKS.md` | `server/src/mom_world_des.rs`、`mom_world_mock.rs` | 61（World Adapter）、DES-31、DES-32 | 部分实现：M0–M2 已准出；M3-2/3 桩数据服务层已合入，真实站点验收待办 |
 | DES 仿真工厂与实验入口 | 世界 | [mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md)、[mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md) | 同上 | `crates/des`、`crates/des-mcp`、`server/src/mom_des_connector.rs`、`mom_sim.rs` | DES-n、62 | 已实现；实验入口随 World Adapter M0 交付 |
 | 生产世界接入 | 世界 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M3、M4 | — | 61（World Adapter） | 设计已确认，未开工 |
 

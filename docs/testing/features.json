@@ -770,6 +770,7 @@
       "docs/testing/evidence/ai-desktop-b3.md",
       "docs/testing/evidence/ai-desktop-t70-preferences.md",
       "docs/testing/evidence/ai-desktop-t71-memory-list.md",
+      "docs/testing/evidence/ai-desktop-t72-memory-write.md",
       "docs/testing/evidence/ai-desktop-c1.md",
       "docs/testing/evidence/ai-desktop-c2.md",
       "docs/testing/evidence/ai-desktop-d.md",
@@ -788,6 +789,7 @@
       "E2E-ADHISTORY",
       "E2E-ADPROF",
       "E2E-ADMEM",
+      "E2E-ADMEMW",
       "E2E-ADINPUT",
       "E2E-ADREAD",
       "E2E-ADASK",
@@ -818,6 +820,9 @@
       "RT-ADMEM-01",
       "RT-ADMEM-02",
       "RT-ADMEM-03",
+      "RT-ADMEM-04",
+      "RT-ADMEM-05",
+      "RT-ADMEM-06",
       "RT-ADACL-01",
       "RT-ADACL-02",
       "RT-ADACL-03",
@@ -910,6 +915,7 @@
       "docs/testing/evidence/wa-m3-0.md",
       "docs/testing/evidence/wa-m3-1-red.md",
       "docs/testing/evidence/wa-m3-2-green.md",
+      "docs/testing/evidence/wa-m3-3-green.md",
       "scripts/wa-m2-regression.sh",
       "scripts/wa-m2-suite.sh",
       "docs/decisions/2026-11-21-wa-m2-1-green-service-layer.md",
@@ -967,7 +973,11 @@
       "RT-WADES-18",
       "RT-WADES-19",
       "RT-WAPROD-01",
-      "RT-WAPROD-02"
+      "RT-WAPROD-02",
+      "RT-WAPROD-03",
+      "RT-WAPROD-04",
+      "RT-WAPROD-05",
+      "RT-WAPROD-06"
     ]
   },
   {

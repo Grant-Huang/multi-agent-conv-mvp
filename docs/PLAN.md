@@ -14,7 +14,7 @@
 
 - [ ] 第 1、4 线：首页正常入口接入可靠受理。先验丢回执后按同一操作回读及重连，再验人工验收与结果回传。
 - [ ] 第 2 线：独立复跑真实桌面委派和运营频道远程 DES 场景，分别记录合入基线、运行模式和证据。
-- [ ] 第 3 线：沿用 M2-6 准出及 T-63 独立复验，维护远程 DES 基线；以已合入的 M3-2 服务层为基础准备候选站点与数据源。
+- [ ] 第 3 线：沿用 M2-6 准出及 T-63 独立复验，维护远程 DES 基线；以已合入的 M3-2/3 桩数据服务层为基础准备候选站点与数据源。
 - [ ] 第 5 线：确认 REQ-conversation-memory-01 并建立会话注入验收，沿用业务内省基线。分期见[第 5 线计划](features/conversation-memory/PLAN.md)。
 
 ## 0. 当前环境
@@ -971,6 +971,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **T-64 Resume 面板接 B2 SSE**（2026-11-22）：ResumeMockPanel → `/events`；E2E-ADRESUME 真实路径；证据 `testing/evidence/ai-desktop-t64-resume.md`
 - [x] **T-70 preferences 面板接 B3**（2026-11-22）：profileStore → `GET/PATCH /preferences`；E2E-ADPROF 真实路径；证据 `testing/evidence/ai-desktop-t70-preferences.md`
 - [x] **T-71 记忆列表接服务**（2026-11-22）：`GET /memories` 夹具权威 + SettingsPanel 列表/详情；E2E-ADMEM；证据 `testing/evidence/ai-desktop-t71-memory-list.md`
+- [x] **T-72 记忆纠错/撤回写路径**（2026-11-22）：PATCH/DELETE 夹具 + UI；E2E-ADMEMW；证据 `testing/evidence/ai-desktop-t72-memory-write.md`
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`
@@ -1011,6 +1012,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **M3-0** 冻结生产只读用例与任务卡（[mom/WA_M3_TASKS.md](mom/WA_M3_TASKS.md)；证据 `testing/evidence/wa-m3-0.md`；#209）
 - [x] **M3-1** 正式 CASES + Red 空壳；生产读合同方案（[mom/WA_M3_1_PLAN.md](mom/WA_M3_1_PLAN.md)；证据 `testing/evidence/wa-m3-1-red.md`；#213）
 - [x] **M3-2** Bind / Observe / 水位服务层 Green（桩数据，`RT-WAPROD-01`/`02`；证据 `testing/evidence/wa-m3-2-green.md`；#218）
+- [x] **M3-3** 权限 / 续读 / 延迟 / 写关闭（桩数据，`RT-WAPROD-03`～`06`；证据 `testing/evidence/wa-m3-3-green.md`；#220）
 - [ ] **M3** 生产只读（写仍 Mock；接站点权威源/水位/权限/断点恢复）
 - [ ] **M4** 首个可查证生产写动作（维修工单）
 

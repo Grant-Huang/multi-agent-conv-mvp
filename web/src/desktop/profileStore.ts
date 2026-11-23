@@ -116,6 +116,30 @@ export async function fetchMemory(id: string): Promise<MemoryEntry> {
   };
 }
 
+/** T-72：纠错正文/标题/有效期 */
+export async function correctMemory(
+  id: string,
+  patch: { title?: string; body?: string; expires?: string },
+): Promise<MemoryEntry> {
+  const m = await api.desktopMemoryPatch(id, patch);
+  return {
+    id: m.id,
+    title: m.title,
+    source: m.source,
+    body: m.body,
+    expires: m.expires,
+  };
+}
+
+/** T-72：撤回（默认列表隐藏） */
+export async function withdrawMemory(id: string): Promise<void> {
+  await api.desktopMemoryDelete(id);
+}
+
+export async function resetMemoriesFixture(): Promise<void> {
+  await api.desktopMemoriesReset();
+}
+
 export const SETTINGS_CATEGORIES = [
   { id: "assistant", title: "我的 AI 助理" },
   { id: "desktop", title: "工作与桌面" },
