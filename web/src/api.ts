@@ -651,6 +651,9 @@ export const api = {
       { method: "POST", body: "{}" },
     ),
 
+  /** AI Desktop T-82：首页快照（AD-G7 三区卡片读模型） */
+  desktopSnapshot: () => request<DesktopSnapshotDto>("/api/desktop/v1/snapshot"),
+
   /** AI Desktop C2：Attention 投递 */
   desktopAttentionList: () =>
     request<{ mute_ordinary: boolean; items: DesktopAttentionDto[] }>("/api/desktop/v1/attention"),
@@ -919,6 +922,27 @@ export type DesktopAttentionDto = {
   body: string;
   task_id: string | null;
   created_at: string;
+};
+
+export type DesktopSnapshotCardDto = {
+  id: string;
+  zone: string;
+  card_type: string;
+  entity_id: string;
+  title: string;
+  subtitle: string;
+  badge: string;
+  priority: string;
+  simulated: boolean;
+  updated_at: string;
+  source_refs: string[];
+};
+
+export type DesktopSnapshotDto = {
+  cards: DesktopSnapshotCardDto[];
+  counts: { tasks_active: number; attention_unread: number };
+  cursor: string;
+  generated_at: string;
 };
 
 export type DesktopAcceptDto = {

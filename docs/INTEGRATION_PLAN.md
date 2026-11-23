@@ -225,6 +225,7 @@ T-69（#215）已合入：沿用 `NEEDS_HUMAN`，按是否已有结果区分待�
 准入已有后端（`crates/server/tests/admission.rs`）；先做“界面 + 认证”的方案；外发“保证范围”写文档并加出口审计用例（`crates/server/tests/egress.rs` 为基线）。
 ### WP7 重启语义（**高风险：store.rs/orchestrator.rs，先出方案；依赖 WP0-1**）
 要写清：待批准保持、运行中任务续跑或明确失败原因；当前行为是 `fail_interrupted_tasks`（启动时把中断任务标 FAILED，见 `runtime/src/lib.rs::assemble`）。
+**本卡进度（T-81，2026-11-23）**：方案 A（明确失败 + 待批准保持，不做断点续跑）经用户批准实施，决策见 [2026-11-23-wp7-restart-semantics](decisions/2026-11-23-wp7-restart-semantics.md)。`store.rs::recover_interrupted_tasks` + `lib.rs::assemble` 写原因事件与失败交付；`orchestrator.rs` 未改。用例 RT-RESTART-01～06（01/02 新行为 Red→Green，03～06 基线锁定）+ E2E-RESTART（GS6 重启分支）。QUEUED 自动重排（方案 C）另卡。
 ### WP8 整体验收
 6 个黄金场景合并回归，真实模型/真实 ACP 的人工清单，CI 接入。只在前面全部完成后做。
 

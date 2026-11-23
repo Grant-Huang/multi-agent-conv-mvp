@@ -692,10 +692,21 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADMEM-05 | ai-desktop | reset 后 | `DELETE /memories/mem-2` | **200**；默认列表不含 mem-2；再 DELETE 幂等 |
 | RT-ADMEM-06 | ai-desktop | harness | `PATCH /memories/no-such` | **404** `not_found` |
 | RT-ADMEM-07 | ai-desktop | 同库路径；PATCH mem-1 后关闭 Runtime | 新进程/新 Runtime 打开同库再 `GET /memories/mem-1` | **200**；正文仍为纠错后内容（Store 权威，非进程夹具） |
+| RT-ADMEM-08 | ai-desktop | 两个全新库各起一个服务；库一纠错 mem-1 并撤回 mem-2 | 读库二的 `mem-1` / `mem-2` | 库二保持种子态：mem-1 为种子正文、mem-2 未撤回（进程状态不跨库泄漏） |
+| RT-ADMEM-09 | ai-desktop | mem-1 与 mem-2 全部撤回后关闭 Runtime | 同库重开服务，`GET /memories` 与 `GET /memories/mem-1` | 列表为空、mem-1 仍 **410** `revoked`（软删行使 ensure 播种不触发，撤回不得被重播种覆盖） |
 | RT-ADXR-01 | ai-desktop | harness reset | `GET /api/desktop/v1/assistant/messages` | **200**；`items` ≥2 含 `asst-msg-1`/`asst-msg-2`；均 `read=false`；`unread_count`≥2 |
 | RT-ADXR-02 | ai-desktop | reset 后 | `POST .../assistant/messages/read` 带 `["asst-msg-1"]` | **200**；`newly_marked=1`；GET 列表该条 `read=true`；`unread_count` 减 1 |
 | RT-ADXR-03 | ai-desktop | 已标 asst-msg-1 | 同 ID 再 POST read | **200**；`newly_marked=0`；`read_ids` 不变 |
 | RT-ADXR-04 | ai-desktop | harness | `POST .../read` 空 `message_ids` | **400** `invalid_request` |
+
+### AI Desktop T-82 首页快照（运行时 / HTTP）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-ADSNAP-01 | ai-desktop | fixture 已 reset | `GET /api/desktop/v1/snapshot` | **200**；`cards` 含 `card-smt-03`（zone=mine、entity_id=TASK-2026-018、card_type=task、simulated=true、source_refs 为数组）；agent 区含 TASK-2026-021；watch 区可为空（真实读模型）；`counts.tasks_active`/`counts.attention_unread` 为数值；`cursor` 非空 |
+| RT-ADSNAP-02 | ai-desktop | fixture reset 后经 B1 受理建真任务 | 再 `GET /snapshot` | 真实任务以卡片出现在快照且 `simulated=false`；fixture 卡保持 `simulated=true`（真实/模拟可辨） |
+| RT-ADSNAP-03 | ai-desktop | harness | `POST .../snapshot/fixture/reset` 连续两次，各自再 `GET /snapshot` | 每次均含 `card-smt-03`（种子可复现、reset 幂等） |
+| RT-ADSNAP-04 | ai-desktop | 全新库未播种 | `GET /api/desktop/v1/snapshot` | **200**；`cards` 为数组（可为空）、`counts` 结构有效、`cursor` 非空（空库不报错、不静默回退静态卡） |
 | RT-ADACL-01 | ai-desktop | 种子证据；alice 有授权 | `GET .../evidence/{id}?view=summary|source` + 头 | **200**；可读摘要/原文 |
 | RT-ADACL-02 | ai-desktop | bob 无授权 | 同上带 bob | **403**；body 不泄露原文/摘要 |
 | RT-ADACL-03 | ai-desktop | 撤权 alice | 读各视图 + 列表 + 搜索 | 全拒或列表/搜索不含该条；撤权幂等 |
@@ -851,6 +862,18 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 | RT-REV-04 | approval | 已是 COMPLETED | accept 或 reject | 409，状态不变 |
 | E2E-REV | approval | 浏览器任务卡为有 result 的待人工 | 点「判定通过」 | 状态与交付文案为已完成 |
 
+### 重启语义（WP7 / G08 / GS6 重启分支；用例冻结；实现只改业务代码）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-RESTART-01 | restart | 库中有 CREATED/QUEUED/RUNNING/VERIFYING 任务 | 关闭 Runtime 后同库重启 | 四类任务均 FAILED；每任务新增含「重启中断」原因的 StatusChanged 事件 |
+| RT-RESTART-02 | restart | 库中有中断任务 | 同库重启 | 各会话收到绑定 `task_id` 的助理失败交付，正文含「任务因服务重启中断，可重新委派」 |
+| RT-RESTART-03 | approval / restart | 待验收（NEEDS_HUMAN 有 result）跨重启 | 重启后 `POST .../review-verdict` accept | **200**；COMPLETED；事件含人工 note；交付照常 |
+| RT-RESTART-04 | approval / restart | 待验收跨重启；`max_review_rounds=1` | 重启后 reject → 返工 → 再待验收 → 再 reject | 首次 reject 回执行侧且同 `conversation_id`；二次 reject FAILED（返工额度按库扣减） |
+| RT-RESTART-05 | approval / restart | 待批准（NEEDS_HUMAN 无 result）跨重启 | 重启后 `POST .../approve` | **200**；按路由继续执行至终态 |
+| RT-RESTART-06 | restart | 库中有 COMPLETED/FAILED/CANCELLED 任务 | 同库重启 | 状态与 `updated_at` 不变；无新增重启事件 |
+| E2E-RESTART | ai-desktop | 干净浏览器 · 桌面首页；harness 同库重启 | S1 委派任务 A；A 在执行中重启服务；重连回原会话；再委派 B 走到待验收，重启后「判定通过」 | A FAILED 且会话见含重启原因的失败交付；B 重启后判定通过仍 COMPLETED；重连后仍在原会话（GS6 重启分支） |
+
 
 ## World Adapter / DES 实验与运营（M0；DES-UI 已冻结）
 
@@ -956,6 +979,8 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WAPROD-04 | world-adapter | 已有合法游标；测试控件可使游标过期 | 过期游标 Subscribe；恢复后续读 | `CURSOR_EXPIRED`；恢复后无漏无重复（按 `event_id`） |
 | RT-WAPROD-05 | world-adapter | 多源 stub；测试控件注入延迟 | Observe | 水位与载荷截至时间一致；延迟可见 |
 | RT-WAPROD-06 | world-adapter | 已 Bind 生产世界；Mock/DES 写路径仍挂载 | 对生产世界 Propose/Execute；对 Mock/DES 写 | 生产写关闭或拒绝；Mock/DES 写仍可用 |
+| RT-WAPROD-07 | world-adapter | 生产桩没有显式工单夹具 | 选择不透明工单引用 | 返回 403；快照入口保持现有合同 |
+| RT-WAPROD-08 | world-adapter | 对三个已绑定世界显式注入回环 adapter 夹具 | 选择一条工单并覆盖拒绝、不可见和源故障 | 公开来源及原始状态对齐，响应标注 fixture，游标为空；拒绝零来源调用，故障零回退 |
 
 说明：Feature Map 中 `E2E-WA-10`（生产确认写）属 **M4**；本里程碑只保证生产只读与写演示隔离。
 

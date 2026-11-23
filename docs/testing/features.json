@@ -61,7 +61,10 @@
       "RT-REV-01",
       "RT-REV-02",
       "RT-REV-03",
-      "RT-REV-04"
+      "RT-REV-04",
+      "RT-RESTART-03",
+      "RT-RESTART-04",
+      "RT-RESTART-05"
     ]
   },
   {
@@ -848,7 +851,8 @@
       "E2E-ADACCEPT",
       "E2E-HOMEACCEPT",
       "E2E-HOMEREV",
-      "E2E-HOMEREJ"
+      "E2E-HOMEREJ",
+      "E2E-RESTART"
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",
@@ -860,6 +864,10 @@
       "RT-ADREPLAY-03",
       "RT-ADREPLAY-04",
       "RT-ADREPLAY-05",
+      "RT-ADSNAP-01",
+      "RT-ADSNAP-02",
+      "RT-ADSNAP-03",
+      "RT-ADSNAP-04",
       "RT-ADLINK-01",
       "RT-ADLINK-02",
       "RT-ADLINK-03",
@@ -874,6 +882,8 @@
       "RT-ADMEM-05",
       "RT-ADMEM-06",
       "RT-ADMEM-07",
+      "RT-ADMEM-08",
+      "RT-ADMEM-09",
       "RT-ADXR-01",
       "RT-ADXR-02",
       "RT-ADXR-03",
@@ -896,7 +906,10 @@
       "RT-ADVOICE-04",
       "RT-ADHAND-01",
       "RT-ADHAND-02",
-      "RT-ADHAND-03"
+      "RT-ADHAND-03",
+      "RT-RESTART-01",
+      "RT-RESTART-02",
+      "RT-RESTART-06"
     ]
   },
   {
@@ -1039,7 +1052,9 @@
       "RT-WAPROD-03",
       "RT-WAPROD-04",
       "RT-WAPROD-05",
-      "RT-WAPROD-06"
+      "RT-WAPROD-06",
+      "RT-WAPROD-07",
+      "RT-WAPROD-08"
     ]
   },
   {
@@ -1054,7 +1069,9 @@
       "web/e2e/session-materials.spec.ts"
     ],
     "coverage": "browser",
-    "cases": ["E2E-SMAT"],
+    "cases": [
+      "E2E-SMAT"
+    ],
     "runtime_cases": [
       "RT-SMAT-01",
       "RT-SMAT-02",

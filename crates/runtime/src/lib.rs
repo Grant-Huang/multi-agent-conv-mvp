@@ -219,13 +219,40 @@ impl Runtime {
         egress: Option<Arc<an_agents::egress::EgressGuard>>,
     ) -> Result<Self> {
         let store = Arc::new(store);
-        let n = store.fail_interrupted_tasks()?;
-        if n > 0 {
+        // WP7 / G08：启动恢复——上次运行中断的任务置 FAILED，并写含原因的状态事件与失败交付。
+        // 不做断点续跑（无步骤级执行状态，重跑会重复副作用）；此时尚无 SSE 消费者，同步落库即可。
+        let interrupted = store.recover_interrupted_tasks()?;
+        if !interrupted.is_empty() {
             tracing::warn!(
                 event = "task.interrupted",
-                count = n,
-                "{n} 个任务在上次运行中被中断，已标记为 FAILED"
+                count = interrupted.len(),
+                "{} 个任务在上次运行中被中断，已标记为 FAILED",
+                interrupted.len()
             );
+        }
+        for task in &interrupted {
+            let reason = "任务因服务重启中断";
+            let event = an_core::TaskEvent {
+                id: an_core::new_id("evt"),
+                conversation_id: task.conversation_id.clone(),
+                task_id: Some(task.id.clone()),
+                kind: an_core::EventKind::StatusChanged,
+                status: Some(an_core::TaskStatus::Failed),
+                message: reason.to_string(),
+                stream_id: None,
+                created_at: an_core::now(),
+            };
+            if let Err(e) = store.insert_event(&event) {
+                tracing::error!(error = %e, task_id = %task.id, "写入重启中断事件失败");
+            }
+            if let Err(e) = store.add_message(
+                &task.conversation_id,
+                "assistant",
+                "任务因服务重启中断，可重新委派",
+                Some(&task.id),
+            ) {
+                tracing::error!(error = %e, task_id = %task.id, "写入重启失败交付失败");
+            }
         }
         let bus = Arc::new(Bus::new(store.clone()));
 

@@ -2908,12 +2908,31 @@ impl Store {
             .collect())
     }
 
-    /// 服务启动时调用：把上次运行中断的任务标记为失败（MVP 不做断点续跑）
-    pub fn fail_interrupted_tasks(&self) -> Result<usize> {
-        Ok(self.write().execute(
+    /// 服务启动时调用：把上次运行中断的任务标记为失败（MVP 不做断点续跑），
+    /// 返回受影响任务供启动恢复写原因事件与失败交付（WP7 / G08：明确失败原因）。
+    pub fn recover_interrupted_tasks(&self) -> Result<Vec<TaskRecord>> {
+        let conn = self.write();
+        let ids: Vec<String> = {
+            let mut st = conn.prepare(
+                "SELECT id FROM tasks WHERE status IN ('CREATED', 'QUEUED', 'RUNNING', 'VERIFYING') ORDER BY created_at, id",
+            )?;
+            let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        conn.execute(
             "UPDATE tasks SET status = 'FAILED', updated_at = ?1 WHERE status IN ('CREATED', 'QUEUED', 'RUNNING', 'VERIFYING')",
             [now()],
-        )?)
+        )?;
+        let mut out = Vec::with_capacity(ids.len());
+        for id in &ids {
+            if let Some(t) = self.get_task(id)? {
+                out.push(t);
+            }
+        }
+        Ok(out)
     }
 
     // ───────────── 事件 ─────────────
