@@ -14,6 +14,7 @@
 //! 与 Router 的分工：Conversation 只决定"要不要委派"，Router 决定"派给谁、怎么做"。
 
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::Instant;
 
 use an_core::{truncate_chars, FollowUpKind, Message, RouteLog, TaskRecord, TurnDecision};
@@ -41,8 +42,14 @@ pub struct ConversationRuntime {
     history_messages: usize,
     prompt_info: TurnPromptInfo,
     stream_replies: bool,
+    /// conversation-memory 5.1 配置：开关 / 上限 / 时限
+    session_materials: bool,
+    session_materials_max_tokens: u32,
+    session_materials_timeout_ms: u64,
     /// 同一会话同一时刻只处理一条消息
     locks: ConvLocks,
+    /// 会话资料源（conversation-memory 5.1）；默认读 Store，测试可注入
+    material_source: Arc<std::sync::RwLock<Arc<dyn crate::session_materials::MaterialSource>>>,
     /// 对话里管理助手（AG.4）；开关关闭时为 None，前台判断与以前完全相同
     agents: Option<Arc<crate::agent_chat::AgentAdmin>>,
 }
@@ -62,6 +69,10 @@ pub struct ConversationDeps {
     pub tools: String,
     pub review_mode: ReviewMode,
     pub stream_replies: bool,
+    /// conversation-memory 5.1：回答路径注入同会话任务回执资料
+    pub session_materials: bool,
+    pub session_materials_max_tokens: u32,
+    pub session_materials_timeout_ms: u64,
 }
 
 /// 一轮对话的处理结果（HTTP 接口直接返回它）
@@ -247,6 +258,10 @@ impl ConversationRuntime {
         Self {
             llm: d.llm,
             reply_llm: d.reply_llm,
+            material_source: Arc::new(std::sync::RwLock::new(Arc::new(
+                crate::session_materials::StoreMaterialSource(d.store.clone()),
+            )
+                as Arc<dyn crate::session_materials::MaterialSource>)),
             store: d.store,
             bus: d.bus,
             router: d.router,
@@ -257,6 +272,9 @@ impl ConversationRuntime {
                 review_mode: d.review_mode,
             },
             stream_replies: d.stream_replies,
+            session_materials: d.session_materials,
+            session_materials_max_tokens: d.session_materials_max_tokens,
+            session_materials_timeout_ms: d.session_materials_timeout_ms,
             locks: ConvLocks::new(),
             agents: d.agents,
         }
@@ -403,6 +421,15 @@ impl ConversationRuntime {
         Self::context_text(history)
     }
 
+    /// 注入自定义会话资料源（RT-SMAT-03 超时/错误降级验证；后续卡可换检索实现）。
+    pub fn set_material_source(&self, source: Arc<dyn crate::session_materials::MaterialSource>) {
+        let mut slot = self
+            .material_source
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        *slot = source;
+    }
+
     /// 处理用户的一条消息
     pub async fn handle_message(&self, conversation_id: &str, text: &str) -> Result<TurnOutcome> {
         self.run_turn(conversation_id, text, true).await
@@ -524,8 +551,9 @@ impl ConversationRuntime {
         match &decision {
             TurnDecision::Respond { .. } => {
                 let reply_id = an_core::new_id("msg");
+                let materials = self.session_materials_block(conversation_id).await;
                 let reply = self
-                    .generate_reply(conversation_id, &reply_id, &history)
+                    .generate_reply(conversation_id, &reply_id, &history, materials.as_deref())
                     .await;
                 let decision = TurnDecision::Respond {
                     reply: reply.clone(),
@@ -733,13 +761,51 @@ impl ConversationRuntime {
 
     /// 直接回答：单独生成回复。开启流式时边生成边推送到界面（片段的 stream_id = 最终消息 id）；
     /// 流式失败时退回一次性生成；都失败时给出带错误码的说明。
+    /// conversation-memory 5.1：收集并渲染回答路径的会话资料；关闭 / 为空 / 降级 → None。
+    /// `session.materials` 事件只记来源 id 与原因，不记资料正文与用户正文。
+    async fn session_materials_block(&self, conversation_id: &str) -> Option<String> {
+        if !self.session_materials {
+            return None;
+        }
+        let source = self
+            .material_source
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let collector = crate::session_materials::Collector::new(source, self.store.clone());
+        let materials = collector
+            .collect(
+                conversation_id,
+                Duration::from_millis(self.session_materials_timeout_ms),
+            )
+            .await;
+        let rendered =
+            crate::session_materials::render(&materials, self.session_materials_max_tokens);
+        tracing::info!(
+            event = "session.materials",
+            conv_id = %conversation_id,
+            selected = %materials.items.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
+            skipped = %materials.skipped.iter().map(|(id, r)| format!("{id}:{r}")).collect::<Vec<_>>().join(","),
+            chars = rendered.chars().count() as u64,
+            "回答路径会话资料注入"
+        );
+        (!rendered.is_empty()).then_some(rendered)
+    }
+
     async fn generate_reply(
         &self,
         conversation_id: &str,
         reply_id: &str,
         history: &[Message],
+        materials: Option<&str>,
     ) -> String {
         let mut messages = vec![ChatMessage::system(reply_system_prompt(&self.prompt_info))];
+        // 会话资料（数据，非指令）紧随系统提示；超预算时 fit() 最先裁掉它，不挤当前请求
+        if let Some(m) = materials {
+            if !m.trim().is_empty() {
+                messages.push(ChatMessage::system(m));
+            }
+        }
         for m in history {
             messages.push(if m.role == "user" {
                 ChatMessage::user(&m.content)

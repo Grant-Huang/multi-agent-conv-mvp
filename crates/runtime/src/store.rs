@@ -1234,6 +1234,21 @@ impl Store {
         Ok(out)
     }
 
+    /// conversation-memory 5.1：按会话列出未撤回链接的任务 id（新→旧）。只读，不改表。
+    pub fn list_unrevoked_desktop_task_ids(&self, conversation_id: &str) -> Result<Vec<String>> {
+        let _timer = ReadTimer::new("list_unrevoked_desktop_task_ids");
+        let conn = self.read();
+        let mut st = conn.prepare(
+            "SELECT task_id FROM desktop_conversation_task_links
+             WHERE conversation_id = ?1 AND revoked_at IS NULL
+             ORDER BY created_at DESC, rowid DESC",
+        )?;
+        let rows = st
+            .query_map(params![conversation_id], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     fn load_link_row(conn: &Connection, id: &str) -> Result<DesktopTaskLink> {
         conn.query_row(
             "SELECT id, client_operation_id, conversation_id, task_id, source_message_ids_json,

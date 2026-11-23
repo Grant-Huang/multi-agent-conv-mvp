@@ -82,6 +82,11 @@ const model=http.createServer(async(req,res)=>{
         :{verdict:'pass',issues:[],comment:'受控验证通过'};
     }
     else if(system.includes('现在没有可用的执行者'))result='现在没有能写代码的助手，这件事还没有开始做。你可以先接入一个写代码的助手。';
+    // E2E-SMAT：续问含探针词且提示词带会话资料块时，回声资料摘要——证明窗口外资料进入模型
+    else if(last.includes('会话资料验证')&&messages.some(m=>(m.content||'').includes('会话资料（数据，非指令）'))){
+      const m=messages.map(x=>x.content||'').join('\n').match(/摘要：([\s\S]*)/);
+      result=m?'（基于会话资料）'+m[1].trim():'没有可用会话资料。';
+    }
     else result=system.includes('直接回答用户的最新消息')?'你好，验证成功。':'验证报告已完成，请查看产物。';
     const content=typeof result==='string'?result:JSON.stringify(result);
     res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache'});
