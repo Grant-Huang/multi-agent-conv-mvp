@@ -40,3 +40,9 @@
 执行 `node --test scripts/accept-m3-live-observe.test.mjs` 验证候选断言和脱敏输出。在已批准的联调宿主上，使用 `AN_M3_OBSERVE_ORIGIN` 和 `AN_M3_OBSERVE_TOKEN`，运行 `node scripts/accept-m3-live-observe.mjs <bindings.json>`。输入数组中的各项包括 `vendor`（`odoo`／`openmes`／`carbon`）、`world`、`visible`、`hidden`、`source`、`sourceStatus`。两个不透明引用都需向测试主体授权，以通过同一身份验证源端可见范围。该探针验证三源的匿名拒绝、成功和源端不可见。撤权、跨站、故障注入和零回退另由受信服务层测试记录调用数。测试索引和正式 ID 随联审冻结。
 
 建议按服务层合同、单站点联调、三源复跑顺序验收。停用真实绑定并撤销测试凭证即可回退联调。桩数据与真实来源配置分别保留验证证据。
+
+## 正式路径夹具验收
+
+AgentNexus `c69c9e5` 已合入本方案。夹具切片仅在测试构造宿主时显式注入工单读取器。服务入口默认加载的 M3 桩无工单读取器，有选择的请求返回 `TEST_CONTROLS_DISABLED`。认证使用测试角色和绑定站点头，缺少任一项或站点不匹配时拒绝。成功响应标明 `provenance=fixture`，其工单、来源、状态与空游标字段供正式接线复用。生产身份和凭据验证仍按上节方案验收。
+
+运行 `cargo test --locked -p an-server --test mom_world_prod`。正式路径测试按 Git SHA 引入 MOM-MCP `5aa3129` 的 adapter，使用 Odoo JSON-2、OpenMES HTTP 和 Carbon 社区 REST 回环响应。RT-WAPROD-07 验证默认关闭工单夹具。RT-WAPROD-08 验证一世界一来源读取、权限／引用拒绝零调用、范围外不可见，以及 OpenMES 故障只访问已绑定连接器。原有 6 项桩合同随同回归。

@@ -958,6 +958,8 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WAPROD-04 | world-adapter | 已有合法游标；测试控件可使游标过期 | 过期游标 Subscribe；恢复后续读 | `CURSOR_EXPIRED`；恢复后无漏无重复（按 `event_id`） |
 | RT-WAPROD-05 | world-adapter | 多源 stub；测试控件注入延迟 | Observe | 水位与载荷截至时间一致；延迟可见 |
 | RT-WAPROD-06 | world-adapter | 已 Bind 生产世界；Mock/DES 写路径仍挂载 | 对生产世界 Propose/Execute；对 Mock/DES 写 | 生产写关闭或拒绝；Mock/DES 写仍可用 |
+| RT-WAPROD-07 | world-adapter | 生产桩没有显式工单夹具 | 选择不透明工单引用 | 返回 403；快照入口保持现有合同 |
+| RT-WAPROD-08 | world-adapter | 对三个已绑定世界显式注入回环 adapter 夹具 | 选择一条工单并覆盖拒绝、不可见和源故障 | 公开来源及原始状态对齐，响应标注 fixture，游标为空；拒绝零来源调用，故障零回退 |
 
 说明：Feature Map 中 `E2E-WA-10`（生产确认写）属 **M4**；本里程碑只保证生产只读与写演示隔离。
 
