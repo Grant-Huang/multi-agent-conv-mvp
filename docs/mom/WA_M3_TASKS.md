@@ -51,6 +51,10 @@
 
 见 `docs/testing/evidence/wa-m3-5.md`。生产写与真站点只读见 [WA_M4_TASKS.md](WA_M4_TASKS.md)。
 
+## 真来源短期工单切片
+
+[真实工单 Observe 接线方案](WA_M3_LIVE_OBSERVE_PLAN.md) 待联审。以已合入的 M3 桩合同为基线，另行评审真实身份、站点凭据及出站后进入联调。
+
 ## 4. 不做（M3）
 
 - 不做真实 MES 写 / WA-06 生产确认（M4）。
