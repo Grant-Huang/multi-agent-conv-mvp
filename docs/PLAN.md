@@ -973,7 +973,8 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **T-71 记忆列表接服务**（2026-11-22）：`GET /memories` 夹具权威 + SettingsPanel 列表/详情；E2E-ADMEM；证据 `testing/evidence/ai-desktop-t71-memory-list.md`
 - [x] **T-72 记忆纠错/撤回写路径**（2026-11-22）：PATCH/DELETE 夹具 + UI；E2E-ADMEMW；证据 `testing/evidence/ai-desktop-t72-memory-write.md`
 - [x] **T-73 已读跨端接服务**（2026-11-22）：`assistant/messages` 读状态夹具 + 面板；E2E-ADXR / RT-ADXR；证据 `testing/evidence/ai-desktop-t73-read-cross.md`
-- [x] **T-74 真机 mic 接入方案**（2026-11-23，**仅文档**）：[ai-desktop/MIC_REAL_PLAN.md](ai-desktop/MIC_REAL_PLAN.md)；决定草案 `decisions/2026-11-23-ai-desktop-mic-real-plan.md`（待确认；不开实现）
+- [x] **T-74 真机 mic 接入方案**（2026-11-23，**仅文档**）：[ai-desktop/MIC_REAL_PLAN.md](ai-desktop/MIC_REAL_PLAN.md)；#225 合入视为批准
+- [x] **T-75 真机 mic 首刀**（2026-11-23）：Web Speech/Harness ASR + fake device → `/voice/*`；E2E-ADMIC-01～04；证据 `testing/evidence/ai-desktop-t75-mic-real.md`
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`

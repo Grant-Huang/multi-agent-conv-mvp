@@ -3,8 +3,8 @@
 | 项目 | 内容 |
 |---|---|
 | 日期 | 2026-11-23 |
-| 来源 | **助手建议**（方案卡；待用户确认） |
-| 状态 | 待用户确认 |
+| 来源 | 用户确认（#225 合入视为批准；T-75 首刀实现） |
+| 状态 | 有效（方案）；实现进行中 |
 | 影响范围 | 特性 ai-desktop；文档；后续实现卡范围 |
 | 相关设计 | [ai-desktop/MIC_REAL_PLAN.md](../ai-desktop/MIC_REAL_PLAN.md)；DESIGN §8/D01；MOCK_REGISTRY M6；[2026-11-21-ai-desktop-d-voice-handoff](2026-11-21-ai-desktop-d-voice-handoff.md) |
 

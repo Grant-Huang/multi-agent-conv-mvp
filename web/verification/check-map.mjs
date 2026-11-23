@@ -45,8 +45,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const features = JSON.parse(readFileSync(path.join(root,'docs/testing/features.json'),'utf8'));
   const cases = readFileSync(path.join(root,'docs/testing/CASES.md'),'utf8');
   const tests = readdirSync(path.join(root,'web/e2e')).filter(f=>f.endsWith('.spec.ts')).map(f=>readFileSync(path.join(root,'web/e2e',f),'utf8')).join('\n');
-  const caseIds = [...cases.matchAll(/^\| (E2E-[A-Z]+) \|/gm)].map(m=>m[1]);
-  const testIds = [...tests.matchAll(/test\('(E2E-[A-Z]+):/g)].map(m=>m[1]);
+  // 允许 E2E-ADMIC-01 这类带数字后缀的 Case ID
+  const caseIds = [...cases.matchAll(/^\| (E2E-[A-Z][A-Z0-9-]*) \|/gm)].map(m=>m[1]);
+  const testIds = [...tests.matchAll(/test\('(E2E-[A-Z][A-Z0-9-]*):/g)].map(m=>m[1]);
   const runtimeCaseIds = [...cases.matchAll(/^\| (RT-[A-Z0-9]+-[0-9]+) \|/gm)].map(m=>m[1]);
   // Rust 集成测试：crates/*/tests/*.rs 中以 rt_ 开头的测试函数
   const rustTests = [];

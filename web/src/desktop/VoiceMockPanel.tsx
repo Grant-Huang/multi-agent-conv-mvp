@@ -1,5 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type DesktopVoiceSessionDto } from "../api";
+import { startAsr, type AsrSession } from "./voiceAsr";
+import {
+  getVoiceMediaMode,
+  requestMicrophone,
+  stopMediaStream,
+  type VoiceMediaMode,
+} from "./voiceMedia";
 
 type Props = {
   taskId: string;
@@ -8,6 +15,10 @@ type Props = {
 export function VoiceMockPanel({ taskId }: Props) {
   const [s, setS] = useState<DesktopVoiceSessionDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<VoiceMediaMode>(() => getVoiceMediaMode());
+  const streamRef = useRef<MediaStream | null>(null);
+  const asrRef = useRef<AsrSession | null>(null);
+  const lastPartialRef = useRef("");
 
   const apply = (next: DesktopVoiceSessionDto) => {
     setS(next);
@@ -18,7 +29,15 @@ export function VoiceMockPanel({ taskId }: Props) {
     void p.then((r) => apply(r.session)).catch((e: Error) => setError(e.message));
   };
 
+  const stopLocalMedia = () => {
+    asrRef.current?.stop();
+    asrRef.current = null;
+    stopMediaStream(streamRef.current);
+    streamRef.current = null;
+  };
+
   useEffect(() => {
+    setMode(getVoiceMediaMode());
     let cancelled = false;
     api
       .desktopVoiceReset(taskId)
@@ -30,12 +49,60 @@ export function VoiceMockPanel({ taskId }: Props) {
       });
     return () => {
       cancelled = true;
+      stopLocalMedia();
     };
   }, [taskId]);
 
+  const openMicReal = async () => {
+    setError(null);
+    stopLocalMedia();
+    const mic = await requestMicrophone();
+    if (!mic.ok) {
+      run(api.desktopVoicePermission(taskId, "denied"));
+      return;
+    }
+    streamRef.current = mic.stream;
+    try {
+      const perm = await api.desktopVoicePermission(taskId, "granted");
+      apply(perm.session);
+      const started = await api.desktopVoiceStart(taskId);
+      apply(started.session);
+      lastPartialRef.current = "";
+      asrRef.current = startAsr({
+        onPartial: (text) => {
+          lastPartialRef.current = text;
+          run(api.desktopVoicePartial(taskId, text));
+        },
+        onFinal: (text) => {
+          lastPartialRef.current = text;
+          run(api.desktopVoicePartial(taskId, text));
+        },
+        onError: (message) => setError(message),
+      });
+    } catch (e) {
+      stopLocalMedia();
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const injectAsrPartial = (text: string) => {
+    if (asrRef.current?.injectPartial) {
+      asrRef.current.injectPartial(text);
+      return;
+    }
+    lastPartialRef.current = text;
+    run(api.desktopVoicePartial(taskId, text));
+  };
+
+  const commitFinal = (text: string, link: boolean) => {
+    asrRef.current?.stop();
+    asrRef.current = null;
+    run(api.desktopVoiceFinalize(taskId, text, link));
+  };
+
   if (!s) {
     return (
-      <div className="voice-mock" data-testid="voice-mock-panel">
+      <div className="voice-mock" data-testid="voice-mock-panel" data-media-mode={mode}>
         <p className="muted">加载语音会话…</p>
         {error && (
           <p className="evidence-error" role="alert">
@@ -46,9 +113,18 @@ export function VoiceMockPanel({ taskId }: Props) {
     );
   }
 
+  const isReal = mode === "real";
+
   return (
-    <div className="voice-mock" data-testid="voice-mock-panel">
-      <h3>语音（fixture）</h3>
+    <div
+      className="voice-mock"
+      data-testid="voice-mock-panel"
+      data-media-mode={mode}
+    >
+      <h3>{isReal ? "语音（真机媒体）" : "语音（fixture）"}</h3>
+      <p className="muted" data-testid="voice-media-mode">
+        media={mode}
+      </p>
       <dl className="evidence-dl">
         <dt>权限</dt>
         <dd data-testid="voice-permission">{s.permission}</dd>
@@ -75,39 +151,72 @@ export function VoiceMockPanel({ taskId }: Props) {
           type="button"
           className="btn small"
           data-testid="voice-reset"
-          onClick={() => run(api.desktopVoiceReset(taskId))}
+          onClick={() => {
+            stopLocalMedia();
+            run(api.desktopVoiceReset(taskId));
+          }}
         >
           重置
         </button>
-        <button
-          type="button"
-          className="btn small"
-          data-testid="voice-deny"
-          onClick={() => run(api.desktopVoicePermission(taskId, "denied"))}
-        >
-          拒绝麦克风
-        </button>
-        <button
-          type="button"
-          className="btn primary small"
-          data-testid="voice-start"
-          onClick={() => run(api.desktopVoiceStart(taskId))}
-        >
-          开启麦克风
-        </button>
-        <button
-          type="button"
-          className="btn small"
-          data-testid="voice-inject-partial"
-          onClick={() => run(api.desktopVoicePartial(taskId, "正在说…SMT"))}
-        >
-          注入部分转写
-        </button>
+        {!isReal && (
+          <>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="voice-deny"
+              onClick={() => run(api.desktopVoicePermission(taskId, "denied"))}
+            >
+              拒绝麦克风
+            </button>
+            <button
+              type="button"
+              className="btn primary small"
+              data-testid="voice-start"
+              onClick={() => run(api.desktopVoiceStart(taskId))}
+            >
+              开启麦克风
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="voice-inject-partial"
+              onClick={() => run(api.desktopVoicePartial(taskId, "正在说…SMT"))}
+            >
+              注入部分转写
+            </button>
+          </>
+        )}
+        {isReal && (
+          <>
+            <button
+              type="button"
+              className="btn primary small"
+              data-testid="voice-open-mic"
+              onClick={() => void openMicReal()}
+            >
+              开启麦克风
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="voice-asr-partial"
+              onClick={() => injectAsrPartial("正在说…SMT-03 振动")}
+            >
+              ASR 注入部分
+            </button>
+          </>
+        )}
         <button
           type="button"
           className="btn small"
           data-testid="voice-commit"
-          onClick={() => run(api.desktopVoiceFinalize(taskId, "调查 SMT-03 振动异常", true))}
+          onClick={() => {
+            // fixture：保持既有 E2E-ADVOICE 固定最终文案；real：用 ASR/partial
+            const text = isReal
+              ? lastPartialRef.current || s.partial || "调查 SMT-03 振动异常"
+              : "调查 SMT-03 振动异常";
+            commitFinal(text, true);
+          }}
         >
           确认最终转写并关联
         </button>
@@ -131,7 +240,10 @@ export function VoiceMockPanel({ taskId }: Props) {
           type="button"
           className="btn small"
           data-testid="voice-offline"
-          onClick={() => run(api.desktopVoiceOffline(taskId))}
+          onClick={() => {
+            stopLocalMedia();
+            run(api.desktopVoiceOffline(taskId));
+          }}
         >
           断线
         </button>
