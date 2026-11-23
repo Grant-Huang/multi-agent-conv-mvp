@@ -4,7 +4,7 @@
 |---|---|
 | 任务 | T-73（方案卡）；实现另卡 |
 | 日期 | 2026-11-22 |
-| 状态 | **待用户批准后另卡实现**；本文件与决策 PR **只含文档** |
+| 状态 | **★方案已批准（#216）**；实现卡按本方按落地 |
 | 缺口 | G02；黄金场景 GS4；PLAN M4.3 |
 | 契约 | [state-and-cancellation](../contracts/state-and-cancellation.md) **S1/S2/S7**；[events-and-trace](../contracts/events-and-trace.md) **E1/R1/R2**（`task_id` + 父子关联；新写路径带 `trace_id`） |
 | 权威设计 | [DESIGN.md](../DESIGN.md) **§9.6**；校验实现 `crates/runtime/src/template.rs`（RT-TPL-01～10 已绿） |

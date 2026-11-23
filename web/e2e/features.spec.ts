@@ -229,3 +229,21 @@ test('E2E-REV: 审查待验收后判定通过', async ({ page }) => {
   expect(task.status).toBe('COMPLETED');
   await expect(page.locator('main')).toContainText(/已完成|任务已完成/);
 });
+
+test('E2E-TPL: 报价单模板拆分可见并汇合完成', async ({ page }) => {
+  const out = await send(page, '按报价单模板出具报价：序列号 SN-E2E，交期两周');
+  expect(out.task.fanout_kind).toBe('root');
+  expect(out.task.template_id).toBe('quote');
+  const parentCard = page.locator('.task-card[data-fanout="root"]');
+  await expect(parentCard).toBeVisible();
+  await expect(parentCard.locator('.fanout-tag')).toContainText('模板·quote');
+  await expect.poll(async () => {
+    const list = await (await page.request.get(`/api/tasks?conversation_id=${out.task.conversation_id}`)).json();
+    return list.filter((t: { fanout_kind?: string }) => t.fanout_kind === 'branch').length;
+  }).toBe(3);
+  await expect(page.locator('.task-card[data-fanout="branch"]')).toHaveCount(3);
+  const task = await complete(page, out.task.id);
+  expect(task.status).toBe('COMPLETED');
+  expect(task.result?.summary ?? '').toMatch(/damage|parts|history/);
+  await expect(page.locator('main .msg.assistant').last()).toBeVisible();
+});

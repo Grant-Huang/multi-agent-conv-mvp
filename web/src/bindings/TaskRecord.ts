@@ -11,4 +11,20 @@ export type TaskRecord = { id: string, conversation_id: string, goal: string, ro
 /**
  * 实际执行者（最近一轮）。尚未分配 agent 时为 None
  */
-assignment?: Assignment | null, created_at: string, updated_at: string, };
+assignment?: Assignment | null, 
+/**
+ * WP4：父任务 id；顶层为 None
+ */
+parent_id?: string | null, 
+/**
+ * WP4：`root` | `branch` | `join`；普通单任务为 None
+ */
+fanout_kind?: string | null, 
+/**
+ * WP4：模板分支 id；join 为 `__join__`；root / 单任务为 None
+ */
+branch_id?: string | null, 
+/**
+ * WP4：模板 id（root/join/branch 冗余）
+ */
+template_id?: string | null, created_at: string, updated_at: string, };

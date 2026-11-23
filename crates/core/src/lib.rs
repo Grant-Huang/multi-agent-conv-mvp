@@ -229,6 +229,18 @@ pub struct RouteDecision {
     pub risk_level: Risk,
     /// 路由理由：写入日志，用于积累评测集
     pub reason: String,
+    /// M4.3 / WP4：模板 id；空字符串表示不拆（DESIGN §9.6）
+    #[serde(default)]
+    #[ts(as = "Option<String>", optional)]
+    pub template_id: String,
+    /// 模板声明的交付物名称；不适用时为空
+    #[serde(default)]
+    #[ts(as = "Option<String>", optional)]
+    pub deliverable: String,
+    /// `yes` 才允许拆分；其他（含空）整单
+    #[serde(default)]
+    #[ts(as = "Option<String>", optional)]
+    pub slots_ok: String,
 }
 
 /// Policy 对路由决策的裁决结果（确定性规则，不调用模型）
@@ -676,6 +688,22 @@ pub struct TaskRecord {
     #[serde(default)]
     #[ts(optional = nullable)]
     pub assignment: Option<Assignment>,
+    /// WP4：父任务 id；顶层为 None
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub parent_id: Option<String>,
+    /// WP4：`root` | `branch` | `join`；普通单任务为 None
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub fanout_kind: Option<String>,
+    /// WP4：模板分支 id；join 为 `__join__`；root / 单任务为 None
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub branch_id: Option<String>,
+    /// WP4：模板 id（root/join/branch 冗余）
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub template_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

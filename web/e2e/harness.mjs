@@ -37,8 +37,9 @@ const model=http.createServer(async(req,res)=>{
       }
     }else if(schema==='route_decision') {
       // AG.3：要求改代码时路由到 coding（测试服务里没有内置 coding agent）
-      if(goal.includes('改代码验证'))result={task_class:'L2',execution_role:'coding',required_tools:[],risk_level:'medium',reason:'受控验证路由'};
-      else result={task_class:'L4',execution_role:'general',required_tools:['write_file'],risk_level:goal.includes('审批')?'high':'medium',reason:'受控验证路由'};
+      if(goal.includes('改代码验证'))result={task_class:'L2',execution_role:'coding',required_tools:[],risk_level:'medium',reason:'受控验证路由',template_id:'',deliverable:'',slots_ok:'no'};
+      else if(goal.includes('报价单模板'))result={task_class:'L2',execution_role:'general',required_tools:[],risk_level:'low',reason:'受控验证模板拆分',template_id:'quote',deliverable:'报价单',slots_ok:'yes'};
+      else result={task_class:'L4',execution_role:'general',required_tools:['write_file'],risk_level:goal.includes('审批')?'high':'medium',reason:'受控验证路由',template_id:'',deliverable:'',slots_ok:'no'};
     }else if(schema==='general_step') {
       // 失败验证：模型服务返回 500，General 出错，任务以 FAILED 结束（用于失败卡片用例）
       if(messages[1]?.content.includes('失败验证任务')) {
@@ -51,9 +52,19 @@ const model=http.createServer(async(req,res)=>{
         res.on('close',()=>{clearTimeout(timer);modelLog.write(JSON.stringify({event:'slow-disconnected'})+'\n');});
         return;
       }
+      // WP4 / E2E-TPL：模板分支直接输出信封 JSON（不走 write_file）
+      const blob=messages.map(m=>m.content||'').join('\n');
+      const branchMatch=blob.match(/branch_id 必须是 `([^`]+)`/)||goal.match(/· 分支 (\S+)/);
+      if(branchMatch){
+        const bid=branchMatch[1];
+        const payloads={damage:{verdict:'可修',hours:'6'},parts:{shortage_amount:'1200'},history:{warranty_risk:'低'}};
+        const payload=payloads[bid]||{ok:'1'};
+        result={thought:'信封',action:'final',tool:'',args:{},answer:JSON.stringify({branch_id:bid,status:'ok',missing:'',payload})};
+      }else{
       const done=messages.some(m=>m.role==='user'&&m.content.startsWith('工具 write_file 的返回结果'));
       result=done?{thought:'完成',action:'final',tool:'',args:{},answer:'验证报告已写入 reports/verification.md'}:
         {thought:'写入',action:'tool_call',tool:'write_file',args:{path:'reports/verification.md',content:'# 验证报告\n真实文件工具已写入。\n'},answer:''};
+      }
     }else if(schema==='review_verdict'){
       // E2E-REV：目标含「人工验收」时进入待验收（needs_human + result）
       const blob=messages.map(m=>m.content||'').join('\n');

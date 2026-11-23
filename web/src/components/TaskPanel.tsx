@@ -5,7 +5,7 @@ import { shouldShowArtifactList } from "../artifacts";
 import type { TaskEvent } from "../bindings/TaskEvent";
 import type { TaskRecord } from "../bindings/TaskRecord";
 import type { TaskStatus } from "../bindings/TaskStatus";
-import { ROLE_LABEL, roleLabel, statusLabel } from "../labels";
+import { ROLE_LABEL, fanoutLabel, roleLabel, statusLabel } from "../labels";
 import { useIncomingDetail } from "../refresh";
 import { ApprovalInfo } from "./ApprovalInfo";
 import { ArtifactList } from "./ArtifactList";
@@ -85,12 +85,14 @@ function TaskCard(props: {
   const awaitingApproval = task.status === "NEEDS_HUMAN" && !task.result;
   const awaitingAcceptance = task.status === "NEEDS_HUMAN" && !!task.result;
   const d = detail?.task ?? task;
+  const fanout = fanoutLabel(task);
 
   return (
-    <div className={`task-card ${open ? "open" : ""}`}>
+    <div className={`task-card ${open ? "open" : ""}`} data-fanout={task.fanout_kind ?? ""} data-template={task.template_id ?? ""}>
       {/* 标题是真正的按钮：可以用键盘展开，并告知屏幕阅读器展开状态 */}
       <button type="button" className="task-head" aria-expanded={open} onClick={onToggle}>
         <StatusBadge status={task.status} result={task.result} />
+        {fanout && <span className="fanout-tag">{fanout}</span>}
         <span className="role">
           {roleLabel(task.role)}
           {/* 执行者：标题行就能看到是哪个 agent 在做（尚未分配时只显示角色） */}

@@ -110,7 +110,7 @@ flowchart TB
 | 多 agent 执行与执行组 | 执行引擎 | 本文第 7 节 | — | `crates/agents`、`runtime/src/registry.rs`、`orchestrator.rs` | — | 已实现 |
 | 跨机器节点 | 执行引擎 | 本文第 8 节 | — | `crates/node`、`runtime/src/nodes.rs` | — | 已实现（局域网明文 HTTP，见第 13 节） |
 | 质检、返工与人工验收 | 执行引擎 | 本文第 7.6 节；[fencing/REVIEW_VERDICT_DESIGN.md](fencing/REVIEW_VERDICT_DESIGN.md)；[fencing/WP2_IMPLEMENTATION_PLAN.md](fencing/WP2_IMPLEMENTATION_PLAN.md) | [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) WP2 | `runtime/src/orchestrator.rs`、`policy.rs` | 59（围栏）；[2026-11-22-wp2-review-acceptance-plan](decisions/2026-11-22-wp2-review-acceptance-plan.md) | 部分实现：验收出口已合入（#215）；文案/E2E 见 WP2 |
-| 任务拆分与模板并行 | 执行引擎 | 本文第 9.6 节；[fencing/WP4_IMPLEMENTATION_PLAN.md](fencing/WP4_IMPLEMENTATION_PLAN.md) | [PLAN.md](PLAN.md) M4.3、INTEGRATION_PLAN WP4 | `runtime/src/template.rs`（编排接入待 WP4 实现卡） | [2026-11-22-wp4-task-split-template-plan](decisions/2026-11-22-wp4-task-split-template-plan.md) | 部分实现：只有加载校验，未接入编排；**WP4 方案待批** |
+| 任务拆分与模板并行 | 执行引擎 | 本文第 9.6 节；[fencing/WP4_IMPLEMENTATION_PLAN.md](fencing/WP4_IMPLEMENTATION_PLAN.md) | [PLAN.md](PLAN.md) M4.3、INTEGRATION_PLAN WP4 | `runtime/src/template.rs`、`builtin_templates.rs`、`orchestrator.rs`、`store.rs` | [2026-11-22-wp4-task-split-template-plan](decisions/2026-11-22-wp4-task-split-template-plan.md) | **已实现（WP4）**：内置模板接入编排；RT-TPL-11～16 / E2E-TPL；不做动态 DAG / M4.4 |
 | 研究报告与网页搜索 | 执行引擎 | 本文第 9.5 节；[tools/websearch/DESIGN.md](../tools/websearch/DESIGN.md) | [PLAN.md](PLAN.md) M2、M3 | `agents/src/report.rs`、`tools/websearch/` | — | 已实现 |
 | MCP 能力目录与 General Harness | 执行引擎 | [mcp/DESIGN.md](mcp/DESIGN.md) | [mcp/PLAN.md](mcp/PLAN.md) | `agents/src/mcp.rs`、`agents/src/tools.rs` | — | 已实现首期（`GET /api/capabilities`） |
 | 助手接入与管理（对话式） | 横切 | 无独立设计文档；目前在 [PLAN.md](PLAN.md)「AG」一节 | 同左 | `runtime/src/agent_catalog.rs`、`agent_config.rs`、`agent_diagnose.rs`、`agent_chat.rs` | 1–14、21、44、59（AG.4）、60 | 已实现；对话里管理助手默认关闭 |
@@ -807,7 +807,7 @@ General Agent 没有用推理服务自带的"函数调用"功能（不同小模�
 
 ### 9.6 M4：模板拆分与输入输出 JSON
 
-本节是 M4.3 的设计。**校验与 RT-TPL-01～10 已实现**（`runtime/src/template.rs`）；**接入编排器 / 并行执行 / Composer 汇合**见 [fencing/WP4_IMPLEMENTATION_PLAN.md](fencing/WP4_IMPLEMENTATION_PLAN.md)（方案待批，实现另卡）。线上在方案获批并实现前仍是一条消息一个动作。
+本节是 M4.3 的设计。**校验（RT-TPL-01～10）与编排接入（RT-TPL-11～16 / E2E-TPL）已实现**（`template.rs`、`builtin_templates.rs`、`orchestrator`/`store` 父子任务）。方按见 [fencing/WP4_IMPLEMENTATION_PLAN.md](fencing/WP4_IMPLEMENTATION_PLAN.md)。未命中模板时仍是一条消息一个动作；不做模型现场编图。
 
 能串行做完的留在一个 agent 里。只有几路都长、互不等待、串起来会超过一次任务能扛住的时间，才套模板并行。模型不现场编图。图是人手写的模板；能力卡片只声明节点上谁能做（`id`、角色、输入输出类型、并发、产物），不声明边。
 
@@ -928,7 +928,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 | 规则 | `policy.reject` | 没有可用 agent，拒绝派发 |
 | 准入 | `admission.preadmitted`、`admission.submitted`、`admission.clarified`、`admission.scored`、`admission.contracted`、`admission.approved`、`admission.activated`、`admission.rejected`、`admission.check`、`admission.warning`、`admission.downgraded`、`admission.revoked`、`admission.sampled`、`admission.bound` | agent 准入协议（E3）每次状态变化一条，带 `agent_id`；同名事件同时写入 `admission_events` 审计表 |
 | 准入（编排器） | `admission.result_rejected`、`admission.tasks_aborted` | 凭证已作废时丢弃 agent 交回的结果（带 `task_id`、`epoch`）；撤权时中止该 agent 进行中的任务（带中止数与耗时） |
-| 任务 | `task.status`、`task.status_conflict`、`task.human_review_verdict` | 每次状态变化一条（FAILED 为 ERROR 级别，NEEDS_HUMAN 为 WARN）；状态已被改掉、这次变化被拒绝时记 `task.status_conflict`（WARN，带期望状态和实际状态）；人工验收判定记 `task.human_review_verdict`（`verdict=accept\|reject`、可选 `rework`、`note`、`task_id`） |
+| 任务 | `task.status`、`task.status_conflict`、`task.human_review_verdict`、`task.template_split`、`task.template_branch_done`、`task.template_join` | 每次状态变化一条（FAILED 为 ERROR 级别，NEEDS_HUMAN 为 WARN）；状态已被改掉、这次变化被拒绝时记 `task.status_conflict`（WARN，带期望状态和实际状态）；人工验收判定记 `task.human_review_verdict`（`verdict=accept\|reject`、可选 `rework`、`note`、`task_id`）；WP4 模板拆分/分支终态/汇合分别记 `task.template_split`（`template_id`、分支数）、`task.template_branch_done`（`branch_id`、`status`）、`task.template_join`（`complete`、`missing_branches`），均带 `task_id` |
 | 执行组 | `pool.wait`、`pool.member_missing`（debug） | 都在忙需要排队；配置的成员还没连上 |
 | 执行 | `task.no_agent`、`agent.run_start`、`agent.run_end`、`agent.run_failed`、`agent.process_group_killed` | 分配和执行；`agent.process_group_killed` 记录子进程组被清理（`reason`：cancelled / timeout / exited_with_leftovers） |
 | ACP | `acp.permission`、`acp.finished`、`acp.handshake_failed`、`acp.runtime_error`、`acp.timeout` | |
