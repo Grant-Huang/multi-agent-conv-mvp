@@ -692,6 +692,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADMEM-05 | ai-desktop | reset 后 | `DELETE /memories/mem-2` | **200**；默认列表不含 mem-2；再 DELETE 幂等 |
 | RT-ADMEM-06 | ai-desktop | harness | `PATCH /memories/no-such` | **404** `not_found` |
 | RT-ADMEM-07 | ai-desktop | 同库路径；PATCH mem-1 后关闭 Runtime | 新进程/新 Runtime 打开同库再 `GET /memories/mem-1` | **200**；正文仍为纠错后内容（Store 权威，非进程夹具） |
+| RT-ADMEM-08 | ai-desktop | 两个全新库各起一个服务；库一纠错 mem-1 并撤回 mem-2 | 读库二的 `mem-1` / `mem-2` | 库二保持种子态：mem-1 为种子正文、mem-2 未撤回（进程状态不跨库泄漏） |
+| RT-ADMEM-09 | ai-desktop | mem-1 与 mem-2 全部撤回后关闭 Runtime | 同库重开服务，`GET /memories` 与 `GET /memories/mem-1` | 列表为空、mem-1 仍 **410** `revoked`（软删行使 ensure 播种不触发，撤回不得被重播种覆盖） |
 | RT-ADXR-01 | ai-desktop | harness reset | `GET /api/desktop/v1/assistant/messages` | **200**；`items` ≥2 含 `asst-msg-1`/`asst-msg-2`；均 `read=false`；`unread_count`≥2 |
 | RT-ADXR-02 | ai-desktop | reset 后 | `POST .../assistant/messages/read` 带 `["asst-msg-1"]` | **200**；`newly_marked=1`；GET 列表该条 `read=true`；`unread_count` 减 1 |
 | RT-ADXR-03 | ai-desktop | 已标 asst-msg-1 | 同 ID 再 POST read | **200**；`newly_marked=0`；`read_ids` 不变 |
