@@ -168,3 +168,6 @@
 {"id":"R-20261121-H1","at":"2026-11-21","by":"fixer","event":"note","text":"已提交方案 docs/fix-plans/r-20261121-h1.md，等待人确认；本轮仅代码核对与方案，未实施修复。"}
 {"id":"R-20261120-H1","at":"2026-11-21","by":"fixer","event":"note","text":"已提交方案 docs/fix-plans/r-20261120-h1.md，等待人确认；本轮仅代码核对与方案，未实施修复。"}
 {"id":"R-20261121-M1","at":"2026-11-21","by":"fixer","event":"note","text":"已提交方案 docs/fix-plans/r-20261121-m1.md，等待人确认；本轮仅代码核对与方案，未实施修复。"}
+{"id":"R-20261121-M2","at":"2026-11-23","by":"fixer","event":"note","text":"已提交方案 docs/fix-plans/r-20261121-m2.md，等待人确认；本轮仅代码核对，未实施修复。"}
+{"id":"R-20261121-M5","at":"2026-11-23","by":"fixer","event":"note","text":"已提交方案 docs/fix-plans/r-20261121-m5.md，等待人确认；本轮仅代码核对，未实施修复。"}
+{"id":"R-20261121-M6","at":"2026-11-23","by":"fixer","event":"note","text":"已提交方案 docs/fix-plans/r-20261121-m6.md，等待人确认；本轮仅代码核对，未实施修复。"}
