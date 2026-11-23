@@ -698,6 +698,15 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADXR-02 | ai-desktop | reset 后 | `POST .../assistant/messages/read` 带 `["asst-msg-1"]` | **200**；`newly_marked=1`；GET 列表该条 `read=true`；`unread_count` 减 1 |
 | RT-ADXR-03 | ai-desktop | 已标 asst-msg-1 | 同 ID 再 POST read | **200**；`newly_marked=0`；`read_ids` 不变 |
 | RT-ADXR-04 | ai-desktop | harness | `POST .../read` 空 `message_ids` | **400** `invalid_request` |
+
+### AI Desktop T-82 首页快照（运行时 / HTTP）
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-ADSNAP-01 | ai-desktop | fixture 已 reset | `GET /api/desktop/v1/snapshot` | **200**；`cards` 含 `card-smt-03`（zone=mine、entity_id=TASK-2026-018、card_type=task、simulated=true、source_refs 为数组）；agent 区含 TASK-2026-021；watch 区可为空（真实读模型）；`counts.tasks_active`/`counts.attention_unread` 为数值；`cursor` 非空 |
+| RT-ADSNAP-02 | ai-desktop | fixture reset 后经 B1 受理建真任务 | 再 `GET /snapshot` | 真实任务以卡片出现在快照且 `simulated=false`；fixture 卡保持 `simulated=true`（真实/模拟可辨） |
+| RT-ADSNAP-03 | ai-desktop | harness | `POST .../snapshot/fixture/reset` 连续两次，各自再 `GET /snapshot` | 每次均含 `card-smt-03`（种子可复现、reset 幂等） |
+| RT-ADSNAP-04 | ai-desktop | 全新库未播种 | `GET /api/desktop/v1/snapshot` | **200**；`cards` 为数组（可为空）、`counts` 结构有效、`cursor` 非空（空库不报错、不静默回退静态卡） |
 | RT-ADACL-01 | ai-desktop | 种子证据；alice 有授权 | `GET .../evidence/{id}?view=summary|source` + 头 | **200**；可读摘要/原文 |
 | RT-ADACL-02 | ai-desktop | bob 无授权 | 同上带 bob | **403**；body 不泄露原文/摘要 |
 | RT-ADACL-03 | ai-desktop | 撤权 alice | 读各视图 + 列表 + 搜索 | 全拒或列表/搜索不含该条；撤权幂等 |

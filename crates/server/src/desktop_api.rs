@@ -5,7 +5,10 @@ use std::convert::Infallible;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use an_core::EventPublisher;
+use an_core::{
+    now, EventPublisher, PolicyVerdict, Risk, Role, RouteDecision, TaskClass, TaskRecord,
+    TaskStatus,
+};
 use an_runtime::store::{
     DesktopAcceptOutcome, DesktopApprovalDecideOutcome, DesktopApprovalExecuteOutcome,
     DesktopEventCursor, DesktopEventsAfter, DesktopEvidenceAccess, DesktopLinkOutcome,
@@ -205,6 +208,12 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/desktop/v1/resume/fixture/continue-b",
             post(resume_fixture_continue_b),
+        )
+        // T-82 首页快照：三区卡片读模型（只读；fixture 种子仅测试/演示模式，标注「模拟」）
+        .route("/api/desktop/v1/snapshot", get(get_snapshot))
+        .route(
+            "/api/desktop/v1/snapshot/fixture/reset",
+            post(snapshot_fixture_reset),
         )
 }
 
@@ -809,6 +818,212 @@ async fn reset_memories_fixture(State(rt): State<AppState>) -> Response {
         Ok(()) => (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response(),
         Err(e) => memory_store_err(e),
     }
+}
+
+// ===== T-82 首页快照（AD-G7 / GET /api/desktop/v1/snapshot） =====
+
+#[derive(Debug, Clone, Serialize)]
+struct DesktopSnapshotCard {
+    id: String,
+    zone: &'static str,
+    card_type: &'static str,
+    entity_id: String,
+    title: String,
+    subtitle: String,
+    badge: &'static str,
+    priority: &'static str,
+    simulated: bool,
+    updated_at: String,
+    source_refs: Vec<String>,
+}
+
+fn snapshot_status_subtitle(status: &TaskStatus) -> &'static str {
+    match status {
+        TaskStatus::Created => "已创建",
+        TaskStatus::Queued => "排队中 · Agent 工作",
+        TaskStatus::Running => "Agent 执行中",
+        TaskStatus::Verifying => "待核验证据 · 查看工作区",
+        TaskStatus::NeedsHuman => "待人工处理",
+        TaskStatus::Completed => "已完成",
+        TaskStatus::Failed => "失败 · 可重试",
+        TaskStatus::Cancelled => "已取消",
+    }
+}
+
+fn snapshot_task_card(t: &TaskRecord, simulated: bool) -> DesktopSnapshotCard {
+    // 分区口径（对齐 A 阶段 mockData）：排队/执行中归 Agent 工作；核验中等需要人的归我的工作
+    let agent_zone = matches!(t.status, TaskStatus::Queued | TaskStatus::Running);
+    let (zone, badge): (&'static str, &'static str) = if agent_zone {
+        ("agent", "Agent 工作")
+    } else {
+        ("mine", "我的工作")
+    };
+    let priority = if matches!(t.status, TaskStatus::NeedsHuman | TaskStatus::Failed) {
+        "high"
+    } else {
+        "normal"
+    };
+    // fixture 种子沿用 A 阶段 mockData 的稳定卡 id（E2E testid 契约：card-smt-03 等）
+    let id = match (simulated, t.id.as_str()) {
+        (true, "TASK-2026-018") => "card-smt-03".to_string(),
+        (true, "TASK-2026-021") => "card-product".to_string(),
+        _ => format!("card-task-{}", t.id),
+    };
+    DesktopSnapshotCard {
+        id,
+        zone,
+        card_type: "task",
+        entity_id: t.id.clone(),
+        title: t.goal.clone(),
+        subtitle: snapshot_status_subtitle(&t.status).to_string(),
+        badge,
+        priority,
+        simulated,
+        updated_at: t.updated_at.clone(),
+        source_refs: vec![format!("task:{}", t.id)],
+    }
+}
+
+fn snapshot_internal_err(e: anyhow::Error) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+    )
+        .into_response()
+}
+
+async fn get_snapshot(State(rt): State<AppState>) -> Response {
+    let tasks = match rt.store.list_tasks(None) {
+        Ok(t) => t,
+        Err(e) => return snapshot_internal_err(e),
+    };
+    let attention = match rt.store.list_desktop_attention() {
+        Ok(a) => a,
+        Err(e) => return snapshot_internal_err(e),
+    };
+    let mut cards: Vec<DesktopSnapshotCard> = Vec::new();
+    let mut tasks_active = 0u64;
+    for t in &tasks {
+        if !matches!(t.status, TaskStatus::Completed | TaskStatus::Cancelled) {
+            tasks_active += 1;
+        }
+        // fixture 种子任务标注「模拟」；真实任务一律 simulated=false（宪章原则 8）
+        let simulated = matches!(t.id.as_str(), "TASK-2026-018" | "TASK-2026-021");
+        cards.push(snapshot_task_card(t, simulated));
+    }
+    let attention_unread = attention.len() as u64;
+    for a in &attention {
+        let mut refs = vec![format!("attention:{}", a.id)];
+        if let Some(tid) = &a.task_id {
+            refs.push(format!("task:{tid}"));
+        }
+        cards.push(DesktopSnapshotCard {
+            id: format!("card-attn-{}", a.id),
+            zone: "watch",
+            card_type: "attention",
+            entity_id: a.task_id.clone().unwrap_or_else(|| a.id.clone()),
+            title: a.title.clone(),
+            subtitle: a.body.clone(),
+            badge: "为你关注",
+            priority: if a.kind == "urgent" { "high" } else { "normal" },
+            simulated: false,
+            updated_at: a.created_at.clone(),
+            source_refs: refs,
+        });
+    }
+    cards.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    let cursor = now();
+    let body = json!({
+        "cards": cards,
+        "counts": {
+            "tasks_active": tasks_active,
+            "attention_unread": attention_unread,
+        },
+        "cursor": cursor,
+        "generated_at": cursor,
+    });
+    (StatusCode::OK, Json(body)).into_response()
+}
+
+/// fixture 种子任务：与 A 阶段 mockData 同内容；已存在则跳过（insert_task 为裸 INSERT）。
+#[allow(clippy::too_many_arguments)]
+fn snapshot_fixture_task(
+    conversation_id: &str,
+    id: &str,
+    goal: &str,
+    role: Role,
+    status: TaskStatus,
+) -> TaskRecord {
+    let ts = now();
+    TaskRecord {
+        id: id.to_string(),
+        conversation_id: conversation_id.to_string(),
+        goal: goal.to_string(),
+        role,
+        status,
+        route: RouteDecision {
+            task_class: TaskClass::L1,
+            execution_role: role,
+            required_tools: vec![],
+            risk_level: Risk::Low,
+            reason: "desktop snapshot fixture seed".into(),
+            template_id: String::new(),
+            deliverable: String::new(),
+            slots_ok: String::new(),
+        },
+        policy: PolicyVerdict {
+            auto_execute: true,
+            needs_review: false,
+            notes: vec!["snapshot fixture".into()],
+            candidates: vec![],
+        },
+        result: None,
+        review: None,
+        assignment: None,
+        parent_id: None,
+        fanout_kind: None,
+        branch_id: None,
+        template_id: None,
+        created_at: ts.clone(),
+        updated_at: ts,
+    }
+}
+
+async fn snapshot_fixture_reset(State(rt): State<AppState>) -> Response {
+    let conv = match rt.store.create_conversation("桌面首页 fixture") {
+        Ok(c) => c,
+        Err(e) => return snapshot_internal_err(e),
+    };
+    // fixture 任务时间戳固定在过去：不得抢占「最新任务」类逻辑（S1 委派芯片、历史等）
+    let ts = "2026-01-01T00:00:00+00:00".to_string();
+    let seeds = [
+        (
+            "TASK-2026-018",
+            "SMT-03 质量调查",
+            Role::General,
+            TaskStatus::Verifying,
+        ),
+        (
+            "TASK-2026-021",
+            "产品改进跟踪",
+            Role::General,
+            TaskStatus::Running,
+        ),
+    ];
+    for (id, goal, role, status) in seeds {
+        let exists = matches!(rt.store.get_task(id), Ok(Some(_)));
+        if exists {
+            continue;
+        }
+        let mut task = snapshot_fixture_task(&conv.id, id, goal, role, status);
+        task.created_at = ts.clone();
+        task.updated_at = ts.clone();
+        if let Err(e) = rt.store.insert_task(&task, "desktop snapshot fixture") {
+            return snapshot_internal_err(e);
+        }
+    }
+    // 不种 attention：关注区是真实读模型，空区照常渲染；避免污染 ADATTN 等队列断言
+    (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response()
 }
 
 #[derive(Debug, Clone, Serialize)]

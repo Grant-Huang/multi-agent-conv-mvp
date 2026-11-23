@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { SMT03_TASK_ID } from '../src/desktop/mockData';
 
+// T-82：首页卡片来自真实快照；每个用例先播种 fixture（SMT-03/产品改进/关注卡），
+// 断言本身与 A 阶段一致（不放松）。
+test.beforeEach(async ({ page }) => {
+  await page.request.post('/api/desktop/v1/snapshot/fixture/reset');
+});
+
 test.afterEach(async ({ page }, info) => {
   await page.screenshot({ path: info.outputPath('page.png'), fullPage: true });
 });
