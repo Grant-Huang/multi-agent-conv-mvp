@@ -104,8 +104,8 @@ flowchart TB
 | 对话前台与派发 | 交互与决策 | 本文第 5、9 节 | [PLAN.md](PLAN.md) M4、FT | `runtime/src/conversation.rs`、`router.rs`、`policy.rs`、`prompts.rs` | 18–43 | 已实现 |
 | 多 agent 执行与执行组 | 执行引擎 | 本文第 7 节 | — | `crates/agents`、`runtime/src/registry.rs`、`orchestrator.rs` | — | 已实现 |
 | 跨机器节点 | 执行引擎 | 本文第 8 节 | — | `crates/node`、`runtime/src/nodes.rs` | — | 已实现（局域网明文 HTTP，见第 13 节） |
-| 质检、返工与人工验收 | 执行引擎 | 本文第 7.6 节；[fencing/REVIEW_VERDICT_DESIGN.md](fencing/REVIEW_VERDICT_DESIGN.md) | [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) WP2 | `runtime/src/orchestrator.rs`、`policy.rs` | 59（围栏） | 部分实现：审查判"需人工"后的验收出口未做（第 15 节 #4） |
-| 任务拆分与模板并行 | 执行引擎 | 本文第 9.6 节 | [PLAN.md](PLAN.md) M4.3、INTEGRATION_PLAN WP4 | `runtime/src/template.rs` | — | 部分实现：只有加载校验，未接入编排 |
+| 质检、返工与人工验收 | 执行引擎 | 本文第 7.6 节；[fencing/REVIEW_VERDICT_DESIGN.md](fencing/REVIEW_VERDICT_DESIGN.md)；[fencing/WP2_IMPLEMENTATION_PLAN.md](fencing/WP2_IMPLEMENTATION_PLAN.md) | [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) WP2 | `runtime/src/orchestrator.rs`、`policy.rs` | 59（围栏）；[2026-11-22-wp2-review-acceptance-plan](decisions/2026-11-22-wp2-review-acceptance-plan.md) | 部分实现：验收出口已合入（#215）；文案/E2E 见 WP2 |
+| 任务拆分与模板并行 | 执行引擎 | 本文第 9.6 节；[fencing/WP4_IMPLEMENTATION_PLAN.md](fencing/WP4_IMPLEMENTATION_PLAN.md) | [PLAN.md](PLAN.md) M4.3、INTEGRATION_PLAN WP4 | `runtime/src/template.rs`（编排接入待 WP4 实现卡） | [2026-11-22-wp4-task-split-template-plan](decisions/2026-11-22-wp4-task-split-template-plan.md) | 部分实现：只有加载校验，未接入编排；**WP4 方案待批** |
 | 研究报告与网页搜索 | 执行引擎 | 本文第 9.5 节；[tools/websearch/DESIGN.md](../tools/websearch/DESIGN.md) | [PLAN.md](PLAN.md) M2、M3 | `agents/src/report.rs`、`tools/websearch/` | — | 已实现 |
 | MCP 能力目录与 General Harness | 执行引擎 | [mcp/DESIGN.md](mcp/DESIGN.md) | [mcp/PLAN.md](mcp/PLAN.md) | `agents/src/mcp.rs`、`agents/src/tools.rs` | — | 已实现首期（`GET /api/capabilities`） |
 | 助手接入与管理（对话式） | 横切 | 无独立设计文档；目前在 [PLAN.md](PLAN.md)「AG」一节 | 同左 | `runtime/src/agent_catalog.rs`、`agent_config.rs`、`agent_diagnose.rs`、`agent_chat.rs` | 1–14、21、44、59（AG.4）、60 | 已实现；对话里管理助手默认关闭 |
@@ -802,7 +802,7 @@ General Agent 没有用推理服务自带的"函数调用"功能（不同小模�
 
 ### 9.6 M4：模板拆分与输入输出 JSON
 
-本节是 M4.3 的设计，尚未改代码。线上仍是一条消息一个动作。
+本节是 M4.3 的设计。**校验与 RT-TPL-01～10 已实现**（`runtime/src/template.rs`）；**接入编排器 / 并行执行 / Composer 汇合**见 [fencing/WP4_IMPLEMENTATION_PLAN.md](fencing/WP4_IMPLEMENTATION_PLAN.md)（方案待批，实现另卡）。线上在方案获批并实现前仍是一条消息一个动作。
 
 能串行做完的留在一个 agent 里。只有几路都长、互不等待、串起来会超过一次任务能扛住的时间，才套模板并行。模型不现场编图。图是人手写的模板；能力卡片只声明节点上谁能做（`id`、角色、输入输出类型、并发、产物），不声明边。
 

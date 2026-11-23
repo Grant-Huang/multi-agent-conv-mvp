@@ -125,5 +125,7 @@
 | [EVAL_LOOP.md](EVAL_LOOP.md) | 缺陷、事故 → 测试与评测闭环 |
 | [PRODUCT_FENCES.md](PRODUCT_FENCES.md) | 工程围栏 → 产品能力映射 |
 | [REVIEW_VERDICT_DESIGN.md](REVIEW_VERDICT_DESIGN.md) | 审查进“待人工”后的通过 / 退回设计 |
+| [WP2_IMPLEMENTATION_PLAN.md](WP2_IMPLEMENTATION_PLAN.md) | WP2 / GS3：人工验收出口实施方按（已批准并实现 #215） |
+| [WP4_IMPLEMENTATION_PLAN.md](WP4_IMPLEMENTATION_PLAN.md) | WP4 / GS4：任务拆分与模板执行实施方按（方案待批） |
 
 **指导不是安全边界**：`AGENTS.md` 里的禁止事项必须靠 CI、分支保护、权限和运行时强制。
