@@ -353,6 +353,8 @@ export const api = {
       body: JSON.stringify(fixture ? { fixture } : {}),
     }),
   tasks: (cid: string) => request<TaskRecord[]>(`/api/tasks?conversation_id=${cid}`),
+  /** 全量任务列表（侧栏「任务」分区用；GET /api/tasks 无 conversation_id 过滤） */
+  tasksAll: () => request<TaskRecord[]>("/api/tasks"),
   task: (id: string, after?: string) => request<TaskDetail>(`/api/tasks/${id}${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   cancel: (id: string) => request<{ cancelled: boolean }>(`/api/tasks/${id}/cancel`, { method: "POST" }),
   approve: (id: string) => request<{ approved: boolean }>(`/api/tasks/${id}/approve`, { method: "POST" }),

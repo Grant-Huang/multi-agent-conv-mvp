@@ -340,7 +340,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 
 | Case | Feature | Given / When | Then |
 |---|---|---|---|
-| E2E-AGFIRST | agent-ui | 新浏览器首次打开，默认进入「我的桌面」 | 主视图顶部出现发现卡，列出可接入的助手；点"知道了"后刷新不再出现 |
+| E2E-AGFIRST | agent-ui | 新浏览器打开 设置与管理 → 连接与能力（T-88：发现卡自首页迁入） | 出现发现卡，列出可接入的助手；点"知道了"后刷新不再出现 |
 | E2E-AGLIST | agent-ui | 打开「助手」页签 | 显示 Claude Code（已安装、未接入）、ZCode（未安装）、hand（在 config.toml 中配置）、内置的通用执行，每项有用途说明 |
 | E2E-AGTOML | agent-ui | 查看 hand 一行 | 显示"在 config.toml 中配置"，没有"停用"按钮 |
 | E2E-AGGUIDE | agent-ui | ZCode 一行点"看安装步骤"，再点"我装好了，重新检测" | 引导卡列出安装步骤，命令带"复制"按钮；检测结果用大白话说明"还没有安装" |
@@ -649,7 +649,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-HOMEACCEPT | ai-desktop | 干净浏览器 · 桌面首页 | S1「委派任务」走 B1 可靠受理（POST 后按丢回执只信 GET）；同 `client_operation_id` 再 POST；打开任务；刷新后再进该会话 | 202/回读 status=accepted；dispatch_count=1；同 op 幂等；芯片 task id 可查；重连后仍在原会话 |
 | E2E-HOMEREV | ai-desktop / approval | 桌面首页；受控模型「人工验收」→ needs_human+result | S1 委派 → 打开原会话 →「判定通过」 | 任务 COMPLETED；`GET .../messages` 有 `task_id` 绑定的助理 Composer 交付；任务 `result` 含产物或证据；刷新后再进发起会话仍可断言（GS3 通过；T1/S7） |
 | E2E-HOMEREJ | ai-desktop / approval | 同上；默认 `max_review_rounds=1` | S1 委派 →「判定不通过」→ 返工；再待验收 → 再「判定不通过」 | 首次 reject→QUEUED/返工且同 `conversation_id`；二次 reject→FAILED；会话 durable 写入失败交付（`task_id` 绑定）；刷新后仍可断言（GS3 拒绝出口；对齐 RT-REV-02/03） |
-| E2E-ADATTN | ai-desktop | 干净浏览器 · 会话输入聚焦 | 输入中注入普通建议；静音后再注入普通建议；注入紧急 | 输入框保持焦点；普通建议可见但不抢焦点；静音后普通建议不新增；紧急仍可见 |
+| E2E-ADATTN | ai-desktop | 干净浏览器 · 会话输入聚焦 | API 注入普通建议（toast 轮询出现）；静音后再 API 注入；API 注入紧急 | 输入框保持焦点；普通建议可见但不抢焦点；静音后普通建议不新增；紧急仍可见；生产界面无注入控件（T-88） |
+| E2E-ADHOME | ai-desktop | 干净浏览器打开首页（fixture 已播种） | 检查首页与全局：无测试注入控件、无配置类链接行与横幅、无旧顶栏页签与右侧重复面板；侧栏含 助理/新会话/任务/历史/运营(权限)/设置 | 首页仅保留 S1 输入与三区快照卡（UI16 无重复面板）；生产界面无测试控制（MOCK_REGISTRY 规则 2） |
 | E2E-ADAPPR | ai-desktop | 打开 SMT-03 工作区 | 批准 → 改参数升版 → 用旧版意图执行失败；再批准并执行两次；拒绝后不可执行；未知回执可查证 | 升版后提示原审批失效；执行次数为 1；拒绝后错误可见；未知回执经查证变为 applied |
 | E2E-ADRESUME | ai-desktop | 打开 SMT-03 工作区 | 种子双任务 Run；对 A 断线重放含重复事件；对 B 补充输入继续 | A/B 状态不串；A 事件去重后进度更新；B 从 waiting_input 变为 running |
 | E2E-ADVOICE | ai-desktop | 打开 SMT-03 工作区 | 拒绝麦克风后改文字；开启后注入部分转写再确认最终并关联；播报中插话；断线后改文字 | 部分转写不关联任务；确认后关联 SMT-03；插话停止播报并保留最终转写；拒麦/断线均可文字继续 |

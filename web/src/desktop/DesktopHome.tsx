@@ -6,10 +6,6 @@ import { S1AskBar, type S1BgJob } from "./S1AskBar";
 type Props = {
   onOpenTask: (taskId: string, source: string) => void;
   onOpenEvidence: (taskId: string) => void;
-  onOpenDesExperiment?: () => void;
-  onOpenOpsChannel?: () => void;
-  onOpenMomWorkbench?: () => void;
-  opsEnabled: boolean;
   assistantName?: string;
   s1BgJob?: S1BgJob | null;
   onS1Ask?: (text: string) => void;
@@ -82,10 +78,6 @@ function Zone({
 export function DesktopHome({
   onOpenTask,
   onOpenEvidence,
-  onOpenDesExperiment,
-  onOpenOpsChannel,
-  onOpenMomWorkbench,
-  opsEnabled,
   assistantName,
   s1BgJob = null,
   onS1Ask,
@@ -118,50 +110,6 @@ export function DesktopHome({
             助理：{assistantName}
           </p>
         )}
-        <p className="desktop-home-lead">提问、委派与关注同一处；模拟卡片已标注。</p>
-        {!opsEnabled && (
-          <p className="desktop-ops-off" data-testid="ops-module-off" role="status">
-            运营模块未启用
-          </p>
-        )}
-        <p className="desktop-settings-links">
-          {onOpenMomWorkbench && (
-            <a
-              href="#mom-workbench"
-              onClick={(e) => {
-                e.preventDefault();
-                onOpenMomWorkbench();
-              }}
-            >
-              MOM 工作台
-            </a>
-          )}
-          {onOpenDesExperiment && (
-            <a
-              href="#des-experiment"
-              onClick={(e) => {
-                e.preventDefault();
-                onOpenDesExperiment();
-              }}
-            >
-              DES 仿真实验
-            </a>
-          )}
-          {onOpenOpsChannel && (
-            <a
-              href="#ops-channel"
-              onClick={(e) => {
-                e.preventDefault();
-                onOpenOpsChannel();
-              }}
-            >
-              运营频道
-            </a>
-          )}
-          {(onOpenMomWorkbench || onOpenDesExperiment || onOpenOpsChannel) && (
-            <span className="desktop-settings-hint">设置与管理</span>
-          )}
-        </p>
       </header>
       {onS1Ask && onS1Delegate && onOpenBgTask && (
         <>
