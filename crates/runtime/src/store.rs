@@ -589,20 +589,33 @@ fn trim_events(conn: &Connection, keep: i64) -> Result<()> {
 
 fn write_events(conn: &mut Connection, batch: &[TaskEvent]) -> Result<()> {
     let tx = conn.transaction()?;
+    let mut ignored = 0usize;
     {
-        let mut st = tx.prepare("INSERT INTO events (id, conversation_id, task_id, json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)")?;
+        // 契约 events-and-trace E2：同一事件编号只处理一次；重复编号忽略而非整批回滚（H4）
+        let mut st = tx.prepare("INSERT OR IGNORE INTO events (id, conversation_id, task_id, json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)")?;
         for e in batch {
-            st.execute(params![
+            let changed = st.execute(params![
                 e.id,
                 e.conversation_id,
                 e.task_id,
                 serde_json::to_string(e)?,
                 e.created_at
             ])?;
+            if changed == 0 {
+                ignored += 1;
+            }
         }
     }
     trim_events(&tx, EVENT_KEEP)?;
     tx.commit()?;
+    if ignored > 0 {
+        tracing::warn!(
+            event = "store.event_batch",
+            ignored,
+            total = batch.len(),
+            "W_ 事件写入忽略重复编号（events-and-trace E2）"
+        );
+    }
     Ok(())
 }
 

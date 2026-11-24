@@ -76,8 +76,8 @@ struct DesktopEventEnvelope {
     created_at: String,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
+pub fn routes(test_fixtures: bool) -> Router<AppState> {
+    let router = Router::new()
         .route(
             "/api/desktop/v1/conversations/{id}/requests",
             post(create_request),
@@ -209,25 +209,31 @@ pub fn routes() -> Router<AppState> {
             "/api/desktop/v1/tasks/{id}/handoff/share-voice",
             post(handoff_share_voice),
         )
-        // T-64 harness fixture：往 bus 灌事件供 B2 SSE 消费（无新表）
-        .route(
-            "/api/desktop/v1/resume/fixture/seed",
-            post(resume_fixture_seed),
-        )
-        .route(
-            "/api/desktop/v1/resume/fixture/replay-a",
-            post(resume_fixture_replay_a),
-        )
-        .route(
-            "/api/desktop/v1/resume/fixture/continue-b",
-            post(resume_fixture_continue_b),
-        )
+        // T-64 harness fixture（resume/fixture/*）改为按 test_fixtures 开关条件挂载，见函数尾部（T-95/FIX-C/H4）
         // T-82 首页快照：三区卡片读模型（只读；fixture 种子仅测试/演示模式，标注「模拟」）
         .route("/api/desktop/v1/snapshot", get(get_snapshot))
         .route(
             "/api/desktop/v1/snapshot/fixture/reset",
             post(snapshot_fixture_reset),
-        )
+        );
+    // T-95/FIX-C（H4）：Resume 测试夹具接口仅在 test_fixtures=true 时挂载；生产缺省不挂载（404）
+    if test_fixtures {
+        router
+            .route(
+                "/api/desktop/v1/resume/fixture/seed",
+                post(resume_fixture_seed),
+            )
+            .route(
+                "/api/desktop/v1/resume/fixture/replay-a",
+                post(resume_fixture_replay_a),
+            )
+            .route(
+                "/api/desktop/v1/resume/fixture/continue-b",
+                post(resume_fixture_continue_b),
+            )
+    } else {
+        router
+    }
 }
 
 pub(crate) fn principal_from(headers: &HeaderMap) -> String {
@@ -2109,11 +2115,14 @@ async fn resume_fixture_seed(State(rt): State<AppState>) -> Response {
         }
     };
     let cid = conv.id;
+    // T-95/FIX-C（H4）：事件编号每次生成，不得写死——重复 seed 的主键冲突会整批回滚真实事件
+    let ev_a = an_core::new_id("evt");
+    let ev_b = an_core::new_id("evt");
     publish_resume_event(
         &rt,
         &cid,
         RESUME_TASK_A,
-        "seed-a-status",
+        &ev_a,
         an_core::EventKind::StatusChanged,
         Some(an_core::TaskStatus::Running),
         "采集中",
@@ -2122,7 +2131,7 @@ async fn resume_fixture_seed(State(rt): State<AppState>) -> Response {
         &rt,
         &cid,
         RESUME_TASK_B,
-        "seed-b-status",
+        &ev_b,
         an_core::EventKind::StatusChanged,
         Some(an_core::TaskStatus::NeedsHuman),
         "等待补充范围",
@@ -2132,7 +2141,8 @@ async fn resume_fixture_seed(State(rt): State<AppState>) -> Response {
         StatusCode::OK,
         Json(json!({
             "conversation_id": cid,
-            "after_cursor": "seed-b-status",
+            "after_cursor": ev_b,
+            "event_ids": [ev_a, ev_b],
             "task_a": RESUME_TASK_A,
             "task_b": RESUME_TASK_B,
             "runs": [
@@ -2191,7 +2201,7 @@ async fn resume_fixture_replay_a(
         &rt,
         &cid,
         RESUME_TASK_A,
-        "ev-a-1",
+        &an_core::new_id("evt"),
         an_core::EventKind::Progress,
         Some(an_core::TaskStatus::Running),
         "采集 40%",
@@ -2200,7 +2210,7 @@ async fn resume_fixture_replay_a(
         &rt,
         &cid,
         RESUME_TASK_A,
-        "ev-a-2",
+        &an_core::new_id("evt"),
         an_core::EventKind::Progress,
         Some(an_core::TaskStatus::Running),
         "采集 80%",
@@ -2249,7 +2259,7 @@ async fn resume_fixture_continue_b(
         &rt,
         &cid,
         RESUME_TASK_B,
-        "ev-b-continue",
+        &an_core::new_id("evt"),
         an_core::EventKind::StatusChanged,
         Some(an_core::TaskStatus::Running),
         "已补充：限定 Line-B 批次",

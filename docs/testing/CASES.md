@@ -717,6 +717,13 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADDRAFTS-02 | ai-desktop | 已存 version=2 的草稿 | 用 `expected_version=1` 再 PUT | **409** `version_conflict`；body 含当前草稿；原内容不被覆盖 |
 | RT-ADDRAFTS-03 | ai-desktop | 已存 version=2、text=草稿A | `DELETE ...?sent_version=2`；再用 `sent_version=2` 重复 DELETE | 第一次：text 清空、version=3、scope 保留；第二次：幂等不变化（仍是清空后状态） |
 | RT-ADDRAFTS-04 | ai-desktop | 草稿含 scope=continue 与 continue_task_id；关闭 Runtime 后同库重开 | `GET` 同路径；另对 kind=other PUT | 重启后草稿仍在（持久）；kind 非法 **400** `invalid_request` |
+
+### AI Desktop T-95 夹具门控与事件去重（运行时 / HTTP，FIX-C/H4）
+
+| Case | Feature | Given / When | Then |
+|---|---|---|---|
+| RT-FIXC-01 | ai-desktop | 连续两次 `POST /resume/fixture/seed` | 两次各产生独立会话；`after_cursor`/事件编号每次生成不重复；各自会话 2 条事件全部落库可回放（H4 主断言）；第二会话用自己的 after_cursor 订阅 **200** |
+| RT-FIXC-02 | ai-desktop | `desktop.test_fixtures=false`（生产缺省） | `/resume/fixture/seed`、`/replay-a`、`/continue-b` 全部 **404**（夹具接口不可达） |
 | RT-ADACL-01 | ai-desktop | 种子证据；alice 有授权 | `GET .../evidence/{id}?view=summary|source` + 头 | **200**；可读摘要/原文 |
 | RT-ADACL-02 | ai-desktop | bob 无授权 | 同上带 bob | **403**；body 不泄露原文/摘要 |
 | RT-ADACL-03 | ai-desktop | 撤权 alice | 读各视图 + 列表 + 搜索 | 全拒或列表/搜索不含该条；撤权幂等 |
