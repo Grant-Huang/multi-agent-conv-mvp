@@ -8,6 +8,8 @@ test.describe.configure({ mode: 'serial' });
 
 /** 打开「助手」页签，返回某个 agent 的一行 */
 async function openAgents(page: Page) {
+  // T-88：助手管理页签在会话视图右栏；先从侧栏进入会话
+  await page.getByRole('button', { name: '＋ 新会话', exact: true }).click();
   await page.getByRole('tab', { name: '助手' }).click();
   return page.getByRole('region', { name: '助手列表' });
 }
@@ -28,14 +30,20 @@ test.afterEach(async ({ page }, info) => { await page.screenshot({ path: info.ou
 
 test('E2E-AGFIRST: 首次打开显示发现卡，关掉后不再出现', async ({ page }) => {
   await page.goto('/');
+  // T-88：发现卡从首页移到设置-连接与能力（断言不变，入口路径适配）
+  await page.getByTestId('open-settings').click();
+  await page.getByTestId('settings-cat-connect').click();
   const card = page.getByRole('region', { name: '发现的助手' });
   await expect(card).toBeVisible();
   await expect(card).toContainText('Claude Code');
   await card.getByRole('button', { name: '知道了', exact: true }).click();
   await expect(card).toHaveCount(0);
   await page.reload();
-  await expect(page.getByRole('tab', { name: '助手' })).toBeVisible();
+  await page.getByTestId('open-settings').click();
+  await page.getByTestId('settings-cat-connect').click();
   await expect(page.getByRole('region', { name: '发现的助手' })).toHaveCount(0);
+  await page.getByRole('button', { name: '＋ 新会话', exact: true }).click();
+  await expect(page.getByRole('tab', { name: '助手' })).toBeVisible();
 });
 
 test('E2E-AGLIST: 助手页签列出状态、来源和用途', async ({ page }) => {

@@ -17,6 +17,9 @@ export function AssistantReadPanel() {
 
   useEffect(() => {
     void refresh().catch((e) => setErr(String(e)));
+    // 跨设备已读同步：轻量轮询（服务端权威）
+    const t = setInterval(() => void refresh().catch(() => {}), 5_000);
+    return () => clearInterval(t);
   }, []);
 
   const markRead = async (ids: string[]) => {
@@ -32,44 +35,13 @@ export function AssistantReadPanel() {
     }
   };
 
-  const reset = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      await api.desktopAssistantMessagesReset();
-      await refresh();
-    } catch (e) {
-      setErr(String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="asst-read-root" data-testid="asst-read-root">
       <div className="asst-read-head">
-        <strong>助理已读（服务）</strong>
+        <strong>助理消息</strong>
         <span className="muted" data-testid="asst-read-unread">
           未读 {unread}
         </span>
-        <button
-          type="button"
-          className="btn small"
-          data-testid="asst-read-reset"
-          disabled={busy}
-          onClick={() => void reset()}
-        >
-          重置夹具
-        </button>
-        <button
-          type="button"
-          className="btn small"
-          data-testid="asst-read-refresh"
-          disabled={busy}
-          onClick={() => void refresh().catch((e) => setErr(String(e)))}
-        >
-          刷新
-        </button>
       </div>
       <ul className="asst-read-list" data-testid="asst-read-list">
         {items.map((it) => (
