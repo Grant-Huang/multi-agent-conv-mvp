@@ -990,6 +990,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WAPROD-06 | world-adapter | 已 Bind 生产世界；Mock/DES 写路径仍挂载 | 对生产世界 Propose/Execute；对 Mock/DES 写 | 生产写关闭或拒绝；Mock/DES 写仍可用 |
 | RT-WAPROD-07 | world-adapter | 生产桩没有显式工单夹具 | 选择不透明工单引用 | 返回 403；快照入口保持现有合同 |
 | RT-WAPROD-08 | world-adapter | 对三个已绑定世界显式注入回环 adapter 夹具 | 选择一条工单并覆盖拒绝、不可见和源故障 | 公开来源及原始状态对齐，响应标注 fixture，游标为空；拒绝零来源调用，故障零回退 |
+| RT-WAPROD-09 | world-adapter | 回环夹具源返回非 JSON 响应 | 选择该工单读取 | 502 `INVALID_SOURCE_RESPONSE`；恰好一次来源调用（零回退零重试）；包络不含源私有字段；联审冻结候选（401/404 独立身份交叉确认属联调宿主探针） |
 
 说明：Feature Map 中 `E2E-WA-10`（生产确认写）属 **M4**；本里程碑只保证生产只读与写演示隔离。
 
