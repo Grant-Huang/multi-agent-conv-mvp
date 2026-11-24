@@ -2,10 +2,10 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | **部分有效**（E1–E5、R1–R3 已确认；R4 CI 强制登记仍建议） |
+| 状态 | **部分有效**（E1–E5、R1a、R2–R3 已确认；R1b 推迟到 World Adapter M4 写入前；R4 CI 强制登记仍建议） |
 | 核对基线 | 远端 `master` 的 `43014db`（2026-11-22） |
 | 适用特性 | 日志与诊断、AI 桌面事件流、MOM 事件、World Adapter 观测与执行、运营频道、业务内省 |
-| 确认决策 | [2026-11-22-c2-m2-minimal-contracts](../decisions/2026-11-22-c2-m2-minimal-contracts.md) |
+| 确认决策 | [2026-11-22-c2-m2-minimal-contracts](../decisions/2026-11-22-c2-m2-minimal-contracts.md)；[2026-11-24-trace-id-minimal-scope](../decisions/2026-11-24-trace-id-minimal-scope.md)（R1 拆分） |
 
 ## 1. 范围
 
@@ -31,7 +31,8 @@
 | E3 | 先提交权威状态和待发布记录，再投递事件 | ai-desktop/DESIGN 第 5 节 |
 | E4 | 续读从游标之后开始、无遗漏无重复；游标过期时明确告知，由调用方重新取快照 | ai-desktop/DESIGN 第 5 节；WORLD_ADAPTER 第 4.2 节 |
 | E5 | 日志只记凭据引用和必要业务信息，不记正文和凭证 | WORLD_ADAPTER 第 8 节；DESIGN 第 10.3 节 |
-| R1 | 引入贯穿的 `trace_id`：**在桌面或 HTTP 受理请求时生成**，经任务、案例、提案、执行一路携带。**C2/M2 及之后的新写路径日志与事件必须带 `trace_id`**；旧路径渐进补齐 | 决定 2026-11-22-c2-m2-minimal-contracts（D5） |
+| R1a | 引入贯穿的 `trace_id`：**在 HTTP 受理请求时确定**（请求头 `X-Trace-Id` 合法则沿用，否则服务端生成），放进请求的 tracing 上下文并回写响应头。**C2/M2 及之后的写路径结构化日志必须带 `trace_id`**，同时带已有业务标识；旧路径触及时补齐，不设截止期。实现卡 TRACE-1，未落地前评审指向该卡，不判违约 | 决定 2026-11-22-c2-m2-minimal-contracts（D5）；[2026-11-24-trace-id-minimal-scope](../decisions/2026-11-24-trace-id-minimal-scope.md) |
+| R1b | `trace_id` 写入事件表与执行记录、随事件流下发：**推迟到 World Adapter M4 生产写入开工前**，须另出改表方案（涉及 `store.rs`） | [2026-11-24-trace-id-minimal-scope](../decisions/2026-11-24-trace-id-minimal-scope.md) |
 | R2 | 各特性保留自己的业务标识（`task_id`、`case_id`、`execution_id`），并持久记录已知对应关系。最小关联：`case_id` ↔ `execution_id`；若分流为平台任务再带 `task_id`。不强迫三套 ID 合一 | 同上；G10 |
 | R3 | 对外接口错误码保留各自风格（如 `APPROVAL_INVALID`、`IDEMPOTENCY_CONFLICT`）；**日志里的 `code` 一律用 `E_` / `W_` 前缀**（可在边界映射） | 同上（D6） |
 
@@ -54,7 +55,7 @@
 
 ## 5. 待决定
 
-1. 旧路径补齐 `trace_id` 的截止里程碑（新写路径已强制）。
+1. ~~旧路径补齐 `trace_id` 的截止里程碑~~：已定，触及时补齐、不设截止期（[2026-11-24-trace-id-minimal-scope](../decisions/2026-11-24-trace-id-minimal-scope.md)）。
 2. R4 是否在文档检查过渡期结束后改为阻断。
 
 ## 6. 验收
@@ -62,6 +63,7 @@
 | 不变量 | Case ID | 场景 |
 |---|---|---|
 | R2 | RT-WADES-09～11、RT-WADES-15 | 执行记录可对照 `case_id` / `execution_id` / 关联键 |
-| R1 | RT-TRACE-01（待补） | 同一次正式写路径日志含 `trace_id`，且能串到 `case_id`+`execution_id`（有 task 时含 `task_id`） |
+| R1a | RT-TRACE-01～03（待补，TRACE-1） | 同一次写路径日志含 `trace_id` 且能串到 `proposal_id`/`execution_id`（有则带 `case_id`、`task_id`）；不带请求头时服务端生成并回写；非法请求头被丢弃 |
+| R1b | 待 M4 前方案 | 事件表与事件流带 `trace_id` |
 | E2 / E4 | RT-ADREPLAY、RT-WADES-03 | 去重与游标过期 |
 | R3 | 诊断抽查 | 对外码不变；日志 `code` 为 `E_`/`W_` |

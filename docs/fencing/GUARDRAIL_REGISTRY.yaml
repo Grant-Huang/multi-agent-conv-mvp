@@ -18,9 +18,9 @@ schema_version: 1
 repo: Grant-Huang/multi-agent-conv-mvp
 default_branch: master
 last_audit:
-  baseline_sha: "152ea0db6658720b0a4319f882318a46e324e824"
-  checked_at: "2026-11-21"
-  by: "Claude Code 会话（初次登记）"
+  baseline_sha: "33b2d05"
+  checked_at: "2026-11-24"
+  by: "Claude Code 会话（更新 GR-2-DOC-LINT、GR-4-NIGHTLY-E2E；初次登记 2026-11-21 于 152ea0d）"
   unknowns:
     - "分支保护 / Rulesets 的实际设置（必需检查、审批数、是否允许绕过）"
     - "开发 agent 是否已有独立身份（BOT_IDENTITY 阶段 2）"
@@ -72,19 +72,21 @@ guardrails:
     evidence_level: VERIFIED
     evidence:
       - "tools/ci/doc_lint.py；tools/ci/tests/test_doc_lint.py（22 个用例，Red 15 失败 → Green）"
+      - "2026-11-24 必备小节改为前缀匹配（允许“定了什么（补充说明）”）：新增 2 个用例，Red 1 失败 → Green，tools/ci 共 113 passed"
       - "PR #193 change-policy 输出“文档检查：0 条发现（只警告，不阻断）”（run 44942724424）"
       - "在 T-50 分支上实测报出决策格式缺字段与缺小节"
       - "decisions/2026-11-21-doc-rules-enforcement.md"
-    last_verified: "2026-11-21"
-    positive_test: "test_well_formed_decision_passes 等"
+    last_verified: "2026-11-24"
+    positive_test: "test_well_formed_decision_passes、test_section_heading_with_parenthetical_note_counts 等"
     negative_test: "test_broken_relative_link_in_added_line_warns、test_appending_numbered_entry_to_decisions_md_warns 等"
     exception:
       kind: "continue-on-error（试点只警告）"
       owner: "用户"
-      reason: "让进行中的分支有一周时间改用新写法"
-      mitigation: "警告出现在 CI 日志与 risk-report 构件 doc-lint.json"
-      expires_at: "2026-11-28"
-    review_due: "2026-11-28"
+      reason: "让进行中的分支有一周时间改用新写法；2026-11-24 延期一周：用新规则扫描，2026-11-21 以来仍有 7 个决策文件缺小节，到期直接阻断会同时卡住多条工作线"
+      mitigation: "警告出现在 CI 日志与 risk-report 构件 doc-lint.json；7 个文件由各自工作线补齐（审查报告 2026-11-24 第 3a 项）"
+      expires_at: "2026-12-05"
+      exit_plan: "到期时若 7 个文件已补齐，去掉 continue-on-error，只对本 PR 新增或修改的决策文件阻断，不追溯旧文件；改 ci.yml 属 L3，另出方案"
+    review_due: "2026-12-05"
 
   - id: GR-2-ENTRY-RULES
     layer: 2
@@ -230,15 +232,17 @@ guardrails:
     status: pilot-warning
     evidence_level: VERIFIED
     evidence:
-      - "定时运行 2 次均失败：run 44795474606（2026-11-20）、run 44931610796（2026-11-21），原因 NOT_VERIFIED"
-    last_verified: "2026-11-21"
+      - "定时运行 2026-11-20～11-23 连续 4 次失败：run 44795474606、44931610796、…、45277117267"
+      - "根因一（编译层，已修）：#249 在 web/e2e/ 留下未用变量，tsc -p e2e/tsconfig.json 报 TS6133（Q-T87-01）；PR CI 未跑 e2e 类型检查（Q-T87-02）。PR #259 修复并把 e2e 类型检查纳入 npm run typecheck"
+      - "根因二（运行期，未修）：本地 npm run verify 90 passed / 2 failed（E2E-MOBILE = Q-T65-01；E2E-ADREAD 新发现），origin/master 上同样失败（PR #259 验证证据）"
+    last_verified: "2026-11-24"
     positive_test: null
     negative_test: null
     exception:
       kind: "持续失败未处理"
       owner: "用户"
-      reason: "见 GAP_ANALYSIS.md G15"
-      mitigation: "PR 级的 web 作业与本地 verify 仍在"
+      reason: "见 GAP_ANALYSIS.md G15；编译层已修，运行期 2 例待桌面线修复"
+      mitigation: "PR 级的 web 作业（含 e2e 类型检查）与本地 verify 仍在"
       expires_at: "2026-11-28"
     review_due: "2026-11-28"
 

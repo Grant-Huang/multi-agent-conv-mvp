@@ -119,6 +119,22 @@ def test_decision_missing_header_fields_and_sections_warns():
         assert word in details
 
 
+def test_section_heading_with_parenthetical_note_counts():
+    # 审查报告 2026-11-24 M1：「定了什么（方案层；实现待再批）」这类带补充说明的标题不应误报
+    text = GOOD_DECISION.replace("## 定了什么", "## 定了什么（方案层；实现待再批）")
+    text = text.replace("## 决策依据", "## 决策依据(数据见附录)")
+    text = text.replace("## 问题", "## 问题：重启后任务去哪")
+    assert lint.check_decision_file("docs/decisions/2026-11-24-note.md", text) == []
+
+
+def test_section_prefix_without_separator_still_warns():
+    # 只认「小节名 + 括号/冒号/空格」开头；「决策依据待补」这类把小节名当前缀的其他标题不算
+    text = GOOD_DECISION.replace("## 决策依据", "## 决策依据待补")
+    found = lint.check_decision_file("docs/decisions/2026-11-24-todo.md", text)
+    assert rules(found) == ["decision-section"]
+    assert "决策依据" in found[0].detail
+
+
 def test_decisions_readme_is_not_checked_as_decision():
     assert lint.check_decision_file("docs/decisions/README.md", "# 说明\n") == []
 
