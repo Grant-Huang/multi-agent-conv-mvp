@@ -211,6 +211,9 @@ pub struct ConversationSection {
     /// 资料源读取时限；超时本轮不带资料、回答照常
     #[serde(default = "d_materials_timeout_ms")]
     pub session_materials_timeout_ms: u64,
+    /// 5.2b：风格卡估算 token 上限（生效的 preference/style 注入）
+    #[serde(default = "d_style_max_tokens")]
+    pub session_materials_style_max_tokens: u32,
 }
 
 impl Default for ConversationSection {
@@ -225,6 +228,7 @@ impl Default for ConversationSection {
             session_materials: true,
             session_materials_max_tokens: d_materials_max_tokens(),
             session_materials_timeout_ms: d_materials_timeout_ms(),
+            session_materials_style_max_tokens: d_style_max_tokens(),
         }
     }
 }
@@ -234,6 +238,9 @@ fn d_materials_max_tokens() -> u32 {
 }
 fn d_materials_timeout_ms() -> u64 {
     300
+}
+fn d_style_max_tokens() -> u32 {
+    200
 }
 
 impl AppConfig {
