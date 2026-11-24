@@ -119,6 +119,17 @@ def check_added_links(added, root: Path) -> list[Finding]:
 DECISION_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 HEADER_FIELDS = ["日期", "来源", "状态", "影响范围", "相关设计"]
 REQUIRED_SECTIONS = ["背景", "问题", "决策依据", "定了什么", "没选什么", "出问题先看"]
+# 小节名后允许跟补充说明，如「定了什么（方案层；实现待再批）」「问题：……」；
+# 但必须以括号、冒号或空白隔开，避免「决策依据待补」这类标题被当成已写（审查报告 2026-11-24 M1）
+SECTION_NOTE_SEPARATORS = ("（", "(", "：", ":", " ", "\t")
+
+
+def _section_matches(heading: str, required: str) -> bool:
+    """标题等于小节名，或以「小节名 + 分隔符」开头时算作该小节。"""
+    if heading == required:
+        return True
+    rest = heading[len(required):]
+    return heading.startswith(required) and rest.startswith(SECTION_NOTE_SEPARATORS)
 
 
 def check_decision_file(path: str, text: str) -> list[Finding]:
@@ -136,7 +147,8 @@ def check_decision_file(path: str, text: str) -> list[Finding]:
         found.append(Finding("decision-header", path, 1,
                              f"开头表格缺字段：{'、'.join(missing_fields)}"))
     sections = {m.group(1).strip() for m in re.finditer(r"^##\s+(.+?)\s*$", text, re.MULTILINE)}
-    missing_sections = [s for s in REQUIRED_SECTIONS if s not in sections]
+    missing_sections = [s for s in REQUIRED_SECTIONS
+                        if not any(_section_matches(h, s) for h in sections)]
     if missing_sections:
         found.append(Finding("decision-section", path, 1,
                              f"缺必备小节：{'、'.join(missing_sections)}（模板见 docs/decisions/README.md）"))

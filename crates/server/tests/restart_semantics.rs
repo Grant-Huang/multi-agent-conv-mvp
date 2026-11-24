@@ -85,15 +85,13 @@ async fn start_mock_llm(pass_after_rework: bool, reviews: Arc<AtomicUsize>) -> S
     format!("http://{addr}/v1")
 }
 
-fn min_config_toml() -> String {
-    "[llm]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\nmax_retries = 0\n\
+fn min_config_toml(resume_queued: bool) -> String {
+    format!(
+        "[llm]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\nmax_retries = 0\n\
+     [orchestrator]\nresume_queued_on_restart = {resume_queued}\n\
      [agents.general]\nenabled = false\n[agents.coding]\nenabled = false\n\
      [agents.reviewer]\nenabled = false\n"
-        .into()
-}
-
-fn min_config() -> AppConfig {
-    toml::from_str(&min_config_toml()).unwrap()
+    )
 }
 
 fn flow_config_toml(llm_url: &str, ws: &str, code: &str, rounds: u32, reviewer: bool) -> String {
@@ -170,11 +168,21 @@ async fn restart(env: Env) -> Env {
 }
 
 async fn boot_min() -> Env {
+    boot_min_with_resume(true).await
+}
+
+async fn boot_min_with_resume(resume_queued: bool) -> Env {
     let dir = std::env::temp_dir().join(an_core::new_id("an-restart"));
     std::fs::create_dir_all(&dir).unwrap();
     let db = dir.join("an.db");
-    let config_toml = min_config_toml();
-    let rt = Arc::new(Runtime::new(min_config(), Store::open(&db).unwrap()).unwrap());
+    let config_toml = min_config_toml(resume_queued);
+    let rt = Arc::new(
+        Runtime::new(
+            toml::from_str::<AppConfig>(&config_toml).unwrap(),
+            Store::open(&db).unwrap(),
+        )
+        .unwrap(),
+    );
     let conv = rt.store.create_conversation("重启语义测试").unwrap();
     let base = serve(an_server::api(rt.clone())).await;
     Env {
@@ -243,6 +251,18 @@ async fn boot_flow(rounds: u32, pass_after_rework: bool, reviewer: bool) -> Env 
 }
 
 fn seed_task(rt: &Runtime, conv: &str, id: &str, status: TaskStatus, role: Role) {
+    seed_task_fanout(rt, conv, id, status, role, None, None);
+}
+
+fn seed_task_fanout(
+    rt: &Runtime,
+    conv: &str,
+    id: &str,
+    status: TaskStatus,
+    role: Role,
+    fanout_kind: Option<&str>,
+    branch_id: Option<&str>,
+) {
     let t = TaskRecord {
         id: id.into(),
         conversation_id: conv.into(),
@@ -269,9 +289,9 @@ fn seed_task(rt: &Runtime, conv: &str, id: &str, status: TaskStatus, role: Role)
         review: None,
         assignment: None,
         parent_id: None,
-        fanout_kind: None,
-        branch_id: None,
-        template_id: None,
+        fanout_kind: fanout_kind.map(String::from),
+        branch_id: branch_id.map(String::from),
+        template_id: fanout_kind.map(|_| "quote".to_string()),
         created_at: an_core::now(),
         updated_at: an_core::now(),
     };
@@ -349,14 +369,13 @@ impl Env {
     }
 }
 
-/// RT-RESTART-01：四类中断任务重启后均 FAILED，且每任务有含「重启中断」原因的事件（WP7 新行为）。
+/// RT-RESTART-01：有副作用风险的中断任务（RUNNING/VERIFYING）重启后 FAILED + 原因事件。
+/// CREATED/QUEUED 单任务的重排见 RT-RESTART-07/08（WP7 方案 C 后语义收窄）。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rt_restart_01_interrupted_tasks_marked_failed_with_reason_event() {
     let e = boot_min().await;
     let cid = e.conv_id.clone();
     let cases = [
-        ("t-created", TaskStatus::Created),
-        ("t-queued", TaskStatus::Queued),
         ("t-running", TaskStatus::Running),
         ("t-verifying", TaskStatus::Verifying),
     ];
@@ -514,6 +533,137 @@ async fn rt_restart_06_terminal_tasks_untouched_by_restart() {
         assert!(
             !events.iter().any(|ev| ev.message.contains("重启中断")),
             "终态任务 {id} 不应有重启事件：{events:?}"
+        );
+    }
+}
+
+/// RT-RESTART-07：单任务 QUEUED 跨重启被重新排队并执行至终态，事件含「重新排队」（WP7 方案 C）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_restart_07_queued_single_task_resumes_after_restart() {
+    let e = boot_flow(1, true, false).await;
+    let cid = e.conv_id.clone();
+    e.rt.store
+        .add_message(&cid, "user", "帮我改代码，加一个文件", None)
+        .unwrap();
+    seed_task(&e.rt, &cid, "t-resume-q", TaskStatus::Queued, Role::Coding);
+    let e = restart(e).await;
+    let final_status = e.wait_status("t-resume-q", &["COMPLETED"], 30_000).await;
+    assert_eq!(final_status, "COMPLETED");
+    let events = e.rt.store.list_events("t-resume-q").unwrap();
+    assert!(
+        events.iter().any(|ev| ev.message.contains("重新排队")),
+        "重排任务应有含「重新排队」的事件：{events:?}"
+    );
+}
+
+/// RT-RESTART-08：单任务 CREATED 跨重启同样重新排队执行（WP7 方案 C）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_restart_08_created_single_task_resumes_after_restart() {
+    let e = boot_flow(1, true, false).await;
+    let cid = e.conv_id.clone();
+    e.rt.store
+        .add_message(&cid, "user", "帮我改代码，加一个文件", None)
+        .unwrap();
+    seed_task(&e.rt, &cid, "t-resume-c", TaskStatus::Created, Role::Coding);
+    let e = restart(e).await;
+    let final_status = e.wait_status("t-resume-c", &["COMPLETED"], 30_000).await;
+    assert_eq!(final_status, "COMPLETED");
+}
+
+/// RT-RESTART-09：RUNNING/VERIFYING 仍 FAILED + 原因交付；CREATED/QUEUED 不再被标记失败（方案 C 后语义）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_restart_09_side_effect_states_fail_while_queued_states_survive() {
+    let e = boot_min().await;
+    let cid = e.conv_id.clone();
+    seed_task(&e.rt, &cid, "t-run", TaskStatus::Running, Role::General);
+    seed_task(&e.rt, &cid, "t-q", TaskStatus::Queued, Role::General);
+    let e = restart(e).await;
+    let run = e.rt.store.get_task("t-run").unwrap().unwrap();
+    assert_eq!(run.status, TaskStatus::Failed, "RUNNING 重启后应 FAILED");
+    // 重排后的任务会立刻 spawn 执行；boot_min 没有可用后端，执行本身可能在断言前就失败，
+    // 所以不能看最终状态（时序竞争：快机器必失败，CI 时好时坏）。方案 C 要验证的是
+    // “启动恢复没有把它标失败”，因此看事件：有「重新排队」、没有启动恢复写的「重启中断」。
+    // 反方向（开关关闭时 QUEUED 仍写「重启中断」并 FAILED）由 RT-RESTART-10 覆盖。
+    e.rt.store.flush_events();
+    let q_events = e.rt.store.list_events("t-q").unwrap();
+    assert!(
+        q_events.iter().any(|ev| ev.message.contains("重新排队")),
+        "QUEUED 单任务应被重新排队（方案 C）：{q_events:?}"
+    );
+    assert!(
+        !q_events.iter().any(|ev| ev.message.contains("重启中断")),
+        "QUEUED 单任务不应被启动恢复标记失败（方案 C）：{q_events:?}"
+    );
+    let run_events = e.rt.store.list_events("t-run").unwrap();
+    assert!(run_events.iter().any(|ev| ev.message.contains("重启中断")));
+}
+
+/// RT-RESTART-10：开关 resume_queued_on_restart=false 时 QUEUED 仍失败（回滚路径）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_restart_10_resume_disabled_keeps_legacy_failure() {
+    let e = boot_min_with_resume(false).await;
+    let cid = e.conv_id.clone();
+    seed_task(&e.rt, &cid, "t-q-off", TaskStatus::Queued, Role::General);
+    let e = restart(e).await;
+    let q = e.rt.store.get_task("t-q-off").unwrap().unwrap();
+    assert_eq!(
+        q.status,
+        TaskStatus::Failed,
+        "开关关闭时 QUEUED 应仍 FAILED"
+    );
+    let events = e.rt.store.list_events("t-q-off").unwrap();
+    assert!(events.iter().any(|ev| ev.message.contains("重启中断")));
+    assert!(
+        !events.iter().any(|ev| ev.message.contains("重新排队")),
+        "开关关闭时不应有重排事件：{events:?}"
+    );
+}
+
+/// RT-RESTART-11：模板家族（root/branch/join）QUEUED 不被重驱，仍 FAILED + 原因（v1 范围防回归）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_restart_11_fanout_family_tasks_not_resumed() {
+    let e = boot_min().await;
+    let cid = e.conv_id.clone();
+    seed_task_fanout(
+        &e.rt,
+        &cid,
+        "t-root",
+        TaskStatus::Queued,
+        Role::General,
+        Some("root"),
+        None,
+    );
+    seed_task_fanout(
+        &e.rt,
+        &cid,
+        "t-branch",
+        TaskStatus::Queued,
+        Role::General,
+        Some("branch"),
+        Some("damage"),
+    );
+    seed_task_fanout(
+        &e.rt,
+        &cid,
+        "t-join",
+        TaskStatus::Queued,
+        Role::General,
+        Some("join"),
+        Some("__join__"),
+    );
+    let e = restart(e).await;
+    for id in ["t-root", "t-branch", "t-join"] {
+        let t = e.rt.store.get_task(id).unwrap().unwrap();
+        assert_eq!(
+            t.status,
+            TaskStatus::Failed,
+            "模板家族任务 {id} 应仍 FAILED"
+        );
+        let events = e.rt.store.list_events(id).unwrap();
+        assert!(events.iter().any(|ev| ev.message.contains("重启中断")));
+        assert!(
+            !events.iter().any(|ev| ev.message.contains("重新排队")),
+            "模板家族任务 {id} 不应被重驱：{events:?}"
         );
     }
 }

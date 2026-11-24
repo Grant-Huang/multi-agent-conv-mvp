@@ -754,3 +754,126 @@ async fn rt_waprod_08_selected_work_order_reads_only_its_bound_loopback_adapter(
     task.abort();
     source_task.abort();
 }
+
+/// RT-WAPROD-09：夹具源返回非 JSON 响应 → 502 INVALID_SOURCE_RESPONSE；
+/// 恰好一次来源调用（零回退/零重试），公开包络不含源私有字段。
+/// 联审冻结候选：WA_M3_LIVE_OBSERVE_PLAN §候选验收 502 行的夹具路径覆盖；
+/// 401 与 404 第二身份交叉确认属联调宿主探针（accept-m3-live-observe.mjs）。
+#[tokio::test]
+async fn rt_waprod_09_invalid_source_response_maps_to_502_without_private_leaks() {
+    use an_server::mom_world_prod::{WorkOrderFixture, WorkOrderFixtureError};
+    use axum::{
+        extract::{Path, State},
+        http::StatusCode,
+        response::IntoResponse,
+        routing::get,
+        Json, Router,
+    };
+    use mom_external_adapter::external_http::{HttpSource, HttpSourceKind};
+    use mom_external_adapter::external_observe::{
+        AuthorizedWorkOrder, ExternalObserve, ObserveError, SourceScope, WorkOrderSelection,
+    };
+    use std::sync::{Arc, Mutex};
+    type Calls = Arc<Mutex<Vec<&'static str>>>;
+
+    async fn openmes(State(calls): State<Calls>, Path(id): Path<u64>) -> impl IntoResponse {
+        calls.lock().unwrap().push("openmes");
+        match id {
+            42 => Json(json!({"data":{"id":42,"order_no":"WO-42","status":"PENDING"}}))
+                .into_response(),
+            // 非 JSON 体：read_json 解析失败 → InvalidResponse → INVALID_SOURCE_RESPONSE
+            45 => (
+                StatusCode::OK,
+                [("content-type", "application/json")],
+                "<html>gateway-error</html>",
+            )
+                .into_response(),
+            _ => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        }
+    }
+
+    let calls: Calls = Arc::default();
+    let (source_url, source_task) = spawn_router(
+        Router::new()
+            .route("/api/v1/work-orders/{id}", get(openmes))
+            .with_state(calls.clone()),
+    )
+    .await;
+    let state = WorldProdState::with_work_order_fixture(move |world, site, reference| {
+        let origin = source_url.clone();
+        Box::pin(async move {
+            if reference != "opaque-invalid" {
+                return Err(WorkOrderFixtureError::AccessDenied);
+            }
+            let scope = SourceScope {
+                tenant: "fixture-tenant",
+                site: &site,
+                instance: "openmes",
+            };
+            let adapter = ExternalObserve::new([HttpSource {
+                kind: HttpSourceKind::OpenMes,
+                base_url: &origin,
+                token: "fixture-token",
+                tenant: scope.tenant,
+                site: scope.site,
+                instance: scope.instance,
+            }])
+            .map_err(|_| WorkOrderFixtureError::SourceUnavailable)?;
+            let order = adapter
+                .observe(
+                    WorkOrderSelection {
+                        world_id: &world,
+                        object_ref: &reference,
+                    },
+                    |_| async {
+                        Some(AuthorizedWorkOrder {
+                            scope,
+                            source_id: "45",
+                        })
+                    },
+                )
+                .await
+                .map_err(|error| match error {
+                    ObserveError::AccessDenied => WorkOrderFixtureError::AccessDenied,
+                    ObserveError::NotVisible => WorkOrderFixtureError::NotVisible,
+                    ObserveError::SourceUnavailable => WorkOrderFixtureError::SourceUnavailable,
+                    ObserveError::InvalidSourceResponse => {
+                        WorkOrderFixtureError::InvalidSourceResponse
+                    }
+                })?;
+            Ok(WorkOrderFixture {
+                source: order.source_instance.to_owned(),
+                observed_at: order.observed_at,
+                state: json!({
+                    "display_number": order.display_number, "source_status": order.source_status,
+                    "normalized_status": order.normalized_status, "mapping_version": order.mapping_version,
+                }),
+            })
+        })
+    });
+    let (origin, task) = spawn_router(router(state)).await;
+    let client = reqwest::Client::new();
+    let world = bind_east(&client, &origin, "openmes").await;
+    let result = client
+        .post(format!("{origin}{PROD_API}/observe"))
+        .headers(operator_site("plant-east"))
+        .json(&json!({
+            "world_id": world, "request_id": "invalid-source-response",
+            "selection":{"type":"work_order","id":"opaque-invalid"},
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(result.status(), 502);
+    let body = result.json::<Value>().await.unwrap();
+    assert_eq!(body["code"], "INVALID_SOURCE_RESPONSE");
+    assert_eq!(body["request_id"], "invalid-source-response");
+    let serialized = body.to_string();
+    for private in ["fixture-token", "fixture-tenant", "gateway-error"] {
+        assert!(!serialized.contains(private));
+    }
+    // 恰好一次来源调用：无重试、无回退到其他来源
+    assert_eq!(*calls.lock().unwrap(), vec!["openmes"]);
+    task.abort();
+    source_task.abort();
+}

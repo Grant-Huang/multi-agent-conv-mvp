@@ -767,6 +767,30 @@ impl Orchestrator {
     }
 
     /// 生成交付消息并写入会话（人工验收与自动结束共用）
+    /// WP7 方案 C：重启后把未起跑的单任务（CREATED/QUEUED，非模板家族）重新排队执行。
+    /// 有副作用风险的状态（RUNNING/VERIFYING）由 `store::recover_interrupted_tasks` 置 FAILED；
+    /// 模板家族（root/branch/join）不重驱（家族一致性无法安全重建），沿 T-81 失败恢复路径。
+    pub fn resume_queued_on_restart(self: &Arc<Self>) -> Result<Vec<String>> {
+        let tasks = self.store.list_resumable_tasks()?;
+        let mut resumed = Vec::new();
+        for mut task in tasks {
+            if task.status == TaskStatus::Created {
+                let _ = self.store.set_task_status(&task.id, TaskStatus::Queued);
+                task.status = TaskStatus::Queued;
+            }
+            EventSink::new(self.bus.clone(), &task.conversation_id, &task.id)
+                .progress("服务重启，任务重新排队执行");
+            tracing::info!(
+                event = "task.resume_queued",
+                task_id = %task.id,
+                "重启后重新排队执行未起跑任务"
+            );
+            resumed.push(task.id.clone());
+            self.spawn(task);
+        }
+        Ok(resumed)
+    }
+
     async fn deliver(
         &self,
         task: &TaskRecord,
