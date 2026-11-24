@@ -3132,11 +3132,10 @@ impl Store {
         }
         // where_clause 以 WHERE 开头；占位符顺序：先 updated_at，再 NOT IN 的排除 id
         let sql = format!("UPDATE tasks SET status = 'FAILED', updated_at = ? {where_clause}");
-        let changed = conn.execute(
+        conn.execute(
             &sql,
             rusqlite::params_from_iter(std::iter::once(&now()).chain(exclude_ids.iter())),
         )?;
-        eprintln!("[dbg] update changed={changed}");
         let mut out = Vec::with_capacity(ids.len());
         for id in &ids {
             if let Some(t) = self.get_task(id)? {
