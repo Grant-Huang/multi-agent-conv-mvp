@@ -500,6 +500,10 @@ impl Runtime {
             session_materials: config.conversation.session_materials,
             session_materials_max_tokens: config.conversation.session_materials_max_tokens,
             session_materials_timeout_ms: config.conversation.session_materials_timeout_ms,
+            session_materials_style_max_tokens: config
+                .conversation
+                .session_materials_style_max_tokens,
+            session_materials_findings_max: config.conversation.session_materials_findings_max,
         }));
         tracing::info!(
             event = "conversation.config",

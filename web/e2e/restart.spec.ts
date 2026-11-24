@@ -16,14 +16,14 @@ async function msgs(request: APIRequestContext, base: string, convId: string) {
   }[];
 }
 
-/** 回到桌面首页；关掉「发现的助手」面板，并显式切回「我的桌面」页签（视图偏好会恢复上次停留） */
+/** 回到桌面首页；关掉可能存在的发现卡，并经侧栏「我的桌面」按钮回首页（T-88 拆顶栏页签；视图偏好会恢复上次停留） */
 async function gotoHome(page: Page, base: string): Promise<void> {
   await page.goto(`${base}/`);
   const dismiss = page.getByRole('button', { name: '知道了' });
   if (await dismiss.isVisible().catch(() => false)) {
     await dismiss.click();
   }
-  await page.getByRole('tab', { name: '我的桌面' }).click();
+  await page.getByRole('button', { name: '我的桌面', exact: true }).click();
   await page.getByTestId('s1-ask-input').waitFor({ state: 'visible', timeout: 15_000 });
 }
 

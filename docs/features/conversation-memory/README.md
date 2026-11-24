@@ -20,7 +20,7 @@
 | 编号 | 需求 | 验收标准 | 状态 | 用例 | 引入版本 |
 |---|---|---|---|---|---|
 | REQ-conversation-memory-01 | 会话续接与来源可查 | 在同一会话续问时，可用摘要带来源进入回答；来源失效或读取超时时，当前轮仍能使用已授权的近期消息。验收标准 2026-11-23 用户确认冻结：见 CASES「会话资料注入」RT-SMAT-01～05、E2E-SMAT | 已确认 | RT-SMAT-01～05、E2E-SMAT | — |
-| REQ-conversation-memory-02 | 个人记忆可控 | 用户明确保存的资料可查、可纠正、可撤回；另一用户不可召回；个人风格或画像的编辑经过预览，确认后在下一会话生效。5.2a 生命周期与隔离验收 2026-11-23 用户确认冻结（POST 端点 + kind 补列 + 夹具头口径）：见 CASES「个人记忆生命周期与隔离」RT-UMEM-01～05；预览与生效闸门（5.2b，含决定 48 红线断言）另卡 | 已确认 | RT-UMEM-01～05 | — |
+| REQ-conversation-memory-02 | 个人记忆可控 | 用户明确保存的资料可查、可纠正、可撤回；另一用户不可召回；个人风格或画像的编辑经过预览，确认后在下一会话生效。5.2a 生命周期与隔离验收 2026-11-23 用户确认冻结（POST 端点 + kind 补列 + 夹具头口径）：见 CASES「个人记忆生命周期与隔离」RT-UMEM-01～05；预览与生效闸门 5.2b 2026-11-23 用户拍板落地（推导式判定 / 独立风格卡 / fact 不走闸门 / ≤200 token + 决定 48 护栏断言）：见 CASES「风格/画像预览与下一会话生效」RT-USTY-01～05 | 已确认 | RT-UMEM-01～05、RT-USTY-01～05 | — |
 | REQ-conversation-memory-03 | 共享知识和组织判断标准按授权使用 | 仅召回当前范围中已生效的条目；过期、撤权、未批准或来源不一致时保留可解释的处理结果 | 提出 | 待登记 | — |
 | REQ-conversation-memory-04 | 内省发现按需进入会话 | DES 的可追溯发现只在相关提问中使用；待核实的发现明确标注；发现无法自动晋升为个人记忆或组织规则 | 提出 | 待登记 | — |
 
@@ -47,6 +47,8 @@
 
 5.2a 切片（2026-11-23 开工）：个人记忆生命周期与隔离——`POST /api/desktop/v1/memories`（用户主动保存）、`desktop_memories` 补 `kind` 列（fact/preference/style，沿补列先例）、记忆与回答注入按 `x-desktop-principal` 作用域（无头回退 `local`，chat 与 B1 受理同步传播说话人）、过期不入注入；注入块扩为「任务回执 + 个人记忆」两段，逐条预算裁剪。
 
+5.2b 切片（2026-11-23 开工）：preference/style 预览→确认→下一会话生效——`confirmed_at` 补列 + `POST /memories/{id}/confirm`（幂等）；草稿不注入、确认晚于会话创建不回填（推导式，无状态机）；生效条目进独立风格卡（`session_materials_style_max_tokens` 默认 200，块首固定决定 48 风险护栏句）；fact 不走闸门。
+
 ## 5. 质量
 
 按上表登记 CASES 与 Feature Map。首批覆盖同会话续问及跨会话隔离、撤回资料、超时降级、预算裁剪、资料中包含指令时的处理。业务内省已冻结的 RT-INT 和 E2E-INTRO 测试沿用[既有验收](../../memory/ACCEPTANCE.md)。独立复跑证据注明所用身份、数据类型与模型模式。
@@ -57,7 +59,7 @@
 
 ## 7. 决策
 
-[第 5 研发线与近期优先级](../../decisions/2026-11-22-five-workstreams.md)；[5.1 验收冻结与默认开](../../decisions/2026-11-23-convmem-s1-acceptance-and-default-on.md)（2026-11-23 用户确认）；[5.2a 生命周期与隔离](../../decisions/2026-11-23-convmem-s2a-lifecycle-and-isolation.md)（2026-11-23 用户确认）；历史决定见 [DECISIONS.md 第九节](../../DECISIONS.md#九记忆画像与内省mem)。
+[第 5 研发线与近期优先级](../../decisions/2026-11-22-five-workstreams.md)；[5.1 验收冻结与默认开](../../decisions/2026-11-23-convmem-s1-acceptance-and-default-on.md)（2026-11-23 用户确认）；[5.2a 生命周期与隔离](../../decisions/2026-11-23-convmem-s2a-lifecycle-and-isolation.md)、[5.2b 风格生效闸门](../../decisions/2026-11-23-convmem-s2b-style-gate.md)（2026-11-23 用户确认）；历史决定见 [DECISIONS.md 第九节](../../DECISIONS.md#九记忆画像与内省mem)。
 
 ## 8. 待决定
 

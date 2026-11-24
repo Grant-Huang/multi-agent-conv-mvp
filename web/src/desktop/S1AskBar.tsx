@@ -43,9 +43,6 @@ export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask }: Props) {
 
   return (
     <div className="s1-ask" data-testid="s1-ask-bar">
-      <label className="s1-ask-label" htmlFor="s1-ask-input">
-        S1 快速问答 / 委派
-      </label>
       <div className="s1-ask-row">
         <input
           id="s1-ask-input"
@@ -95,7 +92,6 @@ export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask }: Props) {
           )}
         </div>
       )}
-      <p className="muted s1-ask-hint">委派经可靠受理写入会话；打开后回到发起会话，不强制离开桌面。</p>
     </div>
   );
 }

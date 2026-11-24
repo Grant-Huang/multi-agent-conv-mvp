@@ -25,7 +25,9 @@ async function complete(page: Page, id: string) {
 }
 
 async function openAgents(page: Page) {
-  await page.getByRole('tab', { name: '助手' }).click();
+  // T-88：助手管理从首页右栏页签迁到「设置 → 连接与能力」（入口路径适配，断言不变）
+  await page.getByTestId('open-settings').click();
+  await page.getByTestId('settings-cat-connect').click();
   return page.getByRole('region', { name: '助手列表' });
 }
 
@@ -54,6 +56,9 @@ async function ensureClaudeConnected(page: Page) {
     await expect(page.getByRole('region', { name: '修改结果' })).toContainText('已完成');
   }
   await expect(claude).toContainText('已接入');
+  // T-88：设置面板为对话框，Esc 关闭后再回会话流（ADINPUT 同语义）
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('settings-panel')).toHaveCount(0);
 }
 
 test.afterEach(async ({ page }, info) => {
@@ -126,6 +131,9 @@ test('E2E-FEEDBACK: 任务卡「派错了」可保存反馈', async ({ page }) =
   const out = await send(page, '改代码验证：反馈链路用');
   await complete(page, out.task.id);
 
+  // T-88 适配欠账（第 1 线定稿后一步适配）：「派错了」所在的任务卡在旧壳位于右栏「任务」页签，
+  // 新壳中该卡既不在右栏事件流、也不在会话内联（详见 PR #270 第 4 线留言）。
+  // 在落点定稿前保留原入口步骤（此处会失败，属已知适配欠账，不属断言放松）。
   await page.getByRole('tab', { name: /任务/ }).click();
   const card = page.locator('.task-card').filter({ hasText: '改代码验证：反馈链路用' });
   await card.locator('.task-head').click();

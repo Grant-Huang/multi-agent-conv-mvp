@@ -16,7 +16,7 @@
 - [ ] 第 1、4 线：首页正常入口接入可靠受理。先验丢回执后按同一操作回读及重连，再验人工验收与结果回传。
 - [ ] 第 2 线：独立复跑真实桌面委派和运营频道远程 DES 场景，分别记录合入基线、运行模式和证据。
 - [ ] 第 3 线：沿用 M2-6 准出及 T-63 独立复验，维护远程 DES 基线；M3 桩数据已准出；M4 写须过 [WA_M4_TASKS](mom/WA_M4_TASKS.md) 准入（候选站 / 身份 / 只读浏览器前置）；下一步待授权 **M4-1 候选站只读**。
-- [ ] 第 5 线：~~确认 REQ-conversation-memory-01 并建立会话注入验收~~（2026-11-23 完成：验收冻结、回答路径注入落地，证据 `testing/evidence/convmem-s1-session-materials.md`）。5.2a 生命周期与隔离完成（POST 保存 + `kind` 补列 + 夹具头作用域 + 过期不入注入，RT-UMEM-01～05，证据 `testing/evidence/convmem-s2a-personal-memory.md`）。下一步 5.2b 预览与生效闸门（待细则确认）。分期见[第 5 线计划](features/conversation-memory/PLAN.md)。
+- [ ] 第 5 线：~~确认 REQ-conversation-memory-01 并建立会话注入验收~~（2026-11-23 完成，证据 `testing/evidence/convmem-s1-session-materials.md`）。5.2a 生命周期与隔离完成（RT-UMEM-01～05，`testing/evidence/convmem-s2a-personal-memory.md`）；5.2b 预览与下一会话生效完成（RT-USTY-01～05，`testing/evidence/convmem-s2b-style-gate.md`）。下一步 5.3 内省与会话联动（可与入口 UI 推进并行）。分期见[第 5 线计划](features/conversation-memory/PLAN.md)。
 
 ## 0. 当前环境
 
@@ -980,9 +980,10 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **T-77 双设备 D01**（2026-11-23）：双 browser context；E2E-ADD01-01～03；证据 `testing/evidence/ai-desktop-t77-dual-device.md`（第二物理机另验）
 - [x] **T-78 记忆持久化表**（2026-11-23）：`desktop_memories` + Store 权威；RT-ADMEM-01～07；E2E-ADMEM/ADMEMW；证据 `testing/evidence/ai-desktop-t78-memory-persist.md`
 - [x] **T-81 记忆持久化验收探针**（2026-11-23，主线 #1:1）：RT-ADMEM-08 库间隔离 / 09 全撤回重启不重播种（对 T-78 实现的回归守卫；9/9 绿）；证据 `testing/evidence/ai-desktop-t81-mem-acceptance.md`
-- [x] **T-82 首页卡接真实快照**（2026-11-23，主线 #1:1）：`GET /api/desktop/v1/snapshot` 三区读模型（我的工作/Agent 工作=真实任务、为你关注=Attention；store 零改动）；RT-ADSNAP-01～04；`desktop.spec` 31/31；证据 `testing/evidence/ai-desktop-t82-home-snapshot.md`
+- [x] **T-82 首页卡接真实快照**（2026-11-23，主线 #1:1）：`GET /api/desktop/v1/snapshot` 三区读模型（我的工作/Agent 工作=真实任务、为你关注=Attention；store 零改动）；RT-ADSNAP-01～04；`desktop.spec` 32/32（31+ADHOME）；证据 `testing/evidence/ai-desktop-t82-home-snapshot.md`
 - [x] **T-86 draftStore 上云**（2026-11-23，主线 #1:1）：`desktop_drafts` 表 + `GET/PUT/DELETE /drafts/{kind}/{id}`（乐观版本；发送后按 sent_version 清空）；本地缓存镜像防抖同步，409 以服务端为准；RT-ADDRAFTS-01～04；证据 `testing/evidence/ai-desktop-t86-drafts-cloud.md`
-- [ ] **T-87 NexusOps 真实厂写方案**（建议号，**待 #1 发号确认**；2026-11-23，主线 #1:1，**仅文档不开实现**）：桌面审批网关经 World Adapter Propose/Execute/Confirm 写 DES；方案 [ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md](ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md)（§三问待确认）；决定草案 `decisions/2026-11-23-nexusops-real-write-plan.md`
+- [x] **T-87 NexusOps 真实厂写方案**（2026-11-23，主线 #1:1，**仅文档**；#1 已发号）：桌面审批网关经 World Adapter Propose/Execute/Confirm 写 DES；§三问已确认（① DES 仿真 ② 质量处置→维修工单 ③ approval 新增 execution_ref 列）；方案 [ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md](ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md)；决定 `decisions/2026-11-23-nexusops-real-write-plan.md`；实现卡待开
+- [x] **T-88 首页与旧壳整治**（2026-11-23，主线 #1:1）：拆旧顶栏页签/右侧四-tab/agent 诊断列表（A1 欠账）；助手管理与发现卡迁设置-连接与能力；首页去配置链接行/横幅/文案；测试注入改 API；RT-ADHOME-01；证据 `testing/evidence/ai-desktop-t88-home-shell-cleanup.md`
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`

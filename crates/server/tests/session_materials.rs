@@ -268,6 +268,12 @@ async fn rt_smat_03_source_timeout_or_error_degrades_current_turn() {
             std::thread::sleep(Duration::from_millis(200));
             Ok(vec![])
         }
+        fn introspection_findings(
+            &self,
+        ) -> anyhow::Result<Vec<an_runtime::introspect::model::IntrospectionFinding>> {
+            std::thread::sleep(Duration::from_millis(200));
+            Ok(vec![])
+        }
     }
     struct Broken;
     impl MaterialSource for Broken {
@@ -278,6 +284,11 @@ async fn rt_smat_03_source_timeout_or_error_degrades_current_turn() {
             &self,
             _: &str,
         ) -> anyhow::Result<Vec<an_runtime::store::DesktopMemory>> {
+            Err(anyhow::anyhow!("受控故障"))
+        }
+        fn introspection_findings(
+            &self,
+        ) -> anyhow::Result<Vec<an_runtime::introspect::model::IntrospectionFinding>> {
             Err(anyhow::anyhow!("受控故障"))
         }
     }

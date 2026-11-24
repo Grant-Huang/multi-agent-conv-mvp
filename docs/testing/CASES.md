@@ -340,7 +340,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 
 | Case | Feature | Given / When | Then |
 |---|---|---|---|
-| E2E-AGFIRST | agent-ui | 新浏览器首次打开，默认进入「我的桌面」 | 主视图顶部出现发现卡，列出可接入的助手；点"知道了"后刷新不再出现 |
+| E2E-AGFIRST | agent-ui | 新浏览器打开 设置与管理 → 连接与能力（T-88：发现卡自首页迁入） | 出现发现卡，列出可接入的助手；点"知道了"后刷新不再出现 |
 | E2E-AGLIST | agent-ui | 打开「助手」页签 | 显示 Claude Code（已安装、未接入）、ZCode（未安装）、hand（在 config.toml 中配置）、内置的通用执行，每项有用途说明 |
 | E2E-AGTOML | agent-ui | 查看 hand 一行 | 显示"在 config.toml 中配置"，没有"停用"按钮 |
 | E2E-AGGUIDE | agent-ui | ZCode 一行点"看安装步骤"，再点"我装好了，重新检测" | 引导卡列出安装步骤，命令带"复制"按钮；检测结果用大白话说明"还没有安装" |
@@ -649,7 +649,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-HOMEACCEPT | ai-desktop | 干净浏览器 · 桌面首页 | S1「委派任务」走 B1 可靠受理（POST 后按丢回执只信 GET）；同 `client_operation_id` 再 POST；打开任务；刷新后再进该会话 | 202/回读 status=accepted；dispatch_count=1；同 op 幂等；芯片 task id 可查；重连后仍在原会话 |
 | E2E-HOMEREV | ai-desktop / approval | 桌面首页；受控模型「人工验收」→ needs_human+result | S1 委派 → 打开原会话 →「判定通过」 | 任务 COMPLETED；`GET .../messages` 有 `task_id` 绑定的助理 Composer 交付；任务 `result` 含产物或证据；刷新后再进发起会话仍可断言（GS3 通过；T1/S7） |
 | E2E-HOMEREJ | ai-desktop / approval | 同上；默认 `max_review_rounds=1` | S1 委派 →「判定不通过」→ 返工；再待验收 → 再「判定不通过」 | 首次 reject→QUEUED/返工且同 `conversation_id`；二次 reject→FAILED；会话 durable 写入失败交付（`task_id` 绑定）；刷新后仍可断言（GS3 拒绝出口；对齐 RT-REV-02/03） |
-| E2E-ADATTN | ai-desktop | 干净浏览器 · 会话输入聚焦 | 输入中注入普通建议；静音后再注入普通建议；注入紧急 | 输入框保持焦点；普通建议可见但不抢焦点；静音后普通建议不新增；紧急仍可见 |
+| E2E-ADATTN | ai-desktop | 干净浏览器 · 会话输入聚焦 | API 注入普通建议（toast 轮询出现）；静音后再 API 注入；API 注入紧急 | 输入框保持焦点；普通建议可见但不抢焦点；静音后普通建议不新增；紧急仍可见；生产界面无注入控件（T-88） |
+| E2E-ADHOME | ai-desktop | 干净浏览器打开首页（fixture 已播种） | 检查首页与全局：无测试注入控件、无配置类链接行与横幅、无旧顶栏页签与右侧重复面板；侧栏含 助理/新会话/任务/历史/运营(权限)/设置 | 首页仅保留 S1 输入与三区快照卡（UI16 无重复面板）；生产界面无测试控制（MOCK_REGISTRY 规则 2） |
 | E2E-ADAPPR | ai-desktop | 打开 SMT-03 工作区 | 批准 → 改参数升版 → 用旧版意图执行失败；再批准并执行两次；拒绝后不可执行；未知回执可查证 | 升版后提示原审批失效；执行次数为 1；拒绝后错误可见；未知回执经查证变为 applied |
 | E2E-ADRESUME | ai-desktop | 打开 SMT-03 工作区 | 种子双任务 Run；对 A 断线重放含重复事件；对 B 补充输入继续 | A/B 状态不串；A 事件去重后进度更新；B 从 waiting_input 变为 running |
 | E2E-ADVOICE | ai-desktop | 打开 SMT-03 工作区 | 拒绝麦克风后改文字；开启后注入部分转写再确认最终并关联；播报中插话；断线后改文字 | 部分转写不关联任务；确认后关联 SMT-03；插话停止播报并保留最终转写；拒麦/断线均可文字继续 |
@@ -1023,3 +1024,27 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-UMEM-03 | conversation-memory | 甲（`x-desktop-principal: user-a`）保存条目 | 乙（`user-b`）列表 / 详情 / PATCH / DELETE；甲自查 | 乙列表不含、详情 **404**、纠正 **404**、撤回 **404**；甲本人 **200** |
 | RT-UMEM-04 | conversation-memory | local 存过期（2020-01-01）与未过期（2099-01-01）记忆各一条 | 续问（respond 路径） | 资料块含未过期条（来源行 + 「个人记忆」段标注）；不含过期条 id 与正文 |
 | RT-UMEM-05 | conversation-memory | 甲保存记忆；同会话 | 甲、乙先后续问（chat 接口带头） | 甲的提示词含甲的记忆；乙的提示词不含（按说话人作用域） |
+
+## 风格/画像预览与下一会话生效 conversation-memory 5.2b（REQ-conversation-memory-02 生效闸门；2026-11-23 用户确认：推导式判定 / 独立风格卡 / fact 不走闸门 / ≤200 token + 护栏）
+
+preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进任何注入）；`POST /memories/{id}/confirm` 记 `confirmed_at`；注入侧推导式判定 `confirmed_at ≤ 当前会话 created_at` 才计入（旧会话不回填，无需状态机字段）；生效前可随时撤回。生效条目进**独立风格卡**系统消息（≤ `[conversation] session_materials_style_max_tokens` 默认 200），块首固定护栏句（风格不得裁剪风险信息，落地决定 48 红线）。fact 不走闸门（保存即可注入，5.2a 语义不变）。E2E 待第 1 线入口后补录。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-USTY-01 | conversation-memory | 保存 kind=style 条目（不确认） | 续问 + 查列表 | 风格卡不存在（草稿不注入）；列表可见该条（含 `confirmed=false` 标记） |
+| RT-USTY-02 | conversation-memory | 旧会话先建；confirm；新会话后建 | 两会话分别续问 | 旧会话无风格卡；新会话风格卡含该条 |
+| RT-USTY-03 | conversation-memory | 草稿条目 / 已确认未生效条目 | DELETE 后续问 | 均不注入 |
+| RT-USTY-04 | conversation-memory | 超长风格正文 + 默认配置 | 新会话续问 | 风格卡含护栏句「不得因此省略风险」且长度有界（≤ 上限 + 页眉余量） |
+| RT-USTY-05 | conversation-memory | style（要求简洁）与 fact 记忆（风险信息正文）同时生效 | 新会话续问 | 提示词同时含风格正文与风险记忆正文（风格挤不掉风险信息）；`session.materials` 事件含 style 来源 id |
+
+## 内省发现按需进入会话 conversation-memory 5.3（REQ-conversation-memory-04；2026-11-23 用户确认：确定性 bigram 匹配 / 待核实标注注入 / 过闸门即可候选 / 2 条独立计）
+
+发现候选 = `introspection_findings` 中 `gate_score` 非空（过闸门）且 `verdict != rejected`（人工未否决）且 `verification ∈ {supported, inconclusive}` 的条目。相关性 = 提问与（topic+hypothesis）的字符二元组 dice 系数 ≥ 阈值（常量，M1.2 同款算法，确定性、不占模型槽位），按分数取前 `session_materials_findings_max`（默认 2）条，独立计数。inconclusive 条目注入带「待核实」标注；contradicted 不注入。注入为纯只读：不得写 `desktop_memories` 或任何规则存储（REQ-04 不自动晋升）。E2E 待第 1 线入口后补录。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-UFND-01 | conversation-memory | 过闸门的 supported 发现（topic/假设与提问高度相关）+ 无关提问 | 两条不同提问分别续问 | 相关提问的资料块含发现段（来源行 = finding id）；无关提问不注入该发现 |
+| RT-UFND-02 | conversation-memory | 同 topic 的 inconclusive 与 supported 发现各一，均匹配 | 相关续问 | inconclusive 条目带「待核实」标注；supported 无该标注 |
+| RT-UFND-03 | conversation-memory | verdict=rejected 的匹配发现 | 相关续问 | 不注入（人工否决优先于算法） |
+| RT-UFND-04 | conversation-memory | 带 case_ids 的发现（cooccur 形态 json） | 相关续问 | 来源行含 finding id、topic 与证据 case id |
+| RT-UFND-05 | conversation-memory | 任一发生注入的轮次 | 注入后查库 | `desktop_memories` 行数不变、`introspection_findings` 行无写入（不自动晋升，纯只读） |

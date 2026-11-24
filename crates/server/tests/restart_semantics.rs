@@ -570,7 +570,10 @@ async fn rt_restart_08_created_single_task_resumes_after_restart() {
     assert_eq!(final_status, "COMPLETED");
 }
 
-/// RT-RESTART-09：RUNNING/VERIFYING 仍 FAILED + 原因交付；CREATED/QUEUED 不再被标记失败（方案 C 后语义）。
+/// RT-RESTART-09：RUNNING/VERIFYING 仍 FAILED + 原因事件；CREATED/QUEUED 不被启动恢复标记失败（方案 C 后语义）。
+/// 注意：重排后的任务会立即执行（min 环境 LLM 不可达 → 快速执行失败），其终态不属于启动恢复语义，
+/// 因此对 QUEUED 任务断言事件语义（有「重新排队」、无「重启中断」），不断言终态——终态断言与
+/// 异步执行存在竞态（CI 上曾暴露）。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rt_restart_09_side_effect_states_fail_while_queued_states_survive() {
     let e = boot_min().await;
@@ -580,14 +583,40 @@ async fn rt_restart_09_side_effect_states_fail_while_queued_states_survive() {
     let e = restart(e).await;
     let run = e.rt.store.get_task("t-run").unwrap().unwrap();
     assert_eq!(run.status, TaskStatus::Failed, "RUNNING 重启后应 FAILED");
-    let q = e.rt.store.get_task("t-q").unwrap().unwrap();
-    assert_ne!(
-        q.status,
-        TaskStatus::Failed,
-        "QUEUED 单任务不应被启动恢复标记失败（方案 C）"
+    // 重排后的任务会立刻 spawn 执行；boot_min 没有可用后端，执行本身可能在断言前就失败，
+    // 所以不能看最终状态（时序竞争：快机器必失败，CI 时好时坏）。方案 C 要验证的是
+    // “启动恢复没有把它标失败”，因此看事件：有「重新排队」、没有启动恢复写的「重启中断」。
+    // 反方向（开关关闭时 QUEUED 仍写「重启中断」并 FAILED）由 RT-RESTART-10 覆盖。
+    e.rt.store.flush_events();
+    let q_events = e.rt.store.list_events("t-q").unwrap();
+    assert!(
+        q_events.iter().any(|ev| ev.message.contains("重新排队")),
+        "QUEUED 单任务应被重新排队（方案 C）：{q_events:?}"
+    );
+    assert!(
+        !q_events.iter().any(|ev| ev.message.contains("重启中断")),
+        "QUEUED 单任务不应被启动恢复标记失败（方案 C）：{q_events:?}"
     );
     let run_events = e.rt.store.list_events("t-run").unwrap();
     assert!(run_events.iter().any(|ev| ev.message.contains("重启中断")));
+    // QUEUED：启动恢复不得写「重启中断」事件/失败交付；应写「重新排队」。终态不设断言（见上）。
+    // 「重新排队」经 bus 异步队列落库，先 flush 再断言
+    e.rt.store.flush_events();
+    let q_events = e.rt.store.list_events("t-q").unwrap();
+    assert!(
+        q_events.iter().any(|ev| ev.message.contains("重新排队")),
+        "QUEUED 单任务应被重排：{q_events:?}"
+    );
+    assert!(
+        !q_events.iter().any(|ev| ev.message.contains("重启中断")),
+        "QUEUED 单任务不应被启动恢复标记失败：{q_events:?}"
+    );
+    let msgs = e.rt.store.list_messages(&cid, None).unwrap();
+    assert!(
+        !msgs.iter().any(|m| m.task_id.as_deref() == Some("t-q")
+            && m.content.contains("任务因服务重启中断，可重新委派")),
+        "QUEUED 单任务不应收到启动恢复的失败交付：{msgs:?}"
+    );
 }
 
 /// RT-RESTART-10：开关 resume_queued_on_restart=false 时 QUEUED 仍失败（回滚路径）。

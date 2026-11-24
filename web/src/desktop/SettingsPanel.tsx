@@ -1,4 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { AgentsPanel } from "../components/AgentsPanel";
+import { DiscoveryCard } from "../components/AgentCards";
+import type { CatalogItem } from "../bindings/CatalogItem";
+import { api } from "../api";
+import { readAgentsIntroSeen, writeAgentsIntroSeen } from "./agentIntro";
 import {
   SETTINGS_CATEGORIES,
   bumpProfileVersionForConflict,
@@ -32,7 +37,7 @@ type Props = {
 
 export function SettingsPanel({
   layer,
-  categoryId: _categoryId,
+  categoryId,
   memoryId,
   search,
   onNavigate,
@@ -46,6 +51,17 @@ export function SettingsPanel({
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [loading, setLoading] = useState(false);
+  // T-88：连接与能力分类 = 助手发现卡（首次）+ 助手管理列表
+  const [connectCatalog, setConnectCatalog] = useState<CatalogItem[] | null>(null);
+  const [connectCardDismissed, setConnectCardDismissed] = useState(() => readAgentsIntroSeen());
+
+  useEffect(() => {
+    if (layer !== "categories" || categoryId !== "connect" || connectCardDismissed || connectCatalog) return;
+    api
+      .agentCatalog()
+      .then(setConnectCatalog)
+      .catch(() => setConnectCardDismissed(true));
+  }, [layer, categoryId, connectCardDismissed, connectCatalog]);
   const [injecting, setInjecting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
@@ -216,11 +232,29 @@ export function SettingsPanel({
                     }
                   >
                     {c.title}
-                    {c.id !== "assistant" && <span className="muted">（占位）</span>}
+                    {c.id !== "assistant" && c.id !== "connect" && <span className="muted">（占位）</span>}
                   </button>
                 </li>
               ))}
             </ul>
+          )}
+          {layer === "categories" && categoryId === "connect" && (
+            <div data-testid="settings-connect">
+              {!connectCardDismissed && connectCatalog && (
+                <DiscoveryCard
+                  catalog={connectCatalog}
+                  onDismiss={() => {
+                    writeAgentsIntroSeen();
+                    setConnectCardDismissed(true);
+                  }}
+                  onManage={() => {
+                    writeAgentsIntroSeen();
+                    setConnectCardDismissed(true);
+                  }}
+                />
+              )}
+              <AgentsPanel />
+            </div>
           )}
         </div>
       )}

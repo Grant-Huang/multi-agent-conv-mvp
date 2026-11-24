@@ -233,7 +233,7 @@ T-69（#215）已合入：沿用 `NEEDS_HUMAN`，按是否已有结果区分待�
 ## 六、容易踩的坑（累积，发现新的请追加）
 
 1. **决策编号撞号**：多会话并行时 `DECISIONS.md` 编号被占用；推送前 `fetch` 确认，改号要连带改引用。
-2. **浏览器用例环境**：`PLAYWRIGHT_BROWSERS_PATH=$HOME/Library/Caches/ms-playwright`；各 spec 端口不同（harness 18787、ops 18791、新增的用 18792 起往后），不要复用。
+2. **浏览器用例环境**：`PLAYWRIGHT_BROWSERS_PATH=$HOME/Library/Caches/ms-playwright`；各 spec 端口不同（harness 18787、**harness 深就绪门 18789**（#247 起）、ops 18791、新增的用 18792 起往后），不要复用；多会话同机并行跑 e2e 时按此错峰，占用中会报 `port/url already used`。
 3. **推送**：直连优先，失败再用 git 配置的代理 `127.0.0.1:7897`；先从远端同步再继续。
 4. **钩子**：提交走正常钩子，不绕过；`cargo fmt --all` 要在推送前跑（CI 的 rust 检查会 `--check`）。
 5. **check-map**：E2E 用例 id 仅大写字母；表格行必须有同名测试，草稿写 bullet。

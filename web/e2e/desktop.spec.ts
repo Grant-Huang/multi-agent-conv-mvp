@@ -18,7 +18,7 @@ test('E2E-ADNAV: 桌面首页多入口打开同一 SMT-03 并返回', async ({ p
   await expect(page.getByRole('region', { name: '我的工作' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Agent 工作' })).toBeVisible();
   await expect(page.getByRole('region', { name: '为你关注' })).toBeVisible();
-  await expect(page.getByTestId('ops-module-off')).toContainText('运营模块未启用');
+  await expect(page.getByTestId('ops-entry-workbench')).toBeDisabled();
   await expect(page.getByRole('tab', { name: /运营桌面/ })).toHaveCount(0);
 
   await page.getByTestId('card-smt-03').click();
@@ -328,8 +328,8 @@ test('E2E-ADXR: 已读跨端服务权威与幂等', async ({ page, browser, requ
   }
   await expect(pageB.getByTestId('asst-read-unread')).toHaveText('未读 0');
 
-  await page.getByTestId('asst-read-refresh').click();
-  await expect(page.getByTestId('asst-read-unread')).toHaveText('未读 0');
+  // T-88：刷新按钮收编，面板 5s 轮询自动对齐
+  await expect(page.getByTestId('asst-read-unread')).toHaveText('未读 0', { timeout: 10_000 });
   await expect(page.getByTestId('asst-read-item-asst-msg-1')).toHaveAttribute('data-read', '1');
 
   const again = await request.post('/api/desktop/v1/assistant/messages/read', {
@@ -339,8 +339,7 @@ test('E2E-ADXR: 已读跨端服务权威与幂等', async ({ page, browser, requ
   const body = await again.json();
   expect(body.newly_marked).toBe(0);
 
-  await page.getByTestId('asst-read-refresh').click();
-  await expect(page.getByTestId('asst-read-unread')).toHaveText('未读 0');
+  await expect(page.getByTestId('asst-read-unread')).toHaveText('未读 0', { timeout: 10_000 });
   await ctxB.close();
 });
 
@@ -638,20 +637,45 @@ test('E2E-ADATTN: 输入中普通建议不抢焦点且可静音', async ({ page 
   await input.fill('正在写草稿');
   await expect(input).toBeFocused();
 
-  await page.getByTestId('attn-inject-ordinary').click();
-  await expect(page.getByTestId('attn-item-ordinary')).toBeVisible();
+  // T-88：注入改为 API（测试控制不再渲染在生产界面）；toast 经轮询出现
+  await page.request.post('/api/desktop/v1/attention', {
+    data: { kind: 'ordinary', title: '建议：复核 SMT-03 证据', body: '可在稍后打开；不打断当前输入' },
+  });
+  await expect(page.getByTestId('attn-item-ordinary')).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId('attn-no-steal')).toBeVisible();
   await expect(input).toBeFocused();
 
   await page.getByTestId('attn-mute-toggle').click();
   await expect(page.getByTestId('attn-mute-toggle')).toHaveAttribute('aria-pressed', 'true');
   const before = await page.getByTestId('attn-item-ordinary').count();
-  await page.getByTestId('attn-inject-ordinary').click();
+  await page.request.post('/api/desktop/v1/attention', {
+    data: { kind: 'ordinary', title: '建议：复核 SMT-03 证据', body: '可在稍后打开；不打断当前输入' },
+  });
   await expect(page.getByTestId('attn-item-ordinary')).toHaveCount(before);
 
-  await page.getByTestId('attn-inject-urgent').click();
-  await expect(page.getByTestId('attn-item-urgent')).toBeVisible();
+  await page.request.post('/api/desktop/v1/attention', {
+    data: { kind: 'urgent', title: '紧急：产线联锁', body: '安全联锁触发，请立即处理' },
+  });
+  await expect(page.getByTestId('attn-item-urgent')).toBeVisible({ timeout: 10_000 });
   await expect(input).toBeFocused();
+});
+
+test('E2E-ADHOME: 首页整治后无测试控制与重复面板（T-88/UI16）', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
+  // 生产界面无测试注入控件（MOCK_REGISTRY 规则 2）
+  await expect(page.getByTestId('attn-inject-ordinary')).toHaveCount(0);
+  await expect(page.getByTestId('attn-inject-urgent')).toHaveCount(0);
+  await expect(page.getByTestId('asst-read-reset')).toHaveCount(0);
+  // 无配置类链接行与未启用横幅
+  await expect(page.getByTestId('ops-module-off')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'DES 仿真实验' })).toHaveCount(0);
+  // A1 欠账：无旧顶栏页签
+  await expect(page.locator('.main-tabs')).toHaveCount(0);
+  // 侧栏分区齐全（任务/运营入口权限门控）
+  await expect(page.getByTestId('open-tasks')).toBeVisible();
+  await expect(page.getByTestId('ops-entry-workbench')).toBeDisabled();
+  await expect(page.getByTestId('asst-read-root')).toBeVisible();
 });
 
 test('E2E-ADAPPR: 审批版本失效、拒绝与执行一次', async ({ page }) => {

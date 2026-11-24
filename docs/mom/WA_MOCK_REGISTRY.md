@@ -8,7 +8,7 @@
 |---|---|---|
 | `[mom] world_mock`（默认 `false`） | `true` 且 loopback 时 `main` 挂载 `/api/world/mock/*`；关闭则路由不存在（404） | `RT-WA-09`；浏览器套件经 `waMockServer` 写 `world_mock=true` |
 | `/api/world/des`（同门控） | `world_mock=true` 时挂载；`[mom] des_mcp` / `AN_MOM_DES_MCP` 非空则真 `DesConnector`+`with_des`，否则内存桩 | `RT-WADES-*`（含 live）、`E2E-WADES*`；`wa-m1-suite` |
-| `/api/world/prod`（同门控） | `world_mock=true` 时挂载；内存权威源登记 stub（无真实凭据） | `RT-WAPROD-01`～`06` + `E2E-WAPROD*`；套件 `wa-m3-suite`；准出 `wa-m3-5.md`（M3-5） |
+| `/api/world/prod`（同门控） | `world_mock=true` 时挂载；内存权威源登记 stub（无真实凭据）；带 `selection` 时经**显式注入**的回环工单夹具读单对象（`with_work_order_fixture`，仅测试进程注入，响应 `provenance=fixture`） | `RT-WAPROD-01`～`09`（07～09：#248/#266 工单选择与回环夹具）+ `E2E-WAPROD*`；套件 `wa-m3-suite`；准出 `wa-m3-5.md`（M3-5） |
 | `[mom] des_mcp`（默认空） | 主应用 MOM `with_des`；与 `/api/world/des` 共用 Engine | T-50 / `WA_DES_CONNECTOR_PLAN`；`rt_wades_*_live_*` |
 | 响应 `protocol_version` | Mock 与未来真实适配器共用合同字段 | `RT-WA-01～08` / `RT-WADES-*` 响应含 `protocol_version=1` |
 | 卡片 `provenance` | Mock 正式运行 `OpsCase.provenance=world_mock`；DES 正式运行 `provenance=des`；工作台种子区分 `mock` / `des` / `production` | `E2E-DES*`、`E2E-WABIND`、`RT-WADES-08`；UI 来源标签 |
@@ -26,7 +26,7 @@
 | WAM-04 | 方案与批准 | 版本、角色；审批走运营频道卡 | **M2** 复用 MOM；**M4** 真实审批 | 过期批准零写入 | **M0 Mock** + **M2 服务层**；真实审批属 M4（**写侧未开**；准入见 [WA_M4_TASKS.md](WA_M4_TASKS.md) §1 G5） |
 | WAM-05 | 写入、回执、取消 | 稳定 execution_id、丢回执、部分失败 | **M2** DES；**M4** MES | 重复执行、终态保护 | **M0 Mock** + **M2 DES 写**；MES **M4**（**写侧未开**；准入 G6；保持 prod `WRITE_DISABLED`） |
 | WAM-06 | 审核与诊断 | 标准答案仅审核可见 | **M2** DES 审核源 | 访问边界、刷新失败恢复 | **M0 Mock** + **M2 DES 审核**（`RT-WADES-18～19`；E2E-WADYN/WALOOP；见 `wa-m2-4-closed-loop.md` / `wa-m2-5-browser.md`） |
-| WAM-07 | 生产来源 | 模拟站点/延迟（种子标识） | **M3** 读；**M4** 写 | 对账可复验 | **读（桩）已定稿**：`wa-m3-5.md`。**写未开**：须过 [WA_M4_TASKS](WA_M4_TASKS.md) 准入；下一待授权卡 **M4-1 候选站只读浏览器**；MES 写在准入齐后 |
+| WAM-07 | 生产来源 | 模拟站点/延迟（种子标识） | **M3** 读；**M4** 写 | 对账可复验 | **读（桩）已定稿**：`wa-m3-5.md`。**真源预演（回环工单夹具）已立案**：`selection` 单工单只读经回环 adapter（固定 rev）夹具，`provenance=fixture`（RT-WAPROD-07～09；#248/#266；[WA_M3_LIVE_OBSERVE_PLAN](WA_M3_LIVE_OBSERVE_PLAN.md) 待联审授权）。**写未开**：须过 [WA_M4_TASKS](WA_M4_TASKS.md) 准入；下一待授权卡 **M4-1 候选站只读浏览器**；MES 写在准入齐后 |
 
 退役真实路径上的 Mock 路由时：关掉 `world_mock`、保留隔离套件作回归、更新本表状态为「已替换」并附 PR。
 

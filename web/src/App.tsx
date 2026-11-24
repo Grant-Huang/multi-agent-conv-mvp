@@ -12,7 +12,6 @@ import { TaskPanel, taskMessageIds } from "./components/TaskPanel";
 import { NodesPanel } from "./components/NodesPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { AgentsPanel } from "./components/AgentsPanel";
-import { DiscoveryCard } from "./components/AgentCards";
 import { OpsDesk } from "./components/OpsDesk";
 import { IntrospectionPanel } from "./components/IntrospectionPanel";
 import { DesktopHome } from "./desktop/DesktopHome";
@@ -33,13 +32,13 @@ import {
   writeDesktopView,
   type DesktopMainView,
 } from "./desktop/mockData";
-import type { CatalogItem } from "./bindings/CatalogItem";
 import { roleLabel } from "./labels";
 
 type MainView = DesktopMainView;
 
 type DesktopSide =
   | null
+  | { kind: "tasks" }
   | { kind: "evidence"; taskId: string; layer: EvidenceLayer; evidenceId: string | null; mode?: "normal" | "empty" }
   | { kind: "history" }
   | {
@@ -56,25 +55,6 @@ const MAX_PROGRESS_LINES = 30;
 const DEV_MODE_KEY = "agentnexus.devMode";
 
 type SideTab = "tasks" | "agents" | "nodes" | "diag" | "logs" | "intro";
-/** 首次打开时的"发现卡"是否已经看过（按浏览器记录，AG.3 用户确认） */
-const AGENTS_INTRO_KEY = "an.agentsIntroSeen";
-
-function readIntroSeen(): boolean {
-  try {
-    return localStorage.getItem(AGENTS_INTRO_KEY) === "1";
-  } catch {
-    // 读不到本地存储（隐私窗口等）时不打扰用户
-    return true;
-  }
-}
-
-function writeIntroSeen() {
-  try {
-    localStorage.setItem(AGENTS_INTRO_KEY, "1");
-  } catch {
-    /* 忽略：只是界面偏好 */
-  }
-}
 
 /** 追加一条进度：与上一条相同则忽略，超出上限丢弃最早的 */
 function appendLine(list: string[], msg: string): string[] {
@@ -152,19 +132,6 @@ export default function App() {
   // 最新一条任务事件，展开的任务卡片会把它追加到时间线上
   const [incoming, setIncoming] = useState<TaskEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // 首次打开时的发现卡：没看过才去读目录
-  const [introCatalog, setIntroCatalog] = useState<CatalogItem[] | null>(null);
-  useEffect(() => {
-    if (readIntroSeen()) return;
-    api
-      .agentCatalog()
-      .then(setIntroCatalog)
-      .catch(() => {});
-  }, []);
-  const dismissIntro = () => {
-    writeIntroSeen();
-    setIntroCatalog(null);
-  };
   // 正在流式生成的回答：id 等于最终消息的 id，最终消息到达后自动隐藏
   const [streaming, setStreaming] = useState<{ id: string; text: string } | null>(null);
   // 每个任务的进度历史（时间顺序）：进度条显示最后一条，展开时看全部
@@ -405,26 +372,30 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .desktopAttentionList()
-      .then((r) => {
-        if (cancelled) return;
-        setAttnItems(
-          r.items.map((d) => ({
-            id: d.id,
-            kind: d.kind,
-            title: d.title,
-            body: d.body,
-            taskId: d.task_id ?? undefined,
-          })),
-        );
-        setAttnMuted(r.mute_ordinary);
-      })
-      .catch(() => {
-        /* harness 未就绪时忽略 */
-      });
+    const load = () =>
+      api
+        .desktopAttentionList()
+        .then((r) => {
+          if (cancelled) return;
+          setAttnItems(
+            r.items.map((d) => ({
+              id: d.id,
+              kind: d.kind,
+              title: d.title,
+              body: d.body,
+              taskId: d.task_id ?? undefined,
+            })),
+          );
+          setAttnMuted(r.mute_ordinary);
+        })
+        .catch(() => {
+          /* harness 未就绪时忽略 */
+        });
+    load();
+    const t = setInterval(load, 5_000);
     return () => {
       cancelled = true;
+      clearInterval(t);
     };
   }, []);
 
@@ -567,11 +538,49 @@ export default function App() {
         </button>
         <button
           type="button"
+          className={`btn ${desktopSide?.kind === "tasks" ? "active" : ""}`}
+          data-testid="open-tasks"
+          onClick={() => setDesktopSide({ kind: "tasks" })}
+        >
+          任务
+        </button>
+        <button
+          type="button"
           className={`btn ${desktopSide?.kind === "history" ? "active" : ""}`}
           data-testid="open-history"
           onClick={() => setDesktopSide({ kind: "history" })}
         >
           历史
+        </button>
+        <p className="sidebar-label">运营</p>
+        <button
+          type="button"
+          className={`btn ${mainView === "mom-workbench" ? "active" : ""}`}
+          data-testid="ops-entry-workbench"
+          disabled={opsUnread === null}
+          title={opsUnread === null ? "运营模块未启用" : undefined}
+          onClick={() => setMainView("mom-workbench")}
+        >
+          运营工作台
+        </button>
+        {opsUnread !== null && (
+          <button
+            type="button"
+            className={`btn ${mainView === "desk" ? "active" : ""}`}
+            data-testid="ops-entry-desk"
+            onClick={() => setMainView("desk")}
+          >
+            运营桌面
+            {opsUnread > 0 && <span className="badge unread" data-testid="ops-unread">{opsUnread}</span>}
+          </button>
+        )}
+        <button
+          type="button"
+          className={`btn ${mainView === "des-experiment" ? "active" : ""}`}
+          data-testid="ops-entry-des"
+          onClick={() => setMainView("des-experiment")}
+        >
+          仿真实验
         </button>
         <button
           type="button"
@@ -581,7 +590,6 @@ export default function App() {
         >
           设置与管理
         </button>
-        <a className="btn" href="/mom/">MOM 运营沙盘</a>
         <p className="sidebar-label">最近</p>
         <nav className="conv-list" aria-label="最近工作">
           <button
@@ -624,55 +632,10 @@ export default function App() {
             {error}（点击关闭）
           </div>
         )}
-        <div className="main-tabs" role="tablist" aria-label="主视图">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mainView === "home" || mainView === "workspace"}
-            className={mainView === "home" || mainView === "workspace" ? "active" : ""}
-            onClick={() => setMainView("home")}
-          >
-            我的桌面
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mainView === "chat"}
-            className={mainView === "chat" ? "active" : ""}
-            onClick={() => setMainView("chat")}
-          >
-            会话
-          </button>
-          {opsUnread !== null && (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mainView === "desk"}
-              className={mainView === "desk" ? "active" : ""}
-              onClick={() => setMainView("desk")}
-            >
-              运营桌面
-            </button>
-          )}
-        </div>
-        {introCatalog && (mainView === "home" || mainView === "chat") && (
-          <DiscoveryCard
-            catalog={introCatalog}
-            onDismiss={dismissIntro}
-            onManage={() => {
-              dismissIntro();
-              setSideTab("agents");
-            }}
-          />
-        )}
         {mainView === "home" && (
           <DesktopHome
             onOpenTask={(id) => openWorkspace(id)}
             onOpenEvidence={(id) => openEvidence(id)}
-            onOpenDesExperiment={() => setMainView("des-experiment")}
-            onOpenOpsChannel={() => openOpsChannel(OPS_CHANNEL_ID, false)}
-            onOpenMomWorkbench={() => setMainView("mom-workbench")}
-            opsEnabled={opsUnread !== null}
             assistantName={assistantProfile.name}
             s1BgJob={s1BgJob}
             s1Reply={s1Reply}
@@ -731,18 +694,15 @@ export default function App() {
           />
         )}
         {(mainView === "home" || mainView === "chat") && (
-          <>
-            <AttentionToast
-              items={attnItems}
-              muted={attnMuted}
-              composing={composingInput}
-              onChange={({ items, muted }) => {
-                setAttnItems(items);
-                setAttnMuted(muted);
-              }}
-            />
-            <AssistantReadPanel />
-          </>
+          <AttentionToast
+            items={attnItems}
+            muted={attnMuted}
+            composing={composingInput}
+            onChange={({ items, muted }) => {
+              setAttnItems(items);
+              setAttnMuted(muted);
+            }}
+          />
         )}
         {mainView === "mom-workbench" && (
           <MomWorkbench
@@ -847,6 +807,16 @@ export default function App() {
             onClose={() => setDesktopSide(null)}
             onProfileSaved={setAssistantProfile}
           />
+        ) : desktopSide?.kind === "tasks" ? (
+          <TasksSidePanel
+            onOpenTask={(id) => {
+              openWorkspace(id);
+              setDesktopSide(null);
+            }}
+            onClose={() => setDesktopSide(null)}
+          />
+        ) : mainView !== "chat" ? (
+          <AssistantReadPanel />
         ) : (
           <>
             <div className="tabs" role="tablist">
@@ -890,49 +860,99 @@ export default function App() {
 /** 接入方式的显示名 */
 const KIND_LABEL: Record<string, string> = { builtin: "内置", cli: "CLI", acp: "ACP", node: "节点" };
 
-/** 左下角：LLM 连接状态和 Agent 可用状态。不可用的原因直接显示，不依赖悬停提示 */
+/** 侧栏「任务」：全部活跃任务的轻量列表（点击进工作区）。T-88 首页整治。 */
+function TasksSidePanel(props: { onOpenTask: (id: string) => void; onClose: () => void }) {
+  const [tasks, setTasks] = useState<TaskRecord[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .tasksAll()
+      .then(setTasks)
+      .catch((e) => setErr(String(e)));
+  }, []);
+
+  const active = (tasks ?? []).filter((t) => t.status !== "COMPLETED" && t.status !== "CANCELLED");
+  const done = (tasks ?? []).length - active.length;
+
+  return (
+    <div data-testid="tasks-side">
+      <p className="settings-crumb">
+        任务
+        <button type="button" className="btn small" aria-label="关闭任务面板" onClick={props.onClose}>
+          关闭
+        </button>
+      </p>
+      {err && <p className="bad-text" role="alert">{err}</p>}
+      {tasks === null && <p className="muted">加载中…</p>}
+      {tasks !== null && (
+        <>
+          <p className="muted">进行中 {active.length} · 已完成折叠 {done}</p>
+          <ul className="conv-list" aria-label="活跃任务">
+            {active.map((t) => (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  className="conv-item"
+                  onClick={() => props.onOpenTask(t.id)}
+                  title={t.id}
+                >
+                  {t.goal}
+                  <span className="agent-meta">{t.status}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {active.length === 0 && <p className="muted">暂无进行中的任务</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** 左下角：连接状态摘要（一行）；助手与后端详情默认折叠到「连接详情」（T-88，设计原则 §13 诊断层折叠） */
 export function HealthBox({ health }: { health: Health | null }) {
   const [open, setOpen] = useState(false);
   if (!health) return <div className="health"><span className="dot bad" /> 后端未连接</div>;
+  const availableAgents = health.agents.filter((a) => (a.link?.status ?? (a.enabled ? "connected" : "unavailable")) === "connected").length;
   return (
     <div className="health">
-      {(health.backends ?? []).length === 0 ? (
-        <div>
-          <span className={`dot ${health.llm.ok ? "ok" : "bad"}`} />
-          LLM {health.llm.ok ? "已连接" : "未连接"}
-        </div>
-      ) : (
-        health.backends.map((b) => (
-          <div key={b.name}>
-            <span className={`dot ${b.ok ? "ok" : "bad"}`} />
-            {b.name} {b.ok ? "已连接" : "未连接"}
-            {b.slots.some((s) => s.server_busy) ? ` · ${b.slots.filter((s) => s.server_busy).length} 个槽位生成中` : ""}
-          </div>
-        ))
-      )}
-      {/* 每个 agent 一行：名称 + 角色 + 接入方式。绿=已连通可调用，灰=已配置未连通，红=不可用；灰红的原因在悬停提示里 */}
-      {health.agents.map((a) => {
-        const status = a.link?.status ?? (a.enabled ? "connected" : "unavailable");
-        const dot = status === "connected" ? "ok" : status === "configured" ? "idle" : "bad";
-        return (
-          <div key={a.id} className="agent-row" title={a.link?.reason}>
-            <span className={`dot ${dot}`} />
-            {a.name}
-            <span className="agent-meta">{roleLabel(a.role)} · {KIND_LABEL[a.kind] ?? a.kind}</span>
-            {!a.enabled && a.disabled_reason && <div className="bad-text agent-reason">{a.disabled_reason}</div>}
-          </div>
-        );
-      })}
+      <div>
+        <span className={`dot ${health.llm.ok ? "ok" : "bad"}`} />
+        连接正常 · {availableAgents}/{health.agents.length} 个助手可用
+      </div>
       {open && (
-        <div className="health-detail">
+        <>
           {(health.backends ?? []).map((b) => (
             <div key={b.name}>
-              {b.base_url} · {b.server_models.join(", ") || b.model}
-              {b.error && <div className="bad-text">{b.error}</div>}
+              <span className={`dot ${b.ok ? "ok" : "bad"}`} />
+              {b.name} {b.ok ? "已连接" : "未连接"}
+              {b.slots.some((s) => s.server_busy) ? ` · ${b.slots.filter((s) => s.server_busy).length} 个槽位生成中` : ""}
             </div>
           ))}
-          <div>结构化：{health.llm.structured_mode}</div>
-        </div>
+          {/* 每个 agent 一行：名称 + 角色 + 接入方式。绿=已连通可调用，灰=已配置未连通，红=不可用；灰红的原因在悬停提示里 */}
+          {health.agents.map((a) => {
+            const status = a.link?.status ?? (a.enabled ? "connected" : "unavailable");
+            const dot = status === "connected" ? "ok" : status === "configured" ? "idle" : "bad";
+            return (
+              <div key={a.id} className="agent-row" title={a.link?.reason}>
+                <span className={`dot ${dot}`} />
+                {a.name}
+                <span className="agent-meta">{roleLabel(a.role)} · {KIND_LABEL[a.kind] ?? a.kind}</span>
+                {!a.enabled && a.disabled_reason && <div className="bad-text agent-reason">{a.disabled_reason}</div>}
+              </div>
+            );
+          })}
+          <div className="health-detail">
+            {(health.backends ?? []).map((b) => (
+              <div key={b.name}>
+                {b.base_url} · {b.server_models.join(", ") || b.model}
+                {b.error && <div className="bad-text">{b.error}</div>}
+              </div>
+            ))}
+            <div>结构化：{health.llm.structured_mode}</div>
+          </div>
+        </>
       )}
       <button type="button" className="health-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         {open ? "收起详情 ▴" : "连接详情 ▾"}
