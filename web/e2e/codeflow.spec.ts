@@ -39,8 +39,15 @@ async function ensureClaudeConnected(page: Page) {
   const list = await openAgents(page);
   const claude = row(list, 'claude');
   await expect(claude).toBeVisible();
+  // T-88：发现卡（seen 标志按 context 存活）会盖住右侧任务卡，进入后先点掉再继续
+  const introCard = page.getByRole('region', { name: '发现的助手' });
+  if (await introCard.count()) {
+    await introCard.getByRole('button', { name: '知道了', exact: true }).click();
+    await expect(introCard).toHaveCount(0);
+  }
   const text = await claude.innerText();
-  if (text.includes('已接入')) return;
+  const alreadyConnected = text.includes('已接入');
+  if (!alreadyConnected) {
   if (text.includes('已停用')) {
     await claude.getByRole('button', { name: '恢复启用' }).click();
     const card = page.getByRole('region', { name: '确认修改' });
@@ -48,15 +55,16 @@ async function ensureClaudeConnected(page: Page) {
     await card.getByRole('button', { name: '确认', exact: true }).click();
     await expect(page.getByRole('region', { name: '修改结果' })).toBeVisible();
   }
-  if (!(await claude.innerText()).includes('已接入')) {
-    await claude.getByRole('button', { name: '接入' }).click();
-    const card = page.getByRole('region', { name: '确认修改' });
-    await expect(card).toBeVisible();
-    await card.getByRole('button', { name: '确认', exact: true }).click();
-    await expect(page.getByRole('region', { name: '修改结果' })).toContainText('已完成');
+    if (!(await claude.innerText()).includes('已接入')) {
+      await claude.getByRole('button', { name: '接入' }).click();
+      const card = page.getByRole('region', { name: '确认修改' });
+      await expect(card).toBeVisible();
+      await card.getByRole('button', { name: '确认', exact: true }).click();
+      await expect(page.getByRole('region', { name: '修改结果' })).toContainText('已完成');
+    }
+    await expect(claude).toContainText('已接入');
   }
-  await expect(claude).toContainText('已接入');
-  // T-88：设置面板为对话框，Esc 关闭后再回会话流（ADINPUT 同语义）
+  // T-88：设置面板为对话框，任何路径收尾都 Esc 关闭后再回会话流（ADINPUT 同语义）
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('settings-panel')).toHaveCount(0);
 }
@@ -131,10 +139,10 @@ test('E2E-FEEDBACK: 任务卡「派错了」可保存反馈', async ({ page }) =
   const out = await send(page, '改代码验证：反馈链路用');
   await complete(page, out.task.id);
 
-  // T-88 适配欠账（第 1 线定稿后一步适配）：「派错了」所在的任务卡在旧壳位于右栏「任务」页签，
-  // 新壳中该卡既不在右栏事件流、也不在会话内联（详见 PR #270 第 4 线留言）。
-  // 在落点定稿前保留原入口步骤（此处会失败，属已知适配欠账，不属断言放松）。
-  await page.getByRole('tab', { name: /任务/ }).click();
+  // T-88 入口适配收尾：新壳右栏（任务与状态）以事件流呈现，点开「任务结束」头选中任务后，
+  // TaskPanel 渲染该任务的任务卡（.task-card 在右侧面板而非会话流内联；断言不变）
+  // 限定当前会话流内的完成头，避免套件共享 harness 时选中偏好残留的其他任务
+  await page.locator('main').getByRole('button', { name: /任务结束：COMPLETED/ }).click();
   const card = page.locator('.task-card').filter({ hasText: '改代码验证：反馈链路用' });
   await card.locator('.task-head').click();
   await card.getByRole('button', { name: '派错了', exact: true }).click();
