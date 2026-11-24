@@ -36,6 +36,10 @@ cd web && npm run typecheck && npm test && npm run test:map && npm run build →
 E2E 回归：desktop ADMEM 2 passed、session-materials 1 passed
 ```
 
+## 5.3b 追加（2026-11-24）：adoption 证据链补强
+
+- `introspect/job.rs` adoption json 写入去重保序的 `case_ids`（RT-UFND-06 Red→Green；job 套件 7/7）；会话注入来源行对两类发现均可点回原始记录（collector 读 case_ids 由 RT-UFND-04 覆盖）。
+
 ## 非本卡
 
 内省页→会话引用回链 UI（第 1 线）；adoption 形态 json 补 case_ids（INT 后续卡）；5.4 组织范围（等身份）。
