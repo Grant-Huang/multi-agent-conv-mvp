@@ -1035,3 +1035,15 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-USTY-03 | conversation-memory | 草稿条目 / 已确认未生效条目 | DELETE 后续问 | 均不注入 |
 | RT-USTY-04 | conversation-memory | 超长风格正文 + 默认配置 | 新会话续问 | 风格卡含护栏句「不得因此省略风险」且长度有界（≤ 上限 + 页眉余量） |
 | RT-USTY-05 | conversation-memory | style（要求简洁）与 fact 记忆（风险信息正文）同时生效 | 新会话续问 | 提示词同时含风格正文与风险记忆正文（风格挤不掉风险信息）；`session.materials` 事件含 style 来源 id |
+
+## 内省发现按需进入会话 conversation-memory 5.3（REQ-conversation-memory-04；2026-11-23 用户确认：确定性 bigram 匹配 / 待核实标注注入 / 过闸门即可候选 / 2 条独立计）
+
+发现候选 = `introspection_findings` 中 `gate_score` 非空（过闸门）且 `verdict != rejected`（人工未否决）且 `verification ∈ {supported, inconclusive}` 的条目。相关性 = 提问与（topic+hypothesis）的字符二元组 dice 系数 ≥ 阈值（常量，M1.2 同款算法，确定性、不占模型槽位），按分数取前 `session_materials_findings_max`（默认 2）条，独立计数。inconclusive 条目注入带「待核实」标注；contradicted 不注入。注入为纯只读：不得写 `desktop_memories` 或任何规则存储（REQ-04 不自动晋升）。E2E 待第 1 线入口后补录。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-UFND-01 | conversation-memory | 过闸门的 supported 发现（topic/假设与提问高度相关）+ 无关提问 | 两条不同提问分别续问 | 相关提问的资料块含发现段（来源行 = finding id）；无关提问不注入该发现 |
+| RT-UFND-02 | conversation-memory | 同 topic 的 inconclusive 与 supported 发现各一，均匹配 | 相关续问 | inconclusive 条目带「待核实」标注；supported 无该标注 |
+| RT-UFND-03 | conversation-memory | verdict=rejected 的匹配发现 | 相关续问 | 不注入（人工否决优先于算法） |
+| RT-UFND-04 | conversation-memory | 带 case_ids 的发现（cooccur 形态 json） | 相关续问 | 来源行含 finding id、topic 与证据 case id |
+| RT-UFND-05 | conversation-memory | 任一发生注入的轮次 | 注入后查库 | `desktop_memories` 行数不变、`introspection_findings` 行无写入（不自动晋升，纯只读） |

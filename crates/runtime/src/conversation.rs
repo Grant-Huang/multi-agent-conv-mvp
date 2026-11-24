@@ -47,6 +47,7 @@ pub struct ConversationRuntime {
     session_materials_max_tokens: u32,
     session_materials_timeout_ms: u64,
     session_materials_style_max_tokens: u32,
+    session_materials_findings_max: u32,
     /// 同一会话同一时刻只处理一条消息
     locks: ConvLocks,
     /// 会话资料源（conversation-memory 5.1）；默认读 Store，测试可注入
@@ -75,6 +76,7 @@ pub struct ConversationDeps {
     pub session_materials_max_tokens: u32,
     pub session_materials_timeout_ms: u64,
     pub session_materials_style_max_tokens: u32,
+    pub session_materials_findings_max: u32,
 }
 
 /// 一轮对话的处理结果（HTTP 接口直接返回它）
@@ -278,6 +280,7 @@ impl ConversationRuntime {
             session_materials_max_tokens: d.session_materials_max_tokens,
             session_materials_timeout_ms: d.session_materials_timeout_ms,
             session_materials_style_max_tokens: d.session_materials_style_max_tokens,
+            session_materials_findings_max: d.session_materials_findings_max,
             locks: ConvLocks::new(),
             agents: d.agents,
         }
@@ -583,7 +586,9 @@ impl ConversationRuntime {
         match &decision {
             TurnDecision::Respond { .. } => {
                 let reply_id = an_core::new_id("msg");
-                let (materials, style) = self.session_materials_block(conversation_id, user).await;
+                let (materials, style) = self
+                    .session_materials_block(conversation_id, user, text)
+                    .await;
                 let reply = self
                     .generate_reply(
                         conversation_id,
@@ -804,6 +809,7 @@ impl ConversationRuntime {
         &self,
         conversation_id: &str,
         user: &str,
+        question: &str,
     ) -> (Option<String>, Option<String>) {
         if !self.session_materials {
             return (None, None);
@@ -818,6 +824,8 @@ impl ConversationRuntime {
             .collect(
                 conversation_id,
                 user,
+                question,
+                self.session_materials_findings_max as usize,
                 Duration::from_millis(self.session_materials_timeout_ms),
             )
             .await;
@@ -833,6 +841,7 @@ impl ConversationRuntime {
             selected = %materials.items.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
             memories = %materials.memories.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
             style = %materials.style.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
+            findings = %materials.findings.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
             skipped = %materials.skipped.iter().map(|(id, r)| format!("{id}:{r}")).collect::<Vec<_>>().join(","),
             chars = rendered.chars().count() as u64,
             style_chars = style.chars().count() as u64,

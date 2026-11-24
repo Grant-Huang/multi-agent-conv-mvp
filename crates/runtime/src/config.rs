@@ -214,6 +214,9 @@ pub struct ConversationSection {
     /// 5.2b：风格卡估算 token 上限（生效的 preference/style 注入）
     #[serde(default = "d_style_max_tokens")]
     pub session_materials_style_max_tokens: u32,
+    /// 5.3：内省发现按相关性注入的条数上限（独立计数）
+    #[serde(default = "d_findings_max")]
+    pub session_materials_findings_max: u32,
 }
 
 impl Default for ConversationSection {
@@ -229,6 +232,7 @@ impl Default for ConversationSection {
             session_materials_max_tokens: d_materials_max_tokens(),
             session_materials_timeout_ms: d_materials_timeout_ms(),
             session_materials_style_max_tokens: d_style_max_tokens(),
+            session_materials_findings_max: d_findings_max(),
         }
     }
 }
@@ -241,6 +245,9 @@ fn d_materials_timeout_ms() -> u64 {
 }
 fn d_style_max_tokens() -> u32 {
     200
+}
+fn d_findings_max() -> u32 {
+    2
 }
 
 impl AppConfig {
