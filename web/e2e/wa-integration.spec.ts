@@ -33,7 +33,8 @@ test.afterEach(async ({ page }, info) => {
 test('E2E-WACHANNEL: 工作台事项前往运营频道', async ({ page }) => {
   if (!server) throw new Error('mock server not started');
   await page.goto(server.base + '/');
-  await page.getByRole('link', { name: 'MOM 工作台', exact: true }).click();
+  await page.getByTestId('ops-entry-workbench').click();
+  await expect(page.getByTestId('mom-workbench')).toBeVisible();
   await expect(page.getByTestId('mom-workbench')).toBeVisible();
   await page.getByLabel('选择世界').selectOption({ label: '华东精加工 · 模拟' });
   await page.getByRole('button', { name: '看板', exact: true }).click();
@@ -42,7 +43,7 @@ test('E2E-WACHANNEL: 工作台事项前往运营频道', async ({ page }) => {
   await expect(detail).toHaveAttribute('data-case-id', 'case-insert-a');
   await detail.getByRole('button', { name: '前往运营频道', exact: true }).click();
   await expect(
-    page.getByRole('complementary', { name: '会话列表' }).getByRole('button', {
+    page.getByRole('navigation', { name: '最近工作' }).getByRole('button', {
       name: /运营频道/,
     }),
   ).toBeVisible();

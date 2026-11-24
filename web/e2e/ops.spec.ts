@@ -98,13 +98,15 @@ async function seedClosed(request: APIRequestContext) {
 }
 async function openDesk(page: Page) {
   await page.goto(on + '/');
-  await page.getByRole('tab', { name: /运营桌面/ }).click();
+  await page.getByTestId('ops-entry-desk').click();
+  await expect(page.getByTestId('ops-strip')).toBeVisible();
 }
 const strip = (page: Page) => page.getByTestId('ops-strip');
 const rows = (page: Page) => page.getByTestId('ops-row');
 async function openChannel(page: Page) {
   await page.goto(on + '/');
-  await page.getByRole('complementary', { name: '会话列表' }).getByRole('button', { name: /运营频道/ }).click();
+  // 旧壳=会话列表按钮（selectConversation，触发 opsRead 清零）；新壳同名入口在「最近工作」导航
+  await page.getByRole('navigation', { name: '最近工作' }).getByRole('button', { name: /运营频道/ }).click();
 }
 const channelMessages = async (request: APIRequestContext) => (await (await request.get(`${on}/api/conversations/${CHANNEL}/messages`)).json()) as unknown[];
 
@@ -135,7 +137,8 @@ test('E2E-OPSDESK: 桌面按风险排序，待批准置顶，已完成折叠，�
   await page.getByRole('button', { name: '待我批准' }).click();
   await expect(page.getByRole('button', { name: '待我批准' })).toHaveAttribute('aria-pressed', 'true');
   await page.reload();
-  await page.getByRole('tab', { name: /运营桌面/ }).click();
+  await page.getByTestId('ops-entry-desk').click();
+  await expect(page.getByTestId('ops-strip')).toBeVisible();
   await expect(page.getByRole('button', { name: '待我批准' })).toHaveAttribute('aria-pressed', 'true');
 });
 
@@ -163,7 +166,8 @@ test('E2E-OPSDRAWER: 详情抽屉按六个业务问题展示，原始数据折�
 test('E2E-OPSCHANNEL: P0 事件在运营频道只出一张卡并就地更新，未读计数，无模型回复无任务', async ({ page, request }) => {
   const id = await scenario(request);
   await page.goto(on + '/');
-  await expect(page.getByTestId('ops-unread')).toHaveText('1');
+  // T-88 侧栏徽标与会话项徽标同名；业务断言指会话列表内的频道未读
+  await expect(page.getByRole('navigation', { name: '最近工作' }).getByTestId('ops-unread')).toHaveText('1');
   await openChannel(page);
   const cards = page.getByTestId('ops-card').filter({ hasText: id });
   await expect(cards).toHaveCount(1);
@@ -199,7 +203,8 @@ test('E2E-OPSNOISE: 超过小时上限合并成汇总卡，同案例重复观测
   await expect(page.getByTestId('ops-card')).toHaveCount(10);
   await expect(page.getByTestId('ops-summary')).toContainText('另有 3 条');
   // 桌面仍能看到全部 13 个事项，没有静默丢弃
-  await page.getByRole('tab', { name: /运营桌面/ }).click();
+  await page.getByTestId('ops-entry-desk').click();
+  await expect(page.getByTestId('ops-strip')).toBeVisible();
   await expect(rows(page)).toHaveCount(13);
   for (const id of ids) await expect(rows(page).filter({ hasText: id })).toHaveCount(1);
 });
@@ -218,7 +223,8 @@ test('E2E-OPSAPPROVE: 桌面进频道后在卡上批准，卡与引擎同步，�
   const view = unwrap(await (await request.get(mom(`/cases/${id}`))).json());
   const approved = JSON.stringify(view.decision_inbox ?? view);
   expect(approved).toContain('supervisor');
-  await page.getByRole('tab', { name: /运营桌面/ }).click();
+  await page.getByTestId('ops-entry-desk').click();
+  await expect(page.getByTestId('ops-strip')).toBeVisible();
   await expect(page.getByRole('button', { name: '批准', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '批准执行' })).toHaveCount(0);
 });
@@ -270,7 +276,7 @@ test('E2E-ADREAD: 运营频道阅读锚点离开后恢复', async ({ page, reque
   // 软切换：避免整页刷新打乱恢复时序
   await page.getByRole('button', { name: '我的桌面', exact: true }).click();
   await expect(page.getByTestId('desktop-home')).toBeVisible();
-  await page.getByRole('complementary', { name: '会话列表' }).getByRole('button', { name: /运营频道/ }).click();
+  await page.getByRole('navigation', { name: '最近工作' }).getByRole('button', { name: /运营频道/ }).click();
   await expect(page.getByTestId('chat-messages')).toBeVisible();
   await expect
     .poll(async () =>

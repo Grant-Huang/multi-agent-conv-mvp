@@ -70,7 +70,8 @@ test('E2E-COMPLAINT: initial response before root cause and incomplete 8D',async
 
 test('E2E-MOMDYNAMIC: main entry and configurable continuous simulation',async({page})=>{
   await page.goto('/');
-  await page.getByRole('link',{name:'MOM 运营沙盘'}).click();
+  // T-88 移除生产壳测试控制入口；直达默认 harness 的 /mom/ 挂载（即旧链接语义），入口取舍在 CASES 另议
+  await page.goto('/mom/');
   await expect(page).toHaveURL(/\/mom\/$/);
   await expect(page.getByRole('heading',{name:'MOM 运营公告板'})).toBeVisible();
   await page.getByText('配置持续仿真',{exact:true}).click();

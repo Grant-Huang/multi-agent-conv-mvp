@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { prepareWaMockArtifacts, startWaMockServer, type WaMockHandle } from './helpers/waMockServer';
+
 
 /**
  * World Adapter M0-4：三入口工作台 + 事项页（E2E-WA-01 → E2E-WABIND）。
@@ -8,10 +10,36 @@ test.afterEach(async ({ page }, info) => {
   await page.screenshot({ path: info.outputPath('page.png'), fullPage: true });
 });
 
+
+let server: WaMockHandle | undefined;
+function base(): string {
+  if (!server) throw new Error('mock server not started');
+  return server.base;
+}
+
+test.beforeAll(async () => {
+  test.setTimeout(300_000);
+  prepareWaMockArtifacts();
+});
+
+test.beforeEach(async () => {
+  server = await startWaMockServer(
+    test.info().title.slice(0, 16).replace(/\W/g, ''),
+  );
+});
+
+test.afterEach(async () => {
+  if (server) {
+    await server.stop();
+    server = undefined;
+  }
+});
+
 test('E2E-WABIND: 三入口打开同一事项且世界隔离', async ({ page }) => {
-  await page.goto('/');
+  await page.goto(base() + '/');
   await expect(page.getByTestId('desktop-home')).toBeVisible();
-  await page.getByRole('link', { name: 'MOM 工作台', exact: true }).click();
+  await page.getByTestId('ops-entry-workbench').click();
+  await expect(page.getByTestId('mom-workbench')).toBeVisible();
   await expect(page.getByTestId('mom-workbench')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'MOM 工作台' })).toBeVisible();
 
@@ -30,8 +58,10 @@ test('E2E-WABIND: 三入口打开同一事项且世界隔离', async ({ page }) 
   await expect(detail.locator('code').first()).toHaveText('case-insert-a');
   await expect(detail).toContainText('world-demo-east');
 
-  await page.getByRole('button', { name: '任务', exact: true }).click();
-  await expect(page.getByRole('button', { name: '任务', exact: true })).toHaveAttribute(
+  // T-88：看板/任务/资源是工作台自身入口（nav「工作台入口」），aria-pressed 表激活
+  const entryTabs = page.getByRole('navigation', { name: '工作台入口' });
+  await entryTabs.getByRole('button', { name: '任务', exact: true }).click();
+  await expect(entryTabs.getByRole('button', { name: '任务', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
@@ -51,7 +81,8 @@ test('E2E-WABIND: 三入口打开同一事项且世界隔离', async ({ page }) 
 
   await page.getByRole('button', { name: '← 返回桌面', exact: true }).click();
   await expect(page.getByTestId('desktop-home')).toBeVisible();
-  await page.getByRole('link', { name: 'MOM 工作台', exact: true }).click();
+  await page.getByTestId('ops-entry-workbench').click();
+  await expect(page.getByTestId('mom-workbench')).toBeVisible();
   await expect(page.getByTestId('mom-workbench')).toBeVisible();
   await expect(worldSelect).toHaveValue('world-demo-east');
   await expect(page.getByRole('button', { name: '资源', exact: true })).toHaveAttribute(
