@@ -982,6 +982,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **T-81 记忆持久化验收探针**（2026-11-23，主线 #1:1）：RT-ADMEM-08 库间隔离 / 09 全撤回重启不重播种（对 T-78 实现的回归守卫；9/9 绿）；证据 `testing/evidence/ai-desktop-t81-mem-acceptance.md`
 - [x] **T-82 首页卡接真实快照**（2026-11-23，主线 #1:1）：`GET /api/desktop/v1/snapshot` 三区读模型（我的工作/Agent 工作=真实任务、为你关注=Attention；store 零改动）；RT-ADSNAP-01～04；`desktop.spec` 31/31；证据 `testing/evidence/ai-desktop-t82-home-snapshot.md`
 - [x] **T-86 draftStore 上云**（2026-11-23，主线 #1:1）：`desktop_drafts` 表 + `GET/PUT/DELETE /drafts/{kind}/{id}`（乐观版本；发送后按 sent_version 清空）；本地缓存镜像防抖同步，409 以服务端为准；RT-ADDRAFTS-01～04；证据 `testing/evidence/ai-desktop-t86-drafts-cloud.md`
+- [ ] **T-87 NexusOps 真实厂写方案**（建议号，**待 #1 发号确认**；2026-11-23，主线 #1:1，**仅文档不开实现**）：桌面审批网关经 World Adapter Propose/Execute/Confirm 写 DES；方案 [ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md](ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md)（§三问待确认）；决定草案 `decisions/2026-11-23-nexusops-real-write-plan.md`
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`
