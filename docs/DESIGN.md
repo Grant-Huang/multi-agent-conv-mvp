@@ -103,9 +103,9 @@ flowchart TB
 
 每个产品特性只有一个**权威设计**入口。状态口径：**已实现** / **部分实现** / **设计已确认**（未开工）/ **设计中** / **无设计**（还没有设计文档，待补）。状态以 [PLAN.md](PLAN.md) 和各计划文档的勾选为准，本表随之更新。
 
-| 特性 | 层 | 权威设计 | 计划与进度 | 主要代码 | 相关决策 | 状态（2026-11-21） |
+| 特性 | 层 | 权威设计 | 计划与进度 | 主要代码 | 相关决策 | 状态（2026-11-24 核对 `e22208b`） |
 |---|---|---|---|---|---|---|
-| AI 桌面外壳 | 外壳 | [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) | [ai-desktop/PLAN.md](ai-desktop/PLAN.md)、[MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md)、[MIC_REAL_PLAN.md](ai-desktop/MIC_REAL_PLAN.md) | `web/src/desktop/`、`server/src/desktop_api.rs` | 61（AI 桌面）、66–69；[2026-11-21-ai-desktop-c2-gateway-attn](decisions/2026-11-21-ai-desktop-c2-gateway-attn.md)、[2026-11-21-ai-desktop-d-voice-handoff](decisions/2026-11-21-ai-desktop-d-voice-handoff.md)、[2026-11-23-ai-desktop-mic-real-plan](decisions/2026-11-23-ai-desktop-mic-real-plan.md)（待确认） | 部分实现：A、B1–B3、C1、C2、D（fixture）、M3 夹具收口；真机 mic 仅有方案 |
+| AI 桌面外壳 | 外壳 | [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) | [ai-desktop/PLAN.md](ai-desktop/PLAN.md)、[MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md)、[MIC_REAL_PLAN.md](ai-desktop/MIC_REAL_PLAN.md) | `web/src/desktop/`、`server/src/desktop_api.rs` | 61（AI 桌面）、66–69；[2026-11-21-ai-desktop-c2-gateway-attn](decisions/2026-11-21-ai-desktop-c2-gateway-attn.md)、[2026-11-21-ai-desktop-d-voice-handoff](decisions/2026-11-21-ai-desktop-d-voice-handoff.md)、[2026-11-23-ai-desktop-mic-real-plan](decisions/2026-11-23-ai-desktop-mic-real-plan.md)（待确认） | 部分实现：A、B1–B3、C1、C2、D（fixture）、M3 夹具收口；D 的真机 mic 首刀（T-75，#229）、可选远端 ASR stub（T-76）、双设备 D01（T-77）已合入，第二物理机另验；首页真实委派（#235/#238）、首页快照（T-82）、记忆持久化（T-78）、草稿上云（T-86）已合入 |
 | 对话前台与派发 | 交互与决策 | 本文第 5、9 节 | [PLAN.md](PLAN.md) M4、FT | `runtime/src/conversation.rs`、`router.rs`、`policy.rs`、`prompts.rs` | 18–43 | 已实现 |
 | 多 agent 执行与执行组 | 执行引擎 | 本文第 7 节 | — | `crates/agents`、`runtime/src/registry.rs`、`orchestrator.rs` | — | 已实现 |
 | 跨机器节点 | 执行引擎 | 本文第 8 节 | — | `crates/node`、`runtime/src/nodes.rs` | — | 已实现（局域网明文 HTTP，见第 13 节） |
@@ -117,15 +117,15 @@ flowchart TB
 | Agent 准入 | 横切 | 无独立设计文档；本文末尾附节 + 第 10.3、10.4 节 | — | `runtime/src/admission.rs`、`server/src/admission_api.rs` | — | 已实现；调用者身份认证未做 |
 | 外发脱敏（DLP） | 横切 | [dlp/CONTRACT.md](dlp/CONTRACT.md)、[mcp/DLP_EGRESS_DEPLOYMENT.md](mcp/DLP_EGRESS_DEPLOYMENT.md) | [PLAN.md](PLAN.md)「DLP 外发脱敏」、[mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md](mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md) | `tools/dlp-egress/`、`agents/src/egress.rs` | 12、15–17、41、42（R-20261118-M2）、DECISIONS 第八节 D-n | 部分实现：只检查登记过的出口 |
 | 业务内省 | 横切 · 第 5 线 | [memory/INTROSPECTION_PLAN.md](memory/INTROSPECTION_PLAN.md) | [PLAN.md](PLAN.md)「INT」、[INTROSPECTION_PLAYBOOK.md](memory/INTROSPECTION_PLAYBOOK.md) | `runtime/src/introspect/`、`server/src/introspection_api.rs` | 45、49、51–55、64、65 | 已实现 S0–S8；默认关闭 |
-| 分层记忆与会话上下文（含个人画像、风格和组织 taste） | 横切 · 第 5 线 | [conversation-memory 特性档案](features/conversation-memory/README.md)（服务宪章 §3 第 4 条及 §5） | [第 5 线计划](features/conversation-memory/PLAN.md) | `runtime/src/conversation.rs` 为现有接点；桌面记忆列表、纠错和撤回已接服务端夹具（T-71/72） | 45–48、50；[五线分工](decisions/2026-11-22-five-workstreams.md) | 设计中，分层记忆与注入未实现 |
+| 分层记忆与会话上下文（含个人画像、风格和组织 taste） | 横切 · 第 5 线 | [conversation-memory 特性档案](features/conversation-memory/README.md)（服务宪章 §3 第 4 条及 §5） | [第 5 线计划](features/conversation-memory/PLAN.md) | `runtime/src/session_materials.rs`（会话资料注入）、`conversation.rs`（挂接点）；个人记忆存于 `desktop_memories` | 45–48、50；[五线分工](decisions/2026-11-22-five-workstreams.md)；[5.1 验收与默认开](decisions/2026-11-23-convmem-s1-acceptance-and-default-on.md)；[5.2a 生命周期与隔离](decisions/2026-11-23-convmem-s2a-lifecycle-and-isolation.md) | 部分实现：5.1 回答路径会话资料注入已实现并默认开启（REQ-01）；5.2a 个人记忆保存、撤回与按说话人隔离已实现（REQ-02 部分）；预览与生效闸门、共享知识与内省接入（REQ-03/04）未开始 |
 | 组织知识（RelOS） | 横切 | 无设计文档；散见 [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) 第 6 节 | AI 桌面 C 阶段 | `server/src/mom_relos.rs`（仅 MOM 诊断调用） | — | 无设计 |
 | 业务执行网关（NexusOps） | 横切 | 无设计文档；散见 ai-desktop 设计第 6 节、[mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M4 | — | — | 无设计 |
 | 日志与诊断 | 横切 | 本文第 10 节 | — | `crates/observe` | — | 已实现 |
 | MOM 案例、方案与审批 | 工业业务 | [mom/DESIGN.md](mom/DESIGN.md)、[mom/IMPLEMENTATION.md](mom/IMPLEMENTATION.md) | [mom/MOCK_REGISTER.md](mom/MOCK_REGISTER.md) | `runtime/src/mom/`、`server/src/mom.rs`、`server/src/bin/an-mom.rs` | DES-n | 已实现（模拟沙盘，未接生产） |
 | 运营桌面与运营频道 | 工业业务 | [mom/OPS_DESK.md](mom/OPS_DESK.md) | [PLAN.md](PLAN.md)「D0–D3」、[OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md) | `runtime/src/mom/ops_desk.rs`、`server/src/mom_ops.rs` | 56–58、60 | 已实现 D0–D2；D3 并入 World Adapter M0 |
-| World Adapter | 工业业务 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | [mom/WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)、`mom/WA_M*_TASKS.md` | `server/src/mom_world_des.rs`、`mom_world_mock.rs` | 61（World Adapter）、DES-31、DES-32 | 部分实现：M0–M2 已准出；M3-2/3 桩数据服务层已合入，真实站点验收待办 |
+| World Adapter | 工业业务 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | [mom/WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)、`mom/WA_M*_TASKS.md` | `server/src/mom_world_des.rs`、`mom_world_mock.rs`、`mom_world_prod.rs` | 61（World Adapter）、DES-31、DES-32；[M3-1 生产读服务层](decisions/2026-11-22-wa-m3-1-prod-read-service-layer.md)；[M4 写入门控](decisions/2026-11-23-wa-m4-write-entry-gates.md) | 部分实现：M0–M2 已准出；M3 桩数据准出（M3-0～M3-5），真实站点验收待办；M4 写入门控已冻结，未开工 |
 | DES 仿真工厂与实验入口 | 世界 | [mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md)、[mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md) | 同上 | `crates/des`、`crates/des-mcp`、`server/src/mom_des_connector.rs`、`mom_sim.rs` | DES-n、62 | 已实现；实验入口随 World Adapter M0 交付 |
-| 生产世界接入 | 世界 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M3、M4 | — | 61（World Adapter） | 设计已确认，未开工 |
+| 生产世界接入 | 世界 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M3、M4（[WA_M3_TASKS.md](mom/WA_M3_TASKS.md)、[WA_M4_TASKS.md](mom/WA_M4_TASKS.md)） | `server/src/mom_world_prod.rs`（`/api/world/prod`，服务层桩数据） | 61（World Adapter） | 部分实现：只读接口以桩数据跑通（M3）；未接真实站点；写入未开工 |
 
 助手接入管理、RelOS 和 NexusOps 仍待补独立权威设计，准入目前保留附节。
 
@@ -344,11 +344,13 @@ crates/
   agents/    各种 agent：内置 General / Reviewer、Codex、ACP、远程（节点）；工具、MCP 客户端、外发检查守卫
   runtime/   Conversation、Router、Policy、Orchestrator、注册表与执行组、节点管理、数据库；
              另含 mom/（MOM 引擎、运营桌面、DES 远程连接）、introspect/（业务内省）、admission.rs（准入）、
-             agent_*.rs（助手接入与管理）
+             agent_*.rs（助手接入与管理）、template.rs 与 builtin_templates.rs（任务拆分模板，WP4）、
+             session_materials.rs（会话资料注入，分层记忆 5.1）
   des/       DES 仿真内核（不依赖其他 crate）
   des-mcp/   模拟工厂：把 DES 以 MCP（stdio）提供，程序 an-des-mcp
   node/      节点程序 an-node
-  server/    AgentNexus 主程序、HTTP 接口（含 MOM、World Adapter、AI 桌面、内省、准入接口）；
+  server/    AgentNexus 主程序、HTTP 接口（含 MOM、World Adapter、AI 桌面、内省、准入接口；
+             World Adapter 分 mom_world_mock.rs / mom_world_des.rs / mom_world_prod.rs 三个适配器）；
              独立 MOM 模拟服务 an-mom；评测工具 an-eval；模拟 agent an-mock-acp
 web/         网页界面（AI 桌面外壳在 web/src/desktop/）
 evals/       路由评测集
@@ -1032,7 +1034,7 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 |---|---|---|
 | `conversations` | 会话 | 执行引擎 |
 | `messages` | 消息（可关联任务；`card_json` 存对话卡片） | 执行引擎 |
-| `tasks` | 任务：目标、角色、状态、路由、规则结论、结果、审查意见、背景信息 | 执行引擎 |
+| `tasks` | 任务：目标、角色、状态、路由、规则结论、结果、审查意见、背景信息；`parent_id` 关联拆分出的子任务（WP4） | 执行引擎 |
 | `events` | 任务事件（界面的时间线） | 执行引擎 |
 | `route_logs` | 每轮对话的决策记录（含模型原始输出），用于调试和积累评测集 | 执行引擎 |
 | `nodes` | 已配对的节点：地址、令牌、最后一次上报的 agent 列表 | 跨机器节点 |
@@ -1043,6 +1045,11 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | `desktop_client_operations` | 桌面受理幂等 | AI 桌面（B1） |
 | `desktop_conversation_task_links`、`desktop_preferences` | 会话与任务关联、基础偏好 | AI 桌面（B3） |
 | `desktop_evidence`、`desktop_evidence_grants` | 证据与访问授权 | AI 桌面（C1） |
+| `desktop_approvals` | 任务级动作审批（每任务一行当前方案，绑定 `revision`，记录 `decided_by`） | AI 桌面（C2） |
+| `desktop_attention_items`、`desktop_attention_prefs` | 主动提醒队列与静音偏好 | AI 桌面（C2） |
+| `desktop_voice_sessions`、`desktop_handoff` | 语音会话；跨端续接草稿 | AI 桌面（D） |
+| `desktop_memories` | 个人记忆（保存、纠正、撤回；按说话人作用域） | AI 桌面（T-78）、分层记忆（5.2a） |
+| `desktop_drafts` | 工作区草稿（服务端权威，乐观版本） | AI 桌面（T-86） |
 
 MOM 用独立的库，不与主库混用：主程序在本机监听时用主库同目录的 `*.mom.db`（MOM 引擎：`mom_snapshot`、`mom_events`、`mom_cursors`，建表在 `crates/runtime/src/mom/engine.rs`）；开启 `[mom] chat_bridge` 时另用 `*.ops.db`（运营频道发布器：`ops_meta`、`ops_cases`、`ops_posts`、`ops_skips`，建表在 `crates/runtime/src/mom/ops_desk.rs`）。独立的 `an-mom` 默认用 `data/mom.db`。
 

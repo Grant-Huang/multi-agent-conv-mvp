@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 版本 | v0.2，2026-11-21 |
+| 版本 | v0.3，2026-11-24 |
 | 状态 | 第 1～8 节有效（2026-11-21 用户确认）；特性档案、需求编号与登记表扩展字段从 World Adapter 试点开始执行，其余特性迁移前沿用现有文档 |
 | 地位 | **唯一的研发规范**：需求 → 设计 → 实现 → 质量 → 版本怎么对齐、风险怎么分级、谁能授权。Agent 入口文件（`AGENTS.md`、`CLAUDE.md`）只引用本文，不复制 |
 | 围栏 | 七层围栏、检查节奏、证据等级、围栏登记表见 [docs/fencing/README.md](docs/fencing/README.md) |
@@ -136,8 +136,9 @@
 
 ## 12. 待决定
 
-- 试点开始时间：PR #187（T-50）合并后。
-- 基线版本号：建议 `v1.1.0`，在开始迁移前由用户打 tag。
+- 试点开始时间：PR #187（T-50）已于 2026-11-21 合并，试点可开始；实际首个特性档案是分层记忆（`docs/features/conversation-memory/`），World Adapter 尚未迁移。
+- 基线版本号：建议 `v1.1.0`，在开始迁移前由用户打 tag（2026-11-24 远端仍只有 `v1.0.0`）。
+- 论文约束：已于 2026-11-24 解除，论文复现以 `v1.0.0` 为准，见 [2026-11-24-lift-paper-constraint](docs/decisions/2026-11-24-lift-paper-constraint.md)。
 
 ## 修订记录
 
@@ -145,3 +146,4 @@
 |---|---|---|---|
 | v0.1 | 2026-11-21 | 草案，位于 `docs/spec/README.md` | [2026-11-21-doc-rules-enforcement](docs/decisions/2026-11-21-doc-rules-enforcement.md) |
 | v0.2 | 2026-11-21 | 移到根目录作为唯一研发规范；加入编号约定、授权、风险对照与底线、例外管理、按任务类型的 TDD、同步分阶段、证据等级、里程碑结论 | [2026-11-21-dev-standard-and-guardrails](docs/decisions/2026-11-21-dev-standard-and-guardrails.md) |
+| v0.3 | 2026-11-24 | 第 12 节：更新试点状态、基线 tag 现状，记录论文约束解除 | [2026-11-24-lift-paper-constraint](docs/decisions/2026-11-24-lift-paper-constraint.md) |
