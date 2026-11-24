@@ -875,12 +875,17 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
-| RT-RESTART-01 | restart | 库中有 CREATED/QUEUED/RUNNING/VERIFYING 任务 | 关闭 Runtime 后同库重启 | 四类任务均 FAILED；每任务新增含「重启中断」原因的 StatusChanged 事件 |
+| RT-RESTART-01 | restart | 库中有 RUNNING/VERIFYING 任务 | 关闭 Runtime 后同库重启 | 两类任务均 FAILED；每任务新增含「重启中断」原因的 StatusChanged 事件 |
 | RT-RESTART-02 | restart | 库中有中断任务 | 同库重启 | 各会话收到绑定 `task_id` 的助理失败交付，正文含「任务因服务重启中断，可重新委派」 |
 | RT-RESTART-03 | approval / restart | 待验收（NEEDS_HUMAN 有 result）跨重启 | 重启后 `POST .../review-verdict` accept | **200**；COMPLETED；事件含人工 note；交付照常 |
 | RT-RESTART-04 | approval / restart | 待验收跨重启；`max_review_rounds=1` | 重启后 reject → 返工 → 再待验收 → 再 reject | 首次 reject 回执行侧且同 `conversation_id`；二次 reject FAILED（返工额度按库扣减） |
 | RT-RESTART-05 | approval / restart | 待批准（NEEDS_HUMAN 无 result）跨重启 | 重启后 `POST .../approve` | **200**；按路由继续执行至终态 |
 | RT-RESTART-06 | restart | 库中有 COMPLETED/FAILED/CANCELLED 任务 | 同库重启 | 状态与 `updated_at` 不变；无新增重启事件 |
+| RT-RESTART-07 | restart | 单任务（非模板家族）QUEUED 跨重启；开关默认开 | 同库重启 | 任务重新排队并执行至终态；事件含「重新排队」（WP7 方案 C） |
+| RT-RESTART-08 | restart | 单任务 CREATED 跨重启 | 同库重启 | 同 RT-RESTART-07 |
+| RT-RESTART-09 | restart | RUNNING/VERIFYING 与 CREATED/QUEUED 并存 | 同库重启（默认开） | 前者 FAILED + 原因；后者不被启动恢复标记失败（由重排处理） |
+| RT-RESTART-10 | restart | `resume_queued_on_restart=false` | QUEUED 任务同库重启 | 仍 FAILED 且含「重启中断」原因；无「重新排队」事件（回滚开关） |
+| RT-RESTART-11 | restart | 模板家族 root/branch/join 处于 QUEUED | 同库重启（默认开） | 均不被重驱：FAILED + 「重启中断」原因；无「重新排队」事件 |
 | E2E-RESTART | ai-desktop | 干净浏览器 · 桌面首页；harness 同库重启 | S1 委派任务 A；A 在执行中重启服务；重连回原会话；再委派 B 走到待验收，重启后「判定通过」 | A FAILED 且会话见含重启原因的失败交付；B 重启后判定通过仍 COMPLETED；重连后仍在原会话（GS6 重启分支） |
 
 

@@ -3059,13 +3059,16 @@ impl Store {
             .collect())
     }
 
-    /// 服务启动时调用：把上次运行中断的任务标记为失败（MVP 不做断点续跑），
+    /// 服务启动时调用：把有副作用风险的中断任务（RUNNING/VERIFYING，可能已执行了一部分）标记为失败，
     /// 返回受影响任务供启动恢复写原因事件与失败交付（WP7 / G08：明确失败原因）。
+    /// CREATED/QUEUED 单任务由 orchestrator 重启重排（WP7 方案 C，见 `list_resumable_tasks`）；
+    /// 模板家族（root/branch/join）的 QUEUED/CREATED 不在本查询内——由 `resume_queued_on_restart`
+    /// 判定排除后走 T-81 失败恢复（原因事件与交付）。
     pub fn recover_interrupted_tasks(&self) -> Result<Vec<TaskRecord>> {
         let conn = self.write();
         let ids: Vec<String> = {
             let mut st = conn.prepare(
-                "SELECT id FROM tasks WHERE status IN ('CREATED', 'QUEUED', 'RUNNING', 'VERIFYING') ORDER BY created_at, id",
+                "SELECT id FROM tasks WHERE status IN ('RUNNING', 'VERIFYING') ORDER BY created_at, id",
             )?;
             let rows = st.query_map([], |r| r.get::<_, String>(0))?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
@@ -3074,9 +3077,66 @@ impl Store {
             return Ok(Vec::new());
         }
         conn.execute(
-            "UPDATE tasks SET status = 'FAILED', updated_at = ?1 WHERE status IN ('CREATED', 'QUEUED', 'RUNNING', 'VERIFYING')",
+            "UPDATE tasks SET status = 'FAILED', updated_at = ?1 WHERE status IN ('RUNNING', 'VERIFYING')",
             [now()],
         )?;
+        let mut out = Vec::with_capacity(ids.len());
+        for id in &ids {
+            if let Some(t) = self.get_task(id)? {
+                out.push(t);
+            }
+        }
+        Ok(out)
+    }
+
+    /// WP7 方案 C：可重启重排的未起跑单任务（CREATED/QUEUED，非模板家族）。
+    /// 模板家族（root/branch/join）不在此列：家族一致性无法安全重建（join 兄弟未终态等）。
+    pub fn list_resumable_tasks(&self) -> Result<Vec<TaskRecord>> {
+        let _timer = ReadTimer::new("list_resumable_tasks");
+        let conn = self.read();
+        let mut st = conn.prepare(&format!(
+            "{TASK_SELECT} WHERE status IN ('CREATED', 'QUEUED') \
+             AND (fanout_kind IS NULL OR fanout_kind = '') ORDER BY created_at, id"
+        ))?;
+        let mut out = Vec::new();
+        for r in st.query_map([], task_from_row)? {
+            out.push(r??);
+        }
+        Ok(out)
+    }
+
+    /// WP7：把仍未起跑（CREATED/QUEUED）且不在 `exclude_ids`（已被重排）中的任务标记为失败，
+    /// 返回受影响任务（含模板家族——家族不重驱，统一走失败恢复）。调用方写原因事件与失败交付。
+    pub fn fail_unstarted_tasks(&self, exclude_ids: &[String]) -> Result<Vec<TaskRecord>> {
+        let conn = self.write();
+        let placeholders = exclude_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
+        let where_clause = if exclude_ids.is_empty() {
+            "WHERE status IN ('CREATED', 'QUEUED')".to_string()
+        } else {
+            format!("WHERE status IN ('CREATED', 'QUEUED') AND id NOT IN ({placeholders})")
+        };
+        let ids: Vec<String> = {
+            let sql = format!("SELECT id FROM tasks {where_clause} ORDER BY created_at, id");
+            let mut st = conn.prepare(&sql)?;
+            let rows = st.query_map(rusqlite::params_from_iter(exclude_ids.iter()), |r| {
+                r.get::<_, String>(0)
+            })?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        // where_clause 以 WHERE 开头；占位符顺序：先 updated_at，再 NOT IN 的排除 id
+        let sql = format!("UPDATE tasks SET status = 'FAILED', updated_at = ? {where_clause}");
+        let changed = conn.execute(
+            &sql,
+            rusqlite::params_from_iter(std::iter::once(&now()).chain(exclude_ids.iter())),
+        )?;
+        eprintln!("[dbg] update changed={changed}");
         let mut out = Vec::with_capacity(ids.len());
         for id in &ids {
             if let Some(t) = self.get_task(id)? {

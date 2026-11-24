@@ -496,6 +496,10 @@ pub struct OrchestratorConfig {
     /// 风险达到该等级的任务需要人工审批后才执行
     #[serde(default = "d_approval")]
     pub approval_risk: Risk,
+    /// WP7 方案 C：重启后把未起跑的单任务（CREATED/QUEUED，非模板家族）重新排队执行。
+    /// 设为 false 恢复 T-81 语义（未起跑任务也标记失败并写原因交付）
+    #[serde(default = "d_true")]
+    pub resume_queued_on_restart: bool,
 }
 fn d_rounds() -> u32 {
     1
@@ -516,6 +520,7 @@ impl Default for OrchestratorConfig {
             history_messages: d_history(),
             task_timeout_secs: d_task_timeout(),
             approval_risk: d_approval(),
+            resume_queued_on_restart: true,
         }
     }
 }
