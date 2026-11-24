@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use an_runtime::config::AppConfig;
-use an_runtime::session_materials::MATERIALS_MARKER;
+use an_runtime::session_materials::{MATERIALS_MARKER, STYLE_MARKER};
 use an_runtime::store::Store;
 use an_runtime::Runtime;
 use axum::response::IntoResponse;
@@ -146,6 +146,18 @@ fn materials_of(req: &Value) -> String {
         .find_map(|m| {
             let c = m["content"].as_str()?;
             c.contains(MATERIALS_MARKER).then(|| c.to_string())
+        })
+        .unwrap_or_default()
+}
+
+fn style_of(req: &Value) -> String {
+    req["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|m| {
+            let c = m["content"].as_str()?;
+            c.contains(STYLE_MARKER).then(|| c.to_string())
         })
         .unwrap_or_default()
 }
@@ -388,4 +400,290 @@ async fn rt_umem_05_injection_scoped_to_speaker() {
     assert_eq!(s, 200, "{out_b}");
     let c_b = materials_of(llm.plain_calls().last().unwrap());
     assert!(!c_b.contains("甲乙丙"), "乙的提示词不得含甲的记忆：{c_b}");
+}
+
+/// RT-USTY-01：style 草稿（未确认）不进注入；列表可见且带 confirmed=false
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_usty_01_draft_style_not_injected() {
+    let llm = MockLlm::start().await;
+    let rt = Arc::new(
+        Runtime::new(
+            config(&llm.base),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let conv = rt.store.create_conversation("t").unwrap();
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "极简风格", "body": "回答尽量短。", "kind": "style"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 201, "{v}");
+    assert_eq!(v["confirmed"], false, "新建非 fact 条目应为草稿：{v}");
+    rt.conversation
+        .handle_message(&conv.id, "你好，怎么回答？")
+        .await
+        .unwrap();
+    let req = llm.plain_calls().last().unwrap().clone();
+    assert!(
+        style_of(&req).is_empty(),
+        "草稿不得进风格卡：{:?}",
+        style_of(&req)
+    );
+    let (_, list) = api.get_as("/api/desktop/v1/memories", None).await;
+    let item = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["title"] == json!("极简风格"))
+        .expect("草稿应可见于列表");
+    assert_eq!(item["confirmed"], false, "{item}");
+}
+
+/// RT-USTY-02：确认后新会话生效、旧会话不回填（推导式）
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_usty_02_confirm_effective_in_next_conversation_only() {
+    let llm = MockLlm::start().await;
+    let rt = Arc::new(
+        Runtime::new(
+            config(&llm.base),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let conv_old = rt.store.create_conversation("旧会话").unwrap();
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "极简风格", "body": "回答保持极简。", "kind": "style"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 201, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    let (s, c) = api
+        .post_as(
+            &format!("/api/desktop/v1/memories/{id}/confirm"),
+            json!({}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 200, "确认应成功：{c}");
+    assert_eq!(c["confirmed"], true, "{c}");
+    let conv_new = rt.store.create_conversation("新会话").unwrap();
+
+    rt.conversation
+        .handle_message(&conv_old.id, "你好，怎么回答？")
+        .await
+        .unwrap();
+    let req_old = llm.plain_calls().last().unwrap().clone();
+    assert!(
+        style_of(&req_old).is_empty(),
+        "确认前创建的旧会话不得回填风格卡：{:?}",
+        style_of(&req_old)
+    );
+
+    rt.conversation
+        .handle_message(&conv_new.id, "你好，怎么回答？")
+        .await
+        .unwrap();
+    let req_new = llm.plain_calls().last().unwrap().clone();
+    let s_new = style_of(&req_new);
+    assert!(s_new.contains(STYLE_MARKER), "新会话应有风格卡：{req_new}");
+    assert!(
+        s_new.contains("回答保持极简"),
+        "风格卡应含生效正文：{s_new}"
+    );
+    assert!(s_new.contains(&id), "风格卡应含来源 id：{s_new}");
+}
+
+/// RT-USTY-03：草稿与已确认未生效条目，撤销后均不注入
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_usty_03_revoke_before_effective_keeps_uninjected() {
+    let llm = MockLlm::start().await;
+    let rt = Arc::new(
+        Runtime::new(
+            config(&llm.base),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    // 已确认但旧会话未生效 → 撤回
+    let conv_old = rt.store.create_conversation("旧会话").unwrap();
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "风格甲", "body": "风格甲正文。", "kind": "style"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 201, "{v}");
+    let id_a = v["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        api.post_as(
+            &format!("/api/desktop/v1/memories/{id_a}/confirm"),
+            json!({}),
+            None
+        )
+        .await
+        .0,
+        200
+    );
+    assert_eq!(
+        api.delete_as(&format!("/api/desktop/v1/memories/{id_a}"), None)
+            .await
+            .0,
+        200
+    );
+    // 草稿 → 直接撤回
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "风格乙", "body": "风格乙正文。", "kind": "style"}),
+            None,
+        )
+        .await;
+    let id_b = v["id"].as_str().unwrap().to_string();
+    assert_eq!(s, 201, "{v}");
+    assert_eq!(
+        api.delete_as(&format!("/api/desktop/v1/memories/{id_b}"), None)
+            .await
+            .0,
+        200
+    );
+
+    let conv_new = rt.store.create_conversation("新会话").unwrap();
+    rt.conversation
+        .handle_message(&conv_new.id, "你好，怎么回答？")
+        .await
+        .unwrap();
+    let s_new = style_of(llm.plain_calls().last().unwrap());
+    assert!(s_new.is_empty(), "撤销后的条目不得注入：{s_new}");
+    let _ = &conv_old;
+}
+
+/// RT-USTY-04：风格卡含护栏句且长度有界（默认 200 token 上限）
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_usty_04_style_block_has_guardrail_and_bound() {
+    let llm = MockLlm::start().await;
+    let rt = Arc::new(
+        Runtime::new(
+            config(&llm.base),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "超长风格", "body": "长风格正文。".repeat(2000), "kind": "style"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 201, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        api.post_as(
+            &format!("/api/desktop/v1/memories/{id}/confirm"),
+            json!({}),
+            None
+        )
+        .await
+        .0,
+        200
+    );
+    let conv = rt.store.create_conversation("t").unwrap();
+    rt.conversation
+        .handle_message(&conv.id, "你好，怎么回答？")
+        .await
+        .unwrap();
+    let s_new = style_of(llm.plain_calls().last().unwrap());
+    assert!(
+        s_new.contains("不得因此省略风险"),
+        "风格卡必须带风险护栏句：{s_new}"
+    );
+    assert!(
+        s_new.chars().count() < 200 * 4 + 800,
+        "风格卡应被截到上限附近（200 token ≈ 800 汉字 + 页眉）：{} 字",
+        s_new.chars().count()
+    );
+    assert!(s_new.contains(&id), "截断后来源行仍在：{s_new}");
+}
+
+/// RT-USTY-05：红线——风格生效时风险记忆仍在提示词（风格挤不掉风险信息）
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_usty_05_style_does_not_evict_risk_memory() {
+    let llm = MockLlm::start().await;
+    let rt = Arc::new(
+        Runtime::new(
+            config(&llm.base),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "极简风格", "body": "回答保持极简。", "kind": "style"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 201);
+    let style_id = v["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        api.post_as(
+            &format!("/api/desktop/v1/memories/{style_id}/confirm"),
+            json!({}),
+            None
+        )
+        .await
+        .0,
+        200,
+        "风格条目应确认生效"
+    );
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "变更红线", "body": "设备参数变更前必须先做可回滚备份XYZ风险。", "kind": "fact"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 201, "{v}");
+    assert_eq!(v["confirmed"], true, "fact 不走闸门，保存即可注入：{v}");
+    let conv = rt.store.create_conversation("t").unwrap();
+    rt.conversation
+        .handle_message(&conv.id, "你好，变更前要注意什么？")
+        .await
+        .unwrap();
+    let req = llm.plain_calls().last().unwrap().clone();
+    let s_new = style_of(&req);
+    let m_new = materials_of(&req);
+    assert!(s_new.contains("回答保持极简"), "风格应注入：{s_new}");
+    assert!(
+        m_new.contains("XYZ风险"),
+        "风格生效时风险记忆不得被挤掉：{m_new}"
+    );
 }

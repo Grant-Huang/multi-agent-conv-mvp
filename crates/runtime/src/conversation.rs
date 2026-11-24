@@ -46,6 +46,7 @@ pub struct ConversationRuntime {
     session_materials: bool,
     session_materials_max_tokens: u32,
     session_materials_timeout_ms: u64,
+    session_materials_style_max_tokens: u32,
     /// 同一会话同一时刻只处理一条消息
     locks: ConvLocks,
     /// 会话资料源（conversation-memory 5.1）；默认读 Store，测试可注入
@@ -73,6 +74,7 @@ pub struct ConversationDeps {
     pub session_materials: bool,
     pub session_materials_max_tokens: u32,
     pub session_materials_timeout_ms: u64,
+    pub session_materials_style_max_tokens: u32,
 }
 
 /// 一轮对话的处理结果（HTTP 接口直接返回它）
@@ -275,6 +277,7 @@ impl ConversationRuntime {
             session_materials: d.session_materials,
             session_materials_max_tokens: d.session_materials_max_tokens,
             session_materials_timeout_ms: d.session_materials_timeout_ms,
+            session_materials_style_max_tokens: d.session_materials_style_max_tokens,
             locks: ConvLocks::new(),
             agents: d.agents,
         }
@@ -580,9 +583,15 @@ impl ConversationRuntime {
         match &decision {
             TurnDecision::Respond { .. } => {
                 let reply_id = an_core::new_id("msg");
-                let materials = self.session_materials_block(conversation_id, user).await;
+                let (materials, style) = self.session_materials_block(conversation_id, user).await;
                 let reply = self
-                    .generate_reply(conversation_id, &reply_id, &history, materials.as_deref())
+                    .generate_reply(
+                        conversation_id,
+                        &reply_id,
+                        &history,
+                        materials.as_deref(),
+                        style.as_deref(),
+                    )
                     .await;
                 let decision = TurnDecision::Respond {
                     reply: reply.clone(),
@@ -788,13 +797,16 @@ impl ConversationRuntime {
         }
     }
 
-    /// 直接回答：单独生成回复。开启流式时边生成边推送到界面（片段的 stream_id = 最终消息 id）；
-    /// 流式失败时退回一次性生成；都失败时给出带错误码的说明。
     /// conversation-memory 5.1：收集并渲染回答路径的会话资料；关闭 / 为空 / 降级 → None。
+    /// 5.2b：第二返回值为生效风格卡（preference/style 预览闸门），独立系统消息。
     /// `session.materials` 事件只记来源 id 与原因，不记资料正文与用户正文。
-    async fn session_materials_block(&self, conversation_id: &str, user: &str) -> Option<String> {
+    async fn session_materials_block(
+        &self,
+        conversation_id: &str,
+        user: &str,
+    ) -> (Option<String>, Option<String>) {
         if !self.session_materials {
-            return None;
+            return (None, None);
         }
         let source = self
             .material_source
@@ -811,29 +823,49 @@ impl ConversationRuntime {
             .await;
         let rendered =
             crate::session_materials::render(&materials, self.session_materials_max_tokens);
+        let style = crate::session_materials::render_style(
+            &materials.style,
+            self.session_materials_style_max_tokens,
+        );
         tracing::info!(
             event = "session.materials",
             conv_id = %conversation_id,
             selected = %materials.items.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
+            memories = %materials.memories.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
+            style = %materials.style.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
             skipped = %materials.skipped.iter().map(|(id, r)| format!("{id}:{r}")).collect::<Vec<_>>().join(","),
             chars = rendered.chars().count() as u64,
+            style_chars = style.chars().count() as u64,
             "回答路径会话资料注入"
         );
-        (!rendered.is_empty()).then_some(rendered)
+        (
+            (!rendered.is_empty()).then_some(rendered),
+            (!style.is_empty()).then_some(style),
+        )
     }
 
+    /// 直接回答：单独生成回复。开启流式时边生成边推送到界面（片段的 stream_id = 最终消息 id）；
+    /// 流式失败时退回一次性生成；都失败时给出带错误码的说明。
+    /// 5.2b：`style` 为生效的风格卡，作为资料块之后的第二条附加系统消息注入。
     async fn generate_reply(
         &self,
         conversation_id: &str,
         reply_id: &str,
         history: &[Message],
         materials: Option<&str>,
+        style: Option<&str>,
     ) -> String {
         let mut messages = vec![ChatMessage::system(reply_system_prompt(&self.prompt_info))];
         // 会话资料（数据，非指令）紧随系统提示；超预算时 fit() 最先裁掉它，不挤当前请求
         if let Some(m) = materials {
             if !m.trim().is_empty() {
                 messages.push(ChatMessage::system(m));
+            }
+        }
+        // 风格卡（数据，非指令；块首已带风险护栏句）紧随资料块
+        if let Some(st) = style {
+            if !st.trim().is_empty() {
+                messages.push(ChatMessage::system(st));
             }
         }
         for m in history {

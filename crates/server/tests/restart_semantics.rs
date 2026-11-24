@@ -583,6 +583,20 @@ async fn rt_restart_09_side_effect_states_fail_while_queued_states_survive() {
     let e = restart(e).await;
     let run = e.rt.store.get_task("t-run").unwrap().unwrap();
     assert_eq!(run.status, TaskStatus::Failed, "RUNNING 重启后应 FAILED");
+    // 重排后的任务会立刻 spawn 执行；boot_min 没有可用后端，执行本身可能在断言前就失败，
+    // 所以不能看最终状态（时序竞争：快机器必失败，CI 时好时坏）。方案 C 要验证的是
+    // “启动恢复没有把它标失败”，因此看事件：有「重新排队」、没有启动恢复写的「重启中断」。
+    // 反方向（开关关闭时 QUEUED 仍写「重启中断」并 FAILED）由 RT-RESTART-10 覆盖。
+    e.rt.store.flush_events();
+    let q_events = e.rt.store.list_events("t-q").unwrap();
+    assert!(
+        q_events.iter().any(|ev| ev.message.contains("重新排队")),
+        "QUEUED 单任务应被重新排队（方案 C）：{q_events:?}"
+    );
+    assert!(
+        !q_events.iter().any(|ev| ev.message.contains("重启中断")),
+        "QUEUED 单任务不应被启动恢复标记失败（方案 C）：{q_events:?}"
+    );
     let run_events = e.rt.store.list_events("t-run").unwrap();
     assert!(run_events.iter().any(|ev| ev.message.contains("重启中断")));
     // QUEUED：启动恢复不得写「重启中断」事件/失败交付；应写「重新排队」。终态不设断言（见上）。
