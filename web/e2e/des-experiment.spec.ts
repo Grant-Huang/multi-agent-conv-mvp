@@ -39,7 +39,8 @@ function base(): string {
 
 test('E2E-DESTRIAL: 配置试跑不向运营频道投递', async ({ page }) => {
   await page.goto(base() + '/');
-  await page.getByRole('link', { name: 'DES 仿真实验' }).click();
+  await page.getByTestId('ops-entry-des').click();
+  await expect(page.getByTestId('des-experiment')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'DES 仿真实验' })).toBeVisible();
   await page.getByRole('tab', { name: '配置' }).click();
   await page.getByLabel('场景时长').fill('-1');
@@ -54,7 +55,8 @@ test('E2E-DESTRIAL: 配置试跑不向运营频道投递', async ({ page }) => {
 
 test('E2E-DESSTART: 正式启动幂等且与试跑 ID 不同', async ({ page }) => {
   await page.goto(base() + '/');
-  await page.getByRole('link', { name: 'DES 仿真实验' }).click();
+  await page.getByTestId('ops-entry-des').click();
+  await expect(page.getByTestId('des-experiment')).toBeVisible();
   await page.getByRole('tab', { name: '正式运行' }).click();
   await expect(page.getByTestId('config-version')).toBeVisible();
   await expect(page.getByTestId('target-channel')).toBeVisible();
@@ -64,13 +66,21 @@ test('E2E-DESSTART: 正式启动幂等且与试跑 ID 不同', async ({ page }) 
   await expect(page.getByTestId('official-run-id')).toHaveText(officialId);
   const trialId = await page.getByTestId('last-trial-run-id').innerText();
   expect(trialId).not.toEqual(officialId);
-  await page.getByRole('link', { name: '运营频道' }).click();
+  await page.getByTestId('ops-entry-workbench').click();
+  await expect(page.getByTestId('mom-workbench')).toBeVisible();
+  await page.getByRole('button', { name: '看板', exact: true }).click();
+  await page.getByRole('button', { name: /事项/ }).first().click();
+  await page.getByRole('button', { name: '前往运营频道' }).click();
   await expect(page.getByTestId('ops-case-card').filter({ hasText: officialId })).toHaveCount(1);
 });
 
 test('E2E-DESOPS: 运营员在桌面内批准并查看执行', async ({ page }) => {
   await page.goto(base() + '/');
-  await page.getByRole('link', { name: '运营频道' }).click();
+  await page.getByTestId('ops-entry-workbench').click();
+  await expect(page.getByTestId('mom-workbench')).toBeVisible();
+  await page.getByRole('button', { name: '看板', exact: true }).click();
+  await page.getByRole('button', { name: /事项/ }).first().click();
+  await page.getByRole('button', { name: '前往运营频道' }).click();
   const card = page.getByTestId('ops-case-card').first();
   await expect(card).toBeVisible();
   await card.getByRole('button', { name: '查看方案', exact: true }).click();
@@ -88,16 +98,26 @@ test('E2E-DESOPS: 运营员在桌面内批准并查看执行', async ({ page }) 
 
 test('E2E-DESPAUSE: 暂停等待区别于失败且推进后回执正确', async ({ page }) => {
   await page.goto(base() + '/');
-  await page.getByRole('link', { name: 'DES 仿真实验' }).click();
+  await page.getByTestId('ops-entry-des').click();
+  await expect(page.getByTestId('des-experiment')).toBeVisible();
   await page.getByRole('tab', { name: '正式运行' }).click();
   await page.getByRole('button', { name: '暂停', exact: true }).click();
   await expect(page.getByTestId('run-status')).toHaveAttribute('data-status', 'paused');
-  await page.getByRole('link', { name: '运营频道' }).click();
+  await page.getByTestId('ops-entry-workbench').click();
+  await expect(page.getByTestId('mom-workbench')).toBeVisible();
+  await page.getByRole('button', { name: '看板', exact: true }).click();
+  await page.getByRole('button', { name: /事项/ }).first().click();
+  await page.getByRole('button', { name: '前往运营频道' }).click();
   await expect(page.getByTestId('ops-case-card').first()).toContainText(/等待仿真|已下发/);
   await expect(page.getByTestId('ops-case-card').first()).not.toContainText(/失败/);
-  await page.getByRole('link', { name: 'DES 仿真实验' }).click();
+  await page.getByTestId('ops-entry-des').click();
+  await expect(page.getByTestId('des-experiment')).toBeVisible();
   await page.getByRole('button', { name: '单步推进', exact: true }).click();
-  await page.getByRole('link', { name: '运营频道' }).click();
+  await page.getByTestId('ops-entry-workbench').click();
+  await expect(page.getByTestId('mom-workbench')).toBeVisible();
+  await page.getByRole('button', { name: '看板', exact: true }).click();
+  await page.getByRole('button', { name: /事项/ }).first().click();
+  await page.getByRole('button', { name: '前往运营频道' }).click();
   await page.reload();
   await expect(page.getByTestId('execution-receipt')).toBeVisible();
   await expect(page.getByTestId('ops-case-card')).toHaveCount(1);
@@ -105,7 +125,11 @@ test('E2E-DESPAUSE: 暂停等待区别于失败且推进后回执正确', async 
 
 test('E2E-DESISO: 跨运行审批被拒绝且无泄露', async ({ page, request }) => {
   await page.goto(base() + '/');
-  await page.getByRole('link', { name: '运营频道' }).click();
+  await page.getByTestId('ops-entry-workbench').click();
+  await expect(page.getByTestId('mom-workbench')).toBeVisible();
+  await page.getByRole('button', { name: '看板', exact: true }).click();
+  await page.getByRole('button', { name: /事项/ }).first().click();
+  await page.getByRole('button', { name: '前往运营频道' }).click();
   await expect(page.getByRole('link', { name: 'DES 仿真实验' })).toHaveCount(0);
   const denied = await request.post(base() + '/api/world/approve', {
     data: { run_id: 'run-b', approval_from_run: 'run-a', plan_revision: 1 },
@@ -124,14 +148,19 @@ test('E2E-DESLOOP: Mock 双角色正式运行闭环', async ({ browser }, info) 
   const opsPage = await operator.newPage();
   try {
     await expPage.goto(base() + '/');
-    await expPage.getByRole('link', { name: 'DES 仿真实验' }).click();
+    await expPage.getByTestId('ops-entry-des').click();
+    await expect(expPage.getByTestId('des-experiment')).toBeVisible();
     await expPage.getByRole('tab', { name: '正式运行' }).click();
     await expPage.getByRole('button', { name: '启动正式运行', exact: true }).click();
     const runId = (await expPage.getByTestId('official-run-id').innerText()).trim();
     expect(runId.length).toBeGreaterThan(0);
 
     await opsPage.goto(base() + '/');
-    await opsPage.getByRole('link', { name: '运营频道' }).click();
+    await opsPage.getByTestId('ops-entry-workbench').click();
+    await expect(opsPage.getByTestId('mom-workbench')).toBeVisible();
+    await opsPage.getByRole('button', { name: '看板', exact: true }).click();
+    await opsPage.getByRole('button', { name: /事项/ }).first().click();
+    await opsPage.getByRole('button', { name: '前往运营频道' }).click();
     const card = opsPage.getByTestId('ops-case-card').filter({ hasText: runId });
     await expect(card).toBeVisible({ timeout: 20_000 });
     await expect(card.getByRole('button', { name: '批准', exact: true })).toBeVisible({
@@ -145,14 +174,16 @@ test('E2E-DESLOOP: Mock 双角色正式运行闭环', async ({ browser }, info) 
     // 运营员保持频道上下文；reload 后若落回桌面则走侧栏入口
     await opsPage.reload();
     const sideOps = opsPage
-      .getByRole('complementary', { name: '会话列表' })
+      .getByRole('navigation', { name: '最近工作' })
       .getByRole('button', { name: /运营频道/ });
     if (await opsPage.getByTestId('ops-case-card').count() === 0) {
-      if (await opsPage.getByRole('link', { name: '运营频道' }).count()) {
-        await opsPage.getByRole('link', { name: '运营频道' }).click();
-      } else {
-        await sideOps.click();
-      }
+      await opsPage.getByTestId('ops-entry-workbench').click();
+      await expect(opsPage.getByTestId('mom-workbench')).toBeVisible();
+      await opsPage.getByRole('button', { name: '看板', exact: true }).click();
+      await opsPage.getByRole('button', { name: /事项/ }).first().click();
+      await opsPage.getByRole('button', { name: '前往运营频道' }).click();
+    } else {
+      await sideOps.click();
     }
     const cardAfter = opsPage.getByTestId('ops-case-card').filter({ hasText: runId });
     await expect(cardAfter).toBeVisible({ timeout: 20_000 });

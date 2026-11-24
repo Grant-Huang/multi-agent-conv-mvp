@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { prepareWaMockArtifacts, startWaMockServer, type WaMockHandle } from './helpers/waMockServer';
+
 
 /**
  * World Adapter M2 远程 DES 写（WA-03/04/05/08 → E2E-WAEXEC / WARECV / WADYN / WALOOP）。
@@ -9,8 +11,33 @@ test.afterEach(async ({ page }, info) => {
   await page.screenshot({ path: info.outputPath('page.png'), fullPage: true }).catch(() => {});
 });
 
+
+let server: WaMockHandle | undefined;
+function base(): string {
+  if (!server) throw new Error('mock server not started');
+  return server.base;
+}
+
+test.beforeAll(async () => {
+  test.setTimeout(300_000);
+  prepareWaMockArtifacts();
+});
+
+test.beforeEach(async () => {
+  server = await startWaMockServer(
+    test.info().title.slice(0, 16).replace(/\W/g, ''),
+  );
+});
+
+test.afterEach(async () => {
+  if (server) {
+    await server.stop();
+    server = undefined;
+  }
+});
+
 test('E2E-WAEXEC: 远程 DES 授权并发与取消守卫', async ({ page, request }) => {
-  const bind = await request.post('/api/world/des/bind', {
+  const bind = await request.post(base() + '/api/world/des/bind', {
     data: { factory: 'plant-a', scenario: 's1', seed: 1, request_id: 'e2e-waexec' },
     headers: { 'X-WA-Role': 'experimenter' },
   });
@@ -18,7 +45,7 @@ test('E2E-WAEXEC: 远程 DES 授权并发与取消守卫', async ({ page, reques
   const world = await bind.json();
   expect(world.world_id).toBeTruthy();
 
-  const propose = await request.post('/api/world/des/propose', {
+  const propose = await request.post(base() + '/api/world/des/propose', {
     data: {
       world_id: world.world_id,
       action_type: 'eam.maintenance',
@@ -40,13 +67,13 @@ test('E2E-WAEXEC: 远程 DES 授权并发与取消守卫', async ({ page, reques
     idempotency_key: 'e2e-waexec-idem',
     plan_revision: 'rev-1',
   };
-  const first = await request.post('/api/world/des/execute', {
+  const first = await request.post(base() + '/api/world/des/execute', {
     data: execBody,
     headers: { 'X-WA-Role': 'operator' },
   });
   expect(first.status()).toBe(200);
   const firstBody = await first.json();
-  const second = await request.post('/api/world/des/execute', {
+  const second = await request.post(base() + '/api/world/des/execute', {
     data: execBody,
     headers: { 'X-WA-Role': 'operator' },
   });
@@ -54,7 +81,7 @@ test('E2E-WAEXEC: 远程 DES 授权并发与取消守卫', async ({ page, reques
   const secondBody = await second.json();
   expect(secondBody.execution_id).toBe(firstBody.execution_id);
 
-  const stale = await request.post('/api/world/des/execute', {
+  const stale = await request.post(base() + '/api/world/des/execute', {
     data: { ...execBody, plan_revision: 'rev-stale', idempotency_key: 'e2e-waexec-stale' },
     headers: { 'X-WA-Role': 'operator' },
   });
@@ -64,22 +91,23 @@ test('E2E-WAEXEC: 远程 DES 授权并发与取消守卫', async ({ page, reques
     /APPROVAL_INVALID|PRECONDITION_FAILED/,
   );
 
-  await page.goto('/');
-  await page.getByRole('link', { name: '运营频道' }).click();
+  await page.goto(base() + '/');
+  // 会话项入口（selectConversation 语义：清未读并整屏刷新频道）
+  await page.getByRole('navigation', { name: '最近工作' }).getByRole('button', { name: /运营频道/ }).click();
   const card = page.getByTestId('ops-case-card').filter({ hasText: firstBody.execution_id });
   await expect(card).toBeVisible();
   await expect(card.getByTestId('execution-evidence')).toContainText(firstBody.execution_id);
 });
 
 test('E2E-WARECV: 丢回执恢复与工厂重启不误投', async ({ request }) => {
-  const bind = await request.post('/api/world/des/bind', {
+  const bind = await request.post(base() + '/api/world/des/bind', {
     data: { factory: 'plant-a', scenario: 's1', seed: 2, request_id: 'e2e-warecv' },
     headers: { 'X-WA-Role': 'experimenter' },
   });
   expect(bind.status()).toBe(200);
   const world = await bind.json();
 
-  const propose = await request.post('/api/world/des/propose', {
+  const propose = await request.post(base() + '/api/world/des/propose', {
     data: {
       world_id: world.world_id,
       action_type: 'eam.maintenance',
@@ -92,7 +120,7 @@ test('E2E-WARECV: 丢回执恢复与工厂重启不误投', async ({ request }) 
   expect(propose.status()).toBe(200);
   const proposal = await propose.json();
 
-  const exec = await request.post('/api/world/des/execute', {
+  const exec = await request.post(base() + '/api/world/des/execute', {
     data: {
       world_id: world.world_id,
       proposal_id: proposal.proposal_id,
@@ -106,13 +134,13 @@ test('E2E-WARECV: 丢回执恢复与工厂重启不误投', async ({ request }) 
   const execution = await exec.json();
   expect(execution.execution_id).toBeTruthy();
 
-  const lose = await request.post('/api/world/des/test/lose-receipt', {
+  const lose = await request.post(base() + '/api/world/des/test/lose-receipt', {
     data: { world_id: world.world_id, execution_id: execution.execution_id },
     headers: { 'X-WA-Role': 'experimenter' },
   });
   expect(lose.status()).toBe(200);
 
-  const unknown = await request.post('/api/world/des/confirm', {
+  const unknown = await request.post(base() + '/api/world/des/confirm', {
     data: { world_id: world.world_id, execution_id: execution.execution_id },
     headers: { 'X-WA-Role': 'operator' },
   });
@@ -120,13 +148,13 @@ test('E2E-WARECV: 丢回执恢复与工厂重启不误投', async ({ request }) 
   const unknownBody = await unknown.json();
   expect(['unknown', 'pending']).toContain(unknownBody.status);
 
-  const recover = await request.post('/api/world/des/test/restore-receipt', {
+  const recover = await request.post(base() + '/api/world/des/test/restore-receipt', {
     data: { world_id: world.world_id, execution_id: execution.execution_id },
     headers: { 'X-WA-Role': 'experimenter' },
   });
   expect(recover.status()).toBe(200);
 
-  const confirmed = await request.post('/api/world/des/confirm', {
+  const confirmed = await request.post(base() + '/api/world/des/confirm', {
     data: { world_id: world.world_id, execution_id: execution.execution_id },
     headers: { 'X-WA-Role': 'operator' },
   });
@@ -135,13 +163,13 @@ test('E2E-WARECV: 丢回执恢复与工厂重启不误投', async ({ request }) 
   expect(confirmedBody.execution_id).toBe(execution.execution_id);
   expect(['applied', 'confirmed']).toContain(confirmedBody.status);
 
-  const restart = await request.post('/api/world/des/test/factory-restart', {
+  const restart = await request.post(base() + '/api/world/des/test/factory-restart', {
     data: { world_id: world.world_id },
     headers: { 'X-WA-Role': 'experimenter' },
   });
   expect(restart.status()).toBe(200);
 
-  const afterRestart = await request.post('/api/world/des/execute', {
+  const afterRestart = await request.post(base() + '/api/world/des/execute', {
     data: {
       world_id: world.world_id,
       proposal_id: proposal.proposal_id,
@@ -159,18 +187,18 @@ test('E2E-WARECV: 丢回执恢复与工厂重启不误投', async ({ request }) 
 });
 
 test('E2E-WADYN: 干预后前缀不变未来改变且无标准答案', async ({ page, request }) => {
-  const bind = await request.post('/api/world/des/bind', {
+  const bind = await request.post(base() + '/api/world/des/bind', {
     data: { factory: 'plant-a', scenario: 'dynamic', seed: 3, request_id: 'e2e-wadyn' },
     headers: { 'X-WA-Role': 'experimenter' },
   });
   expect(bind.status()).toBe(200);
   const world = await bind.json();
 
-  await request.post('/api/world/des/experiment/step', {
+  await request.post(base() + '/api/world/des/experiment/step', {
     data: { world_id: world.world_id, minutes: 30 },
     headers: { 'X-WA-Role': 'experimenter' },
   });
-  const before = await request.post('/api/world/des/observe', {
+  const before = await request.post(base() + '/api/world/des/observe', {
     data: { world_id: world.world_id },
     headers: { 'X-WA-Role': 'operator' },
   });
@@ -178,7 +206,7 @@ test('E2E-WADYN: 干预后前缀不变未来改变且无标准答案', async ({ 
   const beforeBody = await before.json();
   const prefixIds = (beforeBody.events || []).map((e: { event_id: string }) => e.event_id);
 
-  const propose = await request.post('/api/world/des/propose', {
+  const propose = await request.post(base() + '/api/world/des/propose', {
     data: {
       world_id: world.world_id,
       action_type: 'eam.maintenance',
@@ -190,7 +218,7 @@ test('E2E-WADYN: 干预后前缀不变未来改变且无标准答案', async ({ 
   });
   expect(propose.status()).toBe(200);
   const proposal = await propose.json();
-  const exec = await request.post('/api/world/des/execute', {
+  const exec = await request.post(base() + '/api/world/des/execute', {
     data: {
       world_id: world.world_id,
       proposal_id: proposal.proposal_id,
@@ -202,11 +230,11 @@ test('E2E-WADYN: 干预后前缀不变未来改变且无标准答案', async ({ 
   });
   expect(exec.status()).toBe(200);
 
-  await request.post('/api/world/des/experiment/step', {
+  await request.post(base() + '/api/world/des/experiment/step', {
     data: { world_id: world.world_id, minutes: 30 },
     headers: { 'X-WA-Role': 'experimenter' },
   });
-  const after = await request.post('/api/world/des/observe', {
+  const after = await request.post(base() + '/api/world/des/observe', {
     data: { world_id: world.world_id },
     headers: { 'X-WA-Role': 'operator' },
   });
@@ -218,8 +246,9 @@ test('E2E-WADYN: 干预后前缀不变未来改变且无标准答案', async ({ 
   }
   expect(afterIds.length).toBeGreaterThan(prefixIds.length);
 
-  await page.goto('/');
-  await page.getByRole('link', { name: 'MOM 工作台', exact: true }).click();
+  await page.goto(base() + '/');
+  await page.getByTestId('ops-entry-workbench').click();
+  await expect(page.getByTestId('mom-workbench')).toBeVisible();
   // Red 壳曾写 RegExp；Playwright selectOption.label 只接受 string（与 wa-des-remote 对齐）。
   await page.getByLabel('选择世界').selectOption({ label: '刀具磨损演练 · DES' });
   await page.getByRole('button', { name: '看板', exact: true }).click();
@@ -230,14 +259,14 @@ test('E2E-WADYN: 干预后前缀不变未来改变且无标准答案', async ({ 
 });
 
 test('E2E-WALOOP: 双角色远程闭环同一 execution_id', async ({ browser, request }) => {
-  const bind = await request.post('/api/world/des/bind', {
+  const bind = await request.post(base() + '/api/world/des/bind', {
     data: { factory: 'plant-a', scenario: 's1', seed: 4, request_id: 'e2e-waloop' },
     headers: { 'X-WA-Role': 'experimenter' },
   });
   expect(bind.status()).toBe(200);
   const world = await bind.json();
 
-  const official = await request.post('/api/world/des/experiment/official', {
+  const official = await request.post(base() + '/api/world/des/experiment/official', {
     data: {
       world_id: world.world_id,
       target_channel: 'ops-channel',
@@ -249,12 +278,17 @@ test('E2E-WALOOP: 双角色远程闭环同一 execution_id', async ({ browser, r
 
   const experimenter = await browser.newPage();
   const operator = await browser.newPage();
-  await experimenter.goto('/');
-  await experimenter.getByRole('link', { name: 'DES 仿真实验' }).click();
+  await experimenter.goto(base() + '/');
+  await experimenter.getByTestId('ops-entry-des').click();
+  await expect(experimenter.getByTestId('des-experiment')).toBeVisible();
   await expect(experimenter.getByTestId('adapter-mode')).toHaveAttribute('data-mode', 'des');
 
-  await operator.goto('/');
-  await operator.getByRole('link', { name: '运营频道' }).click();
+  await operator.goto(base() + '/');
+  await operator.getByTestId('ops-entry-workbench').click();
+  await expect(operator.getByTestId('mom-workbench')).toBeVisible();
+  await operator.getByRole('button', { name: '看板', exact: true }).click();
+  await operator.getByRole('button', { name: /事项/ }).first().click();
+  await operator.getByRole('button', { name: '前往运营频道' }).click();
   const card = operator.getByTestId('ops-case-card').first();
   await expect(card).toBeVisible();
   await card.getByRole('button', { name: '查看方案', exact: true }).click();
