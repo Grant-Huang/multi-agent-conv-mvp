@@ -107,6 +107,10 @@ pub fn routes() -> Router<AppState> {
             get(list_memories).post(create_memory),
         )
         .route(
+            "/api/desktop/v1/memories/{id}/confirm",
+            post(confirm_memory),
+        )
+        .route(
             "/api/desktop/v1/memories/fixture/reset",
             post(reset_memories_fixture),
         )
@@ -769,7 +773,32 @@ fn memory_json(m: &DesktopMemory) -> serde_json::Value {
         "body": m.body,
         "expires": m.expires,
         "kind": m.kind,
+        "confirmed": m.confirmed_at.is_some(),
     })
+}
+
+/// conversation-memory 5.2b：确认（预览闸门）。幂等；未知 id 404。
+async fn confirm_memory(
+    State(rt): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.confirm_desktop_memory(&user, &id) {
+        Ok(Some(m)) => (StatusCode::OK, Json(memory_json(&m))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(
+                json!({ "code": "not_found", "message": "记忆不存在或已撤回", "retryable": false }),
+            ),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
 }
 
 fn memory_store_err(e: anyhow::Error) -> Response {

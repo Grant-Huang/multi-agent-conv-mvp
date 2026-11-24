@@ -1017,3 +1017,15 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-UMEM-03 | conversation-memory | 甲（`x-desktop-principal: user-a`）保存条目 | 乙（`user-b`）列表 / 详情 / PATCH / DELETE；甲自查 | 乙列表不含、详情 **404**、纠正 **404**、撤回 **404**；甲本人 **200** |
 | RT-UMEM-04 | conversation-memory | local 存过期（2020-01-01）与未过期（2099-01-01）记忆各一条 | 续问（respond 路径） | 资料块含未过期条（来源行 + 「个人记忆」段标注）；不含过期条 id 与正文 |
 | RT-UMEM-05 | conversation-memory | 甲保存记忆；同会话 | 甲、乙先后续问（chat 接口带头） | 甲的提示词含甲的记忆；乙的提示词不含（按说话人作用域） |
+
+## 风格/画像预览与下一会话生效 conversation-memory 5.2b（REQ-conversation-memory-02 生效闸门；2026-11-23 用户确认：推导式判定 / 独立风格卡 / fact 不走闸门 / ≤200 token + 护栏）
+
+preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进任何注入）；`POST /memories/{id}/confirm` 记 `confirmed_at`；注入侧推导式判定 `confirmed_at ≤ 当前会话 created_at` 才计入（旧会话不回填，无需状态机字段）；生效前可随时撤回。生效条目进**独立风格卡**系统消息（≤ `[conversation] session_materials_style_max_tokens` 默认 200），块首固定护栏句（风格不得裁剪风险信息，落地决定 48 红线）。fact 不走闸门（保存即可注入，5.2a 语义不变）。E2E 待第 1 线入口后补录。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-USTY-01 | conversation-memory | 保存 kind=style 条目（不确认） | 续问 + 查列表 | 风格卡不存在（草稿不注入）；列表可见该条（含 `confirmed=false` 标记） |
+| RT-USTY-02 | conversation-memory | 旧会话先建；confirm；新会话后建 | 两会话分别续问 | 旧会话无风格卡；新会话风格卡含该条 |
+| RT-USTY-03 | conversation-memory | 草稿条目 / 已确认未生效条目 | DELETE 后续问 | 均不注入 |
+| RT-USTY-04 | conversation-memory | 超长风格正文 + 默认配置 | 新会话续问 | 风格卡含护栏句「不得因此省略风险」且长度有界（≤ 上限 + 页眉余量） |
+| RT-USTY-05 | conversation-memory | style（要求简洁）与 fact 记忆（风险信息正文）同时生效 | 新会话续问 | 提示词同时含风格正文与风险记忆正文（风格挤不掉风险信息）；`session.materials` 事件含 style 来源 id |
