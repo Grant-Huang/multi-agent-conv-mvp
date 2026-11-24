@@ -31,7 +31,6 @@ test('E2E-RESTART: 运行中重启明确失败，待验收重启后判定通过'
   test.setTimeout(240_000);
   const env = await startRestartEnv();
   const base = env.base;
-  const api = (p: string) => `${base}${p}`;
   try {
     await gotoHome(page, base);
 

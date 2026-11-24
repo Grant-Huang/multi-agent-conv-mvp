@@ -38,7 +38,6 @@ function startModel(): Promise<{ server: http.Server; port: number }> {
       const schema = data.response_format?.json_schema?.name;
       const messages = data.messages ?? [];
       const last = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-      const goal = last.split('\n')[0] ?? '';
       let result: unknown;
       if (schema === 'turn_decision') {
         const delegate = !last.startsWith('你好');
