@@ -472,6 +472,9 @@ async fn rt_usty_02_confirm_effective_in_next_conversation_only() {
         .await;
     assert_eq!(s, 201, "{v}");
     let id = v["id"].as_str().unwrap().to_string();
+    // 时钟间隔：an_core::now() 为微秒粒度，并行负载可能令相邻写入时间戳坍缩，
+    // 推导式判定的相等边界语义不确定——测试显式拉开 2ms 使场景前提确定
+    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     let (s, c) = api
         .post_as(
             &format!("/api/desktop/v1/memories/{id}/confirm"),
@@ -481,6 +484,7 @@ async fn rt_usty_02_confirm_effective_in_next_conversation_only() {
         .await;
     assert_eq!(s, 200, "确认应成功：{c}");
     assert_eq!(c["confirmed"], true, "{c}");
+    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     let conv_new = rt.store.create_conversation("新会话").unwrap();
 
     rt.conversation
@@ -601,6 +605,8 @@ async fn rt_usty_04_style_block_has_guardrail_and_bound() {
         .await;
     assert_eq!(s, 201, "{v}");
     let id = v["id"].as_str().unwrap().to_string();
+    // 时钟间隔（同 USTY-02）：防相邻写入微秒坍缩使推导式边界不确定
+    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     assert_eq!(
         api.post_as(
             &format!("/api/desktop/v1/memories/{id}/confirm"),
@@ -611,6 +617,7 @@ async fn rt_usty_04_style_block_has_guardrail_and_bound() {
         .0,
         200
     );
+    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     let conv = rt.store.create_conversation("t").unwrap();
     rt.conversation
         .handle_message(&conv.id, "你好，怎么回答？")
