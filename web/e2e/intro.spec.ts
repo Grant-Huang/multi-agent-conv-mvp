@@ -134,6 +134,8 @@ async function openApp(page: Page) {
 test('E2E-INTROVIEW: 内省页查看与否决', async ({ page, request }) => {
   await runFixture(request, 'adoption_push');
   await openApp(page);
+  // T-88 入口适配：右栏页签仅在会话视图渲染；用空会话进入，不触碰主窗口已读状态（断言不变）
+  await page.getByRole('button', { name: '＋ 新会话' }).click();
   await page.getByRole('tab', { name: /内省/ }).click();
   await expect(page.getByTestId('intro-panel')).toBeVisible();
   const item = page.locator('.intro-item').first();
@@ -151,6 +153,8 @@ test('E2E-INTROVIEW: 内省页查看与否决', async ({ page, request }) => {
 test('E2E-INTROLABEL: 未推送原因与标注', async ({ page, request }) => {
   await runFixture(request, 'adoption_hold');
   await openApp(page);
+  // T-88 入口适配：右栏页签仅在会话视图渲染；用空会话进入，不触碰主窗口已读状态（断言不变）
+  await page.getByRole('button', { name: '＋ 新会话' }).click();
   await page.getByRole('tab', { name: /内省/ }).click();
   const item = page.locator('.intro-item').first();
   await item.click();
