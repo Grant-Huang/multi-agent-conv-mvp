@@ -176,25 +176,40 @@ export async function startRestartEnv(port = 18793): Promise<RestartEnv> {
 
   const boot = async (): Promise<void> => {
     await writeFile(configPath, configText);
-    child = spawn(binary, [configPath], {
-      cwd: root,
-      env: { ...process.env, RUST_LOG: 'info' },
-      stdio: ['ignore', 'ignore', 'pipe'],
-    });
-    let stderr = '';
-    child.stderr?.on('data', (d: Buffer) => {
-      stderr += d.toString();
-      if (stderr.length > 20000) stderr = stderr.slice(-10000);
-    });
-    child.on('exit', (code) => {
-      if (code !== null && code !== 0 && code !== 143 && code !== 15) {
-        console.error(`[restartEnv] backend exited code=${code} stderr=${stderr.slice(-2000)}`);
-      }
-    });
+    // 端口预留→监听交接窗口（testing/README「子进程HTTP服务就绪」）：旧进程退出后的
+    // TIME_WAIT 可能让新进程 bind 失败即退出。对「启动即退出」做有界重试（3 次、1s 退避），
+    // 30s 健康门不变；只重试基础设施就绪，不重试业务断言。
     const base = `http://127.0.0.1:${port}`;
-    // 端口预留→监听交接：后端可能需要几秒绑定（前一个进程退出后 TIME_WAIT）
-    await new Promise((r) => setTimeout(r, 300));
-    await waitHealth(base, child, 30_000);
+    let lastErr: unknown = new Error('boot not attempted');
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      child = spawn(binary, [configPath], {
+        cwd: root,
+        env: { ...process.env, RUST_LOG: 'info' },
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      let stderr = '';
+      child.stderr?.on('data', (d: Buffer) => {
+        stderr += d.toString();
+        if (stderr.length > 20000) stderr = stderr.slice(-10000);
+      });
+      child.on('exit', (code) => {
+        if (code !== null && code !== 0 && code !== 143 && code !== 15) {
+          console.error(`[restartEnv] backend exited code=${code} stderr=${stderr.slice(-2000)}`);
+        }
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      try {
+        await waitHealth(base, child, 30_000);
+        return;
+      } catch (e) {
+        lastErr = e;
+        if (child.exitCode === null) {
+          child.kill('SIGKILL');
+        }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+    throw lastErr;
   };
 
   await boot();
