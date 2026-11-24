@@ -1087,7 +1087,11 @@ impl Orchestrator {
             created_at: ts.clone(),
             updated_at: ts,
         };
-        self.store.insert_task(&join_task, &join_ctx)?;
+        // H3（R-20261124）：原子插入保证同一父任务只建一个 join；
+        // 未插入说明另一分支收尾已建，不得重复排队与交付。
+        if !self.store.insert_join_if_absent(&join_task, &join_ctx)? {
+            return Ok(());
+        }
         if self.transition(
             &join_task,
             &[TaskStatus::Created],
