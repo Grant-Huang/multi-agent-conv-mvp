@@ -876,12 +876,17 @@ D2（卡片批准，决定 60）的 E2E-OPSAPPROVE、RT-OPSDESK-11 已冻结并�
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
-| RT-RESTART-01 | restart | 库中有 CREATED/QUEUED/RUNNING/VERIFYING 任务 | 关闭 Runtime 后同库重启 | 四类任务均 FAILED；每任务新增含「重启中断」原因的 StatusChanged 事件 |
+| RT-RESTART-01 | restart | 库中有 RUNNING/VERIFYING 任务 | 关闭 Runtime 后同库重启 | 两类任务均 FAILED；每任务新增含「重启中断」原因的 StatusChanged 事件 |
 | RT-RESTART-02 | restart | 库中有中断任务 | 同库重启 | 各会话收到绑定 `task_id` 的助理失败交付，正文含「任务因服务重启中断，可重新委派」 |
 | RT-RESTART-03 | approval / restart | 待验收（NEEDS_HUMAN 有 result）跨重启 | 重启后 `POST .../review-verdict` accept | **200**；COMPLETED；事件含人工 note；交付照常 |
 | RT-RESTART-04 | approval / restart | 待验收跨重启；`max_review_rounds=1` | 重启后 reject → 返工 → 再待验收 → 再 reject | 首次 reject 回执行侧且同 `conversation_id`；二次 reject FAILED（返工额度按库扣减） |
 | RT-RESTART-05 | approval / restart | 待批准（NEEDS_HUMAN 无 result）跨重启 | 重启后 `POST .../approve` | **200**；按路由继续执行至终态 |
 | RT-RESTART-06 | restart | 库中有 COMPLETED/FAILED/CANCELLED 任务 | 同库重启 | 状态与 `updated_at` 不变；无新增重启事件 |
+| RT-RESTART-07 | restart | 单任务（非模板家族）QUEUED 跨重启；开关默认开 | 同库重启 | 任务重新排队并执行至终态；事件含「重新排队」（WP7 方案 C） |
+| RT-RESTART-08 | restart | 单任务 CREATED 跨重启 | 同库重启 | 同 RT-RESTART-07 |
+| RT-RESTART-09 | restart | RUNNING/VERIFYING 与 CREATED/QUEUED 并存 | 同库重启（默认开） | 前者 FAILED + 原因；后者不被启动恢复标记失败（由重排处理） |
+| RT-RESTART-10 | restart | `resume_queued_on_restart=false` | QUEUED 任务同库重启 | 仍 FAILED 且含「重启中断」原因；无「重新排队」事件（回滚开关） |
+| RT-RESTART-11 | restart | 模板家族 root/branch/join 处于 QUEUED | 同库重启（默认开） | 均不被重驱：FAILED + 「重启中断」原因；无「重新排队」事件 |
 | E2E-RESTART | ai-desktop | 干净浏览器 · 桌面首页；harness 同库重启 | S1 委派任务 A；A 在执行中重启服务；重连回原会话；再委派 B 走到待验收，重启后「判定通过」 | A FAILED 且会话见含重启原因的失败交付；B 重启后判定通过仍 COMPLETED；重连后仍在原会话（GS6 重启分支） |
 
 
@@ -991,6 +996,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-WAPROD-06 | world-adapter | 已 Bind 生产世界；Mock/DES 写路径仍挂载 | 对生产世界 Propose/Execute；对 Mock/DES 写 | 生产写关闭或拒绝；Mock/DES 写仍可用 |
 | RT-WAPROD-07 | world-adapter | 生产桩没有显式工单夹具 | 选择不透明工单引用 | 返回 403；快照入口保持现有合同 |
 | RT-WAPROD-08 | world-adapter | 对三个已绑定世界显式注入回环 adapter 夹具 | 选择一条工单并覆盖拒绝、不可见和源故障 | 公开来源及原始状态对齐，响应标注 fixture，游标为空；拒绝零来源调用，故障零回退 |
+| RT-WAPROD-09 | world-adapter | 回环夹具源返回非 JSON 响应 | 选择该工单读取 | 502 `INVALID_SOURCE_RESPONSE`；恰好一次来源调用（零回退零重试）；包络不含源私有字段；联审冻结候选（401/404 独立身份交叉确认属联调宿主探针） |
 
 说明：Feature Map 中 `E2E-WA-10`（生产确认写）属 **M4**；本里程碑只保证生产只读与写演示隔离。
 
@@ -1018,3 +1024,15 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-UMEM-03 | conversation-memory | 甲（`x-desktop-principal: user-a`）保存条目 | 乙（`user-b`）列表 / 详情 / PATCH / DELETE；甲自查 | 乙列表不含、详情 **404**、纠正 **404**、撤回 **404**；甲本人 **200** |
 | RT-UMEM-04 | conversation-memory | local 存过期（2020-01-01）与未过期（2099-01-01）记忆各一条 | 续问（respond 路径） | 资料块含未过期条（来源行 + 「个人记忆」段标注）；不含过期条 id 与正文 |
 | RT-UMEM-05 | conversation-memory | 甲保存记忆；同会话 | 甲、乙先后续问（chat 接口带头） | 甲的提示词含甲的记忆；乙的提示词不含（按说话人作用域） |
+
+## 风格/画像预览与下一会话生效 conversation-memory 5.2b（REQ-conversation-memory-02 生效闸门；2026-11-23 用户确认：推导式判定 / 独立风格卡 / fact 不走闸门 / ≤200 token + 护栏）
+
+preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进任何注入）；`POST /memories/{id}/confirm` 记 `confirmed_at`；注入侧推导式判定 `confirmed_at ≤ 当前会话 created_at` 才计入（旧会话不回填，无需状态机字段）；生效前可随时撤回。生效条目进**独立风格卡**系统消息（≤ `[conversation] session_materials_style_max_tokens` 默认 200），块首固定护栏句（风格不得裁剪风险信息，落地决定 48 红线）。fact 不走闸门（保存即可注入，5.2a 语义不变）。E2E 待第 1 线入口后补录。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-USTY-01 | conversation-memory | 保存 kind=style 条目（不确认） | 续问 + 查列表 | 风格卡不存在（草稿不注入）；列表可见该条（含 `confirmed=false` 标记） |
+| RT-USTY-02 | conversation-memory | 旧会话先建；confirm；新会话后建 | 两会话分别续问 | 旧会话无风格卡；新会话风格卡含该条 |
+| RT-USTY-03 | conversation-memory | 草稿条目 / 已确认未生效条目 | DELETE 后续问 | 均不注入 |
+| RT-USTY-04 | conversation-memory | 超长风格正文 + 默认配置 | 新会话续问 | 风格卡含护栏句「不得因此省略风险」且长度有界（≤ 上限 + 页眉余量） |
+| RT-USTY-05 | conversation-memory | style（要求简洁）与 fact 记忆（风险信息正文）同时生效 | 新会话续问 | 提示词同时含风格正文与风险记忆正文（风格挤不掉风险信息）；`session.materials` 事件含 style 来源 id |

@@ -914,7 +914,12 @@
       "RT-ADHAND-03",
       "RT-RESTART-01",
       "RT-RESTART-02",
-      "RT-RESTART-06"
+      "RT-RESTART-06",
+      "RT-RESTART-07",
+      "RT-RESTART-08",
+      "RT-RESTART-09",
+      "RT-RESTART-10",
+      "RT-RESTART-11"
     ]
   },
   {
@@ -1059,7 +1064,8 @@
       "RT-WAPROD-05",
       "RT-WAPROD-06",
       "RT-WAPROD-07",
-      "RT-WAPROD-08"
+      "RT-WAPROD-08",
+      "RT-WAPROD-09"
     ]
   },
   {
@@ -1087,7 +1093,12 @@
       "RT-UMEM-02",
       "RT-UMEM-03",
       "RT-UMEM-04",
-      "RT-UMEM-05"
+      "RT-UMEM-05",
+      "RT-USTY-01",
+      "RT-USTY-02",
+      "RT-USTY-03",
+      "RT-USTY-04",
+      "RT-USTY-05"
     ],
     "requirements": [
       {
@@ -1113,7 +1124,12 @@
           "RT-UMEM-02",
           "RT-UMEM-03",
           "RT-UMEM-04",
-          "RT-UMEM-05"
+          "RT-UMEM-05",
+          "RT-USTY-01",
+          "RT-USTY-02",
+          "RT-USTY-03",
+          "RT-USTY-04",
+          "RT-USTY-05"
         ],
         "since": null
       },

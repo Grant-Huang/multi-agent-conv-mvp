@@ -211,6 +211,31 @@ impl Runtime {
         Self::assemble(config, store, diagnostics, tools, egress)
     }
 
+    /// WP7：重启失败恢复——写含原因的 StatusChanged 事件与失败交付（同步落库；启动期无 SSE 消费者）。
+    fn write_restart_failure(store: &Arc<Store>, task: &an_core::TaskRecord) {
+        let event = an_core::TaskEvent {
+            id: an_core::new_id("evt"),
+            conversation_id: task.conversation_id.clone(),
+            task_id: Some(task.id.clone()),
+            kind: an_core::EventKind::StatusChanged,
+            status: Some(an_core::TaskStatus::Failed),
+            message: "任务因服务重启中断".to_string(),
+            stream_id: None,
+            created_at: an_core::now(),
+        };
+        if let Err(e) = store.insert_event(&event) {
+            tracing::error!(error = %e, task_id = %task.id, "写入重启中断事件失败");
+        }
+        if let Err(e) = store.add_message(
+            &task.conversation_id,
+            "assistant",
+            "任务因服务重启中断，可重新委派",
+            Some(&task.id),
+        ) {
+            tracing::error!(error = %e, task_id = %task.id, "写入重启失败交付失败");
+        }
+    }
+
     fn assemble(
         config: AppConfig,
         store: Store,
@@ -231,28 +256,7 @@ impl Runtime {
             );
         }
         for task in &interrupted {
-            let reason = "任务因服务重启中断";
-            let event = an_core::TaskEvent {
-                id: an_core::new_id("evt"),
-                conversation_id: task.conversation_id.clone(),
-                task_id: Some(task.id.clone()),
-                kind: an_core::EventKind::StatusChanged,
-                status: Some(an_core::TaskStatus::Failed),
-                message: reason.to_string(),
-                stream_id: None,
-                created_at: an_core::now(),
-            };
-            if let Err(e) = store.insert_event(&event) {
-                tracing::error!(error = %e, task_id = %task.id, "写入重启中断事件失败");
-            }
-            if let Err(e) = store.add_message(
-                &task.conversation_id,
-                "assistant",
-                "任务因服务重启中断，可重新委派",
-                Some(&task.id),
-            ) {
-                tracing::error!(error = %e, task_id = %task.id, "写入重启失败交付失败");
-            }
+            Self::write_restart_failure(&store, task);
         }
         let bus = Arc::new(Bus::new(store.clone()));
 
@@ -432,6 +436,44 @@ impl Runtime {
         if let Some(l) = &admission {
             orchestrator.set_admission(l.clone());
         }
+        // WP7：重启后处理仍未起跑的任务。开关开：单任务（非模板家族）重新排队执行（方案 C）；
+        // 开关关：全部走 T-81 失败恢复。两种情况下，未重排者都写原因事件与失败交付。
+        // 必须在 orchestrator 构建之后（重驱走 spawn）、对外 serve 前完成。
+        let resumed_ids = if o.resume_queued_on_restart {
+            match orchestrator.resume_queued_on_restart() {
+                Ok(ids) if !ids.is_empty() => {
+                    tracing::info!(
+                        event = "task.resume_queued",
+                        count = ids.len(),
+                        "{} 个未起跑任务已重新排队执行",
+                        ids.len()
+                    );
+                    ids
+                }
+                Ok(ids) => ids,
+                Err(e) => {
+                    tracing::error!(error = %e, "重启重排未起跑任务失败");
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+        match store.fail_unstarted_tasks(&resumed_ids) {
+            Ok(unstarted) if !unstarted.is_empty() => {
+                tracing::warn!(
+                    event = "task.interrupted",
+                    count = unstarted.len(),
+                    "{} 个未起跑任务重启后标记为 FAILED",
+                    unstarted.len()
+                );
+                for task in &unstarted {
+                    Self::write_restart_failure(&store, task);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => tracing::error!(error = %e, "重启失败恢复（未起跑任务）出错"),
+        }
         let probers = Arc::new(ProberSet::new(probers));
         let agents = Arc::new(agent_chat::AgentAdmin {
             config: config.clone(),
@@ -458,6 +500,9 @@ impl Runtime {
             session_materials: config.conversation.session_materials,
             session_materials_max_tokens: config.conversation.session_materials_max_tokens,
             session_materials_timeout_ms: config.conversation.session_materials_timeout_ms,
+            session_materials_style_max_tokens: config
+                .conversation
+                .session_materials_style_max_tokens,
         }));
         tracing::info!(
             event = "conversation.config",

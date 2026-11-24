@@ -39,6 +39,8 @@
 
 执行 `node --test scripts/accept-m3-live-observe.test.mjs` 验证候选断言和脱敏输出。在已批准的联调宿主上，使用 `AN_M3_OBSERVE_ORIGIN` 和 `AN_M3_OBSERVE_TOKEN`，运行 `node scripts/accept-m3-live-observe.mjs <bindings.json>`。输入数组中的各项包括 `vendor`（`odoo`／`openmes`／`carbon`）、`world`、`visible`、`hidden`、`source`、`sourceStatus`。两个不透明引用都需向测试主体授权，以通过同一身份验证源端可见范围。该探针验证三源的匿名拒绝、成功和源端不可见。撤权、跨站、故障注入和零回退另由受信服务层测试记录调用数。测试索引和正式 ID 随联审冻结。
 
+> 2026-11-23 夹具路径覆盖：`502 INVALID_SOURCE_RESPONSE` 行已由进程内合同 `RT-WAPROD-09`（回环夹具源返回非 JSON）覆盖；`401` 与 `404` 的第二来源身份交叉确认属联调宿主探针职责，夹具路径不适用。
+
 建议按服务层合同、单站点联调、三源复跑顺序验收。停用真实绑定并撤销测试凭证即可回退联调。桩数据与真实来源配置分别保留验证证据。
 
 ## 正式路径夹具验收
@@ -52,3 +54,5 @@ AgentNexus `c69c9e5` 已合入本方案。夹具切片仅在测试构造宿主�
 首个站点获批后，在联调宿主设置上文的两个环境变量，并运行 `node scripts/accept-m3-live-observe.mjs --single-site <bindings.json>`。文件沿用上文的数组格式，只填该站点的一项绑定。探针对同一世界验证匿名拒绝、授权工单读取和源端范围外不可见。省略 `--single-site` 后，联合验收仍要求三个不同世界及来源，且三个系统均须通过。两种模式均在发请求前校验完整绑定，输出只包含已检查的系统及 HTTP 状态。
 
 AgentNexus PR #248 已合入正式路由夹具。单站点探针的自动化测试覆盖三个系统的独立调用及两种模式的输入边界。真实联调需要批准服务主体、工单绑定、源端凭据和出站范围，仍按服务层、单站点、三源的顺序记录结果。
+
+首个联调切片及部署方需确认的范围见 [M3 Odoo 首站联调审批](WA_M3_ODOO_PILOT_REVIEW.md)。

@@ -159,6 +159,9 @@ pub struct DesktopMemory {
     /// fact（可注入）/ preference / style（5.2b 生效闸门用）；旧行迁移为 fact
     #[serde(default = "default_memory_kind")]
     pub kind: String,
+    /// 5.2b 预览→确认闸门：NULL = 草稿（非 fact）；fact 创建时即写
+    #[serde(default, skip_serializing)]
+    pub confirmed_at: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub revoked: bool,
     #[serde(skip_serializing)]
@@ -548,6 +551,7 @@ CREATE TABLE IF NOT EXISTS desktop_memories (
     body TEXT NOT NULL,
     expires TEXT NOT NULL,
     kind TEXT NOT NULL DEFAULT 'fact',
+    confirmed_at TEXT,
     revoked INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
 );
@@ -785,6 +789,15 @@ impl Store {
             conn.execute_batch(
                 "ALTER TABLE desktop_memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact'",
             )?;
+        }
+        // conversation-memory 5.2b：confirmed_at（非 fact 走预览→确认闸门；NULL = 草稿）
+        let has_confirmed: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('desktop_memories') WHERE name = 'confirmed_at'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_confirmed == 0 {
+            conn.execute_batch("ALTER TABLE desktop_memories ADD COLUMN confirmed_at TEXT")?;
         }
         let read = if path == Path::new(":memory:") {
             None
@@ -2430,6 +2443,7 @@ impl Store {
             kind: r
                 .get::<_, Option<String>>(8)?
                 .unwrap_or_else(|| "fact".into()),
+            confirmed_at: r.get(9)?,
             revoked: revoked != 0,
             updated_at: r.get(7)?,
         })
@@ -2446,6 +2460,7 @@ impl Store {
                 body: "先给结论，再列证据条目与待核实项。".into(),
                 expires: "2027-11-18".into(),
                 kind: "fact".into(),
+                confirmed_at: None,
                 revoked: false,
                 updated_at: ts.clone(),
             },
@@ -2457,6 +2472,7 @@ impl Store {
                 body: "工作日 22:00–08:00 不推普通建议。".into(),
                 expires: "长期".into(),
                 kind: "fact".into(),
+                confirmed_at: None,
                 revoked: false,
                 updated_at: ts,
             },
@@ -2466,8 +2482,8 @@ impl Store {
     fn insert_desktop_memory(conn: &Connection, m: &DesktopMemory) -> Result<()> {
         conn.execute(
             "INSERT OR IGNORE INTO desktop_memories
-             (id, user_id, title, source, body, expires, kind, revoked, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             (id, user_id, title, source, body, expires, kind, confirmed_at, revoked, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 m.id,
                 m.user_id,
@@ -2476,6 +2492,7 @@ impl Store {
                 m.body,
                 m.expires,
                 m.kind,
+                m.confirmed_at,
                 if m.revoked { 1 } else { 0 },
                 m.updated_at,
             ],
@@ -2533,14 +2550,16 @@ impl Store {
                 expires.trim().into()
             },
             kind: kind.into(),
+            // 5.2b：fact 不走预览闸门，创建即可注入；preference/style 为草稿
+            confirmed_at: (kind == "fact").then(now as fn() -> String),
             revoked: false,
             updated_at: now(),
         };
         let conn = self.write();
         conn.execute(
             "INSERT INTO desktop_memories
-             (id, user_id, title, source, body, expires, kind, revoked, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
+             (id, user_id, title, source, body, expires, kind, confirmed_at, revoked, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)",
             params![
                 m.id,
                 m.user_id,
@@ -2549,10 +2568,43 @@ impl Store {
                 m.body,
                 m.expires,
                 m.kind,
+                m.confirmed_at,
                 m.updated_at,
             ],
         )?;
         Ok(m)
+    }
+
+    /// conversation-memory 5.2b：确认（预览闸门）。幂等；fact 重复确认无变化。
+    /// 成功返回确认后的条目；未知 id 返回 None（HTTP 404）。
+    pub fn confirm_desktop_memory(&self, user_id: &str, id: &str) -> Result<Option<DesktopMemory>> {
+        self.ensure_desktop_memory_seed(user_id)?;
+        let conn = self.write();
+        let Some(m) = conn
+            .query_row(
+                "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind, confirmed_at
+                 FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
+                params![user_id, id],
+                Self::map_desktop_memory,
+            )
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        if m.confirmed_at.is_some() {
+            return Ok(Some(m));
+        }
+        let ts = now();
+        conn.execute(
+            "UPDATE desktop_memories SET confirmed_at = ?3, updated_at = ?3
+             WHERE user_id = ?1 AND id = ?2",
+            params![user_id, id, ts],
+        )?;
+        Ok(Some(DesktopMemory {
+            confirmed_at: Some(ts.clone()),
+            updated_at: ts,
+            ..m
+        }))
     }
 
     /// conversation-memory 5.2a：注入侧读取（未撤回；过期与 kind 过滤在调用方做，避免 SQL 里解析自由文本日期）。
@@ -2560,7 +2612,7 @@ impl Store {
         let _timer = ReadTimer::new("list_unrevoked_desktop_memories");
         let conn = self.read();
         let mut stmt = conn.prepare(
-            "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind
+            "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind, confirmed_at
              FROM desktop_memories
              WHERE user_id = ?1 AND revoked = 0
              ORDER BY updated_at DESC, rowid DESC",
@@ -2576,7 +2628,7 @@ impl Store {
         let _timer = ReadTimer::new("list_desktop_memories");
         let conn = self.read();
         let mut stmt = conn.prepare(
-            "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind
+            "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind, confirmed_at
              FROM desktop_memories
              WHERE user_id = ?1 AND revoked = 0
              ORDER BY id",
@@ -2595,7 +2647,7 @@ impl Store {
         let _timer = ReadTimer::new("get_desktop_memory");
         let conn = self.read();
         conn.query_row(
-            "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind
+            "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind, confirmed_at
              FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
             params![user_id, id],
             Self::map_desktop_memory,
@@ -2616,7 +2668,7 @@ impl Store {
         let conn = self.write();
         let Some(mut m) = conn
             .query_row(
-                "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind
+                "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind, confirmed_at
                  FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
                 params![user_id, id],
                 Self::map_desktop_memory,
@@ -2662,7 +2714,7 @@ impl Store {
         let conn = self.write();
         let Some(mut m) = conn
             .query_row(
-                "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind
+                "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind, confirmed_at
                  FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
                 params![user_id, id],
                 Self::map_desktop_memory,
@@ -3059,13 +3111,16 @@ impl Store {
             .collect())
     }
 
-    /// 服务启动时调用：把上次运行中断的任务标记为失败（MVP 不做断点续跑），
+    /// 服务启动时调用：把有副作用风险的中断任务（RUNNING/VERIFYING，可能已执行了一部分）标记为失败，
     /// 返回受影响任务供启动恢复写原因事件与失败交付（WP7 / G08：明确失败原因）。
+    /// CREATED/QUEUED 单任务由 orchestrator 重启重排（WP7 方案 C，见 `list_resumable_tasks`）；
+    /// 模板家族（root/branch/join）的 QUEUED/CREATED 不在本查询内——由 `resume_queued_on_restart`
+    /// 判定排除后走 T-81 失败恢复（原因事件与交付）。
     pub fn recover_interrupted_tasks(&self) -> Result<Vec<TaskRecord>> {
         let conn = self.write();
         let ids: Vec<String> = {
             let mut st = conn.prepare(
-                "SELECT id FROM tasks WHERE status IN ('CREATED', 'QUEUED', 'RUNNING', 'VERIFYING') ORDER BY created_at, id",
+                "SELECT id FROM tasks WHERE status IN ('RUNNING', 'VERIFYING') ORDER BY created_at, id",
             )?;
             let rows = st.query_map([], |r| r.get::<_, String>(0))?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
@@ -3074,8 +3129,64 @@ impl Store {
             return Ok(Vec::new());
         }
         conn.execute(
-            "UPDATE tasks SET status = 'FAILED', updated_at = ?1 WHERE status IN ('CREATED', 'QUEUED', 'RUNNING', 'VERIFYING')",
+            "UPDATE tasks SET status = 'FAILED', updated_at = ?1 WHERE status IN ('RUNNING', 'VERIFYING')",
             [now()],
+        )?;
+        let mut out = Vec::with_capacity(ids.len());
+        for id in &ids {
+            if let Some(t) = self.get_task(id)? {
+                out.push(t);
+            }
+        }
+        Ok(out)
+    }
+
+    /// WP7 方案 C：可重启重排的未起跑单任务（CREATED/QUEUED，非模板家族）。
+    /// 模板家族（root/branch/join）不在此列：家族一致性无法安全重建（join 兄弟未终态等）。
+    pub fn list_resumable_tasks(&self) -> Result<Vec<TaskRecord>> {
+        let _timer = ReadTimer::new("list_resumable_tasks");
+        let conn = self.read();
+        let mut st = conn.prepare(&format!(
+            "{TASK_SELECT} WHERE status IN ('CREATED', 'QUEUED') \
+             AND (fanout_kind IS NULL OR fanout_kind = '') ORDER BY created_at, id"
+        ))?;
+        let mut out = Vec::new();
+        for r in st.query_map([], task_from_row)? {
+            out.push(r??);
+        }
+        Ok(out)
+    }
+
+    /// WP7：把仍未起跑（CREATED/QUEUED）且不在 `exclude_ids`（已被重排）中的任务标记为失败，
+    /// 返回受影响任务（含模板家族——家族不重驱，统一走失败恢复）。调用方写原因事件与失败交付。
+    pub fn fail_unstarted_tasks(&self, exclude_ids: &[String]) -> Result<Vec<TaskRecord>> {
+        let conn = self.write();
+        let placeholders = exclude_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
+        let where_clause = if exclude_ids.is_empty() {
+            "WHERE status IN ('CREATED', 'QUEUED')".to_string()
+        } else {
+            format!("WHERE status IN ('CREATED', 'QUEUED') AND id NOT IN ({placeholders})")
+        };
+        let ids: Vec<String> = {
+            let sql = format!("SELECT id FROM tasks {where_clause} ORDER BY created_at, id");
+            let mut st = conn.prepare(&sql)?;
+            let rows = st.query_map(rusqlite::params_from_iter(exclude_ids.iter()), |r| {
+                r.get::<_, String>(0)
+            })?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        // where_clause 以 WHERE 开头；占位符顺序：先 updated_at，再 NOT IN 的排除 id
+        let sql = format!("UPDATE tasks SET status = 'FAILED', updated_at = ? {where_clause}");
+        conn.execute(
+            &sql,
+            rusqlite::params_from_iter(std::iter::once(&now()).chain(exclude_ids.iter())),
         )?;
         let mut out = Vec::with_capacity(ids.len());
         for id in &ids {
