@@ -39,6 +39,8 @@
 
 执行 `node --test scripts/accept-m3-live-observe.test.mjs` 验证候选断言和脱敏输出。在已批准的联调宿主上，使用 `AN_M3_OBSERVE_ORIGIN` 和 `AN_M3_OBSERVE_TOKEN`，运行 `node scripts/accept-m3-live-observe.mjs <bindings.json>`。输入数组中的各项包括 `vendor`（`odoo`／`openmes`／`carbon`）、`world`、`visible`、`hidden`、`source`、`sourceStatus`。两个不透明引用都需向测试主体授权，以通过同一身份验证源端可见范围。该探针验证三源的匿名拒绝、成功和源端不可见。撤权、跨站、故障注入和零回退另由受信服务层测试记录调用数。测试索引和正式 ID 随联审冻结。
 
+> 2026-11-23 夹具路径覆盖：`502 INVALID_SOURCE_RESPONSE` 行已由进程内合同 `RT-WAPROD-09`（回环夹具源返回非 JSON）覆盖；`401` 与 `404` 的第二来源身份交叉确认属联调宿主探针职责，夹具路径不适用。
+
 建议按服务层合同、单站点联调、三源复跑顺序验收。停用真实绑定并撤销测试凭证即可回退联调。桩数据与真实来源配置分别保留验证证据。
 
 ## 正式路径夹具验收
