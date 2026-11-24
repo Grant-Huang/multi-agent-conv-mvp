@@ -81,9 +81,9 @@ pub struct DesktopRequestRecord {
 pub enum DesktopAcceptOutcome {
     /// 首次受理并写入消息
     Created(DesktopRequestRecord),
-    /// 同操作 ID + 同正文：回放原记录，不二次派发
+    /// 同操作 ID + 同完整载荷：回放原记录，不二次派发
     Replay(DesktopRequestRecord),
-    /// 同操作 ID + 改正文
+    /// 同操作 ID + 不同载荷
     Conflict {
         request_id: String,
         message_id: String,
@@ -1076,33 +1076,39 @@ impl Store {
         }
         let conn = self.write();
         let tx = conn.unchecked_transaction()?;
-        let existing: Option<(String, String, String, i64, String)> = tx
+        let existing: Option<DesktopRequestRecord> = tx
             .query_row(
-                "SELECT request_id, message_id, text, dispatch_count, status
+                "SELECT request_id, message_id, conversation_id, client_operation_id,
+                        text, scope, task_id, status, dispatch_count
                  FROM desktop_client_operations WHERE client_operation_id = ?1",
                 params![client_operation_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                |r| {
+                    Ok(DesktopRequestRecord {
+                        request_id: r.get(0)?,
+                        message_id: r.get(1)?,
+                        conversation_id: r.get(2)?,
+                        client_operation_id: r.get(3)?,
+                        text: r.get(4)?,
+                        scope: r.get(5)?,
+                        task_id: r.get(6)?,
+                        status: r.get(7)?,
+                        dispatch_count: r.get::<_, i64>(8)? as u32,
+                    })
+                },
             )
             .optional()?;
-        if let Some((request_id, message_id, committed, dispatch_count, status)) = existing {
-            if committed == text {
-                tx.commit()?;
-                return Ok(DesktopAcceptOutcome::Replay(DesktopRequestRecord {
-                    request_id,
-                    message_id,
-                    conversation_id: conversation_id.into(),
-                    client_operation_id: client_operation_id.into(),
-                    text: committed,
-                    scope: scope.into(),
-                    task_id: task_id.map(String::from),
-                    status,
-                    dispatch_count: dispatch_count as u32,
-                }));
-            }
+        if let Some(record) = existing {
+            let same_payload = record.conversation_id == conversation_id
+                && record.text == text
+                && record.scope == scope
+                && record.task_id.as_deref() == task_id;
             tx.commit()?;
+            if same_payload {
+                return Ok(DesktopAcceptOutcome::Replay(record));
+            }
             return Ok(DesktopAcceptOutcome::Conflict {
-                request_id,
-                message_id,
+                request_id: record.request_id,
+                message_id: record.message_id,
             });
         }
         let request_id = an_core::new_id("dreq");
