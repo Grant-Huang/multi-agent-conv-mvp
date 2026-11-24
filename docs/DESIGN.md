@@ -119,7 +119,7 @@ flowchart TB
 | 业务内省 | 横切 · 第 5 线 | [memory/INTROSPECTION_PLAN.md](memory/INTROSPECTION_PLAN.md) | [PLAN.md](PLAN.md)「INT」、[INTROSPECTION_PLAYBOOK.md](memory/INTROSPECTION_PLAYBOOK.md) | `runtime/src/introspect/`、`server/src/introspection_api.rs` | 45、49、51–55、64、65 | 已实现 S0–S8；默认关闭 |
 | 分层记忆与会话上下文（含个人画像、风格和组织 taste） | 横切 · 第 5 线 | [conversation-memory 特性档案](features/conversation-memory/README.md)（服务宪章 §3 第 4 条及 §5） | [第 5 线计划](features/conversation-memory/PLAN.md) | `runtime/src/conversation.rs` 为现有接点；桌面记忆列表、纠错和撤回已接服务端夹具（T-71/72） | 45–48、50；[五线分工](decisions/2026-11-22-five-workstreams.md) | 设计中，分层记忆与注入未实现 |
 | 组织知识（RelOS） | 横切 | 无设计文档；散见 [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) 第 6 节 | AI 桌面 C 阶段 | `server/src/mom_relos.rs`（仅 MOM 诊断调用） | — | 无设计 |
-| 业务执行网关（NexusOps） | 横切 | 无设计文档；散见 ai-desktop 设计第 6 节、[mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M4 | — | — | 无设计 |
+| 业务执行网关（NexusOps） | 横切 | [ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md](ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md)（方案草案，待用户确认） | World Adapter M4 | `server/src/mom_world_des.rs`、桌面审批网关 | — | 设计中（方案草案；实现未开工） |
 | 日志与诊断 | 横切 | 本文第 10 节 | — | `crates/observe` | — | 已实现 |
 | MOM 案例、方案与审批 | 工业业务 | [mom/DESIGN.md](mom/DESIGN.md)、[mom/IMPLEMENTATION.md](mom/IMPLEMENTATION.md) | [mom/MOCK_REGISTER.md](mom/MOCK_REGISTER.md) | `runtime/src/mom/`、`server/src/mom.rs`、`server/src/bin/an-mom.rs` | DES-n | 已实现（模拟沙盘，未接生产） |
 | 运营桌面与运营频道 | 工业业务 | [mom/OPS_DESK.md](mom/OPS_DESK.md) | [PLAN.md](PLAN.md)「D0–D3」、[OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md) | `runtime/src/mom/ops_desk.rs`、`server/src/mom_ops.rs` | 56–58、60 | 已实现 D0–D2；D3 并入 World Adapter M0 |
