@@ -102,5 +102,6 @@
 | [2026-11-23-wa-m4-write-entry-gates.md](2026-11-23-wa-m4-write-entry-gates.md) | M4 生产写前置准入；本卡只方案、保持 WRITE_DISABLED | 用户确认（纠正范围） | 有效 |
 | [2026-11-21-wa-m2-1-green-service-layer.md](2026-11-21-wa-m2-1-green-service-layer.md) | WA M2 Green 服务层优先 | 用户确认 | 有效 |
 | [2026-11-22-c2-m2-minimal-contracts.md](2026-11-22-c2-m2-minimal-contracts.md) | C2/M2 最小共享契约（批准/取消/追踪） | 用户确认 | 有效 |
+| [2026-11-24-trace-id-minimal-scope.md](2026-11-24-trace-id-minimal-scope.md) | trace_id 先做最小版：受理时生成、写路径日志必带；持久化推迟到 M4 写入前 | 用户确认 | 有效 |
 | [2026-11-24-lift-paper-constraint.md](2026-11-24-lift-paper-constraint.md) | 解除论文场景行为不变约束，论文复现以 tag v1.0.0 为准 | 用户确认 | 有效 |
 | [2026-11-22-wp2-review-acceptance-plan.md](2026-11-22-wp2-review-acceptance-plan.md) | WP2 审查需人工验收出口方案 | 助手建议 / T-65 方案卡 | 待用户确认 |

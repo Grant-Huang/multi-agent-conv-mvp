@@ -19,7 +19,7 @@
 |---|---|---|---|
 | [身份与审批](identity-and-approval.md) | 谁在操作、谁能批准、一次批准绑定什么 | C2 动作网关与 WA/MOM 批准须同一模型；agent 不得自批 | 部分有效（A1–A7、B1–B4） |
 | [状态与取消](state-and-cancellation.md) | 终态、取消、重试、重启、迟到事件 | 取消后待发不发；unknown 不盲重发；待批准/待验收须拆分 | 部分有效（S1–S7、T1；T2–T5 仍建议） |
-| [事件与追踪](events-and-trace.md) | 事件命名、关联标识、游标与去重 | `task_id` / `case_id` / `execution_id` 须可关联；新写路径带 `trace_id` | 部分有效（E1–E5、R1–R3；R4 仍建议） |
+| [事件与追踪](events-and-trace.md) | 事件命名、关联标识、游标与去重 | `task_id` / `case_id` / `execution_id` 须可关联；新写路径带 `trace_id` | 部分有效（E1–E5、R1a、R2–R3；R1b 推迟到 M4 写入前；R4 仍建议） |
 
 ## 每份契约的结构
 
