@@ -31,7 +31,7 @@
 | 2 独立复跑与集成协调 | 跨组场景、复跑环境、验收证据、问题归属和复验 | 输入为任务卡、PR、Feature Map、CASES 和证据；按合入 SHA 复跑，分别记录 fixture、真实服务和未验项。沿用 [T-60](testing/evidence/t60-cross-group-acceptance.md) 和 [T-63](testing/evidence/t63-m2-reverify.md)；T-63 已验合同及 harness，远程 DES MCP 仍待本线独立复跑 |
 | 3 工业业务闭环 | DES、MOM、运营处置与 World Adapter；业务来源核验 | 沿用 M2-6 准出与 [T-63](testing/evidence/t63-m2-reverify.md)；**M3 桩数据准出**（[wa-m3-5.md](testing/evidence/wa-m3-5.md)）；M4 写须过 [WA_M4_TASKS](mom/WA_M4_TASKS.md) 准入；下一待授权 **M4-1 候选站只读** |
 | 4 执行协议与共享契约 | 通用任务受理、编排、执行组、结果整合及跨模块一致语义 | 先验持久受理、重试去重、可查分流；再把已合入的执行后人工验收（WP2，#215）纳入桌面主路径，并补终态结果可靠回传。运行中恢复按 WP7 分期 |
-| 5 内省、分层记忆与会话上下文 | 内省发现、记忆生命周期及每轮上下文选材 | 先走受控会话上下文切片，并行维持 INT 证据；分期见[特性计划](features/conversation-memory/PLAN.md) |
+| 5 内省、分层记忆与会话上下文；Agent 接入 | 内省发现、记忆生命周期及每轮上下文选材；**Agent 接入**（2026-11-25 起）：助手的发现、配置、诊断与对话式管理，Agent 准入，新 agent 类型（ACP、A2A、CLI 助手、跨机器节点）的接入与握手 | 先走受控会话上下文切片，并行维持 INT 证据；分期见[特性计划](features/conversation-memory/PLAN.md)。Agent 接入按 [决定 2026-11-25-agent-integration-to-line5](decisions/2026-11-25-agent-integration-to-line5.md) 承接；执行组调度与执行协议仍归第 4 线 |
 
 | 汇合场景 | 交付与独立复跑 |
 |---|---|
