@@ -1,6 +1,5 @@
 //! RT-ADLAUD（T-99）：关联修正审计上云 HTTP。用例见 docs/testing/CASES.md。
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -88,7 +87,7 @@ async fn rt_adlaud_01_append_and_list_roundtrip() {
         .await;
     assert_eq!(s, 200, "{v}");
     assert!(
-        v["audit"]["id"].as_str().unwrap_or_default().len() > 0,
+        !v["audit"]["id"].as_str().unwrap_or_default().is_empty(),
         "{v}"
     );
     assert_eq!(v["audit"]["task_id"], "TASK-AUD-A", "{v}");
