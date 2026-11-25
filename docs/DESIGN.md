@@ -93,7 +93,7 @@ flowchart TB
 | 执行引擎 | 编排、执行组、agent 适配、节点、质检返工、结果整合 | Orchestrator、注册表、`crates/agents`、`crates/node`、Composer | 本文第 6–8 节 |
 | 工业业务能力 | 案例、方案版本、审批与动作记录（MOM 是权威来源）；运营投影；统一世界访问 | `crates/runtime/src/mom/`、`crates/server/src/mom*.rs` | [mom/DESIGN.md](mom/DESIGN.md)、[mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) |
 | 世界 | 仿真工厂；生产系统 | `crates/des`、`crates/des-mcp`；生产侧未接 | [mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md) |
-| 横切 · 第 5 线 | 业务内省、分层记忆及会话上下文选材 | 内省已有运行实现；分层记忆与注入在设计中 | [分层记忆特性档案](features/conversation-memory/README.md)、[业务内省](memory/INTROSPECTION_PLAN.md) |
+| 横切 · 第 5 线 | 业务内省、分层记忆及会话上下文选材；Agent 接入（发现、配置、诊断、准入、新 agent 类型接入） | 内省已有运行实现；分层记忆与注入在设计中 | [分层记忆特性档案](features/conversation-memory/README.md)、[业务内省](memory/INTROSPECTION_PLAN.md) |
 | 其他横切产品特性 | 见 0.3 节 | 见 0.3 节 | 见 0.3 节 |
 | 工程治理（不是产品特性） | 围栏、CI 门禁、夜间评审与修复 | `tools/ci/`、`.github/` | [fencing/README.md](fencing/README.md)、[CI_GATES.md](CI_GATES.md)、`REVIEW.md`、`FIX.md` |
 
@@ -113,8 +113,8 @@ flowchart TB
 | 任务拆分与模板并行 | 执行引擎 | 本文第 9.6 节；[fencing/WP4_IMPLEMENTATION_PLAN.md](fencing/WP4_IMPLEMENTATION_PLAN.md) | [PLAN.md](PLAN.md) M4.3、INTEGRATION_PLAN WP4 | `runtime/src/template.rs`、`builtin_templates.rs`、`orchestrator.rs`、`store.rs` | [2026-11-22-wp4-task-split-template-plan](decisions/2026-11-22-wp4-task-split-template-plan.md) | **已实现（WP4）**：内置模板接入编排；RT-TPL-11～16 / E2E-TPL；不做动态 DAG / M4.4 |
 | 研究报告与网页搜索 | 执行引擎 | 本文第 9.5 节；[tools/websearch/DESIGN.md](../tools/websearch/DESIGN.md) | [PLAN.md](PLAN.md) M2、M3 | `agents/src/report.rs`、`tools/websearch/` | — | 已实现 |
 | MCP 能力目录与 General Harness | 执行引擎 | [mcp/DESIGN.md](mcp/DESIGN.md) | [mcp/PLAN.md](mcp/PLAN.md) | `agents/src/mcp.rs`、`agents/src/tools.rs` | — | 已实现首期（`GET /api/capabilities`） |
-| 助手接入与管理（对话式） | 横切 | 无独立设计文档；目前在 [PLAN.md](PLAN.md)「AG」一节 | 同左 | `runtime/src/agent_catalog.rs`、`agent_config.rs`、`agent_diagnose.rs`、`agent_chat.rs` | 1–14、21、44、59（AG.4）、60 | 已实现；对话里管理助手默认关闭 |
-| Agent 准入 | 横切 | 无独立设计文档；本文末尾附节 + 第 10.3、10.4 节 | — | `runtime/src/admission.rs`、`server/src/admission_api.rs` | — | 已实现；调用者身份认证未做 |
+| 助手接入与管理（对话式） | 横切 · 第 5 线 | 无独立设计文档；目前在 [PLAN.md](PLAN.md)「AG」一节 | 同左 | `runtime/src/agent_catalog.rs`、`agent_config.rs`、`agent_diagnose.rs`、`agent_chat.rs` | 1–14、21、44、59（AG.4）、60 | 已实现；对话里管理助手默认关闭 |
+| Agent 准入 | 横切 · 第 5 线 | 无独立设计文档；本文末尾附节 + 第 10.3、10.4 节 | — | `runtime/src/admission.rs`、`server/src/admission_api.rs` | — | 已实现；调用者身份认证未做 |
 | 外发脱敏（DLP） | 横切 | [dlp/CONTRACT.md](dlp/CONTRACT.md)、[mcp/DLP_EGRESS_DEPLOYMENT.md](mcp/DLP_EGRESS_DEPLOYMENT.md) | [PLAN.md](PLAN.md)「DLP 外发脱敏」、[mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md](mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md) | `tools/dlp-egress/`、`agents/src/egress.rs` | 12、15–17、41、42（R-20261118-M2）、DECISIONS 第八节 D-n | 部分实现：只检查登记过的出口 |
 | 业务内省 | 横切 · 第 5 线 | [memory/INTROSPECTION_PLAN.md](memory/INTROSPECTION_PLAN.md) | [PLAN.md](PLAN.md)「INT」、[INTROSPECTION_PLAYBOOK.md](memory/INTROSPECTION_PLAYBOOK.md) | `runtime/src/introspect/`、`server/src/introspection_api.rs` | 45、49、51–55、64、65 | 已实现 S0–S8；默认关闭 |
 | 分层记忆与会话上下文（含个人画像、风格和组织 taste） | 横切 · 第 5 线 | [conversation-memory 特性档案](features/conversation-memory/README.md)（服务宪章 §3 第 4 条及 §5） | [第 5 线计划](features/conversation-memory/PLAN.md) | `runtime/src/session_materials.rs`（会话资料注入）、`conversation.rs`（挂接点）；个人记忆存于 `desktop_memories` | 45–48、50；[五线分工](decisions/2026-11-22-five-workstreams.md)；[5.1 验收与默认开](decisions/2026-11-23-convmem-s1-acceptance-and-default-on.md)；[5.2a 生命周期与隔离](decisions/2026-11-23-convmem-s2a-lifecycle-and-isolation.md)；[5.2b 风格生效闸门](decisions/2026-11-23-convmem-s2b-style-gate.md) | 部分实现：5.1 回答路径会话资料注入已实现并默认开启（REQ-01）；5.2a 个人记忆保存、撤回与按说话人隔离 + 5.2b 预览→确认→下一会话生效闸门（preference/style，独立风格卡）已实现（REQ-02）；共享知识与内省接入（REQ-03/04）未开始 |
