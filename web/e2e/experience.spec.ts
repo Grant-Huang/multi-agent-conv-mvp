@@ -8,6 +8,13 @@ import { SMT03_TASK_ID } from '../src/desktop/mockData';
 
 test.beforeEach(async ({ page }) => {
   await page.request.post('/api/desktop/v1/snapshot/fixture/reset');
+  // 前置条件：SMT-03 在服务端没有其他会话留下的草稿。草稿上云（T-86）后，其他用例在
+  // 别的浏览器会话写的草稿会留在服务端；有旧草稿时新输入可能被覆盖（间歇，见
+  // INTENT-2026-008 / 约束 UX-01-I7，欠账跟踪）。这里只检验本旅程自己的约束。
+  const url = `/api/desktop/v1/drafts/task/${SMT03_TASK_ID}`;
+  const cur = await (await page.request.get(url)).json();
+  const v = cur?.draft?.version ?? 0;
+  if (v > 0) await page.request.delete(`${url}?sent_version=${v}`);
 });
 
 function probe(page: Page) {
