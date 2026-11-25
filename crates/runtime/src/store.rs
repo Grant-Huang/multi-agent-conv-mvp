@@ -81,9 +81,9 @@ pub struct DesktopRequestRecord {
 pub enum DesktopAcceptOutcome {
     /// 首次受理并写入消息
     Created(DesktopRequestRecord),
-    /// 同操作 ID + 同正文：回放原记录，不二次派发
+    /// 同操作 ID + 同完整载荷：回放原记录，不二次派发
     Replay(DesktopRequestRecord),
-    /// 同操作 ID + 改正文
+    /// 同操作 ID + 不同载荷
     Conflict {
         request_id: String,
         message_id: String,
@@ -189,6 +189,16 @@ pub struct DesktopDraftRow {
     pub version: i64,
     #[serde(skip_serializing)]
     pub updated_at: String,
+}
+
+/// AI Desktop T-96：助理消息条目（read 为投影：read_ids 表中存在即已读）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DesktopAssistantMessageRow {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub read: bool,
 }
 
 /// 草稿保存参数（避免长参数列表）
@@ -568,6 +578,17 @@ CREATE TABLE IF NOT EXISTS desktop_drafts (
     version INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (user_id, kind, scope_id)
+);
+-- AI Desktop T-96：助理消息（内容静态，新库播种）与已读集合（T-73 夹具 → SQLite）
+CREATE TABLE IF NOT EXISTS desktop_assistant_messages (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS desktop_assistant_read_ids (
+    id TEXT PRIMARY KEY,
+    updated_at TEXT NOT NULL DEFAULT ''
 );
 "#;
 
@@ -1076,33 +1097,39 @@ impl Store {
         }
         let conn = self.write();
         let tx = conn.unchecked_transaction()?;
-        let existing: Option<(String, String, String, i64, String)> = tx
+        let existing: Option<DesktopRequestRecord> = tx
             .query_row(
-                "SELECT request_id, message_id, text, dispatch_count, status
+                "SELECT request_id, message_id, conversation_id, client_operation_id,
+                        text, scope, task_id, status, dispatch_count
                  FROM desktop_client_operations WHERE client_operation_id = ?1",
                 params![client_operation_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                |r| {
+                    Ok(DesktopRequestRecord {
+                        request_id: r.get(0)?,
+                        message_id: r.get(1)?,
+                        conversation_id: r.get(2)?,
+                        client_operation_id: r.get(3)?,
+                        text: r.get(4)?,
+                        scope: r.get(5)?,
+                        task_id: r.get(6)?,
+                        status: r.get(7)?,
+                        dispatch_count: r.get::<_, i64>(8)? as u32,
+                    })
+                },
             )
             .optional()?;
-        if let Some((request_id, message_id, committed, dispatch_count, status)) = existing {
-            if committed == text {
-                tx.commit()?;
-                return Ok(DesktopAcceptOutcome::Replay(DesktopRequestRecord {
-                    request_id,
-                    message_id,
-                    conversation_id: conversation_id.into(),
-                    client_operation_id: client_operation_id.into(),
-                    text: committed,
-                    scope: scope.into(),
-                    task_id: task_id.map(String::from),
-                    status,
-                    dispatch_count: dispatch_count as u32,
-                }));
-            }
+        if let Some(record) = existing {
+            let same_payload = record.conversation_id == conversation_id
+                && record.text == text
+                && record.scope == scope
+                && record.task_id.as_deref() == task_id;
             tx.commit()?;
+            if same_payload {
+                return Ok(DesktopAcceptOutcome::Replay(record));
+            }
             return Ok(DesktopAcceptOutcome::Conflict {
-                request_id,
-                message_id,
+                request_id: record.request_id,
+                message_id: record.message_id,
             });
         }
         let request_id = an_core::new_id("dreq");
@@ -2866,6 +2893,116 @@ impl Store {
             version: r.get(5)?,
             updated_at: r.get(6)?,
         })
+    }
+
+    /// AI Desktop T-96：助理消息种子（内容静态）。空表时播种；已读状态存 read_ids 表。
+    fn desktop_assistant_seed_rows() -> [(&'static str, &'static str, &'static str, &'static str); 3]
+    {
+        [
+            (
+                "asst-msg-1",
+                "ordinary",
+                "建议关注 · 证据缺口",
+                "SMT-03 质量报告仍缺一处复核；可稍后处理。",
+            ),
+            (
+                "asst-msg-2",
+                "urgent",
+                "紧急 · 产线联锁提醒",
+                "Line-A 安全联锁触发，请优先确认。",
+            ),
+            (
+                "asst-msg-3",
+                "digest",
+                "今日摘要",
+                "2 项后台工作推进中；普通建议已合并。",
+            ),
+        ]
+    }
+
+    fn ensure_desktop_assistant_seed_conn(conn: &Connection) -> Result<()> {
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM desktop_assistant_messages", [], |r| {
+                r.get(0)
+            })?;
+        if count == 0 {
+            for (id, kind, title, body) in Self::desktop_assistant_seed_rows() {
+                conn.execute(
+                    "INSERT OR IGNORE INTO desktop_assistant_messages (id, kind, title, body)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![id, kind, title, body],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn map_desktop_assistant_message(r: &Row<'_>) -> rusqlite::Result<DesktopAssistantMessageRow> {
+        let read: i64 = r.get(4)?;
+        Ok(DesktopAssistantMessageRow {
+            id: r.get(0)?,
+            kind: r.get(1)?,
+            title: r.get(2)?,
+            body: r.get(3)?,
+            read: read != 0,
+        })
+    }
+
+    /// 列表（含 read 投影）；空表时播种种子（每库一次）。
+    pub fn list_desktop_assistant_messages(&self) -> Result<Vec<DesktopAssistantMessageRow>> {
+        {
+            let conn = self.write();
+            Self::ensure_desktop_assistant_seed_conn(&conn)?;
+        }
+        let conn = self.read();
+        let mut st = conn.prepare(
+            "SELECT m.id, m.kind, m.title, m.body, (r.id IS NOT NULL)
+             FROM desktop_assistant_messages m
+             LEFT JOIN desktop_assistant_read_ids r ON r.id = m.id
+             ORDER BY m.id",
+        )?;
+        let rows = st.query_map([], Self::map_desktop_assistant_message)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// 已读集合（排序后返回）。
+    pub fn list_desktop_assistant_read_ids(&self) -> Result<Vec<String>> {
+        let conn = self.read();
+        let mut st = conn.prepare("SELECT id FROM desktop_assistant_read_ids ORDER BY id")?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// 标记已读（幂等）：返回 (全部已读 id 排序, 本次新标记数)。未知 id 亦入集合（忠实于 T-73 语义）。
+    pub fn mark_desktop_assistant_reads(&self, ids: &[String]) -> Result<(Vec<String>, u32)> {
+        let conn = self.write();
+        let ts = now();
+        let mut newly = 0u32;
+        {
+            let mut st = conn.prepare(
+                "INSERT OR IGNORE INTO desktop_assistant_read_ids (id, updated_at) VALUES (?1, ?2)",
+            )?;
+            for id in ids {
+                let n = st.execute(params![id, ts])?;
+                if n > 0 {
+                    newly += 1;
+                }
+            }
+        }
+        let mut read_ids: Vec<String> = {
+            let mut st = conn.prepare("SELECT id FROM desktop_assistant_read_ids ORDER BY id")?;
+            let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        read_ids.sort();
+        Ok((read_ids, newly))
+    }
+
+    /// 重置：清空已读集合（消息内容静态，重置即全部回到未读）。
+    pub fn reset_desktop_assistant_reads(&self) -> Result<()> {
+        let conn = self.write();
+        conn.execute("DELETE FROM desktop_assistant_read_ids", [])?;
+        Ok(())
     }
 
     /// 按时间顺序返回消息；`last` 为 Some(n) 时只返回最近 n 条

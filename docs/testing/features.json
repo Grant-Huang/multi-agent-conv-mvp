@@ -818,7 +818,11 @@
       "docs/ai-desktop/MOCK_REGISTRY.md",
       "docs/decisions/2026-11-21-ai-desktop-c2-gateway-attn.md",
       "docs/decisions/2026-11-21-ai-desktop-d-voice-handoff.md",
-      "web/e2e/experience.spec.ts"
+      "web/e2e/experience.spec.ts",
+      "crates/runtime/tests/desktop_accept_payload.rs",
+      "crates/server/tests/desktop_accept_payload.rs",
+      "docs/testing/evidence/r-20261121-m5.md",
+      "docs/decisions/2026-11-24-desktop-accept-payload.md"
     ],
     "coverage": "browser",
     "cases": [
@@ -866,6 +870,10 @@
       "RT-ADACCEPT-02",
       "RT-ADACCEPT-03",
       "RT-ADACCEPT-04",
+      "RT-ADACCEPT-05",
+      "RT-ADACCEPT-06",
+      "RT-ADACCEPT-07",
+      "RT-ADACCEPT-08",
       "RT-ADREPLAY-01",
       "RT-ADREPLAY-02",
       "RT-ADREPLAY-03",
@@ -901,6 +909,8 @@
       "RT-ADXR-02",
       "RT-ADXR-03",
       "RT-ADXR-04",
+      "RT-ADXR-05",
+      "RT-ADXR-06",
       "RT-ADACL-01",
       "RT-ADACL-02",
       "RT-ADACL-03",

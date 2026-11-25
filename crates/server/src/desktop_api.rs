@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use std::convert::Infallible;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use an_core::{
@@ -341,7 +341,7 @@ async fn create_request(
             StatusCode::CONFLICT,
             Json(json!({
                 "code": "operation_conflict",
-                "message": "相同 client_operation_id 已绑定不同正文",
+                "message": "相同 client_operation_id 已绑定不同请求载荷",
                 "retryable": false,
                 "request_id": request_id,
                 "message_id": message_id
@@ -1280,94 +1280,59 @@ async fn clear_draft(
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct AssistantMessageSeed {
-    id: String,
-    kind: String,
-    title: String,
-    body: String,
-}
-
-#[derive(Debug, Default)]
-struct AssistantReadState {
-    messages: Vec<AssistantMessageSeed>,
-    read_ids: HashSet<String>,
-}
-
-fn seed_assistant_messages() -> Vec<AssistantMessageSeed> {
-    vec![
-        AssistantMessageSeed {
-            id: "asst-msg-1".into(),
-            kind: "ordinary".into(),
-            title: "建议关注 · 证据缺口".into(),
-            body: "SMT-03 质量报告仍缺一处复核；可稍后处理。".into(),
-        },
-        AssistantMessageSeed {
-            id: "asst-msg-2".into(),
-            kind: "urgent".into(),
-            title: "紧急 · 产线联锁提醒".into(),
-            body: "Line-A 安全联锁触发，请优先确认。".into(),
-        },
-        AssistantMessageSeed {
-            id: "asst-msg-3".into(),
-            kind: "digest".into(),
-            title: "今日摘要".into(),
-            body: "2 项后台工作推进中；普通建议已合并。".into(),
-        },
-    ]
-}
-
-fn assistant_read_fixture() -> &'static Mutex<AssistantReadState> {
-    static STORE: OnceLock<Mutex<AssistantReadState>> = OnceLock::new();
-    STORE.get_or_init(|| {
-        Mutex::new(AssistantReadState {
-            messages: seed_assistant_messages(),
-            read_ids: HashSet::new(),
-        })
-    })
-}
-
 #[derive(Debug, Deserialize)]
 struct MarkAssistantReadBody {
     message_ids: Vec<String>,
 }
 
-async fn list_assistant_messages() -> Response {
-    let guard = assistant_read_fixture()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let items: Vec<_> = guard
-        .messages
-        .iter()
-        .map(|m| {
-            let read = guard.read_ids.contains(&m.id);
-            json!({
-                "id": m.id,
-                "kind": m.kind,
-                "title": m.title,
-                "body": m.body,
-                "read": read,
-            })
-        })
-        .collect();
-    let unread_count = items.iter().filter(|i| i["read"] == false).count();
+async fn list_assistant_messages(State(rt): State<AppState>) -> Response {
+    match rt.store.list_desktop_assistant_messages() {
+        Ok(rows) => {
+            let items: Vec<_> = rows
+                .iter()
+                .map(|m| {
+                    json!({
+                        "id": m.id,
+                        "kind": m.kind,
+                        "title": m.title,
+                        "body": m.body,
+                        "read": m.read,
+                    })
+                })
+                .collect();
+            let unread_count = items.iter().filter(|i| i["read"] == false).count();
+            (
+                StatusCode::OK,
+                Json(json!({ "items": items, "unread_count": unread_count })),
+            )
+                .into_response()
+        }
+        Err(e) => assistant_internal_err(e),
+    }
+}
+
+fn assistant_internal_err(e: anyhow::Error) -> Response {
     (
-        StatusCode::OK,
-        Json(json!({ "items": items, "unread_count": unread_count })),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
     )
         .into_response()
 }
 
-async fn get_assistant_reads() -> Response {
-    let guard = assistant_read_fixture()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let mut read_ids: Vec<_> = guard.read_ids.iter().cloned().collect();
-    read_ids.sort();
-    (StatusCode::OK, Json(json!({ "read_ids": read_ids }))).into_response()
+async fn get_assistant_reads(State(rt): State<AppState>) -> Response {
+    match rt.store.list_desktop_assistant_read_ids() {
+        Ok(mut read_ids) => {
+            read_ids.sort();
+            (StatusCode::OK, Json(json!({ "read_ids": read_ids }))).into_response()
+        }
+        Err(e) => assistant_internal_err(e),
+    }
 }
 
-async fn mark_assistant_reads(Json(body): Json<MarkAssistantReadBody>) -> Response {
+async fn mark_assistant_reads(
+    State(rt): State<AppState>,
+    Json(body): Json<MarkAssistantReadBody>,
+) -> Response {
     let ids: Vec<String> = body
         .message_ids
         .into_iter()
@@ -1385,34 +1350,24 @@ async fn mark_assistant_reads(Json(body): Json<MarkAssistantReadBody>) -> Respon
         )
             .into_response();
     }
-    let mut guard = assistant_read_fixture()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let mut newly_marked = 0u32;
-    for id in ids {
-        if guard.read_ids.insert(id) {
-            newly_marked += 1;
-        }
+    match rt.store.mark_desktop_assistant_reads(&ids) {
+        Ok((read_ids, newly_marked)) => (
+            StatusCode::OK,
+            Json(json!({
+                "read_ids": read_ids,
+                "newly_marked": newly_marked,
+            })),
+        )
+            .into_response(),
+        Err(e) => assistant_internal_err(e),
     }
-    let mut read_ids: Vec<_> = guard.read_ids.iter().cloned().collect();
-    read_ids.sort();
-    (
-        StatusCode::OK,
-        Json(json!({
-            "read_ids": read_ids,
-            "newly_marked": newly_marked,
-        })),
-    )
-        .into_response()
 }
 
-async fn reset_assistant_read_fixture() -> Response {
-    let mut guard = assistant_read_fixture()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    guard.messages = seed_assistant_messages();
-    guard.read_ids.clear();
-    (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response()
+async fn reset_assistant_read_fixture(State(rt): State<AppState>) -> Response {
+    match rt.store.reset_desktop_assistant_reads() {
+        Ok(()) => (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response(),
+        Err(e) => assistant_internal_err(e),
+    }
 }
 
 #[derive(Debug, Deserialize)]

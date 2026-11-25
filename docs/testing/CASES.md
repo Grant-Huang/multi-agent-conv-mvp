@@ -679,6 +679,10 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADACCEPT-02 | ai-desktop | 已成功受理一次 | 同 `client_operation_id` + 同正文再 POST | **202**；`request_id`/`message_id` 不变；`dispatch_count` 仍为 1；用户消息仍一条 |
 | RT-ADACCEPT-03 | ai-desktop | 已成功受理一次 | 同 `client_operation_id`、改正文再 POST | **409** `operation_conflict`；原消息与 `dispatch_count` 不变 |
 | RT-ADACCEPT-04 | ai-desktop | POST 已 202（模拟丢回执） | `GET /api/desktop/v1/requests/{request_id}` | **200**；可读 `status=accepted` 与关联 `message_id` |
+| RT-ADACCEPT-05 | ai-desktop | 已受理完整载荷 | 单独改变会话、scope、task_id 或正文 | Conflict；原记录不变，另一会话无消息 |
+| RT-ADACCEPT-06 | ai-desktop | 两会话、8 个同步并发线程 | 同操作键提交相同/不同载荷 | 仅一个 Created；同载荷 Replay、异载荷 Conflict；总用户消息一条 |
+| RT-ADACCEPT-07 | ai-desktop | 同库关闭后重开 | 相同载荷及跨会话重试 | 从库重放全部字段；跨会话 Conflict；保留正文 trim 约定 |
+| RT-ADACCEPT-08 | ai-desktop | 真实 HTTP 已受理 | 改会话/scope/task_id，再同载荷重试 | 异载荷 409 且不泄露正文；同载荷 202 重放；不重复写消息 |
 | RT-ADREPLAY-01 | ai-desktop | 会话已有落库事件 | `GET /api/desktop/v1/events?conversation_id=&after=` 再发 live | **200** SSE：先回放缺口，再续接 live；含 `event_id`/`cursor` |
 | RT-ADREPLAY-02 | ai-desktop | 任务权威状态已 COMPLETED；流含较早 status 事件 | 订阅全量回放；再投递迟到 Running 事件 | 流内 `event_id` 去重；`GET` 任务快照 status/`updated_at` 不回退 |
 | RT-ADREPLAY-03 | ai-desktop | 会话存在 | `after` 指向不存在/已淘汰游标 | **410** `cursor_expired`；不静默回传全量 |
@@ -704,6 +708,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADXR-02 | ai-desktop | reset 后 | `POST .../assistant/messages/read` 带 `["asst-msg-1"]` | **200**；`newly_marked=1`；GET 列表该条 `read=true`；`unread_count` 减 1 |
 | RT-ADXR-03 | ai-desktop | 已标 asst-msg-1 | 同 ID 再 POST read | **200**；`newly_marked=0`；`read_ids` 不变 |
 | RT-ADXR-04 | ai-desktop | harness | `POST .../read` 空 `message_ids` | **400** `invalid_request` |
+| RT-ADXR-05 | ai-desktop | 标记 asst-msg-1 已读后，同库重开服务（新进程） | `GET /assistant/messages` 与 `GET .../read` | 已读状态保留（T-96：服务端权威，重启不丢） |
+| RT-ADXR-06 | ai-desktop | 库 A 标记 asst-msg-1 已读；库 B（全新库） | `GET` 库 B 列表与未读数 | 库 B 保持种子态：asst-msg-1 未读、未读数不变（进程级状态不得跨库泄漏） |
 
 ### AI Desktop T-82 首页快照（运行时 / HTTP）
 
