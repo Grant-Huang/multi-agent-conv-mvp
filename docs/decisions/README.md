@@ -102,6 +102,7 @@
 | [2026-11-23-wa-m4-write-entry-gates.md](2026-11-23-wa-m4-write-entry-gates.md) | M4 生产写前置准入；本卡只方案、保持 WRITE_DISABLED | 用户确认（纠正范围） | 有效 |
 | [2026-11-21-wa-m2-1-green-service-layer.md](2026-11-21-wa-m2-1-green-service-layer.md) | WA M2 Green 服务层优先 | 用户确认 | 有效 |
 | [2026-11-22-c2-m2-minimal-contracts.md](2026-11-22-c2-m2-minimal-contracts.md) | C2/M2 最小共享契约（批准/取消/追踪） | 用户确认 | 有效 |
+| [2026-11-25-ux01-intent-fixes-and-charter-risk.md](2026-11-25-ux01-intent-fixes-and-charter-risk.md) | UX-01 体验偏离派卡 UXFIX-A～D；宪章纳入 L3 风险策略；先校准守护者 | 用户确认 | 有效 |
 | [2026-11-25-charter-v1-4-experience-growth.md](2026-11-25-charter-v1-4-experience-growth.md) | 宪章 v1.4：通用组织桌面定位；体验反目标、体验原则、成长与演进原则；条款编号；原则 10 改写为 CH-G2 | 用户确认 | 有效 |
 | [2026-11-24-review-h1-h4-fix-plan.md](2026-11-24-review-h1-h4-fix-plan.md) | 审查 H1～H5 修复方案：服务端批准登记、汇合只建一次、事件去重与夹具开关（分三张卡交各工作线） | 用户确认 | 有效 |
 | [2026-11-24-trace-id-minimal-scope.md](2026-11-24-trace-id-minimal-scope.md) | trace_id 先做最小版：受理时生成、写路径日志必带；持久化推迟到 M4 写入前 | 用户确认 | 有效 |

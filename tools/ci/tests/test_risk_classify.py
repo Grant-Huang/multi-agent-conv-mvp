@@ -129,6 +129,17 @@ def test_real_policy_review_rules_need_owner_but_reports_stay_l0():
     assert rc.classify_path("docs/review/findings.jsonl", rules, default).level == "L0"
 
 
+def test_real_policy_charter_needs_owner():
+    # 产品宪章是文档体系最上层（D0），改它等于改所有产品判断的依据，必须由负责人审批（L3），
+    # 不能因为匹配 **/*.md 而被当成普通文档（L0）。体验地图与产品意图审查报告仍是普通文档。
+    # 依据：docs/decisions/2026-11-25-ux01-intent-fixes-and-charter-risk.md
+    policy = rc.load_policy(REAL_POLICY)
+    rules, default = policy["rules"], policy["default_level"]
+    assert rc.classify_path("docs/PRODUCT.md", rules, default).level == "L3"
+    report = "docs/review/product-intent/2026-11-25-ux01-baseline.md"
+    assert rc.classify_path(report, rules, default).level == "L0"
+
+
 def test_end_to_end_on_real_repo(repo):
     # 在真实 git 仓库中运行 CLI：新增一个 store.rs 并写入建表语句。
     (repo / "store.rs").write_text("CREATE TABLE t (id INT);\n", encoding="utf-8")
