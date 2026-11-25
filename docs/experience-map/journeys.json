@@ -337,5 +337,79 @@
       "INTENT-2026-022",
       "INTENT-2026-023"
     ]
+  },
+  {
+    "id": "UX-06",
+    "title": "从工作中直达对应设置，改完回到原处",
+    "document": "docs/experience-map/journeys/UX-06.md",
+    "persona": "docs/experience-map/personas/P-SUP-NEW.md",
+    "charter": [
+      "CH-U2",
+      "CH-U4",
+      "CH-U5"
+    ],
+    "features": [
+      "ai-desktop"
+    ],
+    "invariants": [
+      {
+        "id": "UX-06-I1",
+        "text": "场景内设置捷径直达对应分类，而不是设置首页",
+        "charter": "CH-U4",
+        "case": "E2E-UX06"
+      },
+      {
+        "id": "UX-06-I2",
+        "text": "保存后改动在桌面各处生效",
+        "charter": "CH-U4",
+        "case": "E2E-UX06"
+      },
+      {
+        "id": "UX-06-I3",
+        "text": "关闭设置回到原工作区，任务与草稿不变",
+        "charter": "CH-U2",
+        "case": "E2E-UX06"
+      },
+      {
+        "id": "UX-06-I4",
+        "text": "从分类进入子层（记忆），返回回到原分类",
+        "charter": "CH-U2",
+        "case": "E2E-UX06"
+      },
+      {
+        "id": "UX-06-I5",
+        "text": "从捷径进入设置后，一次返回即回到原工作",
+        "charter": "CH-U2",
+        "debt": true
+      },
+      {
+        "id": "UX-06-I6",
+        "text": "从提醒可直达对应设置（通知与主动性）",
+        "charter": "CH-U4",
+        "debt": true
+      },
+      {
+        "id": "UX-06-I7",
+        "text": "设置用用户语言，不显示内部概念与测试控件",
+        "charter": "CH-U5",
+        "debt": true
+      }
+    ],
+    "budget": {
+      "steps_max": 6,
+      "full_page_navigations_max": 0
+    },
+    "baseline": {
+      "date": "2026-11-25",
+      "steps": 5,
+      "full_page_navigations": 0
+    },
+    "known_deviations": [
+      "INTENT-2026-003",
+      "INTENT-2026-010",
+      "INTENT-2026-012",
+      "INTENT-2026-024",
+      "INTENT-2026-025"
+    ]
   }
 ]

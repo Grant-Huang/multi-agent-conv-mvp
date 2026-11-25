@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 层级 | D2（特性设计层），服务宪章 [PRODUCT.md](../PRODUCT.md) 第 5.2 节体验原则 CH-U1～U6 |
+| 层级 | D2（特性设计层），服务宪章 [PRODUCT.md](../PRODUCT.md) 第 5.2 节体验原则 CH-U1～U7 |
 | 状态 | 试点（2026-11-25 起，先做 UX-01） |
 | 机器可读 | [journeys.json](journeys.json)，由 `cd web && npm run test:map` 校验（`web/verification/check-experience.mjs`） |
 | 审查报告 | [docs/review/product-intent/](../review/product-intent/) |
@@ -60,7 +60,7 @@
 | UX-03 | 一句话委派复杂任务，后台运行时继续做别的事 | CH-U2、U3、P8 | 已建（2026-11-25 基线） |
 | UX-04 | 从对话进入专注模式再退回 | CH-U2、U5 | 已建（2026-11-25 基线） |
 | UX-05 | 主动提醒 → 稍后处理 → 回来处理 | CH-U3 | 已建（2026-11-25 基线） |
-| UX-06 | 从提醒或功能处直达对应设置，改完回原处 | CH-U4、U5 | 规划 |
+| UX-06 | 从提醒或功能处直达对应设置，改完回原处 | CH-U4、U5 | 已建（2026-11-25 基线） |
 | UX-07 | 运营频道案例卡批准并查看执行回执 | CH-P6、P7、P8 | 规划 |
 | UX-08 | 纠正 / 撤回一条个人记忆 | CH-G1、G2e | 规划 |
 | UX-09 | “只要结论”偏好下风险提示仍保留 | CH-G2c | 规划 |

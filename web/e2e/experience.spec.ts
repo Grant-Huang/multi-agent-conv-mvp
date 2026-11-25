@@ -183,6 +183,9 @@ test('E2E-UX04: 对话中委派的任务完成后，打开任务详情不影响�
 test('E2E-UX05: 提醒不抢输入焦点；稍后回到桌面可从“为你关注”直达任务，返回后提醒仍在', async ({ page }) => {
   const p = probe(page);
   const title = `建议：复核 SMT-03 证据 ${Date.now()}`;
+  // 前置条件：普通建议未被静音。E2E-ADATTN 会打开“静音普通建议”且不恢复，同一服务上先跑它时
+  // 本用例注入的普通提醒会被吞掉（测试间状态串扰，不是产品问题）。
+  await page.request.post('/api/desktop/v1/attention/mute', { data: { mute_ordinary: false } });
   await page.goto('/');
   const s1 = page.getByRole('textbox', { name: 'S1 输入' });
   await s1.fill('正在写的问题'); p.step();
@@ -209,4 +212,52 @@ test('E2E-UX05: 提醒不抢输入焦点；稍后回到桌面可从“为你关�
   await expect(watch).toBeVisible();
   // 处理过程中不发生整页跳转（只计 reload 之后）
   expect(p.snapshot().full_page_navigations - navBefore).toBe(0);
+});
+
+// 体验地图 UX-06（docs/experience-map/journeys/UX-06.md）：从工作中直达对应设置，改完回到原处。
+// 只断言当前成立的约束 UX-06-I1～I4；“一次返回即回原工作”（I5）、从提醒直达对应设置（I6）为欠账，
+// 见 2026-11-25 UX-06 基线审查。改过的助理名称在用例末尾恢复，避免影响其他用例。
+test('E2E-UX06: 工作区“调整助理”直达助理设置，改名生效，记忆子层返回原分类，关闭后回到原工作且草稿不变', async ({ page }) => {
+  const p = probe(page);
+  const draft = '调查草稿：对比首件记录';
+  const newName = `助理${Date.now() % 100000}`;
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click(); p.step();
+  const input = page.getByRole('textbox', { name: '工作区输入' });
+  await input.fill(draft); p.step();
+
+  // UX-06-I1（CH-U4）：场景内捷径直达对应分类，而不是设置首页
+  await page.getByRole('button', { name: '调整助理' }).click(); p.step();
+  await expect(page.getByTestId('settings-crumb')).toContainText('我的 AI 助理');
+  const nameBox = page.getByTestId('profile-name');
+  const original = await nameBox.inputValue();
+
+  // UX-06-I2（CH-U4）：保存后改动在桌面各处生效
+  await nameBox.fill(newName); p.step();
+  await page.getByTestId('profile-save').click(); p.step();
+
+  // UX-06-I4（CH-U2）：从分类进入子层（记忆），返回回到原分类
+  await page.getByRole('button', { name: '查看记忆' }).click(); p.step();
+  await page.getByTestId('memory-back').click(); p.step();
+  await expect(page.getByTestId('settings-crumb')).toContainText('我的 AI 助理');
+
+  // UX-06-I3（CH-U2）：关闭设置回到原工作区，任务与草稿不变（当前需要两次返回，见 I5 欠账）
+  await page.keyboard.press('Escape'); p.step();
+  await page.keyboard.press('Escape'); p.step();
+  await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await expect(input).toHaveValue(draft);
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click(); p.step();
+  await expect(page.getByTestId('home-assistant-name')).toContainText(newName);
+  expect(p.snapshot().full_page_navigations).toBe(0);
+
+  // 清理：恢复原名称
+  await page.getByTestId('card-smt-03').click();
+  await page.getByRole('button', { name: '调整助理' }).click();
+  await page.getByTestId('profile-name').fill(original);
+  await page.getByTestId('profile-save').click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await expect(page.getByTestId('home-assistant-name')).toContainText(original);
 });
