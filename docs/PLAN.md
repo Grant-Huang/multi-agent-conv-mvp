@@ -987,6 +987,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **T-88 首页与旧壳整治**（2026-11-23，主线 #1:1）：拆旧顶栏页签/右侧四-tab/agent 诊断列表（A1 欠账）；助手管理与发现卡迁设置-连接与能力；首页去配置链接行/横幅/文案；测试注入改 API；RT-ADHOME-01；证据 `testing/evidence/ai-desktop-t88-home-shell-cleanup.md`
 - [x] **T-95 夹具门控与事件去重**（2026-11-24，主线 #1:1，FIX-C/H4）：Resume 夹具事件改 new_id；`write_events` 改 INSERT OR IGNORE（E2，重复编号打 W_ 日志）；`desktop.test_fixtures` 门控夹具路由；RT-FIXC-01/02；证据 `testing/evidence/ai-desktop-t95-fixture-gate.md`
 - [x] **T-96 助理消息已读持久化**（2026-11-24，主线 #1:1）：T-73 夹具→`desktop_assistant_messages`/`desktop_assistant_read_ids` 两表（新库播种）；RT-ADXR-05 同库重启持久 / 06 库间隔离；证据 `testing/evidence/ai-desktop-t96-assistant-reads-persist.md`
+- [x] **T-99 关联审计上云**（2026-11-25，主线 #1:1）：TaskLinkAudit localStorage→`desktop_task_link_audits` 表 + `GET/POST /tasks/{id}/link-audits`；RT-ADLAUD-01～04；证据 `testing/evidence/ai-desktop-t99-link-audit-cloud.md`
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`

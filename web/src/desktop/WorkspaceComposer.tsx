@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   appendTaskLinkAudit,
   clearDraftAfterSend,
@@ -10,6 +10,7 @@ import {
   saveDraft,
   scheduleDraftSync,
   type DraftScope,
+  type TaskLinkAudit,
 } from "./draftStore";
 import { ScopeControls } from "./ScopeControls";
 
@@ -51,7 +52,8 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
   const [continueTaskId, setContinueTaskId] = useState<string | null>(taskId);
   const [sending, setSending] = useState(false);
   const [linked, setLinked] = useState(true);
-  const [audits, setAudits] = useState(() => listTaskLinkAudits());
+  const [audits, setAudits] = useState<TaskLinkAudit[]>([]);
+  const [auditErr, setAuditErr] = useState<string | null>(null);
   const [late, setLate] = useState<string[]>([]);
   const [localReply, setLocalReply] = useState<string | null>(null);
   const composingRef = useRef(false);
@@ -64,6 +66,15 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
     };
   }, []);
 
+  const loadAudits = useCallback(
+    (tid: string) => {
+      listTaskLinkAudits(tid)
+        .then(setAudits)
+        .catch((e) => setAuditErr(String(e)));
+    },
+    [],
+  );
+
   useEffect(() => {
     const d = loadDraft(key);
     setText(d.text);
@@ -72,6 +83,7 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
     setContinueTaskId(d.continueTaskId ?? taskId);
     setLocalReply(null);
     setLate(loadLate(taskId));
+    loadAudits(taskId);
     // T-84：以服务端草稿为准刷新（跨设备/清存储后不丢）；失败保留本地缓存
     void loadDraftRemote(key).then((remote) => {
       if (!aliveRef.current || taskRef.current !== taskId) return;
@@ -129,18 +141,22 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
     }
   };
 
+  const recordAudit = (action: TaskLinkAudit["action"]) => {
+    appendTaskLinkAudit(taskId, { source: "workspace", action })
+      .then(() => loadAudits(taskId))
+      .catch((e) => setAuditErr(String(e)));
+  };
+
   const convert = () => {
-    appendTaskLinkAudit({ taskId, source: "workspace", action: "link" });
+    recordAudit("link");
     setLinked(true);
     onScope("continue", taskId);
-    setAudits(listTaskLinkAudits());
   };
 
   const correct = () => {
-    appendTaskLinkAudit({ taskId, source: "workspace", action: "revoke" });
+    recordAudit("revoke");
     setLinked(false);
     onScope("independent", null);
-    setAudits(listTaskLinkAudits());
   };
 
   return (
@@ -200,6 +216,11 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
           迟到回执：{n}
         </p>
       ))}
+      {auditErr && (
+        <p className="bad-text" data-testid="scope-audit-error" role="alert">
+          审计加载失败：{auditErr}
+        </p>
+      )}
       <ul className="scope-audit" data-testid="scope-audit" aria-label="关联修正记录">
         {audits
           .filter((a) => a.taskId === taskId)

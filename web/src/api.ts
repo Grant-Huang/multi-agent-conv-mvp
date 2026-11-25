@@ -653,6 +653,20 @@ export const api = {
       { method: "POST", body: "{}" },
     ),
 
+  /** AI Desktop T-99：关联修正审计（服务端权威；用户事件不播种） */
+  desktopLinkAuditsList: (taskId: string) =>
+    request<{ items: DesktopLinkAuditDto[] }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/link-audits`,
+    ),
+  desktopLinkAuditCreate: (
+    taskId: string,
+    body: { source: string; action: "link" | "revoke" },
+  ) =>
+    request<{ audit: DesktopLinkAuditDto }>(
+      `/api/desktop/v1/tasks/${encodeURIComponent(taskId)}/link-audits`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   /** AI Desktop T-82：首页快照（AD-G7 三区卡片读模型） */
   desktopSnapshot: () => request<DesktopSnapshotDto>("/api/desktop/v1/snapshot"),
 
@@ -949,6 +963,14 @@ export type DesktopAttentionDto = {
   title: string;
   body: string;
   task_id: string | null;
+  created_at: string;
+};
+
+export type DesktopLinkAuditDto = {
+  id: string;
+  task_id: string;
+  source: string;
+  action: string;
   created_at: string;
 };
 

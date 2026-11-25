@@ -13,7 +13,7 @@ use an_runtime::store::{
     DesktopAcceptOutcome, DesktopApprovalDecideOutcome, DesktopApprovalExecuteOutcome,
     DesktopDraftRow, DesktopDraftSave, DesktopDraftSaveOutcome, DesktopEventCursor,
     DesktopEventsAfter, DesktopEvidenceAccess, DesktopLinkOutcome, DesktopMemory,
-    DesktopPrefPatchOutcome, DesktopRequestRecord,
+    DesktopPrefPatchOutcome, DesktopRequestRecord, DesktopTaskLinkAuditRow,
 };
 use an_runtime::Runtime;
 use axum::extract::{Path, Query, State};
@@ -91,6 +91,11 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
         .route(
             "/api/desktop/v1/tasks/{id}/links/{link_id}",
             delete(revoke_link),
+        )
+        // T-99：关联修正审计（服务端权威；用户事件不播种）
+        .route(
+            "/api/desktop/v1/tasks/{id}/link-audits",
+            get(list_link_audits).post(create_link_audit),
         )
         .route(
             "/api/desktop/v1/preferences",
@@ -1285,6 +1290,62 @@ struct MarkAssistantReadBody {
     message_ids: Vec<String>,
 }
 
+// ===== T-99 关联修正审计 =====
+
+fn link_audit_json(r: &DesktopTaskLinkAuditRow) -> serde_json::Value {
+    json!({
+        "id": r.id,
+        "task_id": r.task_id,
+        "source": r.source,
+        "action": r.action,
+        "created_at": r.created_at,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateLinkAuditBody {
+    source: String,
+    action: String,
+}
+
+async fn list_link_audits(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
+    match rt.store.list_desktop_task_link_audits(&task_id) {
+        Ok(rows) => {
+            let items: Vec<_> = rows.iter().map(link_audit_json).collect();
+            (StatusCode::OK, Json(json!({ "items": items }))).into_response()
+        }
+        Err(e) => drafts_internal_err(e),
+    }
+}
+
+async fn create_link_audit(
+    State(rt): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(body): Json<CreateLinkAuditBody>,
+) -> Response {
+    if body.action != "link" && body.action != "revoke" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "invalid_request",
+                "message": "action 必须为 link 或 revoke",
+                "retryable": false
+            })),
+        )
+            .into_response();
+    }
+    match rt
+        .store
+        .append_desktop_task_link_audit(&task_id, &body.source, &body.action)
+    {
+        Ok(row) => (
+            StatusCode::OK,
+            Json(json!({ "audit": link_audit_json(&row) })),
+        )
+            .into_response(),
+        Err(e) => drafts_internal_err(e),
+    }
+}
 async fn list_assistant_messages(State(rt): State<AppState>) -> Response {
     match rt.store.list_desktop_assistant_messages() {
         Ok(rows) => {

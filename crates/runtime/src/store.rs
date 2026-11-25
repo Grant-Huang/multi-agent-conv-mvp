@@ -201,6 +201,16 @@ pub struct DesktopAssistantMessageRow {
     pub read: bool,
 }
 
+/// AI Desktop T-99：关联修正审计行
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DesktopTaskLinkAuditRow {
+    pub id: String,
+    pub task_id: String,
+    pub source: String,
+    pub action: String,
+    pub created_at: String,
+}
+
 /// 草稿保存参数（避免长参数列表）
 #[derive(Debug, Clone, Copy)]
 pub struct DesktopDraftSave<'a> {
@@ -590,6 +600,16 @@ CREATE TABLE IF NOT EXISTS desktop_assistant_read_ids (
     id TEXT PRIMARY KEY,
     updated_at TEXT NOT NULL DEFAULT ''
 );
+-- AI Desktop T-99：关联修正审计（服务端权威；用户事件，不播种）
+CREATE TABLE IF NOT EXISTS desktop_task_link_audits (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    action TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_desktop_task_link_audits_task
+    ON desktop_task_link_audits(task_id, created_at);
 "#;
 
 fn tune(conn: &Connection) -> Result<()> {
@@ -3003,6 +3023,52 @@ impl Store {
         let conn = self.write();
         conn.execute("DELETE FROM desktop_assistant_read_ids", [])?;
         Ok(())
+    }
+
+    /// AI Desktop T-99：追加一条关联修正审计（服务端生成 id 与时间）。
+    pub fn append_desktop_task_link_audit(
+        &self,
+        task_id: &str,
+        source: &str,
+        action: &str,
+    ) -> Result<DesktopTaskLinkAuditRow> {
+        let conn = self.write();
+        let row = DesktopTaskLinkAuditRow {
+            id: an_core::new_id("laud"),
+            task_id: task_id.into(),
+            source: source.into(),
+            action: action.into(),
+            created_at: now(),
+        };
+        conn.execute(
+            "INSERT INTO desktop_task_link_audits (id, task_id, source, action, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![row.id, row.task_id, row.source, row.action, row.created_at],
+        )?;
+        Ok(row)
+    }
+
+    /// 某任务的审计列表（created_at 升序）。
+    pub fn list_desktop_task_link_audits(
+        &self,
+        task_id: &str,
+    ) -> Result<Vec<DesktopTaskLinkAuditRow>> {
+        let conn = self.read();
+        let mut st = conn.prepare(
+            "SELECT id, task_id, source, action, created_at FROM desktop_task_link_audits
+             WHERE task_id = ?1
+             ORDER BY rowid ASC",
+        )?;
+        let rows = st.query_map(params![task_id], |r| {
+            Ok(DesktopTaskLinkAuditRow {
+                id: r.get(0)?,
+                task_id: r.get(1)?,
+                source: r.get(2)?,
+                action: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     /// 按时间顺序返回消息；`last` 为 Some(n) 时只返回最近 n 条

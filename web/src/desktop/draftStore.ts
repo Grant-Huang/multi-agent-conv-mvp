@@ -61,34 +61,34 @@ function emptyDraft(): DraftRecord {
   return { text: "", version: 0, scope: "auto", continueTaskId: null };
 }
 
-const LINK_KEY = "an.desktop.taskLinks.v1";
-
 export type TaskLinkAudit = {
   id: string;
   taskId: string;
   source: string;
   action: "link" | "revoke";
-  at: number;
+  at: string;
 };
 
-export function listTaskLinkAudits(): TaskLinkAudit[] {
-  try {
-    const raw = localStorage.getItem(LINK_KEY);
-    return raw ? (JSON.parse(raw) as TaskLinkAudit[]) : [];
-  } catch {
-    return [];
-  }
+// ===== T-99 关联修正审计（服务端权威；按 task 过滤，created_at 升序） =====
+
+/** 列表某任务的审计。失败时抛错，由调用方展示（原则 3：审计不静默丢弃）。 */
+export async function listTaskLinkAudits(taskId: string): Promise<TaskLinkAudit[]> {
+  const r = await api.desktopLinkAuditsList(taskId);
+  return r.items.map((a) => ({
+    id: a.id,
+    taskId: a.task_id,
+    source: a.source,
+    action: a.action as TaskLinkAudit["action"],
+    at: a.created_at,
+  }));
 }
 
-export function appendTaskLinkAudit(entry: Omit<TaskLinkAudit, "id" | "at">): TaskLinkAudit {
-  const full: TaskLinkAudit = { ...entry, id: `link-${Date.now()}`, at: Date.now() };
-  const all = [...listTaskLinkAudits(), full];
-  try {
-    localStorage.setItem(LINK_KEY, JSON.stringify(all.slice(-50)));
-  } catch {
-    /* 忽略 */
-  }
-  return full;
+/** 追加一条审计（服务端生成 id 与时间）。失败时抛错，由调用方展示。 */
+export async function appendTaskLinkAudit(
+  taskId: string,
+  entry: { source: string; action: TaskLinkAudit["action"] },
+): Promise<void> {
+  await api.desktopLinkAuditCreate(taskId, entry);
 }
 
 // ===== T-84 草稿上云：服务端权威 + 本地缓存镜像 =====
