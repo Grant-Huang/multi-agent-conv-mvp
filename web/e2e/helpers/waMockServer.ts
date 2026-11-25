@@ -69,6 +69,7 @@ export async function startWaMockServer(name: string): Promise<WaMockHandle> {
       'discovery=false',
       '[mom]',
       'world_mock=true',
+      'chat_bridge=true',
       '[logging]',
       `dir=${JSON.stringify(path.join(dir, 'logs'))}`,
     ].join('\n'),
