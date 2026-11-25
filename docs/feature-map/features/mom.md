@@ -18,13 +18,12 @@
 
 ## How to get to it (user POV)
 
-主界面左栏“**MOM 运营沙盘**”链接 → `/mom/`（页面标题“MOM 运营公告板”）；或独立运行 `cargo run --bin an-mom`（<http://127.0.0.1:8790>，必须回环地址）。
+同源 `/mom/` 挂载直达（页面标题“MOM 运营公告板”；T-88 移除主界面“MOM 运营沙盘”入口）；或独立运行 `cargo run --bin an-mom`（<http://127.0.0.1:8790>，必须回环地址）。
 
 ## Driving it with Playwright / HTTP
 
 ```ts
-await page.goto('/');
-await page.getByRole('link', { name: 'MOM 运营沙盘' }).click();     // → /mom/
+await page.goto('/mom/');   // T-88 移除主界面入口，直达同源挂载
 await page.getByRole('button', { name: '＋ 多扰动 S1' }).click();
 await expect(page.locator('#content h2').first()).toContainText('WAITING_HUMAN');
 await page.getByRole('button', { name: '人类运营视图' }).click();

@@ -48,7 +48,7 @@
 | world-adapter | Desktop「DES 仿真实验」「运营频道」「MOM 工作台」 | Mock + M1/M2 DES；**M3 读桩准出**（`wa-m3-5.md`）；**M4 写未开**（方案/准入 `WA_M4_TASKS` / `wa-m4-0.md`；下一待授权 M4-1 候选站只读） | `E2E-DES*`、`E2E-WABIND`、`E2E-WACHANNEL`、`E2E-WADES`/`WAREAD`/`WAOBS`、`E2E-WAEXEC`/`WARECV`/`WADYN`/`WALOOP`、`E2E-WAPROD`/`WAPISO`/`WAPREAD`/`WAPDELAY`、`RT-WA-01～09`、`RT-WADES-01～19`、`RT-WAPROD-01`～`06`、`RT-DES-08～11`、`RT-DESC-*`；套件 `wa-m0/m1/m2/m3-suite`；台账 [WA_MOCK_REGISTRY.md](../mom/WA_MOCK_REGISTRY.md)；任务卡 [WA_M3_TASKS.md](../mom/WA_M3_TASKS.md)、[WA_M4_TASKS.md](../mom/WA_M4_TASKS.md)；准出 [wa-m2-6.md](../testing/evidence/wa-m2-6.md)、[wa-m3-5.md](../testing/evidence/wa-m3-5.md)、[wa-m4-0.md](../testing/evidence/wa-m4-0.md) |
 | mom | 独立 an-mom 人类看板与 Agent 机器视图 | S1 审批后下发、核验再关闭；S2 初复独立，缺证据不能关闭8D | E2E-MOM/E2E-COMPLAINT；业务系统、主模型及审批身份仍为替代件，见 MOM Mock 清单 |
 
-MOM 增量：主界面左侧 **MOM 运营沙盘** → 同源 `/mom/`；配置持续仿真与播放暂停、事件队列和完整 gap 详情由 E2E-MOMDYNAMIC 验证。独立8790服务仍保留。两者均为明确标识的模拟模式。
+MOM 增量：同源 `/mom/` 挂载直达（T-88 移除主界面沙盘入口）；配置持续仿真与播放暂停、事件队列和完整 gap 详情由 E2E-MOMDYNAMIC 验证。独立8790服务仍保留。两者均为明确标识的模拟模式。
 
 RelOS 接入（E1-C）：RT-MOM-06～09 覆盖上下文驱动的诊断、RelOS 不可用时的安全降级、上下文写入校验与未启用时的兼容；HTTP-MOM-RELOS-01/02（`crates/server/tests/mom.rs`）用桩 RelOS 与无人监听地址验证 an-mom 的端到端调用。RelOS 知识为仿真数据（台账 M24）。
 
