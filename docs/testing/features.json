@@ -817,7 +817,8 @@
       "docs/testing/evidence/ai-desktop-d.md",
       "docs/ai-desktop/MOCK_REGISTRY.md",
       "docs/decisions/2026-11-21-ai-desktop-c2-gateway-attn.md",
-      "docs/decisions/2026-11-21-ai-desktop-d-voice-handoff.md"
+      "docs/decisions/2026-11-21-ai-desktop-d-voice-handoff.md",
+      "web/e2e/experience.spec.ts"
     ],
     "coverage": "browser",
     "cases": [
@@ -854,7 +855,8 @@
       "E2E-HOMEACCEPT",
       "E2E-HOMEREV",
       "E2E-HOMEREJ",
-      "E2E-RESTART"
+      "E2E-RESTART",
+      "E2E-UX01"
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",

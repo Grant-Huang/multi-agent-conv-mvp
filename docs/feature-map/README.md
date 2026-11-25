@@ -10,6 +10,7 @@
 |---|---|
 | 本目录 | 面向 Agent 的**操作地图**：入口、驱动方法、判据、坑 |
 | [COVERAGE.md](COVERAGE.md)（原 `docs/testing/FEATURE_MAP.md`） | 各功能的用例 ID、证据与边界，**权威的覆盖/证据状态在这里** |
+| [体验地图](../experience-map/README.md) | 跨功能的**用户旅程**（UX-xx）：角色、目标、守护的宪章体验原则、必须成立的约束；功能地图回答“有什么”，体验地图回答“用户怎么完成一件事” |
 | [docs/testing/features.json](../testing/features.json) | 机器索引，`npm run test:map` 校验源文件与用例引用 |
 | [docs/testing/CASES.md](../testing/CASES.md) | 用例定义（E2E-* / RT-*） |
 
