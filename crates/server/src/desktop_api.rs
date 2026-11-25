@@ -341,7 +341,7 @@ async fn create_request(
             StatusCode::CONFLICT,
             Json(json!({
                 "code": "operation_conflict",
-                "message": "相同 client_operation_id 已绑定不同正文",
+                "message": "相同 client_operation_id 已绑定不同请求载荷",
                 "retryable": false,
                 "request_id": request_id,
                 "message_id": message_id
