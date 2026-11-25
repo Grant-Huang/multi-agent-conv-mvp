@@ -28,7 +28,7 @@
    cd web && npm ci && npm run build && node e2e/harness.mjs   # 后台运行，等待 http://127.0.0.1:18789/ready 返回 200
    ```
 3. 对 `journeys.json` 中每条旅程，以该旅程的角色身份，只凭目标与成功标准，用 Playwright 自主操作（不看测试代码里的点击路径）。每条旅程至少 3 次，其中 1 次用 390 宽视口；每一步记录“想找什么、看到什么、为什么这么点”。
-4. 每个发现写：违反的宪章条款编号、严重度（高 / 中 / 低）、证据（页面、可见文字或控件、截图文件名）、建议。命中 [EXCEPTIONS.md](EXCEPTIONS.md) 的，标“授权例外”，不算偏离。
+4. 每个发现写：违反的宪章条款编号、严重度（高 / 中 / 低）、证据（页面、可见文字或控件、截图文件名）、建议，以及**建议归属的研发线**（每次运行时重新读 [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md)「五条研发线与近期汇合」表，线的数量和职责可能变化；拿不准写“待定”）。守护者只建议归属，不派卡；派卡由产品意图审查会话按 [2026-11-25-dispatch-to-workstreams](../decisions/2026-11-25-dispatch-to-workstreams.md) 执行。命中 [EXCEPTIONS.md](EXCEPTIONS.md) 的，标“授权例外”，不算偏离。
 
 ### 第 2 步：确定性检查
 

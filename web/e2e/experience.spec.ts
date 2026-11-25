@@ -115,3 +115,38 @@ test('E2E-UX02: 任务中切到独立话题临时提问再切回，不离开工�
   await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
   expect(p.snapshot().full_page_navigations).toBe(0);
 });
+
+// 体验地图 UX-03（docs/experience-map/journeys/UX-03.md）：一句话委派复杂任务，后台运行时继续做别的事。
+// 只断言当前成立的约束 UX-03-I1、I2、I3；从卡片看到真实结果（I4）、完成时主动告知（I5）、
+// 不显示内部编号（I6）为欠账，见 2026-11-25 UX-03 基线审查。
+test('E2E-UX03: 首页一句话委派后留在桌面，后台运行时可去做别的任务，完成后在“我的工作”看到已完成', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  const p = probe(page);
+  // 用唯一的目标文字区分本次委派（服务端任务不随夹具重置清空，EX-02）
+  const goal = `汇总本周 Line-A 质量异常并起草 8D 初稿 ${Date.now()}`;
+  await page.goto('/');
+  const s1 = page.getByRole('textbox', { name: 'S1 输入' });
+
+  // UX-03-I1（CH-U2、CH-U1）：委派后不离开桌面，受理状态可见，首页输入立即可用
+  await s1.fill(goal); p.step();
+  await page.getByRole('button', { name: '委派任务' }).click(); p.step();
+  await expect(page.getByRole('status').filter({ hasText: '已受理' })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
+  await expect(s1).toBeEditable();
+  await expect(s1).toHaveValue('');
+
+  // UX-03-I2（CH-U2）：后台运行时可以打开另一个任务做事，再回到桌面
+  await page.getByTestId('card-smt-03').click(); p.step();
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await expect(page.getByRole('textbox', { name: '工作区输入' })).toBeEditable();
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click(); p.step();
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
+
+  // UX-03-I3（CH-U3）：不用守着，委派的任务出现在“我的工作”并最终显示已完成
+  const card = page.getByRole('region', { name: '我的工作' }).getByRole('button').filter({ hasText: goal });
+  await expect(card).toContainText('已完成', { timeout: 60_000 });
+
+  const metrics = p.snapshot();
+  expect(metrics.full_page_navigations).toBe(0);
+  await info.attach('ux03-probe.json', { body: JSON.stringify({ journey: 'UX-03', ...metrics }, null, 2), contentType: 'application/json' });
+});
