@@ -150,3 +150,28 @@ test('E2E-UX03: 首页一句话委派后留在桌面，后台运行时可去做�
   expect(metrics.full_page_navigations).toBe(0);
   await info.attach('ux03-probe.json', { body: JSON.stringify({ journey: 'UX-03', ...metrics }, null, 2), contentType: 'application/json' });
 });
+
+// 体验地图 UX-04（docs/experience-map/journeys/UX-04.md）：在对话里处理任务，查看任务详情时不丢对话现场。
+// 只断言当前成立的约束 UX-04-I1；从对话进入工作区 / 专注模式（I2）、离开再返回草稿仍在（I3）、
+// 对话页不暴露内部页签与原始工具参数（I4）为欠账，见 2026-11-25 UX-04 基线审查。
+test('E2E-UX04: 对话中委派的任务完成后，打开任务详情不影响对话输入与草稿，且不整页跳转', async ({ page }) => {
+  test.setTimeout(120_000);
+  const p = probe(page);
+  // 用唯一文字区分本次会话（服务端会话不随夹具重置清空，EX-02）
+  const goal = `写一份关于本地小模型选型的简短报告，保存成 Markdown ${Date.now()}`;
+  await page.goto('/');
+  await page.getByRole('button', { name: '＋ 新会话' }).click(); p.step();
+  const input = page.getByRole('textbox', { name: '输入消息' });
+  await input.fill(goal); p.step();
+  await input.press('Enter'); p.step();
+  await expect(page.getByRole('button', { name: /任务结束：COMPLETED/ })).toBeVisible({ timeout: 60_000 });
+
+  // UX-04-I1（CH-U2、CH-U1）：写了一半的追问，打开右侧任务详情后，对话输入仍可用、草稿不变
+  await input.fill('再补一段关于功耗的对比'); p.step();
+  const taskEntry = page.getByRole('complementary', { name: '任务与状态' }).getByRole('button').filter({ hasText: goal });
+  await taskEntry.click(); p.step();
+  await expect(taskEntry).toHaveAttribute('aria-expanded', 'true');
+  await expect(input).toBeEditable();
+  await expect(input).toHaveValue('再补一段关于功耗的对比');
+  expect(p.snapshot().full_page_navigations).toBe(0);
+});

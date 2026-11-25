@@ -221,5 +221,61 @@
       "INTENT-2026-015",
       "INTENT-2026-016"
     ]
+  },
+  {
+    "id": "UX-04",
+    "title": "在对话里处理任务，需要时进入专注模式再退回对话",
+    "document": "docs/experience-map/journeys/UX-04.md",
+    "persona": "docs/experience-map/personas/P-SUP-NEW.md",
+    "charter": [
+      "CH-U1",
+      "CH-U2",
+      "CH-U4",
+      "CH-U5"
+    ],
+    "features": [
+      "ai-desktop",
+      "conversation"
+    ],
+    "invariants": [
+      {
+        "id": "UX-04-I1",
+        "text": "对话中查看任务详情时，对话输入可用、未发送草稿不变，不整页跳转",
+        "charter": "CH-U2",
+        "case": "E2E-UX04"
+      },
+      {
+        "id": "UX-04-I2",
+        "text": "从对话一步进入该任务的工作区（S2 / S3），退回后回到原对话与位置",
+        "charter": "CH-U2",
+        "debt": true
+      },
+      {
+        "id": "UX-04-I3",
+        "text": "离开对话做别的事再返回，未发送草稿仍在",
+        "charter": "CH-U2",
+        "debt": true
+      },
+      {
+        "id": "UX-04-I4",
+        "text": "对话页不常驻内部页签（内省、节点）与原始工具参数",
+        "charter": "CH-U5",
+        "debt": true
+      }
+    ],
+    "budget": {
+      "steps_max": 6,
+      "full_page_navigations_max": 0
+    },
+    "baseline": {
+      "date": "2026-11-25",
+      "steps": 5,
+      "full_page_navigations": 0
+    },
+    "known_deviations": [
+      "INTENT-2026-017",
+      "INTENT-2026-018",
+      "INTENT-2026-019"
+    ]
   }
 ]
