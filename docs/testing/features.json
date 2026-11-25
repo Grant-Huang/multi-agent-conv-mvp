@@ -862,7 +862,8 @@
       "E2E-RESTART",
       "E2E-UX01",
       "E2E-UX02",
-      "E2E-UX03"
+      "E2E-UX03",
+      "E2E-UX04"
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",
