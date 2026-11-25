@@ -88,6 +88,7 @@
 | RT-TPL-14 | templates | slots_ok=no，或 template_id 未注册 | 委派 | 不拆分；仅一条普通任务（无 fanout=root） |
 | RT-TPL-15 | templates | 已拆分且分支仍在跑 | 取消 parent | 子 ACTIVE→CANCELLED；不新建 join；parent CANCELLED |
 | RT-TPL-16 | templates | 一支审查 needs_human | 未验收前 | 不启动 join；WP2 accept 该支后可继续汇合 |
+| RT-TPL-17 | templates | 三支分支并发收尾（假 agent 立即返回） | 循环 400 个父任务 | 每个父任务恰好 1 个 join、1 条交付（H3 汇合只建一次；R-20261124） |
 | E2E-TPL | templates | 浏览器；受控模型目标含「报价单模板」 | 观察任务卡并等待完成 | 可见拆分/多路；最终汇合向交付且 parent COMPLETED |
 
 ## MOM 可配置持续仿真（实现前定义）

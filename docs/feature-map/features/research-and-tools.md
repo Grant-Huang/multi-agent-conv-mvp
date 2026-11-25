@@ -45,6 +45,6 @@
 ## Backed by
 
 源码：`crates/agents/src/general.rs`、`tools`、MCP 相关模块（`crates/agents/`）、`crates/server/src/bin/eval.rs`
-用例：RT-REP-01～09（`crates/agents/tests/report_flow.rs`）、RT-TPL-01～10（`crates/runtime/tests/template_cases.rs`）；`crates/agents/tests/mcp.rs`、`crates/server/tests/mcp.rs`
+用例：RT-REP-01～09（`crates/agents/tests/report_flow.rs`）、RT-TPL-01～10（`crates/runtime/tests/template_cases.rs`）、RT-TPL-11～17（`crates/runtime/tests/template_orch.rs`，17=H3 汇合只建一次）；`crates/agents/tests/mcp.rs`、`crates/server/tests/mcp.rs`
 文档：`docs/mcp/README.md`、`DESIGN.md`、`PLAN.md`
 验证状态：控制流自动化已覆盖；真实模型质量/搜索时效未验收。

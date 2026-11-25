@@ -2885,6 +2885,39 @@ impl Store {
 
     // ───────────── 任务 ─────────────
 
+    /// WP4 / H3（R-20261124 审查）：汇合任务原子插入——同一父任务只建一个 join。
+    /// 单条 `INSERT … SELECT … WHERE NOT EXISTS` 在 SQLite 写锁下原子完成「检查 + 插入」，
+    /// 消除 `try_join` 先查后插窗口内的重复汇合；同一写连接连带写任务上下文。
+    /// 返回是否真的插入（false = 已存在 join，调用方不得再排队/交付）。
+    pub fn insert_join_if_absent(&self, t: &TaskRecord, context: &str) -> Result<bool> {
+        let changed = self.write().execute(
+            "INSERT INTO tasks (id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, context, parent_id, fanout_kind, branch_id, template_id)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM tasks WHERE parent_id = ?13 AND fanout_kind = 'join'
+             )",
+            params![
+                t.id,
+                t.conversation_id,
+                t.goal,
+                t.role.as_str(),
+                t.status.as_str(),
+                serde_json::to_string(&t.route)?,
+                serde_json::to_string(&t.policy)?,
+                t.result.as_ref().map(serde_json::to_string).transpose()?,
+                t.review.as_ref().map(serde_json::to_string).transpose()?,
+                t.created_at,
+                t.updated_at,
+                context,
+                t.parent_id,
+                t.fanout_kind,
+                t.branch_id,
+                t.template_id,
+            ],
+        )?;
+        Ok(changed == 1)
+    }
+
     pub fn insert_task(&self, t: &TaskRecord, context: &str) -> Result<()> {
         self.write().execute(
             "INSERT INTO tasks (id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, context, parent_id, fanout_kind, branch_id, template_id)

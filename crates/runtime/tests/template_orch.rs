@@ -494,3 +494,64 @@ fn builtin_registry_loads_three_templates() {
     assert!(reg.get("release").is_some());
     let _empty = TemplateRegistry::default();
 }
+
+/// RT-TPL-17（H3 / R-20261124 审查）：分支并发收尾时每个父任务恰好 1 个汇合、1 条交付。
+/// 修复前 `try_join` 先查后插无互斥，窗口内重复建 join（审查报告约 1/40，方案复测 1/60）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn rt_tpl_17_join_created_once_under_concurrent_completion() {
+    let e = env(Duration::ZERO, None);
+    let rounds = 400usize;
+    let mut dup_joins: Vec<(usize, usize)> = Vec::new();
+    let mut bad_deliveries: Vec<(usize, usize)> = Vec::new();
+    for i in 0..rounds {
+        let conv = e
+            .store
+            .create_conversation(&format!("tpl17-{i}"))
+            .unwrap()
+            .id;
+        let parent = e
+            .orch
+            .submit(&conv, "报价", "ctx", quote_route("yes", "quote"), auto())
+            .unwrap();
+        wait_parent_done(&e.store, &parent.id).await;
+        let joins = e
+            .store
+            .list_children(&parent.id)
+            .unwrap()
+            .iter()
+            .filter(|c| c.fanout_kind.as_deref() == Some("join"))
+            .count();
+        if joins != 1 {
+            dup_joins.push((i, joins));
+        }
+        // 交付消息宽限窗口（同 rt_tpl_12）：编排侧先交付再 COMPLETED
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let deliveries = loop {
+            let n = e
+                .store
+                .list_messages(&conv, None)
+                .unwrap()
+                .iter()
+                .filter(|m| m.role == "assistant")
+                .count();
+            if n >= 1 {
+                break n;
+            }
+            if std::time::Instant::now() > deadline {
+                break 0;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        if deliveries != 1 {
+            bad_deliveries.push((i, deliveries));
+        }
+    }
+    assert!(
+        dup_joins.is_empty(),
+        "{rounds} 轮中出现重复汇合：{dup_joins:?}"
+    );
+    assert!(
+        bad_deliveries.is_empty(),
+        "{rounds} 轮中交付次数不为 1：{bad_deliveries:?}"
+    );
+}
