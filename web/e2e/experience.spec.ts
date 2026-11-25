@@ -92,3 +92,26 @@ test('E2E-UX01: 桌面发现 SMT-03 → 工作区 → 证据 → 专注 → 离�
   expect(metrics.full_page_navigations).toBe(0);
   await info.attach('ux01-probe.json', { body: JSON.stringify({ journey: 'UX-01', ...metrics, ...homeClutter }, null, 2), contentType: 'application/json' });
 });
+
+// 体验地图 UX-02（docs/experience-map/journeys/UX-02.md）：做事中途临时提问，不被带离当前工作。
+// 只断言当前成立的约束 UX-02-I1；草稿保留（I2）、得到回答（I3）、助理入口可对话（I4）为欠账。
+test('E2E-UX02: 任务中切到独立话题临时提问再切回，不离开工作区且任务与作用域恢复', async ({ page }) => {
+  const p = probe(page);
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click(); p.step();
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  const input = page.getByRole('textbox', { name: '工作区输入' });
+
+  await page.getByRole('button', { name: '独立话题' }).click(); p.step();
+  await expect(page.getByRole('button', { name: '独立话题' })).toHaveAttribute('aria-pressed', 'true');
+  await input.fill('8D 报告里的 D4 指什么？'); p.step();
+  await page.getByRole('button', { name: '发送', exact: true }).click(); p.step();
+
+  // UX-02-I1：仍在同一任务的工作区，没有被带走
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await expect(input).toBeEditable();
+  await page.getByRole('button', { name: '继续当前任务' }).click(); p.step();
+  await expect(page.getByRole('button', { name: '继续当前任务' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  expect(p.snapshot().full_page_navigations).toBe(0);
+});
