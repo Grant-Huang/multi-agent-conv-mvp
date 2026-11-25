@@ -54,7 +54,7 @@ $ npx playwright test e2e/features.spec.ts -g 'REV|MOBILE' → 2 passed
 
 | 项 | 状态 |
 |---|---|
-| push @ `75f55cb`（#311，run [45666350348](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45666350348)） | 记录时 **in_progress**；终态回填：（待回填） |
+| push @ `75f55cb`（#311，run [45666350348](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45666350348)） | **success**（8m26s）——**rust 连续第四推绿**（467d6e0/6fbc83c/03373f2/75f55cb）；Q-AR2-04 观察续记：抖动未再复现，机制建议（复跑/限并行）仍值得做但紧迫度下降 |
 | nightly 11-25 | 未触发（收稿时点）；**派工标签首采窗口**：若失败，核对 Issue 标签 `dispatch + line:N` 是否按分诊规则流向 |
 
 ## 4. 问题清单
