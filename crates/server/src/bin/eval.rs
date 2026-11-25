@@ -536,7 +536,8 @@ async fn main() -> Result<()> {
         let active: Vec<TaskRecord> = c.active_tasks.iter().map(fake_task).collect();
 
         let t0 = Instant::now();
-        match rt.conversation.decide_turn(&history, &active).await {
+        // 评测直驱不走会话资料绑定（标准 E0 提示词保持不变）；材料化评测集另卡
+        match rt.conversation.decide_turn(&history, &active, None).await {
             Ok(d) => {
                 r.turn_ms = t0.elapsed().as_millis() as u64;
                 r.attempts += d.attempts;

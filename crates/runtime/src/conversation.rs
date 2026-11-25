@@ -48,6 +48,7 @@ pub struct ConversationRuntime {
     session_materials_timeout_ms: u64,
     session_materials_style_max_tokens: u32,
     session_materials_findings_max: u32,
+    session_materials_judge: bool,
     /// 同一会话同一时刻只处理一条消息
     locks: ConvLocks,
     /// 会话资料源（conversation-memory 5.1）；默认读 Store，测试可注入
@@ -77,6 +78,7 @@ pub struct ConversationDeps {
     pub session_materials_timeout_ms: u64,
     pub session_materials_style_max_tokens: u32,
     pub session_materials_findings_max: u32,
+    pub session_materials_judge: bool,
 }
 
 /// 一轮对话的处理结果（HTTP 接口直接返回它）
@@ -281,6 +283,7 @@ impl ConversationRuntime {
             session_materials_timeout_ms: d.session_materials_timeout_ms,
             session_materials_style_max_tokens: d.session_materials_style_max_tokens,
             session_materials_findings_max: d.session_materials_findings_max,
+            session_materials_judge: d.session_materials_judge,
             locks: ConvLocks::new(),
             agents: d.agents,
         }
@@ -300,6 +303,7 @@ impl ConversationRuntime {
         &self,
         history: &[Message],
         active: &[TaskRecord],
+        judge_digest: Option<&str>,
     ) -> std::result::Result<Structured<TurnDecision>, StructuredError> {
         let query = history
             .iter()
@@ -315,6 +319,12 @@ impl ConversationRuntime {
             system.push_str(&a.prompt_section());
         }
         let mut messages = vec![ChatMessage::system(system)];
+        // S4：会话资料极简清单紧随判断系统提示（数据，非指令）；超出预算时 fit() 最先裁掉
+        if let Some(d) = judge_digest {
+            if !d.trim().is_empty() {
+                messages.push(ChatMessage::system(d));
+            }
+        }
         for m in history {
             messages.push(if m.role == "user" {
                 ChatMessage::user(&m.content)
@@ -543,8 +553,59 @@ impl ConversationRuntime {
             _ => {}
         }
 
+        // 3.5 会话资料（S4）：每轮收集一次，判断清单与回答资料块两路共享；
+        // 管理提示轮（上方早退）不收集
+        let collect = self.session_materials || self.session_materials_judge;
+        let session_materials = if collect {
+            Some(
+                self.collect_session_materials(conversation_id, user, text)
+                    .await,
+            )
+        } else {
+            None
+        };
+        let (reply_block, style_block, judge_digest) = session_materials
+            .as_ref()
+            .map(|m| {
+                let rendered = crate::session_materials::render(
+                    m,
+                    self.session_materials_max_tokens,
+                );
+                let style = crate::session_materials::render_style(
+                    &m.style,
+                    self.session_materials_style_max_tokens,
+                );
+                let digest = if self.session_materials_judge {
+                    crate::session_materials::render_judge_digest(m)
+                } else {
+                    String::new()
+                };
+                tracing::info!(
+                    event = "session.materials",
+                    conv_id = %conversation_id,
+                    selected = %m.items.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
+                    memories = %m.memories.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
+                    style = %m.style.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
+                    findings = %m.findings.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
+                    skipped = %m.skipped.iter().map(|(id, r)| format!("{id}:{r}")).collect::<Vec<_>>().join(","),
+                    chars = rendered.chars().count() as u64,
+                    style_chars = style.chars().count() as u64,
+                    judge_chars = digest.chars().count() as u64,
+                    "回答路径会话资料注入"
+                );
+                (
+                    (!rendered.is_empty()).then_some(rendered),
+                    (!style.is_empty()).then_some(style),
+                    (!digest.is_empty()).then_some(digest),
+                )
+            })
+            .unwrap_or((None, None, None));
+
         // 4. Turn Controller
-        let decision = match self.decide_turn(&history, &active).await {
+        let decision = match self
+            .decide_turn(&history, &active, judge_digest.as_deref())
+            .await
+        {
             Ok(d) => {
                 log.raw_outputs.extend(d.raw_outputs);
                 log.attempts += d.attempts;
@@ -586,16 +647,13 @@ impl ConversationRuntime {
         match &decision {
             TurnDecision::Respond { .. } => {
                 let reply_id = an_core::new_id("msg");
-                let (materials, style) = self
-                    .session_materials_block(conversation_id, user, text)
-                    .await;
                 let reply = self
                     .generate_reply(
                         conversation_id,
                         &reply_id,
                         &history,
-                        materials.as_deref(),
-                        style.as_deref(),
+                        reply_block.as_deref(),
+                        style_block.as_deref(),
                     )
                     .await;
                 let decision = TurnDecision::Respond {
@@ -805,22 +863,19 @@ impl ConversationRuntime {
     /// conversation-memory 5.1：收集并渲染回答路径的会话资料；关闭 / 为空 / 降级 → None。
     /// 5.2b：第二返回值为生效风格卡（preference/style 预览闸门），独立系统消息。
     /// `session.materials` 事件只记来源 id 与原因，不记资料正文与用户正文。
-    async fn session_materials_block(
+    async fn collect_session_materials(
         &self,
         conversation_id: &str,
         user: &str,
         question: &str,
-    ) -> (Option<String>, Option<String>) {
-        if !self.session_materials {
-            return (None, None);
-        }
+    ) -> crate::session_materials::Materials {
         let source = self
             .material_source
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
         let collector = crate::session_materials::Collector::new(source, self.store.clone());
-        let materials = collector
+        collector
             .collect(
                 conversation_id,
                 user,
@@ -828,29 +883,7 @@ impl ConversationRuntime {
                 self.session_materials_findings_max as usize,
                 Duration::from_millis(self.session_materials_timeout_ms),
             )
-            .await;
-        let rendered =
-            crate::session_materials::render(&materials, self.session_materials_max_tokens);
-        let style = crate::session_materials::render_style(
-            &materials.style,
-            self.session_materials_style_max_tokens,
-        );
-        tracing::info!(
-            event = "session.materials",
-            conv_id = %conversation_id,
-            selected = %materials.items.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
-            memories = %materials.memories.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
-            style = %materials.style.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
-            findings = %materials.findings.iter().map(|m| m.task_id.as_str()).collect::<Vec<_>>().join(","),
-            skipped = %materials.skipped.iter().map(|(id, r)| format!("{id}:{r}")).collect::<Vec<_>>().join(","),
-            chars = rendered.chars().count() as u64,
-            style_chars = style.chars().count() as u64,
-            "回答路径会话资料注入"
-        );
-        (
-            (!rendered.is_empty()).then_some(rendered),
-            (!style.is_empty()).then_some(style),
-        )
+            .await
     }
 
     /// 直接回答：单独生成回复。开启流式时边生成边推送到界面（片段的 stream_id = 最终消息 id）；

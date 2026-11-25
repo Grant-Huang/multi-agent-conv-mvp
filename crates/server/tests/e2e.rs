@@ -1046,7 +1046,7 @@ async fn ten_corrections_fix_similar_messages() {
         async move {
             let d = rt
                 .conversation
-                .decide_turn(&history, &[])
+                .decide_turn(&history, &[], None)
                 .await
                 .unwrap_or_else(|e| panic!("{text}: {e}"));
             matches!(d.value, TurnDecision::Respond { .. })
