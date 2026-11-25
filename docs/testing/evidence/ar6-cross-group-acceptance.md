@@ -66,7 +66,7 @@ $ npx playwright test e2e/features.spec.ts -g 'REV|MOBILE' → 2 passed
 
 | 项 | 状态 |
 |---|---|
-| push @ `81445e7`（#294，run [45554642160](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45554642160)） | 记录时 **in_progress**；终态回填：（待回填） |
+| push @ `81445e7`（#294，run [45554642160](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45554642160)） | **FAILED**：rust 红——`conv_lock::tests::entries_are_cleaned_up_after_use`（runtime 内联单测，conv_lock.rs:113）FAILED，4m14s；**第三个抖动样本（三连败三不同用例、横跨 server/agents/runtime 三 crate），Q-AR2-04 系统性定性坐实**；本地 6/6 绿（0.04s/次）；web/python-* 绿 |
 | nightly 11-25 | 未触发（收稿时点）；AR-5 已证收敛形态，本卡不变 |
 
 ## 4. 问题清单
