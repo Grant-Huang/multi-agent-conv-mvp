@@ -985,6 +985,7 @@ risk_rules = true                    # 新增，B：规则判风险，只升不�
 - [x] **T-93 汇合只建一次（H3 修复）**（2026-11-24，主线 #4:1；R-20261124 派工 FIX-B）：`store.insert_join_if_absent` 原子插入 + `try_join` 改用（未插入不排队/不交付）；RT-TPL-17（400 轮三分支并发收尾）先 Red 后 Green——修复前 3 跑 2 挂（dup join 率合审查 1/40）、修复后 4×400 全绿；L2（方案 `decisions/2026-11-24-review-h1-h4-fix-plan.md` 已批，PR #285）
 - [x] **T-87 NexusOps 真实厂写方案**（2026-11-23，主线 #1:1，**仅文档**；#1 已发号）：桌面审批网关经 World Adapter Propose/Execute/Confirm 写 DES；§三问已确认（① DES 仿真 ② 质量处置→维修工单 ③ approval 新增 execution_ref 列）；方案 [ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md](ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md)；决定 `decisions/2026-11-23-nexusops-real-write-plan.md`；实现卡待开
 - [x] **T-88 首页与旧壳整治**（2026-11-23，主线 #1:1）：拆旧顶栏页签/右侧四-tab/agent 诊断列表（A1 欠账）；助手管理与发现卡迁设置-连接与能力；首页去配置链接行/横幅/文案；测试注入改 API；RT-ADHOME-01；证据 `testing/evidence/ai-desktop-t88-home-shell-cleanup.md`
+- [x] **T-95 夹具门控与事件去重**（2026-11-24，主线 #1:1，FIX-C/H4）：Resume 夹具事件改 new_id；`write_events` 改 INSERT OR IGNORE（E2，重复编号打 W_ 日志）；`desktop.test_fixtures` 门控夹具路由；RT-FIXC-01/02；证据 `testing/evidence/ai-desktop-t95-fixture-gate.md`
 - [x] **B3 关联持久 + 基础配置**（2026-11-20）：ConversationTaskLink + preferences；RT-ADLINK-01～04、RT-ADPREF-01～03；证据 `testing/evidence/ai-desktop-b3.md`（E2E-ADSCOPE/ADPROF Mock 仍保留）
 - [x] **C1 证据 ACL**（2026-11-20）：`desktop_evidence` + grants；RT-ADACL-01～05；E2E-ADSOURCES 真实 HTTP；证据 `testing/evidence/ai-desktop-c1.md`
 - [x] **C2 动作网关 + Attention**（2026-11-21）：desktop_approvals + attention；RT-ADAPPR-01～05、RT-ADATTN-01～02；E2E-ADAPPR/ADATTN 真实 HTTP；证据 `testing/evidence/ai-desktop-c2.md`

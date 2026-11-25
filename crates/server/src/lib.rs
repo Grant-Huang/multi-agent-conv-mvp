@@ -117,7 +117,7 @@ pub fn api(rt: AppState) -> Router {
         .route("/api/diagnostics", get(diagnostics))
         .merge(admission_api::routes())
         .merge(introspection_api::routes())
-        .merge(desktop_api::routes())
+        .merge(desktop_api::routes(rt.config.desktop.test_fixtures))
         .with_state(rt)
 }
 

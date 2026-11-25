@@ -337,6 +337,7 @@ export default function App() {
     await loadConversations();
     setMainView("chat");
     setCurrent(c.id);
+    setDesktopSide(null);
     setNavOpen(false);
   };
 
@@ -419,6 +420,7 @@ export default function App() {
   const selectConversation = (id: string) => {
     setMainView("chat");
     setCurrent(id);
+    setDesktopSide(null);
     setNavOpen(false);
     opsViewed.current = id === OPS_CHANNEL_ID;
     if (opsViewed.current && opsUnread !== null) {
@@ -437,6 +439,7 @@ export default function App() {
     // 先同步切入频道，避免 click 后立刻 reload 时仍停在实验页（DESPAUSE）
     setMainView("chat");
     setCurrent(OPS_CHANNEL_ID);
+    setDesktopSide(null);
     writeCurrentConv(OPS_CHANNEL_ID);
     api.worldMock
       .ensureOpsSeed()

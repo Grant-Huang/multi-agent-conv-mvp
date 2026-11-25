@@ -53,6 +53,17 @@ pub struct AppConfig {
     /// 业务内省；默认关闭，关闭时行为与以前完全相同
     #[serde(default)]
     pub introspection: IntrospectionSection,
+    /// 桌面壳相关开关（T-95/FIX-C：测试夹具门控）
+    #[serde(default)]
+    pub desktop: DesktopSection,
+}
+
+/// `[desktop]`：桌面壳相关开关。`test_fixtures` 控制 Resume 测试夹具接口（`/resume/fixture/*`）是否挂载；
+/// 默认 false（生产缺省不挂载），测试/演示环境显式打开（H4：夹具接口不得在生产可达）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DesktopSection {
+    pub test_fixtures: bool,
 }
 
 /// `[mom]`：运营频道和运营桌面（DECISIONS 第 56–58 条）。`chat_bridge` 默认关闭，关闭时行为与以前完全相同。
