@@ -1048,3 +1048,4 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-UFND-03 | conversation-memory | verdict=rejected 的匹配发现 | 相关续问 | 不注入（人工否决优先于算法） |
 | RT-UFND-04 | conversation-memory | 带 case_ids 的发现（cooccur 形态 json） | 相关续问 | 来源行含 finding id、topic 与证据 case id |
 | RT-UFND-05 | conversation-memory | 任一发生注入的轮次 | 注入后查库 | `desktop_memories` 行数不变、`introspection_findings` 行无写入（不自动晋升，纯只读） |
+| RT-UFND-06 | conversation-memory | 过闸门的 adoption 发现（5.3b 证据链补强） | 跑分析 job 后查 findings json | adoption 形态 json 含非空 `case_ids` 字符串数组（与 cooccur 形态对齐，注入来源行可点回原始记录） |

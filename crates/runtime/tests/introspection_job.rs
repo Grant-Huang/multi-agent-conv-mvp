@@ -291,3 +291,37 @@ async fn cooccur_same_asset_batch_stays_on_page_no_interrupt() {
     assert_eq!(store.introspection_pushes_today().unwrap(), 0);
     assert_eq!(store.introspection_unread_count().unwrap(), 0);
 }
+
+/// 5.3b（REQ-conversation-memory-04 可追溯补强）：adoption 发现 json 携带证据
+/// case_ids——会话侧注入（session_materials）对两类发现都能点回原始记录。
+#[tokio::test]
+async fn rt_ufnd_06_adoption_finding_json_carries_evidence_case_ids() {
+    let store = Store::open(Path::new(":memory:")).unwrap();
+    let src = source_two_templates();
+    let c = cfg();
+    let o1 = run(
+        &store,
+        &src,
+        &c,
+        "schedule",
+        r#"{"mom":1}"#,
+        "hash-ufnd-06",
+        opts(),
+    )
+    .await;
+    assert!(matches!(o1, RunOnceOutcome::Done { .. }), "{o1:?}");
+    let findings = store.introspection_list_findings(None, 100).unwrap();
+    let adoption = findings
+        .iter()
+        .find(|f| f.topic == an_runtime::introspect::TOPIC_ADOPTION)
+        .expect("fixture 应产出 adoption_pattern 发现");
+    let j: serde_json::Value = serde_json::from_str(&adoption.json).unwrap();
+    let ids = j["case_ids"]
+        .as_array()
+        .expect("adoption json 应带 case_ids 数组（与 cooccur 形态对齐）");
+    assert!(!ids.is_empty(), "case_ids 不得为空：{j}");
+    assert!(
+        ids.iter().all(|v| v.is_string()),
+        "case_ids 应为字符串数组：{j}"
+    );
+}

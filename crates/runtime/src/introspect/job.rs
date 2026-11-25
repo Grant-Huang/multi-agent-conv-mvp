@@ -258,6 +258,21 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                         }
                         DraftStats::Cooccur(_) => (0, false),
                     };
+                    // 5.3b：证据 case id 去重保序——会话注入来源行可点回原始记录（与 cooccur 形态对齐）
+                    let evidence_case_ids: Vec<String> = {
+                        let mut seen = std::collections::HashSet::new();
+                        draft
+                            .evidence
+                            .iter()
+                            .filter_map(|e| {
+                                if seen.insert(e.case_id.clone()) {
+                                    Some(e.case_id.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect()
+                    };
                     let json = match &draft.stats {
                         DraftStats::Adoption(s) => serde_json::to_string(&serde_json::json!({
                             "template": s.template,
@@ -268,6 +283,7 @@ pub async fn run_once(req: RunOnceRequest<'_>) -> Result<RunOnceOutcome> {
                             "latency_secs": s.latency_secs,
                             "hypothesis": hypothesis,
                             "next_step": draft.next_step,
+                            "case_ids": evidence_case_ids,
                         }))?,
                         DraftStats::Cooccur(s) => serde_json::to_string(&serde_json::json!({
                             "key_kind": s.key_kind,

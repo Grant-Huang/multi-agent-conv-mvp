@@ -1103,7 +1103,8 @@
       "RT-UFND-02",
       "RT-UFND-03",
       "RT-UFND-04",
-      "RT-UFND-05"
+      "RT-UFND-05",
+      "RT-UFND-06"
     ],
     "requirements": [
       {
@@ -1154,7 +1155,8 @@
           "RT-UFND-02",
           "RT-UFND-03",
           "RT-UFND-04",
-          "RT-UFND-05"
+          "RT-UFND-05",
+          "RT-UFND-06"
         ],
         "since": null
       }
