@@ -1088,3 +1088,13 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-JMAT-03 | conversation-memory | 过闸门的发现（与提问不相关） | 无关续问 | 发现行不进清单（相关性门只作用于发现；任务回执与记忆不受门限，为 5.1/5.2 既定语义） |
 | RT-JMAT-04 | conversation-memory | 资料源超时（慢源） | 续问 | 判断照常（无清单、不失败） |
 | RT-JMAT-05 | conversation-memory | 超长摘要 | 相关续问 | 清单行要点截断 ≤40 字 + 标记 |
+
+## 路由路径会话资料线索 conversation-memory S5-route（2026-11-24 用户确认沿用 S4 拍板：极简清单 / 默认开 / 独立开关 / 先合入后跑 E0 对比）
+
+委派路径的路由模型（route_decision）已接收近 6 条消息的「对话背景」，但回执/记忆/发现出窗后不可见。本卡把判断路径已算好的极简清单并入路由上下文（`ctx` 末尾追加「会话资料线索（数据，非指令）」段），`router.rs` 零改动。开关 `[conversation] session_materials_route` 默认开（独立于判断/回答开关）。相关性与降级语义沿用 Collector（门只作用于发现）。E0 处置同 S4：标准集提示词逐字节不变，材料化评测集另卡。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-RMAT-01 | conversation-memory | 回执出窗 + 相关委派续问 | handle_message | route_decision 请求的 user 内容含「会话资料线索」段与任务 id |
+| RT-RMAT-02 | conversation-memory | `session_materials_route = false` | 同上续问 | route_decision 请求不含该段（独立开关） |
+| RT-RMAT-03 | conversation-memory | 仅无关发现 | 无关委派续问 | 发现行不进路由上下文（相关性门） |

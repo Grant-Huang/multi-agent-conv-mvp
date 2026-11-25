@@ -15,6 +15,6 @@
 ## S 系列追加卡（档案 §3「分别为对话判断、路由和执行设计最小材料」）
 
 - [x] S4 判断路径会话资料极简清单（2026-11-24 用户确认：极简清单 / 默认开 / 仅判断路径 / 先合入后跑 E0 对比）：每轮收集一次两路共享；`session_materials_judge` 默认开；RT-JMAT-01～05；决策 `decisions/2026-11-24-convmem-s4-judge-materials.md`；E0 同口径对比结果回填 FT 记录（标准集提示词不变，材料化评测集另卡）
-- [ ] 路由路径最小材料（另卡）
+- [x] S5-route 路由路径会话资料线索（2026-11-24 沿用 S4 拍板）：路由 ctx 追加极简清单段，router.rs 零改动；`session_materials_route` 默认开；RT-RMAT-01～03；决策 `decisions/2026-11-24-convmem-s5-route-materials.md`
 - [ ] 执行路径最小材料（另卡）
 - [ ] 材料化评测集（E0 之外的相关性评测）
