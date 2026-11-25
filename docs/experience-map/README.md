@@ -6,6 +6,7 @@
 | 状态 | 试点（2026-11-25 起，先做 UX-01） |
 | 机器可读 | [journeys.json](journeys.json)，由 `cd web && npm run test:map` 校验（`web/verification/check-experience.mjs`） |
 | 审查报告 | [docs/review/product-intent/](../review/product-intent/) |
+| 守护者 | 每周定时运行，规程见 [GUARDIAN.md](GUARDIAN.md)，授权例外见 [EXCEPTIONS.md](EXCEPTIONS.md) |
 
 ## 1. 为什么要有体验地图
 
@@ -54,8 +55,8 @@
 
 | 编号 | 旅程 | 主要检验 | 状态 |
 |---|---|---|---|
-| UX-01 | 桌面发现异常 → 调查 → 离开 → 返回（SMT-03） | CH-U1、U2、U3 | 试点已建 |
-| UX-02 | 普通问答不被带离当前工作 | CH-U2 | 规划 |
+| UX-01 | 桌面发现异常 → 调查 → 离开 → 返回（SMT-03） | CH-U1、U2、U3 | 已建（试点） |
+| UX-02 | 做事中途临时问 AI，不被带离当前工作 | CH-U1、U2、U5 | 已建（2026-11-25 基线） |
 | UX-03 | 一句话委派复杂任务，后台运行时继续做别的事 | CH-U2 | 规划 |
 | UX-04 | 从对话进入专注模式再退回 | CH-U2 | 规划 |
 | UX-05 | 主动提醒 → 稍后处理 → 回来处理 | CH-U3 | 规划 |

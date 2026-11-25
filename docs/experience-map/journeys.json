@@ -57,6 +57,12 @@
         "text": "有其他会话的旧服务端草稿时，新输入的草稿不被覆盖",
         "charter": "CH-U2",
         "debt": true
+      },
+      {
+        "id": "UX-01-I8",
+        "text": "工作区已发送的消息与受理记录离开再返回后仍在",
+        "charter": "CH-U2",
+        "debt": true
       }
     ],
     "budget": {
@@ -76,7 +82,67 @@
       "INTENT-2026-005",
       "INTENT-2026-006",
       "INTENT-2026-007",
-      "INTENT-2026-008"
+      "INTENT-2026-008",
+      "INTENT-2026-009",
+      "INTENT-2026-010",
+      "INTENT-2026-011"
+    ]
+  },
+  {
+    "id": "UX-02",
+    "title": "做事中途临时问 AI 一个问题，不被带离当前工作",
+    "document": "docs/experience-map/journeys/UX-02.md",
+    "persona": "docs/experience-map/personas/P-SUP-NEW.md",
+    "charter": [
+      "CH-U1",
+      "CH-U2",
+      "CH-U5"
+    ],
+    "features": [
+      "ai-desktop",
+      "conversation"
+    ],
+    "invariants": [
+      {
+        "id": "UX-02-I1",
+        "text": "临时提问不离开当前任务工作区，切回后作用域恢复",
+        "charter": "CH-U2",
+        "case": "E2E-UX02"
+      },
+      {
+        "id": "UX-02-I2",
+        "text": "临时提问后回到任务，原任务草稿仍在",
+        "charter": "CH-U2",
+        "debt": true
+      },
+      {
+        "id": "UX-02-I3",
+        "text": "临时问题得到回答",
+        "charter": "CH-U1",
+        "debt": true
+      },
+      {
+        "id": "UX-02-I4",
+        "text": "“我的助理”入口打开可对话的助理面板",
+        "charter": "CH-U1",
+        "debt": true
+      }
+    ],
+    "budget": {
+      "steps_max": 6,
+      "full_page_navigations_max": 0
+    },
+    "baseline": {
+      "date": "2026-11-25",
+      "steps": 5,
+      "full_page_navigations": 0
+    },
+    "known_deviations": [
+      "INTENT-2026-001",
+      "INTENT-2026-002",
+      "INTENT-2026-003",
+      "INTENT-2026-012",
+      "INTENT-2026-013"
     ]
   }
 ]

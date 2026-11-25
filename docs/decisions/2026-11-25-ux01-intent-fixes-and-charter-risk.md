@@ -105,3 +105,4 @@
 | 日期 | 变化 | 关联 |
 |---|---|---|
 | 2026-11-25 | 新建 | #292、#294 |
+| 2026-11-25 | UXFIX-D 范围扩大，加入 INTENT-2026-011；另开 UXFIX-E、UXFIX-F | [2026-11-25-guardian-weekly-and-intent-009-011](2026-11-25-guardian-weekly-and-intent-009-011.md) |

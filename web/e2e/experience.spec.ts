@@ -36,6 +36,20 @@ test('E2E-UX01: 桌面发现 SMT-03 → 工作区 → 证据 → 专注 → 离�
 
   // UX-01-I1（CH-U1）：首页对话入口可用
   await expect(page.getByRole('textbox', { name: 'S1 输入' })).toBeEditable();
+  // 首页拥挤度探针（CH-U4、CH-U5，只记录趋势）：可见可交互控件数与技术词命中数。
+  // 校准基线：T-88 之前 37 / 主区 21 / 技术词 11；之后 21 / 6 / 1（见 docs/review/product-intent/）。
+  const homeClutter = await page.evaluate(() => {
+    const visible = (e: Element) => (e as HTMLElement).offsetParent !== null;
+    const sel = 'button,a[href],input,textarea,select,[role=tab]';
+    const main = document.querySelector('main');
+    const terms = ['fixture', 'Mock', 'ACP', 'ACL', 'O-Agent', '夹具', '注入', '重置', '未启用', '页签'];
+    const text = document.body.innerText;
+    return {
+      home_controls: [...document.querySelectorAll(sel)].filter(visible).length,
+      home_main_controls: main ? [...main.querySelectorAll(sel)].filter(visible).length : 0,
+      home_tech_terms: terms.reduce((n, t) => n + (text.split(t).length - 1), 0),
+    };
+  });
   // 发现：异常卡片在“我的工作”里，并标明“模拟”（CH-P8）
   const card = page.getByTestId('card-smt-03');
   await expect(card).toBeVisible();
@@ -55,6 +69,7 @@ test('E2E-UX01: 桌面发现 SMT-03 → 工作区 → 证据 → 专注 → 离�
 
   // UX-01-I2（CH-U2）：切换专注模式再回来，草稿不丢
   await page.getByRole('button', { name: '专注 S3' }).click(); p.step();
+  await expect(workspaceInput).toBeEditable(); // UX-01-I1：专注模式下对话输入仍可用
   await expect(workspaceInput).toHaveValue('请对比上周同批次的首件检验记录');
   await page.getByRole('button', { name: '分屏 S2' }).click(); p.step();
   await expect(workspaceInput).toHaveValue('请对比上周同批次的首件检验记录');
@@ -62,6 +77,7 @@ test('E2E-UX01: 桌面发现 SMT-03 → 工作区 → 证据 → 专注 → 离�
   // UX-01-I2（CH-U2）：打开设置再关闭，回到原处，草稿不丢
   await page.getByRole('button', { name: '设置与管理' }).click(); p.step();
   await page.keyboard.press('Escape'); p.step();
+  await expect(workspaceInput).toBeEditable(); // UX-01-I1
   await expect(workspaceInput).toHaveValue('请对比上周同批次的首件检验记录');
 
   // UX-01-I2（CH-U2）：离开回桌面做别的事，再从卡片返回，草稿与任务恢复
@@ -74,5 +90,28 @@ test('E2E-UX01: 桌面发现 SMT-03 → 工作区 → 证据 → 专注 → 离�
   // UX-01-I4（CH-U2）：整个旅程不发生整页跳转
   const metrics = p.snapshot();
   expect(metrics.full_page_navigations).toBe(0);
-  await info.attach('ux01-probe.json', { body: JSON.stringify({ journey: 'UX-01', ...metrics }, null, 2), contentType: 'application/json' });
+  await info.attach('ux01-probe.json', { body: JSON.stringify({ journey: 'UX-01', ...metrics, ...homeClutter }, null, 2), contentType: 'application/json' });
+});
+
+// 体验地图 UX-02（docs/experience-map/journeys/UX-02.md）：做事中途临时提问，不被带离当前工作。
+// 只断言当前成立的约束 UX-02-I1；草稿保留（I2）、得到回答（I3）、助理入口可对话（I4）为欠账。
+test('E2E-UX02: 任务中切到独立话题临时提问再切回，不离开工作区且任务与作用域恢复', async ({ page }) => {
+  const p = probe(page);
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click(); p.step();
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  const input = page.getByRole('textbox', { name: '工作区输入' });
+
+  await page.getByRole('button', { name: '独立话题' }).click(); p.step();
+  await expect(page.getByRole('button', { name: '独立话题' })).toHaveAttribute('aria-pressed', 'true');
+  await input.fill('8D 报告里的 D4 指什么？'); p.step();
+  await page.getByRole('button', { name: '发送', exact: true }).click(); p.step();
+
+  // UX-02-I1：仍在同一任务的工作区，没有被带走
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await expect(input).toBeEditable();
+  await page.getByRole('button', { name: '继续当前任务' }).click(); p.step();
+  await expect(page.getByRole('button', { name: '继续当前任务' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  expect(p.snapshot().full_page_navigations).toBe(0);
 });
