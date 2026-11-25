@@ -1127,7 +1127,10 @@
       "RT-JMAT-02",
       "RT-JMAT-03",
       "RT-JMAT-04",
-      "RT-JMAT-05"
+      "RT-JMAT-05",
+      "RT-RMAT-01",
+      "RT-RMAT-02",
+      "RT-RMAT-03"
     ],
     "requirements": [
       {
@@ -1184,7 +1187,10 @@
           "RT-JMAT-02",
           "RT-JMAT-03",
           "RT-JMAT-04",
-          "RT-JMAT-05"
+          "RT-JMAT-05",
+          "RT-RMAT-01",
+          "RT-RMAT-02",
+          "RT-RMAT-03"
         ],
         "since": null
       }

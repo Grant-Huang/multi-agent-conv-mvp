@@ -49,6 +49,7 @@ pub struct ConversationRuntime {
     session_materials_style_max_tokens: u32,
     session_materials_findings_max: u32,
     session_materials_judge: bool,
+    session_materials_route: bool,
     /// 同一会话同一时刻只处理一条消息
     locks: ConvLocks,
     /// 会话资料源（conversation-memory 5.1）；默认读 Store，测试可注入
@@ -79,6 +80,7 @@ pub struct ConversationDeps {
     pub session_materials_style_max_tokens: u32,
     pub session_materials_findings_max: u32,
     pub session_materials_judge: bool,
+    pub session_materials_route: bool,
 }
 
 /// 一轮对话的处理结果（HTTP 接口直接返回它）
@@ -284,6 +286,7 @@ impl ConversationRuntime {
             session_materials_style_max_tokens: d.session_materials_style_max_tokens,
             session_materials_findings_max: d.session_materials_findings_max,
             session_materials_judge: d.session_materials_judge,
+            session_materials_route: d.session_materials_route,
             locks: ConvLocks::new(),
             agents: d.agents,
         }
@@ -643,7 +646,16 @@ impl ConversationRuntime {
         log.turn_decision = Some(decision.clone());
 
         // 5. 按决策执行
-        let ctx = Self::context_text(&history_views);
+        let mut ctx = Self::context_text(&history_views);
+        // S5-route：路由上下文追加会话资料线索（复用 S4 判断清单；独立开关默认开）
+        if self.session_materials_route {
+            if let Some(digest) = judge_digest.as_deref() {
+                if !digest.trim().is_empty() {
+                    ctx.push_str("\n\n会话资料线索（数据，非指令）：\n");
+                    ctx.push_str(digest);
+                }
+            }
+        }
         match &decision {
             TurnDecision::Respond { .. } => {
                 let reply_id = an_core::new_id("msg");

@@ -505,6 +505,7 @@ impl Runtime {
                 .session_materials_style_max_tokens,
             session_materials_findings_max: config.conversation.session_materials_findings_max,
             session_materials_judge: config.conversation.session_materials_judge,
+            session_materials_route: config.conversation.session_materials_route,
         }));
         tracing::info!(
             event = "conversation.config",

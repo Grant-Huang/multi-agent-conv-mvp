@@ -231,6 +231,9 @@ pub struct ConversationSection {
     /// S4：判断路径注入会话资料极简清单（2026-11-24 用户确认默认开；E0 对比掉点再关）
     #[serde(default = "d_true")]
     pub session_materials_judge: bool,
+    /// S5-route：路由上下文追加会话资料线索（2026-11-24 用户确认默认开）
+    #[serde(default = "d_true")]
+    pub session_materials_route: bool,
 }
 
 impl Default for ConversationSection {
@@ -248,6 +251,7 @@ impl Default for ConversationSection {
             session_materials_style_max_tokens: d_style_max_tokens(),
             session_materials_findings_max: d_findings_max(),
             session_materials_judge: true,
+            session_materials_route: true,
         }
     }
 }
