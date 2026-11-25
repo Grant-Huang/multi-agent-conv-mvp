@@ -35,6 +35,8 @@ paths = [
   "7-fence-review.md",
   # 修复 agent 的指令：修复 agent 不得改自己的规则后自动合并。
   "FIX.md",
+  # 产品宪章（D0）：所有产品判断与产品意图审查的依据；宪章第 7 节要求每次修改都经用户确认（2026-11-25）。
+  "docs/PRODUCT.md",
   "config/**",
   "tools/ci/**",
 ]
