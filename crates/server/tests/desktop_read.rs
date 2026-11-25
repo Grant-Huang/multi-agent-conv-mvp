@@ -57,19 +57,24 @@ fn read_test_gate() -> &'static Mutex<()> {
     GATE.get_or_init(|| Mutex::new(()))
 }
 
-async fn boot() -> (Api, MutexGuard<'static, ()>) {
-    let guard = read_test_gate().lock().await;
-    let dir = std::env::temp_dir().join(an_core::new_id("an-desktop-read"));
-    std::fs::create_dir_all(&dir).unwrap();
-    let db = dir.join("an.db");
-    let rt = Arc::new(Runtime::new(config(), Store::open(&db).unwrap()).unwrap());
-    let api = Api {
+/// 在指定库文件上启动服务（T-96 持久化/隔离探针用）
+async fn boot_at(db: &std::path::Path) -> Api {
+    let rt = Arc::new(Runtime::new(config(), Store::open(db).unwrap()).unwrap());
+    Api {
         base: serve(an_server::api(rt)).await,
         http: reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
             .unwrap(),
-    };
+    }
+}
+
+async fn boot() -> (Api, MutexGuard<'static, ()>) {
+    let guard = read_test_gate().lock().await;
+    let dir = std::env::temp_dir().join(an_core::new_id("an-desktop-read"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("an.db");
+    let api = boot_at(&db).await;
     let (s, v) = api
         .post(
             "/api/desktop/v1/assistant/messages/fixture/reset",
@@ -165,4 +170,97 @@ async fn rt_adxr_04_empty_message_ids_rejected() {
         .await;
     assert_eq!(s, 400, "{v}");
     assert_eq!(v["code"], "invalid_request");
+}
+
+/// RT-ADXR-05（T-96）：同库重启持久。已读标记后同一库重开服务，状态必须仍在。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_adxr_05_reopen_same_db_keeps_read_state() {
+    let _gate = read_test_gate().lock().await;
+    let dir = std::env::temp_dir().join(an_core::new_id("an-desktop-read-p5"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("an.db");
+    {
+        let api = boot_at(&db).await;
+        let (s, v) = api
+            .post(
+                "/api/desktop/v1/assistant/messages/read",
+                json!({ "message_ids": ["asst-msg-1"] }),
+            )
+            .await;
+        assert_eq!(s, 200, "{v}");
+        assert_eq!(v["newly_marked"], 1);
+    }
+    // 同库重开（新进程语义）：已读状态必须保留
+    let api2 = boot_at(&db).await;
+    let (s, list) = api2.get("/api/desktop/v1/assistant/messages").await;
+    assert_eq!(s, 200, "{list}");
+    let msg1 = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == "asst-msg-1")
+        .expect("asst-msg-1 应存在");
+    assert_eq!(msg1["read"], true, "重启后已读状态丢失");
+    let (s, reads) = api2.get("/api/desktop/v1/assistant/messages/read").await;
+    assert_eq!(s, 200, "{reads}");
+    assert!(
+        reads["read_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x == "asst-msg-1"),
+        "{reads}"
+    );
+}
+
+/// RT-ADXR-06（T-96）：库间隔离。全新库上的服务不得看到其他库/进程标记的已读状态
+/// （H4 同族探针：进程级状态不得跨库泄漏）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_adxr_06_fresh_db_does_not_inherit_process_state() {
+    let _gate = read_test_gate().lock().await;
+    let dir = std::env::temp_dir().join(an_core::new_id("an-desktop-read-p6"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db1 = dir.join("a.db");
+    let db2 = dir.join("b.db");
+
+    let api_a = boot_at(&db1).await;
+    let (s, _) = api_a
+        .post(
+            "/api/desktop/v1/assistant/messages/fixture/reset",
+            json!({}),
+        )
+        .await;
+    assert_eq!(s, 200);
+    let api_b = boot_at(&db2).await;
+    let (s, seed_list) = api_b.get("/api/desktop/v1/assistant/messages").await;
+    assert_eq!(s, 200, "{seed_list}");
+    let seed_unread = seed_list["unread_count"].as_u64().unwrap();
+
+    // 库一标记已读
+    let (s, v) = api_a
+        .post(
+            "/api/desktop/v1/assistant/messages/read",
+            json!({ "message_ids": ["asst-msg-1"] }),
+        )
+        .await;
+    assert_eq!(s, 200, "{v}");
+
+    // 库二（全新库）必须仍是种子态：asst-msg-1 未读、未读数不变
+    let (s, list_b) = api_b.get("/api/desktop/v1/assistant/messages").await;
+    assert_eq!(s, 200, "{list_b}");
+    let msg1_b = list_b["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == "asst-msg-1")
+        .expect("asst-msg-1 应存在");
+    assert_eq!(
+        msg1_b["read"], false,
+        "进程级已读状态泄漏到了另一个全新库: {list_b}"
+    );
+    assert_eq!(
+        list_b["unread_count"].as_u64().unwrap(),
+        seed_unread,
+        "新库未读数应保持种子值"
+    );
 }

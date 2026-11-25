@@ -706,6 +706,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADXR-02 | ai-desktop | reset 后 | `POST .../assistant/messages/read` 带 `["asst-msg-1"]` | **200**；`newly_marked=1`；GET 列表该条 `read=true`；`unread_count` 减 1 |
 | RT-ADXR-03 | ai-desktop | 已标 asst-msg-1 | 同 ID 再 POST read | **200**；`newly_marked=0`；`read_ids` 不变 |
 | RT-ADXR-04 | ai-desktop | harness | `POST .../read` 空 `message_ids` | **400** `invalid_request` |
+| RT-ADXR-05 | ai-desktop | 标记 asst-msg-1 已读后，同库重开服务（新进程） | `GET /assistant/messages` 与 `GET .../read` | 已读状态保留（T-96：服务端权威，重启不丢） |
+| RT-ADXR-06 | ai-desktop | 库 A 标记 asst-msg-1 已读；库 B（全新库） | `GET` 库 B 列表与未读数 | 库 B 保持种子态：asst-msg-1 未读、未读数不变（进程级状态不得跨库泄漏） |
 
 ### AI Desktop T-82 首页快照（运行时 / HTTP）
 
