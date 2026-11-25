@@ -1,0 +1,82 @@
+[
+  {
+    "id": "UX-01",
+    "title": "从桌面发现异常并开始调查（SMT-03）",
+    "document": "docs/experience-map/journeys/UX-01.md",
+    "persona": "docs/experience-map/personas/P-SUP-NEW.md",
+    "charter": [
+      "CH-U1",
+      "CH-U2",
+      "CH-U3",
+      "CH-U5",
+      "CH-P8"
+    ],
+    "features": [
+      "ai-desktop",
+      "conversation"
+    ],
+    "invariants": [
+      {
+        "id": "UX-01-I1",
+        "text": "每一步对话输入都可用",
+        "charter": "CH-U1",
+        "case": "E2E-UX01"
+      },
+      {
+        "id": "UX-01-I2",
+        "text": "切换、设置、离开再返回后草稿与任务恢复",
+        "charter": "CH-U2",
+        "case": "E2E-UX01"
+      },
+      {
+        "id": "UX-01-I3",
+        "text": "打开再关闭证据后回到原工作区",
+        "charter": "CH-U2",
+        "case": "E2E-UX01"
+      },
+      {
+        "id": "UX-01-I4",
+        "text": "旅程中不发生整页跳转",
+        "charter": "CH-U2",
+        "case": "E2E-UX01"
+      },
+      {
+        "id": "UX-01-I5",
+        "text": "向 AI 提出的问题得到回答",
+        "charter": "CH-U1",
+        "debt": true
+      },
+      {
+        "id": "UX-01-I6",
+        "text": "窄屏下工作区对话输入在首屏可见",
+        "charter": "CH-U1",
+        "debt": true
+      },
+      {
+        "id": "UX-01-I7",
+        "text": "有其他会话的旧服务端草稿时，新输入的草稿不被覆盖",
+        "charter": "CH-U2",
+        "debt": true
+      }
+    ],
+    "budget": {
+      "steps_max": 12,
+      "full_page_navigations_max": 0
+    },
+    "baseline": {
+      "date": "2026-11-25",
+      "steps": 10,
+      "full_page_navigations": 0
+    },
+    "known_deviations": [
+      "INTENT-2026-001",
+      "INTENT-2026-002",
+      "INTENT-2026-003",
+      "INTENT-2026-004",
+      "INTENT-2026-005",
+      "INTENT-2026-006",
+      "INTENT-2026-007",
+      "INTENT-2026-008"
+    ]
+  }
+]
