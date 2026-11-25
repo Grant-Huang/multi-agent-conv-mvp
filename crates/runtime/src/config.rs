@@ -234,6 +234,11 @@ pub struct ConversationSection {
     /// S5-route：路由上下文追加会话资料线索（2026-11-24 用户确认默认开）
     #[serde(default = "d_true")]
     pub session_materials_route: bool,
+    /// S6-exec：general 任务上下文追加完整资料块（2026-11-24 用户确认默认开；512 上限）
+    #[serde(default = "d_true")]
+    pub session_materials_exec: bool,
+    #[serde(default = "d_exec_max_tokens")]
+    pub session_materials_exec_max_tokens: u32,
 }
 
 impl Default for ConversationSection {
@@ -252,6 +257,8 @@ impl Default for ConversationSection {
             session_materials_findings_max: d_findings_max(),
             session_materials_judge: true,
             session_materials_route: true,
+            session_materials_exec: true,
+            session_materials_exec_max_tokens: d_exec_max_tokens(),
         }
     }
 }
@@ -267,6 +274,9 @@ fn d_style_max_tokens() -> u32 {
 }
 fn d_findings_max() -> u32 {
     2
+}
+fn d_exec_max_tokens() -> u32 {
+    512
 }
 
 impl AppConfig {
