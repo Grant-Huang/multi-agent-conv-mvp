@@ -69,7 +69,7 @@ E2E-REV → expected        E2E-HOMEREV → expected
 
 | 项 | 状态 |
 |---|---|
-| push @ `6fbc83c`（#291，run [45548460843](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45548460843)） | 记录时 **in_progress**；终态回填：（待回填） |
+| push @ `6fbc83c`（#291，run [45548460843](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45548460843)） | **success**（记录时 in_progress，同会话复跑确认终态，全部作业通过） |
 | nightly 11-25 | 未触发（收稿时点）；预期收敛形态见摘要 |
 
 ## 4. 问题清单
