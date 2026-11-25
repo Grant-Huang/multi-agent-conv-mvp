@@ -85,3 +85,4 @@
 | 日期 | 变化 | 关联 |
 |---|---|---|
 | 2026-11-25 | 新建；扩大 UXFIX-D 范围 | 补充 [2026-11-25-ux01-intent-fixes-and-charter-risk](2026-11-25-ux01-intent-fixes-and-charter-risk.md) |
+| 2026-11-25 | UXFIX-D 再加入 INTENT-2026-013；另开 UXFIX-G（INTENT-2026-012） | [2026-11-25-intent-012-013-cards](2026-11-25-intent-012-013-cards.md) |
