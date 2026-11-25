@@ -13,8 +13,7 @@ use an_runtime::store::{
     DesktopAcceptOutcome, DesktopApprovalDecideOutcome, DesktopApprovalExecuteOutcome,
     DesktopDraftRow, DesktopDraftSave, DesktopDraftSaveOutcome, DesktopEventCursor,
     DesktopEventsAfter, DesktopEvidenceAccess, DesktopLinkOutcome, DesktopMemory,
-    DesktopPrefPatchOutcome, DesktopRequestRecord,
-    DesktopTaskLinkAuditRow,
+    DesktopPrefPatchOutcome, DesktopRequestRecord, DesktopTaskLinkAuditRow,
 };
 use an_runtime::Runtime;
 use axum::extract::{Path, Query, State};
@@ -1309,10 +1308,7 @@ struct CreateLinkAuditBody {
     action: String,
 }
 
-async fn list_link_audits(
-    State(rt): State<AppState>,
-    Path(task_id): Path<String>,
-) -> Response {
+async fn list_link_audits(State(rt): State<AppState>, Path(task_id): Path<String>) -> Response {
     match rt.store.list_desktop_task_link_audits(&task_id) {
         Ok(rows) => {
             let items: Vec<_> = rows.iter().map(link_audit_json).collect();
@@ -1338,8 +1334,15 @@ async fn create_link_audit(
         )
             .into_response();
     }
-    match rt.store.append_desktop_task_link_audit(&task_id, &body.source, &body.action) {
-        Ok(row) => (StatusCode::OK, Json(json!({ "audit": link_audit_json(&row) }))).into_response(),
+    match rt
+        .store
+        .append_desktop_task_link_audit(&task_id, &body.source, &body.action)
+    {
+        Ok(row) => (
+            StatusCode::OK,
+            Json(json!({ "audit": link_audit_json(&row) })),
+        )
+            .into_response(),
         Err(e) => drafts_internal_err(e),
     }
 }

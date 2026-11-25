@@ -87,7 +87,10 @@ async fn rt_adlaud_01_append_and_list_roundtrip() {
         )
         .await;
     assert_eq!(s, 200, "{v}");
-    assert!(v["audit"]["id"].as_str().unwrap_or_default().len() > 0, "{v}");
+    assert!(
+        v["audit"]["id"].as_str().unwrap_or_default().len() > 0,
+        "{v}"
+    );
     assert_eq!(v["audit"]["task_id"], "TASK-AUD-A", "{v}");
     assert_eq!(v["audit"]["action"], "link", "{v}");
     let (s, v) = api
@@ -142,15 +145,12 @@ async fn rt_adlaud_02_filter_by_task() {
     assert_eq!(s, 200, "{g}");
     let items = g["items"].as_array().unwrap();
     assert_eq!(items.len(), 2, "TASK-B-AUD 应恰有 2 条: {g}");
-    assert!(
-        items.iter().all(|i| i["task_id"] == "TASK-B-AUD"),
-        "{g}"
-    );
+    assert!(items.iter().all(|i| i["task_id"] == "TASK-B-AUD"), "{g}");
 }
 
-/// RT-ADLAUD-04：action 非法值拒绝。
+/// RT-ADLAUD-03：action 非法值拒绝。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn rt_adlaud_04_invalid_action_rejected() {
+async fn rt_adlaud_03_invalid_action_rejected() {
     let (api, _rt) = boot().await;
     let (s, v) = api
         .post(
@@ -162,10 +162,9 @@ async fn rt_adlaud_04_invalid_action_rejected() {
     assert_eq!(v["code"], "invalid_request", "{v}");
 }
 
-
-/// RT-ADLAUD-05：同库重启持久 + 跨库隔离（H4 同族探针）。
+/// RT-ADLAUD-04：同库重启持久 + 跨库隔离（H4 同族探针）。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn rt_adlaud_05_restart_persists_and_cross_db_isolated() {
+async fn rt_adlaud_04_restart_persists_and_cross_db_isolated() {
     let dir = std::env::temp_dir().join(an_core::new_id("an-desktop-link-aud-p5"));
     std::fs::create_dir_all(&dir).unwrap();
     let db1 = dir.join("a.db");
@@ -182,16 +181,20 @@ async fn rt_adlaud_05_restart_persists_and_cross_db_isolated() {
     }
     // 同库重开：审计保留
     let api_r = boot_at(&db1).await;
-    let (s, g) = api_r
-        .get("/api/desktop/v1/tasks/TASK-P/link-audits")
-        .await;
+    let (s, g) = api_r.get("/api/desktop/v1/tasks/TASK-P/link-audits").await;
     assert_eq!(s, 200, "{g}");
-    assert_eq!(g["items"].as_array().unwrap().len(), 1, "重启后审计丢失: {g}");
+    assert_eq!(
+        g["items"].as_array().unwrap().len(),
+        1,
+        "重启后审计丢失: {g}"
+    );
     // 全新库：空（用户事件不播种、跨库不泄漏）
     let api_f = boot_at(&db2).await;
-    let (s, g) = api_f
-        .get("/api/desktop/v1/tasks/TASK-P/link-audits")
-        .await;
+    let (s, g) = api_f.get("/api/desktop/v1/tasks/TASK-P/link-audits").await;
     assert_eq!(s, 200, "{g}");
-    assert_eq!(g["items"].as_array().unwrap().len(), 0, "全新库不应有其他库的审计: {g}");
+    assert_eq!(
+        g["items"].as_array().unwrap().len(),
+        0,
+        "全新库不应有其他库的审计: {g}"
+    );
 }
