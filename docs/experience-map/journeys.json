@@ -57,6 +57,12 @@
         "text": "有其他会话的旧服务端草稿时，新输入的草稿不被覆盖",
         "charter": "CH-U2",
         "debt": true
+      },
+      {
+        "id": "UX-01-I8",
+        "text": "工作区已发送的消息与受理记录离开再返回后仍在",
+        "charter": "CH-U2",
+        "debt": true
       }
     ],
     "budget": {

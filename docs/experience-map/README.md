@@ -6,6 +6,7 @@
 | 状态 | 试点（2026-11-25 起，先做 UX-01） |
 | 机器可读 | [journeys.json](journeys.json)，由 `cd web && npm run test:map` 校验（`web/verification/check-experience.mjs`） |
 | 审查报告 | [docs/review/product-intent/](../review/product-intent/) |
+| 守护者 | 每周定时运行，规程见 [GUARDIAN.md](GUARDIAN.md)，授权例外见 [EXCEPTIONS.md](EXCEPTIONS.md) |
 
 ## 1. 为什么要有体验地图
 
