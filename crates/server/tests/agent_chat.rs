@@ -474,7 +474,7 @@ async fn rt_agchat_10_undo_and_list_ignore_agent_id() {
     ] {
         let d = rt
             .conversation
-            .decide_turn(&history(text), &[])
+            .decide_turn(&history(text), &[], None)
             .await
             .unwrap_or_else(|e| panic!("{text}：{}", e.message));
         match d.value {
@@ -497,7 +497,7 @@ async fn rt_agchat_11_prompt_rules_for_common_mistakes() {
     let llm = MockLlm::start(Arc::new(|_, _| manage("list", "", ""))).await;
     let (_base, rt) = sb.serve(&llm.base, true).await;
     rt.conversation
-        .decide_turn(&history("你好"), &[])
+        .decide_turn(&history("你好"), &[], None)
         .await
         .unwrap();
     let req = llm.turn_requests().pop().expect("应请求前台判断");
@@ -524,7 +524,7 @@ async fn rt_agchat_11_prompt_rules_for_common_mistakes() {
     .await;
     let (_b2, rt2) = sb2.serve(&llm2.base, false).await;
     rt2.conversation
-        .decide_turn(&history("你好"), &[])
+        .decide_turn(&history("你好"), &[], None)
         .await
         .unwrap();
     let off = llm2.turn_requests().pop().unwrap()["messages"][0]["content"]

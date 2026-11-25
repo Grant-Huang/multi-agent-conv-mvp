@@ -186,7 +186,7 @@ async fn rt_ft_01_defaults_unchanged() {
     .await;
     let rt = runtime(&llm.base, 0, "", "");
     rt.conversation
-        .decide_turn(&user("写一份周报"), &[])
+        .decide_turn(&user("写一份周报"), &[], None)
         .await
         .unwrap();
     assert!(rt.router.route("写一份周报", "", &[]).await.is_ok());
@@ -218,7 +218,7 @@ async fn rt_ft_02_reason_first_when_thinking_off() {
     .await;
     let rt = runtime(&llm.base, 0, THINK_OFF_REASON, "");
     rt.conversation
-        .decide_turn(&user("写一份周报"), &[])
+        .decide_turn(&user("写一份周报"), &[], None)
         .await
         .unwrap();
     assert!(rt.router.route("写一份周报", "", &[]).await.is_ok());
@@ -252,7 +252,7 @@ async fn rt_ft_03_reason_first_ignored_when_thinking_on() {
     .await;
     let rt = runtime(&llm.base, 0, "front_reason_first = true", "");
     rt.conversation
-        .decide_turn(&user("写一份周报"), &[])
+        .decide_turn(&user("写一份周报"), &[], None)
         .await
         .unwrap();
     assert!(rt.router.route("写一份周报", "", &[]).await.is_ok());
@@ -314,7 +314,7 @@ async fn rt_ft_06_format_error_escalates() {
     let rt = runtime(&llm.base, 2, THINK_OFF_ESCALATE, "");
     let out = rt
         .conversation
-        .decide_turn(&user("写一份周报"), &[])
+        .decide_turn(&user("写一份周报"), &[], None)
         .await
         .unwrap();
     assert!(matches!(out.value, TurnDecision::Delegate { .. }));
@@ -381,7 +381,7 @@ async fn rt_ft_09_empty_goal_escalates() {
     let rt = runtime(&llm.base, 2, THINK_OFF_ESCALATE, "");
     let out = rt
         .conversation
-        .decide_turn(&user("写一份周报"), &[])
+        .decide_turn(&user("写一份周报"), &[], None)
         .await
         .unwrap();
     assert!(matches!(&out.value, TurnDecision::Delegate { task_goal } if !task_goal.is_empty()));
@@ -395,7 +395,10 @@ async fn rt_ft_09_empty_goal_escalates() {
 async fn rt_ft_10_escalates_at_most_once() {
     let llm = MockLlm::start(Arc::new(|_, _, _| "这不是 JSON".into())).await;
     let rt = runtime(&llm.base, 1, THINK_OFF_ESCALATE, "");
-    let out = rt.conversation.decide_turn(&user("写一份周报"), &[]).await;
+    let out = rt
+        .conversation
+        .decide_turn(&user("写一份周报"), &[], None)
+        .await;
     assert!(out.is_err(), "始终不合格应返回错误");
     let calls = llm.calls("turn_decision");
     let off: Vec<bool> = calls.iter().map(thinking_off).collect();
@@ -423,7 +426,7 @@ async fn rt_ft_11_no_escalation_without_both_switches() {
         .await;
         let rt = runtime(&llm.base, 2, extra, "");
         rt.conversation
-            .decide_turn(&user("写一份周报"), &[])
+            .decide_turn(&user("写一份周报"), &[], None)
             .await
             .unwrap();
         let off: Vec<bool> = llm

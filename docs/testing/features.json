@@ -1107,7 +1107,12 @@
       "RT-UFND-03",
       "RT-UFND-04",
       "RT-UFND-05",
-      "RT-UFND-06"
+      "RT-UFND-06",
+      "RT-JMAT-01",
+      "RT-JMAT-02",
+      "RT-JMAT-03",
+      "RT-JMAT-04",
+      "RT-JMAT-05"
     ],
     "requirements": [
       {
@@ -1159,7 +1164,12 @@
           "RT-UFND-03",
           "RT-UFND-04",
           "RT-UFND-05",
-          "RT-UFND-06"
+          "RT-UFND-06",
+          "RT-JMAT-01",
+          "RT-JMAT-02",
+          "RT-JMAT-03",
+          "RT-JMAT-04",
+          "RT-JMAT-05"
         ],
         "since": null
       }

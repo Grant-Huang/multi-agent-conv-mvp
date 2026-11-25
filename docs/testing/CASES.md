@@ -1057,3 +1057,15 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-UFND-04 | conversation-memory | 带 case_ids 的发现（cooccur 形态 json） | 相关续问 | 来源行含 finding id、topic 与证据 case id |
 | RT-UFND-05 | conversation-memory | 任一发生注入的轮次 | 注入后查库 | `desktop_memories` 行数不变、`introspection_findings` 行无写入（不自动晋升，纯只读） |
 | RT-UFND-06 | conversation-memory | 过闸门的 adoption 发现（5.3b 证据链补强） | 跑分析 job 后查 findings json | adoption 形态 json 含非空 `case_ids` 字符串数组（与 cooccur 形态对齐，注入来源行可点回原始记录） |
+
+## 判断路径会话资料清单 conversation-memory 5.4a（S4；2026-11-24 用户确认：极简清单 / 默认开 / 仅判断路径 / 先合入后跑 E0 对比）
+
+判断模型（turn_decision）此前只见近 12 条消息与活动任务；回执出窗后续问时判断方向可能误判。本卡把会话资料以**极简清单**注入判断提示词（每条一行 `id · 类型 · 要点≤40字`，最多 3 行，独立系统消息紧随判断系统提示）；收集复用 5.1 Collector（相关性门/作用域/降级/过期语义不变），**每轮收集一次、判断与回答两路共享**；schema 不变。`[conversation] session_materials_judge` 默认开。判断提示词变化对 FT 路由基线的影响：先合入后跑 E0 同口径对比，结果回填 FT 记录，掉点则关默认。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-JMAT-01 | conversation-memory | 回执出窗 + 相关续问 | handle_message | turn_decision 请求的 messages 含清单行（含任务 id 与截断要点） |
+| RT-JMAT-02 | conversation-memory | 回执、fact 记忆、过闸门发现各一 | 相关续问 | 清单三行齐全（行式 `id：类型「标题」：要点`） |
+| RT-JMAT-03 | conversation-memory | 过闸门的发现（与提问不相关） | 无关续问 | 发现行不进清单（相关性门只作用于发现；任务回执与记忆不受门限，为 5.1/5.2 既定语义） |
+| RT-JMAT-04 | conversation-memory | 资料源超时（慢源） | 续问 | 判断照常（无清单、不失败） |
+| RT-JMAT-05 | conversation-memory | 超长摘要 | 相关续问 | 清单行要点截断 ≤40 字 + 标记 |

@@ -228,6 +228,9 @@ pub struct ConversationSection {
     /// 5.3：内省发现按相关性注入的条数上限（独立计数）
     #[serde(default = "d_findings_max")]
     pub session_materials_findings_max: u32,
+    /// S4：判断路径注入会话资料极简清单（2026-11-24 用户确认默认开；E0 对比掉点再关）
+    #[serde(default = "d_true")]
+    pub session_materials_judge: bool,
 }
 
 impl Default for ConversationSection {
@@ -244,6 +247,7 @@ impl Default for ConversationSection {
             session_materials_timeout_ms: d_materials_timeout_ms(),
             session_materials_style_max_tokens: d_style_max_tokens(),
             session_materials_findings_max: d_findings_max(),
+            session_materials_judge: true,
         }
     }
 }
