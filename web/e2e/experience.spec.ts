@@ -36,6 +36,20 @@ test('E2E-UX01: 桌面发现 SMT-03 → 工作区 → 证据 → 专注 → 离�
 
   // UX-01-I1（CH-U1）：首页对话入口可用
   await expect(page.getByRole('textbox', { name: 'S1 输入' })).toBeEditable();
+  // 首页拥挤度探针（CH-U4、CH-U5，只记录趋势）：可见可交互控件数与技术词命中数。
+  // 校准基线：T-88 之前 37 / 主区 21 / 技术词 11；之后 21 / 6 / 1（见 docs/review/product-intent/）。
+  const homeClutter = await page.evaluate(() => {
+    const visible = (e: Element) => (e as HTMLElement).offsetParent !== null;
+    const sel = 'button,a[href],input,textarea,select,[role=tab]';
+    const main = document.querySelector('main');
+    const terms = ['fixture', 'Mock', 'ACP', 'ACL', 'O-Agent', '夹具', '注入', '重置', '未启用', '页签'];
+    const text = document.body.innerText;
+    return {
+      home_controls: [...document.querySelectorAll(sel)].filter(visible).length,
+      home_main_controls: main ? [...main.querySelectorAll(sel)].filter(visible).length : 0,
+      home_tech_terms: terms.reduce((n, t) => n + (text.split(t).length - 1), 0),
+    };
+  });
   // 发现：异常卡片在“我的工作”里，并标明“模拟”（CH-P8）
   const card = page.getByTestId('card-smt-03');
   await expect(card).toBeVisible();
@@ -74,5 +88,5 @@ test('E2E-UX01: 桌面发现 SMT-03 → 工作区 → 证据 → 专注 → 离�
   // UX-01-I4（CH-U2）：整个旅程不发生整页跳转
   const metrics = p.snapshot();
   expect(metrics.full_page_navigations).toBe(0);
-  await info.attach('ux01-probe.json', { body: JSON.stringify({ journey: 'UX-01', ...metrics }, null, 2), contentType: 'application/json' });
+  await info.attach('ux01-probe.json', { body: JSON.stringify({ journey: 'UX-01', ...metrics, ...homeClutter }, null, 2), contentType: 'application/json' });
 });
