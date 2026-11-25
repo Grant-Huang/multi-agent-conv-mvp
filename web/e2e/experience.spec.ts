@@ -69,6 +69,7 @@ test('E2E-UX01: 桌面发现 SMT-03 → 工作区 → 证据 → 专注 → 离�
 
   // UX-01-I2（CH-U2）：切换专注模式再回来，草稿不丢
   await page.getByRole('button', { name: '专注 S3' }).click(); p.step();
+  await expect(workspaceInput).toBeEditable(); // UX-01-I1：专注模式下对话输入仍可用
   await expect(workspaceInput).toHaveValue('请对比上周同批次的首件检验记录');
   await page.getByRole('button', { name: '分屏 S2' }).click(); p.step();
   await expect(workspaceInput).toHaveValue('请对比上周同批次的首件检验记录');
@@ -76,6 +77,7 @@ test('E2E-UX01: 桌面发现 SMT-03 → 工作区 → 证据 → 专注 → 离�
   // UX-01-I2（CH-U2）：打开设置再关闭，回到原处，草稿不丢
   await page.getByRole('button', { name: '设置与管理' }).click(); p.step();
   await page.keyboard.press('Escape'); p.step();
+  await expect(workspaceInput).toBeEditable(); // UX-01-I1
   await expect(workspaceInput).toHaveValue('请对比上周同批次的首件检验记录');
 
   // UX-01-I2（CH-U2）：离开回桌面做别的事，再从卡片返回，草稿与任务恢复
