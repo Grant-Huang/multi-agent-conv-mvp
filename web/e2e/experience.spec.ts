@@ -175,3 +175,38 @@ test('E2E-UX04: 对话中委派的任务完成后，打开任务详情不影响�
   await expect(input).toHaveValue('再补一段关于功耗的对比');
   expect(p.snapshot().full_page_navigations).toBe(0);
 });
+
+// 体验地图 UX-05（docs/experience-map/journeys/UX-05.md）：主动提醒 → 稍后处理 → 回来处理。
+// 只断言当前成立的约束 UX-05-I1、I2；“为你关注”实时出现（I3）、“稍后”不丢提醒（I4）、
+// 助理消息可直达对应工作（I5）为欠账，见 2026-11-25 UX-05 基线审查。
+// 提醒经测试 API 注入（夹具，EX-02），用唯一标题区分。
+test('E2E-UX05: 提醒不抢输入焦点；稍后回到桌面可从“为你关注”直达任务，返回后提醒仍在', async ({ page }) => {
+  const p = probe(page);
+  const title = `建议：复核 SMT-03 证据 ${Date.now()}`;
+  await page.goto('/');
+  const s1 = page.getByRole('textbox', { name: 'S1 输入' });
+  await s1.fill('正在写的问题'); p.step();
+  await s1.focus();
+  await page.request.post('/api/desktop/v1/attention', {
+    data: { kind: 'ordinary', title, body: '首件记录与上周对比缺一处复核', task_id: SMT03_TASK_ID },
+  });
+
+  // UX-05-I1（CH-U3、CH-U2）：提醒以浮层出现，不抢正在输入的焦点、不清空输入
+  await expect(page.getByTestId('attn-item-ordinary').filter({ hasText: title })).toBeVisible({ timeout: 15_000 });
+  await expect(s1).toBeFocused();
+  await expect(s1).toHaveValue('正在写的问题');
+
+  // 稍后回来：重新打开桌面（当前“为你关注”不随新提醒实时更新，见 INTENT-2026-023 / UX-05-I3 欠账）
+  await page.reload();
+  const navBefore = p.snapshot().full_page_navigations;
+
+  // UX-05-I2（CH-U3、CH-U2）：从“为你关注”直达关联任务；处理完返回桌面，提醒仍在原处
+  const watch = page.getByRole('region', { name: '为你关注' }).getByRole('button').filter({ hasText: title });
+  await expect(watch).toBeVisible();
+  await watch.click(); p.step();
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click(); p.step();
+  await expect(watch).toBeVisible();
+  // 处理过程中不发生整页跳转（只计 reload 之后）
+  expect(p.snapshot().full_page_navigations - navBefore).toBe(0);
+});

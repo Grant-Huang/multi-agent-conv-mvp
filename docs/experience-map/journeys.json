@@ -277,5 +277,65 @@
       "INTENT-2026-018",
       "INTENT-2026-019"
     ]
+  },
+  {
+    "id": "UX-05",
+    "title": "主动提醒 → 稍后处理 → 回来处理",
+    "document": "docs/experience-map/journeys/UX-05.md",
+    "persona": "docs/experience-map/personas/P-SUP-NEW.md",
+    "charter": [
+      "CH-U2",
+      "CH-U3"
+    ],
+    "features": [
+      "ai-desktop"
+    ],
+    "invariants": [
+      {
+        "id": "UX-05-I1",
+        "text": "提醒出现时不抢正在输入的焦点、不清空输入",
+        "charter": "CH-U3",
+        "case": "E2E-UX05"
+      },
+      {
+        "id": "UX-05-I2",
+        "text": "从“为你关注”直达提醒关联的任务，返回后提醒仍在",
+        "charter": "CH-U3",
+        "case": "E2E-UX05"
+      },
+      {
+        "id": "UX-05-I3",
+        "text": "新提醒到达时“为你关注”实时出现，不需刷新",
+        "charter": "CH-U3",
+        "debt": true
+      },
+      {
+        "id": "UX-05-I4",
+        "text": "可以选择“稍后”，提醒保留在“为你关注”而不丢失；忽略后各处一致",
+        "charter": "CH-U3",
+        "debt": true
+      },
+      {
+        "id": "UX-05-I5",
+        "text": "助理消息可直接打开对应的任务或对象",
+        "charter": "CH-U3",
+        "debt": true
+      }
+    ],
+    "budget": {
+      "steps_max": 4,
+      "full_page_navigations_max": 0
+    },
+    "baseline": {
+      "date": "2026-11-25",
+      "steps": 3,
+      "full_page_navigations": 0
+    },
+    "known_deviations": [
+      "INTENT-2026-006",
+      "INTENT-2026-021",
+      "INTENT-2026-022",
+      "INTENT-2026-023"
+    ]
   }
 ]
