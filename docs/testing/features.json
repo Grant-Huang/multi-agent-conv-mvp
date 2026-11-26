@@ -753,6 +753,7 @@
       "web/src/App.tsx",
       "web/src/desktop/DesktopHome.tsx",
       "web/src/desktop/WorkspaceView.tsx",
+      "web/src/desktop/taskStatusText.ts",
       "web/src/desktop/WorkspaceComposer.tsx",
       "web/src/desktop/EvidencePanel.tsx",
       "web/src/desktop/principalStore.ts",

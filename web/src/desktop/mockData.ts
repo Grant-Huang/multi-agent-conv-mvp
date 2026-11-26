@@ -1,6 +1,10 @@
 /** A 阶段桌面 Mock 种子（M1）；SMT-03 允许纯 Mock，见决定 61 / MOCK_REGISTRY。 */
 export const SMT03_TASK_ID = "TASK-2026-018";
 
+/** 夹具任务集合（UXFIX-E）：只有这些任务在工作区显示模拟内容并标“模拟”；
+ *  其余任务一律按 Task ID 读真实任务（CH-P8）。 */
+export const FIXTURE_TASK_IDS: ReadonlySet<string> = new Set([SMT03_TASK_ID, "TASK-2026-021"]);
+
 export type DesktopCard = {
   id: string;
   zone: "mine" | "agent" | "watch";

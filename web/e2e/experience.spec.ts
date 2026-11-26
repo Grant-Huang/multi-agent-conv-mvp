@@ -146,6 +146,20 @@ test('E2E-UX03: 首页一句话委派后留在桌面，后台运行时可去做�
   const card = page.getByRole('region', { name: '我的工作' }).getByRole('button').filter({ hasText: goal });
   await expect(card).toContainText('已完成', { timeout: 60_000 });
 
+  // UX-03-I4（CH-P8）：从卡片打开委派的真实任务，工作区显示该任务自己的目标、状态与产物，
+  // 不出现夹具的模拟内容；工作区状态词与卡片一致
+  const cardSubtitle = await card.locator('.desktop-card-sub').innerText();
+  expect(cardSubtitle).toBe('已完成');
+  await card.click(); p.step();
+  const pane = page.getByTestId('workspace-task-pane');
+  await expect(page.getByTestId('workspace-task-status')).toHaveText('已完成');
+  await expect(page.getByTestId('workspace-task-goal')).toContainText(goal);
+  await expect(page.getByTestId('workspace-task-artifacts')).toContainText('verification.md');
+  await expect(pane).not.toContainText('质量批次 SMT-03');
+  await expect(pane).not.toContainText('桌面首页 Mock');
+  await expect(pane).not.toContainText('执行中（模拟）');
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+
   const metrics = p.snapshot();
   expect(metrics.full_page_navigations).toBe(0);
   await info.attach('ux03-probe.json', { body: JSON.stringify({ journey: 'UX-03', ...metrics }, null, 2), contentType: 'application/json' });
