@@ -32,22 +32,26 @@ struct Api {
 
 impl Api {
     async fn get(&self, path: &str) -> (u16, Value) {
-        let r = self
-            .http
-            .get(format!("{}{path}", self.base))
-            .send()
-            .await
-            .unwrap();
+        self.get_as("", path).await
+    }
+    /// 带 `x-desktop-principal` 夹具头请求（M4 用户隔离口径；空串 = 不带头）
+    async fn get_as(&self, principal: &str, path: &str) -> (u16, Value) {
+        let mut r = self.http.get(format!("{}{path}", self.base));
+        if !principal.is_empty() {
+            r = r.header("x-desktop-principal", principal);
+        }
+        let r = r.send().await.unwrap();
         (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
     }
     async fn post(&self, path: &str, body: Value) -> (u16, Value) {
-        let r = self
-            .http
-            .post(format!("{}{path}", self.base))
-            .json(&body)
-            .send()
-            .await
-            .unwrap();
+        self.post_as("", path, body).await
+    }
+    async fn post_as(&self, principal: &str, path: &str, body: Value) -> (u16, Value) {
+        let mut r = self.http.post(format!("{}{path}", self.base)).json(&body);
+        if !principal.is_empty() {
+            r = r.header("x-desktop-principal", principal);
+        }
+        let r = r.send().await.unwrap();
         (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
     }
 }
@@ -262,5 +266,77 @@ async fn rt_adxr_06_fresh_db_does_not_inherit_process_state() {
         list_b["unread_count"].as_u64().unwrap(),
         seed_unread,
         "新库未读数应保持种子值"
+    );
+}
+
+/// RT-ADXR-07（M4，Issue #361）：已读状态按用户隔离。
+/// alice 标记的已读，bob 查询不得看到（跨用户状态泄漏修复的回归用例）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_adxr_07_read_state_is_isolated_per_user() {
+    let (api, _gate) = boot().await;
+    // alice 标记 asst-msg-2 已读
+    let (s, v) = api
+        .post_as(
+            "alice",
+            "/api/desktop/v1/assistant/messages/read",
+            json!({ "message_ids": ["asst-msg-2"] }),
+        )
+        .await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["newly_marked"], 1, "{v}");
+
+    // alice 自己看到已读
+    let (s, list_a) = api
+        .get_as("alice", "/api/desktop/v1/assistant/messages")
+        .await;
+    assert_eq!(s, 200, "{list_a}");
+    let msg2_a = list_a["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == "asst-msg-2")
+        .expect("asst-msg-2 应存在");
+    assert_eq!(msg2_a["read"], true, "alice 应看到自己的已读态: {list_a}");
+
+    // bob 看到未读：alice 的已读态不得泄漏给 bob
+    let (s, list_b) = api
+        .get_as("bob", "/api/desktop/v1/assistant/messages")
+        .await;
+    assert_eq!(s, 200, "{list_b}");
+    let msg2_b = list_b["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == "asst-msg-2")
+        .expect("asst-msg-2 应存在");
+    assert_eq!(
+        msg2_b["read"], false,
+        "alice 的已读态泄漏给了 bob（M4 跨用户状态泄漏）: {list_b}"
+    );
+    let (s, reads_b) = api
+        .get_as("bob", "/api/desktop/v1/assistant/messages/read")
+        .await;
+    assert_eq!(s, 200, "{reads_b}");
+    assert!(
+        !reads_b["read_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x == "asst-msg-2"),
+        "bob 的 read_ids 不应含 alice 标记的条目: {reads_b}"
+    );
+
+    // 无头请求回退 local 用户：与 alice/bob 互不可见（现网单用户行为不变的护栏）
+    let (s, list_local) = api.get("/api/desktop/v1/assistant/messages").await;
+    assert_eq!(s, 200, "{list_local}");
+    let msg2_local = list_local["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == "asst-msg-2")
+        .expect("asst-msg-2 应存在");
+    assert_eq!(
+        msg2_local["read"], false,
+        "无头回退 local 不应看到 alice 的已读态"
     );
 }
