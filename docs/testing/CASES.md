@@ -639,9 +639,12 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|---|
 | E2E-ADNAV | ai-desktop | 干净浏览器；Mock 首页种子含 SMT-03 | 打开 `/`；从首页卡打开任务；返回桌面；再从侧栏「最近」打开同一任务；查看运营入口 | 见「我的 AI 桌面」与三区；工作区 Task ID 为 `TASK-2026-018`；返回后仍在桌面首页；再次打开仍为同一 ID；`[mom]` 未开时无「运营桌面」页签且可见「运营模块未启用」说明 |
 | E2E-ADLAYOUT | ai-desktop | 已从首页打开 SMT-03 工作区 | S2→S3→S2；刷新页面 | 仍在同一 Task；布局偏好恢复为离开前的 S2 或 S3；执行区展开状态可观察 |
+| E2E-UX01 | ai-desktop | 首页快照夹具含 SMT-03（标“模拟”） | 体验地图 UX-01：卡片进入工作区 → 写草稿 → 打开再关闭证据 → S3 再回 S2 → 打开设置后 Esc → 返回桌面再从卡片进入 | 每一步对话输入可用；草稿与任务恢复；关闭证据回到原工作区；全程无整页跳转；探针记录步数与整页跳转（基线补录，见 docs/experience-map/journeys/UX-01.md）；前置清理已随 UXFIX-D 移除 |
+| E2E-UX01-I7 | ai-desktop | 路由拦截注入服务端旧草稿（另一会话，PUT 一律 409 应答） | UXFIX-D（INTENT-2026-008）：打开 SMT-03 工作区 → 远端快照返回前输入新内容 → 返回桌面再从卡片进入 | 本会话新输入保留、不被旧草稿覆盖；出现含“其他设备”的冲突提示；可一键改用其他设备草稿（单元级并发序列另见 draftStore.test.ts） |
+| E2E-UX01-I8 | ai-desktop | 首页快照夹具含 SMT-03 | UXFIX-D（INTENT-2026-011）：工作区发送消息 → 出现“已受理（模拟）”回执 → 返回桌面再从卡片进入 | 发送记录含已发送正文与受理回执，离开再返回后仍在原位 |
+| E2E-UX02 | ai-desktop | 首页快照夹具含 SMT-03 | 体验地图 UX-02：进入 SMT-03 工作区 → 写任务草稿 → 切“独立话题” → 输入并发送临时问题 → 切回“继续当前任务” | 全程在同一任务工作区；作用域按钮状态正确切换并恢复；回到任务后原任务草稿仍在（UXFIX-D，INTENT-2026-013）；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-02.md） |
+
 | E2E-ADTESTCTRL | ai-desktop | 自管服务器实例（无 [desktop] 段，test_fixtures=false）；同仓 dist | UXFIX-B（INTENT-003）：读快照 test_fixtures 标志 → 打开「设置与管理」→ 助理面板 | 快照 test_fixtures=false；设置面板无「注入冲突（测试）」。工作区模拟按钮与证据面板身份切换/空列表夹具的门控由组件级测试覆盖（workspaceView.test.tsx：关闭时不渲染、开启时渲染，harness 下现有 E2E 不变） |
-| E2E-UX01 | ai-desktop | 首页快照夹具含 SMT-03（标“模拟”） | 体验地图 UX-01：卡片进入工作区 → 写草稿 → 打开再关闭证据 → S3 再回 S2 → 打开设置后 Esc → 返回桌面再从卡片进入 | 每一步对话输入可用；草稿与任务恢复；关闭证据回到原工作区；全程无整页跳转；探针记录步数与整页跳转（基线补录，见 docs/experience-map/journeys/UX-01.md） |
-| E2E-UX02 | ai-desktop | 首页快照夹具含 SMT-03 | 体验地图 UX-02：进入 SMT-03 工作区 → 切“独立话题” → 输入并发送临时问题 → 切回“继续当前任务” | 全程在同一任务工作区；作用域按钮状态正确切换并恢复；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-02.md） |
 | E2E-UX03 | ai-desktop | 首页快照夹具含 SMT-03；本地模拟模型 | 体验地图 UX-03：首页输入一句话目标 → 点“委派任务” → 打开 SMT-03 工作区 → 返回桌面 → 等待 | 委派后仍在桌面，受理状态可见，首页输入清空可用；可进出其他任务；委派的任务出现在“我的工作”并显示“已完成”；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-03.md） |
 | E2E-UX04 | ai-desktop | 本地模拟模型 | 体验地图 UX-04：“＋ 新会话”发任务 → 等完成 → 在对话输入写追问草稿 → 点右侧任务条目展开详情 | 任务详情展开；对话输入仍可编辑、草稿不变；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-04.md） |
 | E2E-UX05 | ai-desktop | 首页快照夹具含 SMT-03；提醒经测试 API 注入（`desktop.test_fixtures`） | 体验地图 UX-05：S1 输入框写字并聚焦 → 注入关联 SMT-03 的普通提醒 → 重新打开桌面 → 点“为你关注”中的提醒 → 返回桌面 | 提醒浮层出现且不抢焦点、不清空输入；“为你关注”中的提醒直达 SMT-03 工作区；返回后提醒仍在；处理过程无整页跳转（基线补录，见 docs/experience-map/journeys/UX-05.md） |
@@ -652,7 +655,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-ADHISTORY | ai-desktop | 干净浏览器 | 打开「历史」；按标题筛选；固定一项后排序变化；打开 SMT-03；关闭后再开历史筛选仍在 | 推荐理由可见；固定后该项仍在列表前列；打开任务 ID 正确；筛选值恢复 |
 | E2E-ADPROF | ai-desktop | 打开 SMT-03 并写草稿 | 工作区点「调整助理」；改名称并保存；查看记忆再返回；注入冲突后再保存 | 侧栏/首页助理名同步；记忆面包屑回到助理分类；草稿仍在；冲突提示且输入框草稿未被存档覆盖 |
 | E2E-ADMEM | ai-desktop | 打开 SMT-03 工作区 | 调整助理 → 查看记忆；列表可见服务端条目；打开 mem-1 看正文；返回列表再回助理 | 列表标题含「质量报告偏好摘要格式」；详情正文与来源/有效期来自 HTTP；返回路径不丢草稿 |
-| E2E-ADMEMW | ai-desktop | 打开 SMT-03；夹具已 reset | 打开 mem-1 纠错正文并保存；撤回 mem-2；回列表 | mem-1 正文已更新；列表不再含 mem-2；工作区草稿仍在 |
+| E2E-ADMEMW | ai-desktop | 打开 SMT-03；夹具已 reset | 打开 mem-1 纠错正文并保存；再次打开 mem-1 撤回；回列表 | mem-1 正文已更新；撤回后列表不再含 mem-1；工作区草稿仍在 |
 | E2E-ADXR | ai-desktop | 干净浏览器；夹具 reset；双上下文同服务 | 端 A 见未读≥2 并标记 asst-msg-1 已读；端 B 刷新后 asst-msg-1 已读且未读减 1；端 B 再标其余；端 A 刷新未读为 0；重复提交已读 | 服务权威跨端一致；重复提交幂等；未读徽标来自 HTTP |
 | E2E-ADINPUT | ai-desktop | 干净浏览器 | 在 360/768/1024/1440 宽检查关键控件可达；设置中 Escape 关闭；会话输入 composition 期间 Enter 不发请求；`prefers-reduced-motion` 时根节点标注 | 各宽度可见「设置与管理」或抽屉入口；Esc 关掉设置；composition 中无 POST /messages；`html[data-reduced-motion]` 为 1 |
 | E2E-ADASK | ai-desktop | 干净浏览器 · 桌面首页 | S1 先问答；再委派复杂任务；后台芯片出现后继续问答；手动打开任务 | 问答后仍在桌面；委派先「提交中」再「已受理」且不强制进工作区；芯片为真实 task id；打开进入发起会话（聊天）并可看见该任务 |
@@ -700,15 +703,17 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADPREF-01 | ai-desktop | 空库 | `GET /api/desktop/v1/preferences` | **200**；默认字段与 `version=1` |
 | RT-ADPREF-02 | ai-desktop | 默认配置 | `PATCH` 带 `expected_version=1` | **200**；`version=2`；持久化 |
 | RT-ADPREF-03 | ai-desktop | 已 PATCH 成功 | 再用过期 `expected_version` PATCH | **409** `version_conflict`；不覆盖已存配置 |
-| RT-ADMEM-01 | ai-desktop | harness | `GET /api/desktop/v1/memories` | **200**；`items` ≥2；含 `mem-1`/`mem-2` 及 title/source/body/expires |
+| RT-ADMEM-01 | ai-desktop | harness | `GET /api/desktop/v1/memories` | **200**；`items` ≥1；含 `mem-1` 及 title/source/body/expires；不含设置来源条目（#354） |
 | RT-ADMEM-02 | ai-desktop | harness | `GET /api/desktop/v1/memories/mem-1` | **200**；正文与列表一致 |
 | RT-ADMEM-03 | ai-desktop | harness | `GET /api/desktop/v1/memories/no-such` | **404** `not_found` |
 | RT-ADMEM-04 | ai-desktop | reset 后 | `PATCH /memories/mem-1` 改 `body` | **200**；GET/列表正文已更新 |
-| RT-ADMEM-05 | ai-desktop | reset 后 | `DELETE /memories/mem-2` | **200**；默认列表不含 mem-2；再 DELETE 幂等 |
+| RT-ADMEM-05 | ai-desktop | reset 后 | `DELETE /memories/mem-1` | **200**；列表不含 mem-1；再 DELETE 幂等 |
 | RT-ADMEM-06 | ai-desktop | harness | `PATCH /memories/no-such` | **404** `not_found` |
 | RT-ADMEM-07 | ai-desktop | 同库路径；PATCH mem-1 后关闭 Runtime | 新进程/新 Runtime 打开同库再 `GET /memories/mem-1` | **200**；正文仍为纠错后内容（Store 权威，非进程夹具） |
-| RT-ADMEM-08 | ai-desktop | 两个全新库各起一个服务；库一纠错 mem-1 并撤回 mem-2 | 读库二的 `mem-1` / `mem-2` | 库二保持种子态：mem-1 为种子正文、mem-2 未撤回（进程状态不跨库泄漏） |
-| RT-ADMEM-09 | ai-desktop | mem-1 与 mem-2 全部撤回后关闭 Runtime | 同库重开服务，`GET /memories` 与 `GET /memories/mem-1` | 列表为空、mem-1 仍 **410** `revoked`（软删行使 ensure 播种不触发，撤回不得被重播种覆盖） |
+| RT-ADMEM-08 | ai-desktop | 两个全新库各起一个服务；库一纠错 mem-1 | 读库二的 `mem-1` | 库二保持种子态：mem-1 为种子正文（进程状态不跨库泄漏） |
+| RT-ADMEM-09 | ai-desktop | 种子（mem-1）撤回后关闭 Runtime | 同库重开服务，`GET /memories` 与 `GET /memories/mem-1` | 列表为空、mem-1 仍 **410** `revoked`（软删行使 ensure 播种不触发，撤回不得被重播种覆盖） |
+| RT-ADMEM-10 | ai-desktop | reset 后（INTENT-032 / #354） | `GET /api/desktop/v1/memories` | **200**；列表不含任何「设置」来源条目；免打扰时段等设置项不作为记忆存储 |
+| RT-ADMEM-11 | ai-desktop | reset 后（INTENT-032 / #354） | `GET /api/desktop/v1/memories` 逐条核对 | 来源含「用户确认」的条目 `confirmed` 为真；种子条目来源为系统生成的「用户保存 · 日期」 |
 | RT-ADXR-01 | ai-desktop | harness reset | `GET /api/desktop/v1/assistant/messages` | **200**；`items` ≥2 含 `asst-msg-1`/`asst-msg-2`；均 `read=false`；`unread_count`≥2 |
 | RT-ADXR-02 | ai-desktop | reset 后 | `POST .../assistant/messages/read` 带 `["asst-msg-1"]` | **200**；`newly_marked=1`；GET 列表该条 `read=true`；`unread_count` 减 1 |
 | RT-ADXR-03 | ai-desktop | 已标 asst-msg-1 | 同 ID 再 POST read | **200**；`newly_marked=0`；`read_ids` 不变 |
@@ -782,6 +787,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-OPSCHANNEL | ops-desk | 开关打开；注入一个待批准案例 | 查看页签未读数，打开运营频道，再批准该案例 | 未读数为 1，打开后清零；频道里该案例只有一张带“模拟”的卡；批准后同一张卡更新（含批准人）、频道消息条数不变；频道没有模型回复，也没有任务 |
 | E2E-OPSNOISE | ops-desk | 开关打开，每小时上限 10；一个已有卡片的案例，再来 12 个新案例 | 对已有卡片的案例重复上报 10 次观测；再注入 12 个新案例 | 重复观测不新增频道消息；卡片总数为 10，另有一张“另有 3 条”汇总卡；桌面仍有全部 13 个事项 |
 | E2E-OPSAPPROVE | ops-desk | 开启桥的实例，有待批准案例 | 桌面点「在频道中处理」→ 卡上点「批准」 | 卡显示 supervisor；桌面无「批准」按钮；引擎 decision_inbox 含批准人 |
+| E2E-OPSAUTOEXEC | ops-desk | 开启桥的实例，有待批准案例（INTENT-027，决定 2026-11-26-ops-approve-auto-execute） | 桌面点「在频道中处理」→ 卡上点「批准」；全程不调用执行 API | 卡变「核验中」并显示执行回执；引擎 stage=VERIFYING 且 actions 非空；桌面「待批准 0」，该事项行显示「核验中」 |
+| E2E-OPSEXPIRE | ops-desk | 开启桥的实例，待批准案例，已注入 `resources_available=false`（INTENT-027） | 卡上点「批准」；用 `advance` 推进引擎时间越过批准有效期；恢复资源并 `refresh_plan` 后在卡上再点「批准」 | 受阻时卡显示「已批准」「执行受阻」且引擎无 actions、批准保留；过期后卡显示「批准已过期」「需重新批准」并有重新批准按钮；刷新方案重评后重新批准即执行成功（VERIFYING），新批准有效期刷新（expires_at 变大） |
 | E2E-OPSOFF | ops-desk | 默认 harness，未配置 `[mom]`（基线：现状本来就通过，用于防止回归） | 注入 MOM 案例，打开页面，发一句问候 | 没有“运营桌面”页签、没有运营频道、`/api/mom/desk` 为 404；原有会话回复正常 |
 | E2E-ADREAD | ai-desktop | 开关打开；频道内 ≥6 张运营卡；窄视口 | 滚到中间卡使其位于列表顶部；切到桌面再回运营频道；工作区收起执行后离开再打开 | 锚点=滚动停止时首条可见消息及其偏移（几何钳制时为钳制位置的可见消息）；返回后该锚点消息仍为首可见、偏移恢复（阅读位置精确还原）；工作区执行区保持收起 |
 
@@ -802,8 +809,10 @@ Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_ops
 | RT-OPSDESK-09 | ops-desk | 发布器（文件库），先后发出几张卡 | 查看未读、批准已发卡的案例、再发新卡、标记已读、重启 | 无消息时未读为 0；每张新卡、汇总卡各加 1；就地更新原卡不增加；标记已读后为 0；已读位置重启后仍在 |
 | RT-OPSDESK-11 | ops-desk | 服务端挂桌面路由，已发卡的待批准案例 | approve 两次；错误 plan_revision；不存在案例 | 首次 already=false；再次 already=true；卡 approver=supervisor；错误版本 409；不存在 404 |
 | RT-OPSDESK-10 | ops-desk | 服务端同时挂 MOM 与运营桌面路由，已创建 s1 案例 | `GET /api/mom/desk`；`GET …/cases/{id}`；对同一案例 `POST …/open-in-channel` 两次；对不存在案例 GET/POST | desk 200 且 rows 案例集合与 `/mom/api/mom/cases` 相同；详情含 `projection_seq`；两次 open 返回同一 `message_id`；不存在案例 404 |
+| RT-OPSDESK-12 | ops-desk | 文件库引擎，一个待批准案例（s1）；另一组先注入 `resources_available=false` | 调用 `approve_and_execute`：正常案例；受阻案例；受阻案例到期前再次调用；错误方案版本 | 正常：返回已执行，stage=VERIFYING、actions 非空、无 execution_block；受阻：批准保留、无 actions、execution_block 记录原因、事件 `ExecutionBlocked`；到期前重试：仍受阻、批准不重复登记；错误版本：整体失败，无批准无事件 |
+| RT-OPSDESK-13 | ops-desk | 文件库引擎，受阻批准（`approve_and_execute` 已 Blocked） | `advance` 越过批准有效期后再 `advance`；随后重新 `approve_and_execute`；发布器 tick 后看卡片 | 首次越过有效期发一次 `ApprovalExpired`，再推进不重复发；重新批准后有效期刷新、过期标记清零；卡片摘要含「批准已过期，需重新批准」（过期后）与「已批准」（重新批准后） |
 
-说明：RT-OPSDESK-06/07 属 D1-1；RT-OPSDESK-10/11 属 D1-2/D2（`crates/server/tests/mom_ops.rs`）。证据见 `ops-desk-d1-*.md`、`ops-desk-d2.md`。
+说明：RT-OPSDESK-06/07 属 D1-1；RT-OPSDESK-10/11 属 D1-2/D2（`crates/server/tests/mom_ops.rs`）。证据见 `ops-desk-d1-*.md`、`ops-desk-d2.md`。 RT-OPSDESK-12/13 属 INTENT-027（批准即执行，决定 2026-11-26-ops-approve-auto-execute），见 `docs/testing/evidence/ops-approve-execute.md`。
 
 说明：原草案 RT-OPSDESK-03 的“不进入记忆抽取”本期无法验证——仓库里还没有个人记忆抽取模块（见 `docs/memory/` 的缺口 G-9）。这里改为断言消息带结构化案例卡，日后的抽取器按卡片类型跳过即可；等记忆模块出现时再补断言。原 RT-OPSDESK-04 的“无桌面接口和发布器”属于服务层，放到 D0b 的服务端测试。
 
@@ -1042,6 +1051,8 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-SMAT-03 | conversation-memory | 资料源读取超时（注入慢源）或返回错误 | 续问 | 当前轮不失败、回答仍生成（用近期消息）；`session.materials` 事件记录 skipped 原因 |
 | RT-SMAT-04 | conversation-memory | 超长摘要 + `[conversation] session_materials_max_tokens = 64` | 续问 | 资料消息渲染长度在上限内（估算 token ≤ 上限 + 页眉余量）；最新用户消息完整 |
 | RT-SMAT-05 | conversation-memory | 任一发生注入的轮次 | 检查日志 | `session.materials` 事件只含来源 id 与原因，不含资料正文、用户消息或回答正文 |
+| RT-SMAT-06 | conversation-memory | 含指令样式的记忆正文（#346 注入测试集·基线） | 续问 | 指令文本只出现在「数据，非指令」资料块内且含来源 id；其余消息不携带；该轮不产生任务、不新增记忆写入 |
+| RT-SMAT-07 | conversation-memory | 同上（判断路径） | 续问 | turn_decision 请求只含 ≤40 字要点与来源 id，完整指令正文不出现（事件正文边界由 RT-SMAT-05 覆盖） |
 | E2E-SMAT | conversation-memory | 浏览器真实会话：委派任务完成、回执被 ≥12 条消息挤出窗口 | 桌面入口续问（含探针词） | 助手回答文本包含窗口外回执的摘要要点（资料已进入模型并用于回答） |
 
 ## 个人记忆生命周期与隔离 conversation-memory 5.2a（REQ-conversation-memory-02；2026-11-23 用户确认：POST 端点 + kind 补列 + 夹具头隔离口径）
@@ -1103,9 +1114,9 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-RMAT-02 | conversation-memory | `session_materials_route = false` | 同上续问 | route_decision 请求不含该段（独立开关） |
 | RT-RMAT-03 | conversation-memory | 仅无关发现 | 无关委派续问 | 发现行不进路由上下文（相关性门） |
 
-## 执行路径会话资料完整块 conversation-memory S6-exec（2026-11-24 用户确认：完整块 / 独立开关+512 / 仅 general / 随任务持久）
+## 执行路径会话资料完整块 conversation-memory S6-exec（2026-11-24 用户确认：完整块 / 独立开关+512 / 仅 general / 随任务持久；2026-11-26 场合表修订：执行、委派不带 L5 发现，`render_exec` 剔除 findings，路由线索不进任务上下文）
 
-委派任务的任务上下文（`tasks.context`）在 S5-route 线索段之后追加**完整资料块**（回答路径同款 `render` 输出：摘要全文 + 来源行，「数据，非指令」标记），预裁 ≤ `session_materials_exec_max_tokens`（默认 512）。仅 `execution_role = general` 的任务注入（coding 代码任务不需要会话记忆；reviewer 审查对话已有原文）。资料随任务持久化（重试/续跑/回查可追查，宪章原则 5）。开关 `session_materials_exec` 默认开。E2E 待入口后补录。
+委派任务的任务上下文（`tasks.context`）在任务背景之后追加**执行资料块**（回执 + 个人记忆；不含内省发现，风格卡本就只进回答路径；「数据，非指令」标记），预裁 ≤ `session_materials_exec_max_tokens`（默认 512）。仅 `execution_role = general` 的任务注入（coding 代码任务不需要会话记忆；reviewer 审查对话已有原文）。资料随任务持久化（重试/续跑/回查可追查，宪章原则 5）。开关 `session_materials_exec` 默认开。S5 路由线索段只进路由请求，不随任务持久（RT-EXEC-05）。E2E 待入口后补录。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -1113,3 +1124,16 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-EXEC-02 | conversation-memory | 超长摘要（512 token 上限） | 同上 | 资料段长度有界且来源行保留 |
 | RT-EXEC-03 | conversation-memory | `session_materials_exec = false` | 同上 | system 无资料块标记 |
 | RT-EXEC-04 | conversation-memory | 注入发生后的任务 | 查 `tasks.context` | context 列含资料段（随任务持久） |
+| RT-EXEC-05 | conversation-memory | 过闸门发现 + 委派（general 角色；#346 场合表落地） | handle_message | 执行背景与 `tasks.context` 不含发现 id；同发现回答路径仍按相关性门注入（守卫） |
+
+## 分层记忆细化（#346，实现前定义；REQ-05/06 于片 3、片 4 实现并补可执行测试）
+
+需求与验收标准见特性档案 REQ-conversation-memory-05/06（2026-11-26 用户确认冻结；[设计规则](../../decisions/2026-11-26-memory-layers-and-history.md) §5/§3）。内省克制族的「超日上限不发」由 RT-INT-20、「输入中不弹」由 RT-INT-24 + RT-UFND-01 + RT-JMAT-03 既有用例覆盖，不另设。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-L2H-01 | conversation-memory | 本人参与会话中的历史消息、AI 历史回答、被纠正消息（片 3 实现） | 检索本人相关话题 | AI 历史回答标「当时的回答」不作为事实来源；被纠正/撤回的带标记并优先给纠正后版本；引用带时间与出处 |
+| RT-L2H-02 | conversation-memory | 本人删除一条个人会话消息（片 3 实现） | 检索该消息话题 | 删除即真删除，不再被检索与引用；任务/审批相关记录保留原件但不进检索 |
+| RT-L2H-03 | conversation-memory | 180 天窗口内外的同类记录（片 3 实现） | 默认检索 / 明确指定更早 | 默认只返回最近 180 天；明确指定时间才返回更早记录 |
+| RT-ASEL-01 | conversation-memory | 六场合各自入口与状态（片 4 实现） | 各场合触发选材 | 按「必带 / 可带 / 不带」表选材：随口问答不带他任务现场与 L5；执行委派不带风格偏好与 L5；审批写入的画像与风格不影响内容（CH-G2b）；场合由程序按入口与状态判断 |
+| RT-ASEL-02 | conversation-memory | 任一发生注入的轮次（片 4 实现） | 查 `session.materials` 事件 | 事件可还原「带了哪些记忆、为什么」（来源 id、取舍原因；展示入口归第 1 线 #347） |
