@@ -102,6 +102,11 @@ max_retries = 2                    # 输出不合格时把错误反馈给模型�
 #   auto     —— 短内容直接回答；长内容（约 30 行 / 1500 字以上）、文件、仓库交给后台
 review_requests = "reviewer"
 stream_replies = true             # 直接回答时边生成边显示
+# 会话资料注入（第 5 线）：回答路径把任务回执 / 个人记忆 / 相关内省发现作为「数据，非指令」并入提示词。默认开启。
+# session_materials = true
+# session_materials_max_tokens = 2048   # 资料块 token 预算（含页眉）
+# session_materials_timeout_ms = 200     # 读资料超时则本轮不加资料、仍正常回答
+# session_materials_findings_max = 2     # 最多注入几条相关内省发现
 # 前台提速实验（FT）B：路由后按规则把风险只升不降（删除 / 对外发送 / 部署 → high，写文件 / 改代码 → 至少 medium）。默认不开
 # risk_rules = true
 # 前台提速实验（FT.5）Q：路由不直接选 L1–L4，改为回答"需要取数工具吗""需要生成文档吗"两个是/否问题，
@@ -257,3 +262,32 @@ approval_risk = "high"             # 风险达到该等级需人工审批：low 
 # backend = "cloud"
 # destination_id = "cloud-llm"
 # purpose = "llm_inference"
+
+# ───── AI 桌面壳（可选）─────
+# test_fixtures：是否挂载 Resume 等测试夹具接口（/api/desktop/v1/resume/fixture/*）。
+# 默认 false（生产不要开）；本地演示或 Playwright 夹具环境可改为 true（H4：夹具不得在生产可达）。
+# [desktop]
+# test_fixtures = false
+
+# ───── MOM 运营沙盘 / 运营频道（可选，默认全关）─────
+# chat_bridge：主服务挂载同源 /mom/ 与运营频道桥接；关闭时行为与早期版本相同。
+# world_mock：打开 /api/world/mock（World Adapter 协议/实验 Mock）。
+# des_mcp：模拟工厂命令（如 an-des-mcp）；空 = 不挂 DesConnector；也可用环境变量 AN_MOM_DES_MCP。
+# [mom]
+# chat_bridge = false
+# ops_merge_secs = 60              # 同一案例卡片更新合并窗口（秒）
+# ops_hourly_cap = 10              # 运营频道每小时最多新发几张卡
+# world_mock = false
+# des_mcp = ""
+
+# ───── 业务内省（可选，默认关闭）─────
+# 定时分析与发送闸门；本地第 6 线真实环境测试常显式打开。
+# [introspection]
+# enabled = false
+# schedule_hours = 24              # 定时任务间隔（小时）
+# timeout_secs = 120               # 单次分析超时
+# min_samples = 10                 # 样本门槛
+# push_threshold = 4.0             # 推送分数门槛
+# daily_cap = 1                    # 每日最多推送几条
+# operator_role = ""               # 预留，暂不生效
+# model_explain = false            # 模型解释层（S7）；开则用后台槽位，取不到则跳过

@@ -883,8 +883,10 @@
       "E2E-UX05",
       "E2E-UX05-I3I4",
       "E2E-UX06",
+      "E2E-UX02-I4",
       "E2E-ADTESTCTRL",
-      "E2E-UX03-I5"
+"E2E-UX03-I5",
+"E2E-ADSETGROUPS"
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",
