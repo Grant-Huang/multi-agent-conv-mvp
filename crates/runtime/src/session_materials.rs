@@ -335,6 +335,39 @@ impl Collector {
             }
             out.skipped.push((m.id, "unknown_kind"));
         }
+        // #403（INTENT-034，2026-11-26 用户拍板方案 a）：设置里的沟通原则（Soul）/
+        // 质量偏好（Taste）视作已确认风格——保存即确认、全会话生效，与 L3 风格
+        // 记忆同卡渲染、同护栏与预算。种子默认值视作「未设置」不注入（用户清空
+        // 字段同样停用）；个人质量偏好 ≠ 组织 taste（CH-G2，组织判断标准不经
+        // 个人设置）。
+        if let Ok(p) = self.store.get_desktop_preferences(user_id) {
+            for (id, title, text, default) in [
+                (
+                    "profile:soul",
+                    "沟通原则（设置）",
+                    p.soul.as_str(),
+                    crate::store::DEFAULT_SOUL,
+                ),
+                (
+                    "profile:taste",
+                    "质量偏好（设置）",
+                    p.taste.as_str(),
+                    crate::store::DEFAULT_TASTE,
+                ),
+            ] {
+                let text = text.trim();
+                if text.is_empty() || text == default {
+                    continue;
+                }
+                out.style.push(SessionMaterial {
+                    task_id: id.to_string(),
+                    title: title.to_string(),
+                    status: "已确认（设置）".into(),
+                    time: p.updated_at.clone(),
+                    summary: text.to_string(),
+                });
+            }
+        }
         // 5.3：内省发现——过闸门 + 未被人工否决 + supported/inconclusive + dice 相关性达标
         let question_grams = char_grams(question);
         let mut scored: Vec<(f64, IntrospectionFinding)> = Vec::new();
