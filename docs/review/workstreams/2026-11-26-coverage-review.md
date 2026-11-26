@@ -6,6 +6,7 @@
 | 对照依据 | [PRODUCT.md](../../PRODUCT.md) v1.6 第 1～5 节；[DESIGN.md](../../DESIGN.md) 第 0.2 节分层表、第 0.3 节特性索引（全部条目）；[contracts/](../../contracts/README.md)（3 份契约 + 待建连接器契约）；`crates/` 下 9 个包；派工 Issue（`dispatch` 标签） |
 | 基线 | `master` 的 `b2cd2e3` |
 | 审查者 | 产品意图审查会话；结论为**助手建议**，未经用户确认前不改分工 |
+| 用户决定 | 2026-11-26：第 5 节问题 1～5 按建议执行，第 6 问不执行（已派出的卡负责线不变）。见 [2026-11-26-workstream-realignment](../../decisions/2026-11-26-workstream-realignment.md) |
 
 ## 1. 结论
 
