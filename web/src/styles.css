@@ -753,3 +753,18 @@ html[data-reduced-motion="1"] .btn {
 .appr-mock h3, .resume-mock h3, .voice-mock h3, .handoff-mock h3, .accept-mock h3 { margin: 0 0 8px; font-size: 14px; }
 .resume-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .resume-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+
+/* UXFIX-G：个人助理面板（可对话，非设置表单） */
+.assistant-panel-root { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; }
+.assistant-panel-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.35); }
+.assistant-panel {
+  position: relative; width: min(560px, 92vw); max-height: 72vh; display: flex; flex-direction: column;
+  background: var(--panel, #fff); color: var(--text, inherit); border: 1px solid var(--border, #ddd);
+  border-radius: 10px; padding: 12px; gap: 8px; box-shadow: 0 12px 32px rgba(0,0,0,.18);
+}
+.assistant-panel-head { display: flex; align-items: center; gap: 8px; }
+.assistant-panel-avatar { font-weight: 600; flex: 1; }
+.assistant-panel-msgs { flex: 1; min-height: 120px; overflow: auto; border: 1px solid var(--border, #ddd); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.assistant-panel-line { margin: 0; font-size: 13px; }
+.assistant-panel-inputrow { display: flex; gap: 6px; }
+.assistant-panel-inputrow input { flex: 1; font: inherit; padding: 6px 8px; border: 1px solid var(--border, #ddd); border-radius: 6px; background: var(--bg, #fff); color: inherit; }
