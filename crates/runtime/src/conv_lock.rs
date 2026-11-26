@@ -20,6 +20,8 @@ pub struct ConvGuard<'a> {
     guard: Option<OwnedMutexGuard<()>>,
     /// 排队等了多久（毫秒），0 表示没有排队
     pub waited_ms: u64,
+    /// 是否进入了等待分支（无竞争时走 try_lock 快路径，与耗时无关）
+    pub waited: bool,
 }
 
 impl ConvLocks {
@@ -33,12 +35,18 @@ impl ConvLocks {
             m.entry(conversation_id.to_string()).or_default().clone()
         };
         let started = std::time::Instant::now();
-        let guard = entry.lock_owned().await;
+        // 快路径无竞争：try_lock 成功即「未进入等待分支」，与耗时无关（慢 CI 上
+        // elapsed 可能 ≥1ms，用毫秒数判断是否排队会把无竞争误判为有排队）
+        let (guard, waited) = match entry.clone().try_lock_owned() {
+            Ok(guard) => (guard, false),
+            Err(_) => (entry.lock_owned().await, true),
+        };
         ConvGuard {
             locks: self,
             id: conversation_id.to_string(),
             guard: Some(guard),
             waited_ms: started.elapsed().as_millis() as u64,
+            waited,
         }
     }
 
