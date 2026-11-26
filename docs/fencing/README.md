@@ -6,6 +6,7 @@
 | 地位 | **唯一的围栏入口**：七层定义、检查节奏、围栏登记与生命周期。研发流程（需求→版本、风险分级、授权、证据等级）见 [DEV_STANDARD.md](../../DEV_STANDARD.md) |
 | 现状清单 | [GUARDRAIL_REGISTRY.yaml](GUARDRAIL_REGISTRY.yaml)：每条围栏的证据等级、负责人、到期日 |
 | 缺口与路线图 | [GAP_ANALYSIS.md](GAP_ANALYSIS.md) |
+| 集成环节 | [INTEGRATION_PIPELINE.md](INTEGRATION_PIPELINE.md)：在制品上限、合并队列与集成 agent、CI 分层 T0～T3、定时任务分层、基线冻结（2026-11-26） |
 | 来源 | 用户 2026-11-21 起草的《七层围栏：审计、建设与持续治理规范》与《实操指南》（原文存档见 [explore/guardrails-draft-2026-11-21/](../explore/guardrails-draft-2026-11-21/README.md)），按本仓库事实改写；背景材料 [AUTONOMOUS_DEV_ACTION_GUIDE.md](../AUTONOMOUS_DEV_ACTION_GUIDE.md) |
 | 取代 | `7-fence-review.md` 第 1 节（七层落点）与第 3 节（差距清单）；该文件其余部分仍是定期检查操作手册 |
 

@@ -23,7 +23,7 @@
 
 - [x] 片 1 特性档案登记：L0～L5 分层、按场合选材、克制内省、L2 历史检索规则、可编辑范围、注入八道防线写入档案 §2/§3；REQ-05～07 登记（提出）；登记表同步
 - [x] 片 2 CASES 与可执行测试（2026-11-26，先 Red）：REQ-05～07 用户确认冻结（会话确认，状态与用例挂接落 features.json）；注入基线 RT-SMAT-06/07（封装隔离 / 判断清单只带要点，既有行为补录）；**场合表落地修正**——S6-exec 执行块用 `render_exec` 剔除 L5 发现、S5 路由线索不再随任务上下文进执行背景（RT-EXEC-05，Red→Green）；内省克制族映射既有 RT-INT-20 / RT-INT-24 / RT-UFND-01 / RT-JMAT-03；L2 检索 RT-L2H-01～03 与场合选材 RT-ASEL-01～02 登记「实现前定义」随片 3/4 补测试；证据 `testing/evidence/convmem-layers-slice2.md`
-- [ ] 片 3 L2 历史记录检索实现（本人参与范围、180 天窗口、AI 回答标注、删除与保留语义、引用带时间出处）
+- [x] 片 3 L2 历史记录检索（2026-11-26，方案经用户批准）：`GET /api/desktop/v1/history/search`（principal 说明见端点文档；默认 180 天窗口、AI 历史回答标「当时的回答」、消息+已完成任务回执两路检索、引用带 `msg_id`/`conv_id`/`at`）+ `DELETE /api/desktop/v1/messages/{id}`（仅本人 user 消息真删除，AI 回答 403，重复 404）；RT-L2H-01～03；store.rs 新增 `search_history`/`delete_message`（只读查询 + 单条删除，无迁移）；纠正注记与撤回标记拆 RT-L2H-04（实现前定义，片 4/5）；证据 `testing/evidence/convmem-layers-slice3.md`
 - [ ] 片 4 按场合选材（六场合确定性判断）与「带了哪些记忆、为什么」记录
 - [ ] 片 5 注入防线落地（写入闸门外部候选、撤回影响追溯、长度预算）与注入测试集
 
