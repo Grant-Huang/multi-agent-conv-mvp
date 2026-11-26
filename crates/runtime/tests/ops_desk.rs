@@ -565,3 +565,37 @@ fn rt_opsdesk_13_approval_expiry_emits_once_and_card_prompts_reapproval() {
     assert!(card_summary(&store).contains("核验中") || e.case(&id).unwrap().stage == "VERIFYING");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// #384：分级不能用消费时刻的案例阶段回溯——创建后在首个发布节拍前已被批准并执行的
+// 新案例（stage 已到 VERIFYING）仍必须出卡，不允许被 p1_no_card 静默吞掉。
+#[test]
+fn rt_opsdesk_14_case_advanced_before_first_tick_still_gets_card() {
+    let store = store();
+    let mut e = Engine::memory().unwrap();
+    let a = pending_case(&mut e, "RT14A");
+    let b = pending_case(&mut e, "RT14B");
+    // 案例在发布器消费之前就被批准并执行，stage 已离开 WAITING_HUMAN
+    approve(&mut e, &b);
+    e.execute(&b, "production").unwrap();
+    assert_eq!(e.case(&b).unwrap().stage, "VERIFYING");
+    let mut p = OpsPublisher::memory(store.clone(), cfg(0, 10)).unwrap();
+    let report = p.tick(&mut e, 1000).unwrap();
+    let ids: Vec<String> = ops_cards(&store)
+        .into_iter()
+        .filter_map(|c| match c {
+            an_core::ChatCard::OpsCase { case_id, .. } => Some(case_id),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        ids.contains(&b),
+        "节拍前已执行的新案例必须出卡（#384），实际 {ids:?}，report {report:?}"
+    );
+    assert!(ids.contains(&a), "待批准案例应出卡，实际 {ids:?}");
+    let log = p.skip_log().unwrap();
+    assert!(
+        !log.iter()
+            .any(|s| s.case_id == b && s.reason == "p1_no_card"),
+        "不允许 p1_no_card 吞掉：{log:?}"
+    );
+}

@@ -809,6 +809,7 @@ Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_ops
 | RT-OPSDESK-10 | ops-desk | 服务端同时挂 MOM 与运营桌面路由，已创建 s1 案例 | `GET /api/mom/desk`；`GET …/cases/{id}`；对同一案例 `POST …/open-in-channel` 两次；对不存在案例 GET/POST | desk 200 且 rows 案例集合与 `/mom/api/mom/cases` 相同；详情含 `projection_seq`；两次 open 返回同一 `message_id`；不存在案例 404 |
 | RT-OPSDESK-12 | ops-desk | 文件库引擎，一个待批准案例（s1）；另一组先注入 `resources_available=false` | 调用 `approve_and_execute`：正常案例；受阻案例；受阻案例到期前再次调用；错误方案版本 | 正常：返回已执行，stage=VERIFYING、actions 非空、无 execution_block；受阻：批准保留、无 actions、execution_block 记录原因、事件 `ExecutionBlocked`；到期前重试：仍受阻、批准不重复登记；错误版本：整体失败，无批准无事件 |
 | RT-OPSDESK-13 | ops-desk | 文件库引擎，受阻批准（`approve_and_execute` 已 Blocked） | `advance` 越过批准有效期后再 `advance`；随后重新 `approve_and_execute`；发布器 tick 后看卡片 | 首次越过有效期发一次 `ApprovalExpired`，再推进不重复发；重新批准后有效期刷新、过期标记清零；卡片摘要含「批准已过期，需重新批准」（过期后）与「已批准」（重新批准后） |
+| RT-OPSDESK-14 | ops-desk | 同一引擎两个待批准案例；发布器未 tick 前其中一个已被批准并执行（stage 已到 VERIFYING）（#384） | 发布器一次 tick；查 skip_log | 两个案例都出卡；被执行案例没有 `p1_no_card` 跳过记录；`DecisionRequested` 事件按种类固定 P0，与消费时刻的阶段无关 |
 
 说明：RT-OPSDESK-06/07 属 D1-1；RT-OPSDESK-10/11 属 D1-2/D2（`crates/server/tests/mom_ops.rs`）。证据见 `ops-desk-d1-*.md`、`ops-desk-d2.md`。 RT-OPSDESK-12/13 属 INTENT-027（批准即执行，决定 2026-11-26-ops-approve-auto-execute），见 `docs/testing/evidence/ops-approve-execute.md`。
 
