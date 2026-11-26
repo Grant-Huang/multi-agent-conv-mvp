@@ -18,7 +18,24 @@ export type MemoryEntry = {
   source: string;
   body: string;
   expires: string;
+  /** UXFIX-T（#353）：类型（fact/preference/style）与确认状态（服务端已序列化） */
+  kind: string;
+  confirmed: boolean;
 };
+
+/** UXFIX-T：记忆类型用户语言（CH-G2e） */
+export function memoryKindText(kind: string): string {
+  switch (kind) {
+    case "fact":
+      return "事实";
+    case "preference":
+      return "偏好";
+    case "style":
+      return "风格";
+    default:
+      return kind;
+  }
+}
 
 export const DEFAULT_PROFILE: AssistantProfile = {
   name: "我的助理",
@@ -102,6 +119,8 @@ export async function fetchMemories(): Promise<MemoryEntry[]> {
     source: m.source,
     body: m.body,
     expires: m.expires,
+    kind: m.kind,
+    confirmed: m.confirmed,
   }));
 }
 
@@ -113,6 +132,8 @@ export async function fetchMemory(id: string): Promise<MemoryEntry> {
     source: m.source,
     body: m.body,
     expires: m.expires,
+    kind: m.kind,
+    confirmed: m.confirmed,
   };
 }
 
@@ -128,6 +149,8 @@ export async function correctMemory(
     source: m.source,
     body: m.body,
     expires: m.expires,
+    kind: m.kind,
+    confirmed: m.confirmed,
   };
 }
 

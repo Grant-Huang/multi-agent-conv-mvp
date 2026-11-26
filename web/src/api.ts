@@ -1069,6 +1069,9 @@ export type DesktopMemoryDto = {
   source: string;
   body: string;
   expires: string;
+  /** UXFIX-T（#353）：服务端已序列化的类型与确认状态 */
+  kind: string;
+  confirmed: boolean;
 };
 
 export type DesktopAssistantMessageDto = {

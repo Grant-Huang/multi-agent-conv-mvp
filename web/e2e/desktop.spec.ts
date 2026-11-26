@@ -283,7 +283,10 @@ test('E2E-ADMEMW: 记忆纠错与撤回', async ({ page, request }) => {
   await expect(page.getByTestId('memory-item-mem-1')).toBeVisible();
   // #354 夹具口径：种子只剩 mem-1，撤回流程改用 mem-1 验证
   await page.getByTestId('memory-item-mem-1').click();
+  // UXFIX-T（#353）：撤回需确认
   await page.getByTestId('memory-withdraw').click();
+  await expect(page.getByTestId('memory-withdraw-confirm')).toBeVisible();
+  await page.getByTestId('memory-withdraw-confirm-yes').click();
   await expect(page.getByTestId('memory-list')).toBeVisible();
   await expect(page.getByTestId('memory-item-mem-1')).toHaveCount(0);
 
@@ -291,6 +294,49 @@ test('E2E-ADMEMW: 记忆纠错与撤回', async ({ page, request }) => {
   await page.getByTestId('settings-back').click();
   await page.getByTestId('settings-back').click();
   await expect(page.getByTestId('workspace-input')).toHaveValue('纠错时应保留的草稿');
+});
+
+// UX-08-I6（CH-G2，INTENT-2026-031 客户端部分）：撤回需确认；详情显示类型与确认状态（中文）；
+// 有效期可编辑（详情与列表显示新值）。撤销恢复与已撤回记录需服务端支持，另出方案（见 #353 评论）。
+test('E2E-UX08-I6: 撤回需确认；详情显示类型与确认状态；有效期可编辑', async ({ page, request }) => {
+  const reset = await request.post('/api/desktop/v1/memories/fixture/reset', { data: {} });
+  expect(reset.ok()).toBeTruthy();
+
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await page.getByTestId('workspace-input').fill('有效期测试草稿');
+  await page.getByTestId('workspace-open-settings').click();
+  await page.getByTestId('profile-open-memory').click();
+  await page.getByTestId('memory-item-mem-1').click();
+  await expect(page.getByTestId('memory-detail')).toBeVisible();
+
+  // 类型与确认状态（中文）。夹具口径（#354）：种子 confirmed_at=None → 待确认，
+  // source「用户保存」不虚报「已确认」
+  await expect(page.getByTestId('memory-kind')).toContainText('事实');
+  await expect(page.getByTestId('memory-confirm')).toContainText('待确认');
+
+  // 有效期可编辑（详情与列表都显示新值）
+  await page.getByTestId('memory-expires-input').fill('2028-01-01');
+  await page.getByTestId('memory-expires-save').click();
+  await expect(page.getByTestId('memory-expires')).toContainText('2028-01-01');
+  await page.getByTestId('memory-detail-back').click();
+  await expect(page.getByTestId('memory-list')).toContainText('2028-01-01');
+  await page.getByTestId('memory-item-mem-1').click();
+
+  // 撤回需确认：第一次点击不撤回
+  await page.getByTestId('memory-withdraw').click();
+  await expect(page.getByTestId('memory-withdraw-confirm')).toBeVisible();
+  await expect(page.getByTestId('memory-withdraw-confirm')).toContainText('不再参与下一次回答');
+  await expect(page.getByTestId('memory-list')).not.toBeVisible();
+
+  // 确认后撤回：回到列表且条目消失
+  await page.getByTestId('memory-withdraw-confirm-yes').click();
+  await expect(page.getByTestId('memory-list')).toBeVisible();
+  await expect(page.getByTestId('memory-item-mem-1')).toHaveCount(0);
+  // 子层返回不变（memory→分类→关闭回工作区），草稿不变
+  await page.getByTestId('memory-back').click();
+  await page.getByTestId('settings-back').click();
+  await expect(page.getByTestId('workspace-input')).toHaveValue('有效期测试草稿');
 });
 
 test('E2E-ADXR: 已读跨端服务权威与幂等', async ({ page, browser, request }) => {
