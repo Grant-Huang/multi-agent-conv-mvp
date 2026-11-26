@@ -31,7 +31,7 @@ A1 一次换壳后，下列能力**优先接真实**（已有协议），其余�
 | 真实（已有） | Mock 仍覆盖的缺口 |
 |---|---|
 | 会话/消息/TurnOutcome、任务列表与事件 SSE | 可靠受理 202、操作 ID 幂等、多对多关联 |
-| 运营 desk / ops-channel / OpsCase 批准（D0–D2） | 首页卡片区、S1 浮层、证据面板、桌面快照 |
+| 运营 desk / ops-channel / OpsCase 批准（D0–D2） | 首页卡片区、证据面板、桌面快照；S1 浮层「问答」已接真实会话（UXFIX-A，模拟回复已注销；委派受理提示仍属 M1 缺口） |
 | 内省 unread/findings（若开启） | Personal Agent 设置中心、通用 Attention 策略 |
 
 替换顺序默认：**M1 → M2 → M3 → M4 → M5 → M6**（与里程碑 B1→B2→B3→C1→C2→D 一致）。可并行准备，但合并进真实路径须按上表验收，且每次合并后跑 **完整 Feature Map Playwright**。
