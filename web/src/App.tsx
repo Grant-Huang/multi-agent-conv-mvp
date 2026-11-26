@@ -352,6 +352,21 @@ export default function App() {
   // UXFIX-N（INTENT-023）：注意力列表每次同步递增，驱动首页“为你关注”实时刷新
   const [attnRevision, setAttnRevision] = useState(0);
   const [attnMuted, setAttnMuted] = useState(false);
+  // UXFIX-B（INTENT-003）：测试模式由服务端告知（snapshot.test_fixtures）；正常界面不渲染测试控件
+  const [testFixtures, setTestFixtures] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .desktopSnapshot()
+      .then((r) => {
+        if (!cancelled) setTestFixtures(!!r.test_fixtures);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -750,6 +765,7 @@ export default function App() {
             onOpenEvidence={() => openEvidence(workspaceTaskId)}
             onOpenSettings={() => openSettings("assistant", "assistant")}
             onOpenTask={(id) => openWorkspace(id)}
+            testFixtures={testFixtures}
           />
         )}
         {mainView === "des-experiment" && (
@@ -800,6 +816,7 @@ export default function App() {
               setDesktopSide({ ...desktopSide, layer, evidenceId })
             }
             onClose={() => setDesktopSide(null)}
+            testFixtures={testFixtures}
             onDemoEmpty={() =>
               setDesktopSide({
                 kind: "evidence",
@@ -824,6 +841,7 @@ export default function App() {
             categoryId={desktopSide.categoryId}
             memoryId={desktopSide.memoryId}
             search={desktopSide.search}
+            testFixtures={testFixtures}
             onNavigate={(next) =>
               setDesktopSide({
                 kind: "settings",

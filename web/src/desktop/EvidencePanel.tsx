@@ -13,9 +13,11 @@ type Props = {
   onLayer: (layer: EvidenceLayer, evidenceId: string | null) => void;
   onClose: () => void;
   onDemoEmpty?: () => void;
+  /** UXFIX-B（INTENT-003）：服务端告知的测试模式；仅在 true 时渲染身份切换与夹具控件 */
+  testFixtures?: boolean;
 };
 
-export function EvidencePanel({ taskId, layer, evidenceId, mode = "normal", onLayer, onClose, onDemoEmpty }: Props) {
+export function EvidencePanel({ taskId, layer, evidenceId, mode = "normal", onLayer, onClose, onDemoEmpty, testFixtures = false }: Props) {
   const [principal, setPrincipal] = useState<DesktopPrincipal>(() => loadPrincipal());
   const [list, setList] = useState<DesktopEvidenceDto[]>([]);
   const [detail, setDetail] = useState<DesktopEvidenceDto | null>(null);
@@ -132,7 +134,9 @@ export function EvidencePanel({ taskId, layer, evidenceId, mode = "normal", onLa
         <span className="desktop-sim" data-testid="evidence-mode-label">真实 ACL</span>
       </header>
 
-      <div className="evidence-acl-bar" data-testid="evidence-acl-bar">
+      {/* UXFIX-B：身份切换只在测试模式渲染（服务端告知），正常界面不出现（CH-U5） */}
+      {testFixtures && (
+        <div className="evidence-acl-bar" data-testid="evidence-acl-bar">
         <span>身份</span>
         {(["alice", "bob", "carol"] as DesktopPrincipal[]).map((p) => (
           <button
@@ -154,7 +158,8 @@ export function EvidencePanel({ taskId, layer, evidenceId, mode = "normal", onLa
             {searchHits.length === 0 ? "none" : searchHits.join(",")}
           </span>
         )}
-      </div>
+        </div>
+      )}
 
       {err && (
         <p className="evidence-error" role="alert" data-testid="evidence-load-error">
@@ -188,12 +193,12 @@ export function EvidencePanel({ taskId, layer, evidenceId, mode = "normal", onLa
               ))}
             </ul>
           )}
-          {onDemoEmpty && mode !== "empty" && (
+          {testFixtures && onDemoEmpty && mode !== "empty" && (
             <button type="button" className="btn small" data-testid="evidence-demo-empty" onClick={onDemoEmpty}>
               空列表夹具
             </button>
           )}
-          {mode === "empty" && (
+          {testFixtures && mode === "empty" && (
             <button type="button" className="btn small" data-testid="evidence-demo-restore" onClick={() => onClose()}>
               关闭空夹具
             </button>
