@@ -597,8 +597,10 @@ CREATE TABLE IF NOT EXISTS desktop_assistant_messages (
     body TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS desktop_assistant_read_ids (
-    id TEXT PRIMARY KEY,
-    updated_at TEXT NOT NULL DEFAULT ''
+    user_id TEXT NOT NULL DEFAULT '',
+    id TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (user_id, id)
 );
 -- AI Desktop T-99：关联修正审计（服务端权威；用户事件，不播种）
 CREATE TABLE IF NOT EXISTS desktop_task_link_audits (
@@ -852,6 +854,28 @@ impl Store {
         )?;
         if has_confirmed == 0 {
             conn.execute_batch("ALTER TABLE desktop_memories ADD COLUMN confirmed_at TEXT")?;
+        }
+        // M4（#361）：助理已读表加 user_id 维度。PK 改造无法 ALTER，探测旧结构后重建：
+        // 旧行没有用户归属，统一并入 local 单用户（与 5.2a 作用域契约一致），回滚兼容——
+        // user_id 带 DEFAULT ''，旧代码写入仍可落库（退化为共享读态）。
+        let has_read_user: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('desktop_assistant_read_ids') WHERE name = 'user_id'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_read_user == 0 {
+            conn.execute_batch(
+                "CREATE TABLE desktop_assistant_read_ids_new (
+                    user_id TEXT NOT NULL DEFAULT '',
+                    id TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY (user_id, id)
+                );
+                INSERT INTO desktop_assistant_read_ids_new (user_id, id, updated_at)
+                    SELECT 'local', id, updated_at FROM desktop_assistant_read_ids;
+                DROP TABLE desktop_assistant_read_ids;
+                ALTER TABLE desktop_assistant_read_ids_new RENAME TO desktop_assistant_read_ids;",
+            )?;
         }
         let read = if path == Path::new(":memory:") {
             None
@@ -2957,8 +2981,11 @@ impl Store {
         })
     }
 
-    /// 列表（含 read 投影）；空表时播种种子（每库一次）。
-    pub fn list_desktop_assistant_messages(&self) -> Result<Vec<DesktopAssistantMessageRow>> {
+    /// 列表（含 read 投影，按 `user_id` 隔离）；空表时播种种子（每库一次）。
+    pub fn list_desktop_assistant_messages(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<DesktopAssistantMessageRow>> {
         {
             let conn = self.write();
             Self::ensure_desktop_assistant_seed_conn(&conn)?;
@@ -2967,50 +2994,61 @@ impl Store {
         let mut st = conn.prepare(
             "SELECT m.id, m.kind, m.title, m.body, (r.id IS NOT NULL)
              FROM desktop_assistant_messages m
-             LEFT JOIN desktop_assistant_read_ids r ON r.id = m.id
+             LEFT JOIN desktop_assistant_read_ids r ON r.id = m.id AND r.user_id = ?1
              ORDER BY m.id",
         )?;
-        let rows = st.query_map([], Self::map_desktop_assistant_message)?;
+        let rows = st.query_map(params![user_id], Self::map_desktop_assistant_message)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// 已读集合（排序后返回）。
-    pub fn list_desktop_assistant_read_ids(&self) -> Result<Vec<String>> {
+    /// 已读集合（排序后返回，按 `user_id` 隔离）。
+    pub fn list_desktop_assistant_read_ids(&self, user_id: &str) -> Result<Vec<String>> {
         let conn = self.read();
-        let mut st = conn.prepare("SELECT id FROM desktop_assistant_read_ids ORDER BY id")?;
-        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        let mut st = conn
+            .prepare("SELECT id FROM desktop_assistant_read_ids WHERE user_id = ?1 ORDER BY id")?;
+        let rows = st.query_map(params![user_id], |r| r.get::<_, String>(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// 标记已读（幂等）：返回 (全部已读 id 排序, 本次新标记数)。未知 id 亦入集合（忠实于 T-73 语义）。
-    pub fn mark_desktop_assistant_reads(&self, ids: &[String]) -> Result<(Vec<String>, u32)> {
+    /// 标记已读（幂等，按 `user_id` 隔离）：返回 (该用户全部已读 id 排序, 本次新标记数)。未知 id 亦入集合（忠实于 T-73 语义）。
+    pub fn mark_desktop_assistant_reads(
+        &self,
+        user_id: &str,
+        ids: &[String],
+    ) -> Result<(Vec<String>, u32)> {
         let conn = self.write();
         let ts = now();
         let mut newly = 0u32;
         {
             let mut st = conn.prepare(
-                "INSERT OR IGNORE INTO desktop_assistant_read_ids (id, updated_at) VALUES (?1, ?2)",
+                "INSERT OR IGNORE INTO desktop_assistant_read_ids (user_id, id, updated_at)
+                 VALUES (?1, ?2, ?3)",
             )?;
             for id in ids {
-                let n = st.execute(params![id, ts])?;
+                let n = st.execute(params![user_id, id, ts])?;
                 if n > 0 {
                     newly += 1;
                 }
             }
         }
         let mut read_ids: Vec<String> = {
-            let mut st = conn.prepare("SELECT id FROM desktop_assistant_read_ids ORDER BY id")?;
-            let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+            let mut st = conn.prepare(
+                "SELECT id FROM desktop_assistant_read_ids WHERE user_id = ?1 ORDER BY id",
+            )?;
+            let rows = st.query_map(params![user_id], |r| r.get::<_, String>(0))?;
             rows.collect::<rusqlite::Result<_>>()?
         };
         read_ids.sort();
         Ok((read_ids, newly))
     }
 
-    /// 重置：清空已读集合（消息内容静态，重置即全部回到未读）。
-    pub fn reset_desktop_assistant_reads(&self) -> Result<()> {
+    /// 重置：清空**该用户**的已读集合（消息内容静态，重置即全部回到未读）。
+    pub fn reset_desktop_assistant_reads(&self, user_id: &str) -> Result<()> {
         let conn = self.write();
-        conn.execute("DELETE FROM desktop_assistant_read_ids", [])?;
+        conn.execute(
+            "DELETE FROM desktop_assistant_read_ids WHERE user_id = ?1",
+            params![user_id],
+        )?;
         Ok(())
     }
 
