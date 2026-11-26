@@ -731,6 +731,7 @@
       "E2E-OPSNOISE",
       "E2E-OPSAPPROVE",
       "E2E-OPSRECEIPT",
+      "E2E-OPSPLAN",
       "E2E-OPSOFF",
       "E2E-OPSAUTOEXEC",
       "E2E-OPSEXPIRE"
