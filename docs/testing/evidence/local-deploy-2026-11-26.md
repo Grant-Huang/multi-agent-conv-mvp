@@ -49,15 +49,44 @@ W2 数据集未就绪，本轮用接口手工造数（符合 #424 正文）。
 
 手册已补：`docs/manual/09-backup-and-upgrade.md`。
 
+## D3 真实模型接入（8787 + 临时端口）
+
+环境：macOS 26.6.2 arm64；测口默认 `http://127.0.0.1:8787`。
+
+| 场景 | 做法 | 结果 |
+|---|---|---|
+| 本地 llama | 8787 已接 `http://127.0.0.1:8200/v1`（Qwen3.8-35B-A3B-Q4_K_M） | `POST .../messages`「只回答一个词：就绪」→ 回复「就绪」（`action=respond`） |
+| 连接失败提示 | 临时实例 `18789`，`[llm].base_url=http://127.0.0.1:9/v1` | 助手回复含 `[E_LLM_UNREACHABLE] 无法连接 LLM 服务…可以换个说法再试一次`；日志 `llm.unreachable` |
+| 云端 | 临时实例 `18790`，`[backends.cloud]`→`https://api.deepseek.com/v1` + `api_key_env=DEEPSEEK_API_KEY`（按 manual 07 方案 B） | 路由正确挂到 `backend=cloud`；当前环境密钥 **401 invalid**，界面返回可读 `[E_LLM_HTTP] … Authentication Fails`。**未拿到有效云端密钥下的成功回答** |
+
+结论：本地可用 + 失败提示可读 = 通过；云端「能配、失败可读」，成功路径受本机密钥限制（非产品缺陷，不另开 Issue）。
+
+## D4 本机 agent（Claude Code，交叉 #419）
+
+| 步骤 | 结果 |
+|---|---|
+| 版本 | Claude Code `2.1.329`；`claude-agent-acp@0.112.0`（npm 全局） |
+| `POST /api/agents/diagnose` `{id:claude}` | `probe.kind=ok`「已连通：握手成功」；checks：命令在服务 PATH / 登录 shell / Node v22 均 ok |
+| `POST /api/agents/probe` | `kind=ok`，与体检一致 |
+| 指定 coding 默认 | `set_default` → `assign.coding=["claude"]` |
+| 委派执行 | `task-d36bb47a8be548f2bb35584238439830` role=`coding`，`agent.run_start`/`acp.finished` agent_id=`claude`；产物 `workspace/code/hello_d4.py` 内容 `print("hello-from-d4")`；审查 `verdict=pass`，任务 `COMPLETED` |
+
+结论：检测与体检一致，且能实际执行。未装场景（改名 `claude-agent-acp`）留给 #419 专卡补证据。
+
+## D1 干净机（可选）
+
+本轮**未**做全新用户/干净机隔离（本机已有 Rust/Node/模型）。仍记「部分通过」。
+
 ## 清单状态
 
 | 项 | 状态 |
 |---|---|
-| D1 | 部分通过（本机路径记录；欠干净机） |
-| D2 | 通过（等审合） |
-| D3/D4 | 未做（可与 #419 交叉） |
+| D1 | 部分通过（本机路径；欠干净机） |
+| D2 | 通过（#430 已合入） |
+| D3 | 本地通过；失败提示通过；云端成功路径欠有效密钥 |
+| D4 | 通过（Claude Code；详见上，交叉 #419） |
 | D5 | 通过（手工种子） |
-| D6 | **偏离**：能启无「新数据不可用」提示 → 待归属 |
+| D6 | **偏离**：能启无「新数据不可用」提示 → #431 |
 | D7 | 通过（手工种子；W2 verify 脚本未就绪） |
 
-**不关闭 #424**，直至上表与验收齐套。
+**不关闭 #424**：D1 干净机与 D3 云端成功回答仍欠；D6 产品提示在 #431。
