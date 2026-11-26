@@ -1138,14 +1138,15 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-EXEC-04 | conversation-memory | 注入发生后的任务 | 查 `tasks.context` | context 列含资料段（随任务持久） |
 | RT-EXEC-05 | conversation-memory | 过闸门发现 + 委派（general 角色；#346 场合表落地） | handle_message | 执行背景与 `tasks.context` 不含发现 id；同发现回答路径仍按相关性门注入（守卫） |
 
-## 分层记忆细化（#346，实现前定义；REQ-05/06 于片 3、片 4 实现并补可执行测试）
+## 分层记忆细化（#346；RT-L2H-01～03 已随片 3 实现（2026-11-26），RT-L2H-04 与 RT-ASEL-01～02 为实现前定义随片 4/5 补可执行测试）
 
-需求与验收标准见特性档案 REQ-conversation-memory-05/06（2026-11-26 用户确认冻结；[设计规则](../../decisions/2026-11-26-memory-layers-and-history.md) §5/§3）。内省克制族的「超日上限不发」由 RT-INT-20、「输入中不弹」由 RT-INT-24 + RT-UFND-01 + RT-JMAT-03 既有用例覆盖，不另设。
+需求与验收标准见特性档案 REQ-conversation-memory-05/06（2026-11-26 用户确认冻结；[设计规则](../decisions/2026-11-26-memory-layers-and-history.md) §5/§3）。内省克制族的「超日上限不发」由 RT-INT-20、「输入中不弹」由 RT-INT-24 + RT-UFND-01 + RT-JMAT-03 既有用例覆盖，不另设。**片 3 边界**：被纠正/撤回的带标记与「优先给纠正后版本」拆入 RT-L2H-04（纠正注记能力，尚未实现）；本片的「撤回」语义由删除即不在检索面覆盖。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
-| RT-L2H-01 | conversation-memory | 本人参与会话中的历史消息、AI 历史回答、被纠正消息（片 3 实现） | 检索本人相关话题 | AI 历史回答标「当时的回答」不作为事实来源；被纠正/撤回的带标记并优先给纠正后版本；引用带时间与出处 |
-| RT-L2H-02 | conversation-memory | 本人删除一条个人会话消息（片 3 实现） | 检索该消息话题 | 删除即真删除，不再被检索与引用；任务/审批相关记录保留原件但不进检索 |
-| RT-L2H-03 | conversation-memory | 180 天窗口内外的同类记录（片 3 实现） | 默认检索 / 明确指定更早 | 默认只返回最近 180 天；明确指定时间才返回更早记录 |
+| RT-L2H-01 | conversation-memory | 本人参与会话中的历史消息、AI 历史回答（`GET /api/desktop/v1/history/search`，片 3） | 检索关键词 | AI 历史回答标「当时的回答」；用户消息/系统事件/任务回执分级；每条命中带 `msg_id`/`conv_id`/`at` 出处 |
+| RT-L2H-02 | conversation-memory | 本人删除一条个人会话消息（`DELETE /api/desktop/v1/messages/{id}`，片 3） | 删除后再检索 | 删除即真删除，检索与消息列表均不再出现；AI 回答不可经此删除（403）；重复删除 404 |
+| RT-L2H-03 | conversation-memory | 180 天窗口内外的同类记录（片 3） | 默认检索 / `days` 显式指定 | 默认只返回最近 180 天；`days` 显式加大才返回更早记录，引用带原始时间；空关键词 400 |
+| RT-L2H-04 | conversation-memory | 被纠正的历史消息与更正注记（实现前定义，片 4/5） | 检索被纠正话题 | 被纠正/撤回的带标记，优先给纠正后版本；更正注记单独记录、原文不改写 |
 | RT-ASEL-01 | conversation-memory | 六场合各自入口与状态（片 4 实现） | 各场合触发选材 | 按「必带 / 可带 / 不带」表选材：随口问答不带他任务现场与 L5；执行委派不带风格偏好与 L5；审批写入的画像与风格不影响内容（CH-G2b）；场合由程序按入口与状态判断 |
 | RT-ASEL-02 | conversation-memory | 任一发生注入的轮次（片 4 实现） | 查 `session.materials` 事件 | 事件可还原「带了哪些记忆、为什么」（来源 id、取舍原因；展示入口归第 1 线 #347） |
