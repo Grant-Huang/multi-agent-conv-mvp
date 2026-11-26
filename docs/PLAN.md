@@ -16,7 +16,7 @@
 - [ ] 第 1、4 线：首页正常入口接入可靠受理。先验丢回执后按同一操作回读及重连，再验人工验收与结果回传。
 - [ ] 第 2 线：独立复跑真实桌面委派和运营频道远程 DES 场景，分别记录合入基线、运行模式和证据。
 - [ ] 第 3 线：沿用 M2-6 准出及 T-63 独立复验，维护远程 DES 基线；M3 桩数据已准出；M4 写须过 [WA_M4_TASKS](mom/WA_M4_TASKS.md) 准入（候选站 / 身份 / 只读浏览器前置）；下一步待授权 **M4-1 候选站只读**。
-- [ ] 第 5 线：四阶段 5.1/5.2/5.3 全部完成（证据 `testing/evidence/convmem-s1-session-materials.md`、`convmem-s2a-personal-memory.md`、`convmem-s2b-style-gate.md`、`convmem-s3-findings-in-session.md`）；5.3b adoption 证据链补强完成（RT-UFND-06）；**5.4 组织范围 2026-11-24 用户拍板移交第 4 线**。S 系列（档案 §3 每轮上下文选材）：S4 判断路径极简清单完成（RT-JMAT-01～05，`testing/evidence/convmem-s4-judge-materials.md`，E0 对比回填 FT 记录）；S5-route 路由路径线索完成（RT-RMAT-01～03，`testing/evidence/convmem-s5-route-materials.md`）。S6-exec 执行路径完整块完成（RT-EXEC-01～04，`testing/evidence/convmem-s6-exec-materials.md`）。余：材料化评测集、E0 对比执行。分期见[第 5 线计划](features/conversation-memory/PLAN.md)。
+- [ ] 第 5 线：四阶段 5.1/5.2/5.3 全部完成（证据 `testing/evidence/convmem-s1-session-materials.md`、`convmem-s2a-personal-memory.md`、`convmem-s2b-style-gate.md`、`convmem-s3-findings-in-session.md`）；5.3b adoption 证据链补强完成（RT-UFND-06）；**5.4 组织范围 2026-11-24 用户拍板移交第 4 线**。S 系列（档案 §3 每轮上下文选材）：S4 判断路径极简清单完成（RT-JMAT-01～05，`testing/evidence/convmem-s4-judge-materials.md`，E0 对比回填 FT 记录）；S5-route 路由路径线索完成（RT-RMAT-01～03，`testing/evidence/convmem-s5-route-materials.md`）。S6-exec 执行路径完整块完成（RT-EXEC-01～04，`testing/evidence/convmem-s6-exec-materials.md`）。余：材料化评测集、E0 对比执行。分层细化 #346 开工（2026-11-26 宪章 v1.6）：档案 REQ-05～07 已登记（提出），用例与实现切片见[第 5 线计划](features/conversation-memory/PLAN.md)。
 
 ## 0. 当前环境
 

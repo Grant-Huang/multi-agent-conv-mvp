@@ -2509,34 +2509,23 @@ impl Store {
         })
     }
 
+    /// 桌面演示夹具种子。INTENT-032 / #354：只放本人保存口径的 L3 记忆，
+    /// 设置项（免打扰时段等）只存在于设置中心，不作为记忆存储；source 由系统
+    /// 按真实来源生成（「用户保存 · 日期」），不得声称「用户确认」而 confirmed 为假。
     fn desktop_memory_seeds(user_id: &str) -> Vec<DesktopMemory> {
         let ts = now();
-        vec![
-            DesktopMemory {
-                id: "mem-1".into(),
-                user_id: user_id.into(),
-                title: "质量报告偏好摘要格式".into(),
-                source: "用户确认 · 2026-11-18".into(),
-                body: "先给结论，再列证据条目与待核实项。".into(),
-                expires: "2027-11-18".into(),
-                kind: "fact".into(),
-                confirmed_at: None,
-                revoked: false,
-                updated_at: ts.clone(),
-            },
-            DesktopMemory {
-                id: "mem-2".into(),
-                user_id: user_id.into(),
-                title: "免打扰时段".into(),
-                source: "设置 · 通知与主动性".into(),
-                body: "工作日 22:00–08:00 不推普通建议。".into(),
-                expires: "长期".into(),
-                kind: "fact".into(),
-                confirmed_at: None,
-                revoked: false,
-                updated_at: ts,
-            },
-        ]
+        vec![DesktopMemory {
+            id: "mem-1".into(),
+            user_id: user_id.into(),
+            title: "质量报告偏好摘要格式".into(),
+            source: "用户保存 · 2026-11-18".into(),
+            body: "先给结论，再列证据条目与待核实项。".into(),
+            expires: "2027-11-18".into(),
+            kind: "fact".into(),
+            confirmed_at: None,
+            revoked: false,
+            updated_at: ts,
+        }]
     }
 
     fn insert_desktop_memory(conn: &Connection, m: &DesktopMemory) -> Result<()> {

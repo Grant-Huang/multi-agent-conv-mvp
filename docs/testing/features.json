@@ -730,7 +730,9 @@
       "E2E-OPSCHANNEL",
       "E2E-OPSNOISE",
       "E2E-OPSAPPROVE",
-      "E2E-OPSOFF"
+      "E2E-OPSOFF",
+      "E2E-OPSAUTOEXEC",
+      "E2E-OPSEXPIRE"
     ],
     "runtime_cases": [
       "RT-OPSDESK-01",
@@ -743,7 +745,9 @@
       "RT-OPSDESK-08",
       "RT-OPSDESK-09",
       "RT-OPSDESK-10",
-      "RT-OPSDESK-11"
+      "RT-OPSDESK-11",
+      "RT-OPSDESK-12",
+      "RT-OPSDESK-13"
     ]
   },
   {
@@ -754,6 +758,8 @@
       "web/src/desktop/DesktopHome.tsx",
       "web/src/desktop/WorkspaceView.tsx",
       "web/src/desktop/taskStatusText.ts",
+      "web/src/desktop/draftStore.ts",
+      "web/src/desktop/draftStore.test.ts",
       "web/src/desktop/WorkspaceComposer.tsx",
       "web/src/desktop/EvidencePanel.tsx",
       "web/src/desktop/principalStore.ts",
@@ -864,6 +870,8 @@
       "E2E-HOMEREJ",
       "E2E-RESTART",
       "E2E-UX01",
+      "E2E-UX01-I7",
+      "E2E-UX01-I8",
       "E2E-UX02",
       "E2E-UX03",
       "E2E-UX04",
@@ -904,6 +912,8 @@
       "RT-ADMEM-07",
       "RT-ADMEM-08",
       "RT-ADMEM-09",
+      "RT-ADMEM-10",
+      "RT-ADMEM-11",
       "RT-ADDRAFTS-01",
       "RT-ADDRAFTS-02",
       "RT-ADDRAFTS-03",
@@ -1210,6 +1220,27 @@
           "RT-EXEC-04"
         ],
         "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-05",
+        "title": "历史记录可检索（L2）",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-06",
+        "title": "按场合选材且所用记忆可说明",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-07",
+        "title": "记忆与检索的注入防线",
+        "status": "提出",
+        "cases": [],
+        "since": null
       }
     ],
     "contracts": [
@@ -1217,7 +1248,9 @@
       "docs/contracts/events-and-trace.md"
     ],
     "decisions": [
-      "docs/decisions/2026-11-22-five-workstreams.md"
+      "docs/decisions/2026-11-22-five-workstreams.md",
+      "docs/decisions/2026-11-26-charter-v1-6-memory.md",
+      "docs/decisions/2026-11-26-memory-layers-and-history.md"
     ]
   },
   {

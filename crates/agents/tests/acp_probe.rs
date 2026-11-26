@@ -11,7 +11,33 @@ use std::time::{Duration, Instant};
 
 use an_agents::acp::{AcpConfig, PermissionMode};
 use an_agents::AcpAgent;
-use an_core::{ProbeKind, Role};
+use an_core::{ProbeKind, ProbeOutcome, Role};
+
+/// exec 偶发瞬态 ETXTBSY 的有界重试（Q-AR2-04 第四样本，Issue #343）。
+///
+/// CI（rust job 单进程内三测试并行）出现过一次：spawn 已拷贝好的 mock 二进制时报
+/// `无法启动：Text file busy (os error 26)`——同提交 rerun 转绿、本地不触发，属瞬态写持有窗口
+/// （构建/拷贝刚结束时的内核写计数落账延迟一类），几百毫秒内自愈。
+/// 重试只吸收这个窗口，总数有上限；断言口径不变：最终仍要求探测成功（Ok）。
+const BUSY_RETRIES: usize = 40;
+const BUSY_RETRY_INTERVAL: Duration = Duration::from_millis(100);
+
+/// 探测一次；仅当失败原因是「Text file busy」时按上限重试，其他失败原样返回。
+async fn probe_with_busy_retry(a: &AcpAgent, timeout: Duration) -> ProbeOutcome {
+    let mut out = a.probe_detailed(timeout).await;
+    for _ in 0..BUSY_RETRIES {
+        let busy = out
+            .detail
+            .as_deref()
+            .is_some_and(|d| d.contains("Text file busy"));
+        if !busy {
+            return out;
+        }
+        tokio::time::sleep(BUSY_RETRY_INTERVAL).await;
+        out = a.probe_detailed(timeout).await;
+    }
+    out
+}
 
 /// 临时目录：放假的 agent 脚本，用完删除
 struct Dir(PathBuf);
@@ -154,7 +180,7 @@ async fn probe_session_new_cwd_is_canonical() {
         base.join("unused-default"),
     );
 
-    let out = a.probe_detailed(Duration::from_secs(10)).await;
+    let out = probe_with_busy_retry(&a, Duration::from_secs(10)).await;
     std::env::set_current_dir(prev_cwd).unwrap();
 
     assert_eq!(out.kind, ProbeKind::Ok, "{:?}", out.detail);
@@ -201,8 +227,9 @@ async fn rt_i325_01_probe_reresolves_command_appearing_after_construction() {
     std::fs::copy(&mock, &late).unwrap();
     std::fs::set_permissions(&late, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-    // 3) 再次探测：重新解析 + 握手成功（不再永远 not_installed）
-    let out = a.probe_detailed(Duration::from_secs(10)).await;
+    // 3) 再次探测：重新解析 + 握手成功（不再永远 not_installed）。
+    //    exec 换成有界重试：吸收 CI 偶发的瞬态 ETXTBSY 写持有窗口（#343），断言仍是握手必须 Ok
+    let out = probe_with_busy_retry(&a, Duration::from_secs(10)).await;
     assert_eq!(
         out.kind,
         ProbeKind::Ok,
