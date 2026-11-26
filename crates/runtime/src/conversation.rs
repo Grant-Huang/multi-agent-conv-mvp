@@ -688,7 +688,7 @@ impl ConversationRuntime {
         match &decision {
             TurnDecision::Respond { .. } => {
                 let reply_id = an_core::new_id("msg");
-                let reply = self
+                let mut reply = self
                     .generate_reply(
                         conversation_id,
                         &reply_id,
@@ -697,6 +697,23 @@ impl ConversationRuntime {
                         style_block.as_deref(),
                     )
                     .await;
+                // CH-G2c（#402）：风险信息不可省略。风格卡护栏句是第一道（提示词约束，模型负责理解），
+                // 这里是第二道（程序负责决定）：本轮资料含风险标记而回答缺该标记时，程序补齐固定提示语并记录事件
+                if let Some(m) = session_materials.as_ref() {
+                    let gaps = crate::session_materials::risk_gaps(&reply, m);
+                    if !gaps.is_empty() {
+                        tracing::warn!(
+                            event = "conversation.risk_restored",
+                            conv_id = %conversation_id,
+                            restored = gaps.len(),
+                            "回答缺风险提示，程序补齐（CH-G2c）"
+                        );
+                        for hint in &gaps {
+                            reply.push_str("\n\n");
+                            reply.push_str(hint);
+                        }
+                    }
+                }
                 let decision = TurnDecision::Respond {
                     reply: reply.clone(),
                 };
