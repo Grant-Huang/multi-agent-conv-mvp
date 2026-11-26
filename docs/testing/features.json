@@ -837,6 +837,7 @@
     "cases": [
       "E2E-ADNAV",
       "E2E-ADLAYOUT",
+      "E2E-ADLAYOUT-CHU7",
       "E2E-ADDRAFT",
       "E2E-ADSCOPE",
       "E2E-ADEVID",

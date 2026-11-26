@@ -121,26 +121,29 @@ export function DesktopHome({
           )}
         </>
       )}
-      {failed && (
-        <p className="muted" data-testid="snapshot-unavailable" role="status">
-          首页快照暂不可用。
-          <button type="button" className="btn small" data-testid="snapshot-retry" onClick={load}>
-            重试
-          </button>
-        </p>
-      )}
-      {!failed && cards === null && (
-        <p className="muted" data-testid="snapshot-loading" role="status">
-          首页加载中…
-        </p>
-      )}
-      {cards !== null && (
-        <div className="desktop-zones">
-          <Zone title="我的工作" cards={cards.filter((c) => c.zone === "mine")} onOpen={open} onEvidence={onOpenEvidence} />
-          <Zone title="Agent 工作" cards={cards.filter((c) => c.zone === "agent")} onOpen={open} onEvidence={onOpenEvidence} />
-          <Zone title="为你关注" cards={cards.filter((c) => c.zone === "watch")} onOpen={open} onEvidence={onOpenEvidence} />
-        </div>
-      )}
+      {/* CH-U7（#321）：S1 输入框固定在栏内可视位置，卡片内容区单独滚动，不把输入框滚走 */}
+      <div className="desktop-home-scroll">
+        {failed && (
+          <p className="muted" data-testid="snapshot-unavailable" role="status">
+            首页快照暂不可用。
+            <button type="button" className="btn small" data-testid="snapshot-retry" onClick={load}>
+              重试
+            </button>
+          </p>
+        )}
+        {!failed && cards === null && (
+          <p className="muted" data-testid="snapshot-loading" role="status">
+            首页加载中…
+          </p>
+        )}
+        {cards !== null && (
+          <div className="desktop-zones">
+            <Zone title="我的工作" cards={cards.filter((c) => c.zone === "mine")} onOpen={open} onEvidence={onOpenEvidence} />
+            <Zone title="Agent 工作" cards={cards.filter((c) => c.zone === "agent")} onOpen={open} onEvidence={onOpenEvidence} />
+            <Zone title="为你关注" cards={cards.filter((c) => c.zone === "watch")} onOpen={open} onEvidence={onOpenEvidence} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
