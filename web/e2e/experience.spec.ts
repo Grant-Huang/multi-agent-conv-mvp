@@ -185,6 +185,40 @@ test('E2E-UX02: 任务中切到独立话题临时提问再切回，不离开工�
   expect(p.snapshot().full_page_navigations).toBe(0);
 });
 
+// UX-02-I4（CH-U1、CH-U5，INTENT-2026-012）：左栏“我的助理”打开可直接对话的助理面板
+// （顶部对话输入 + 最近消息），“调整助理”进设置；面板不出现内部术语 Soul / Taste；
+// 关闭恢复下层界面，工作区任务与草稿不变。
+test('E2E-UX02-I4: 我的助理打开可对话面板，关闭后草稿与任务不变且无内部术语', async ({ page }) => {
+  const p = probe(page);
+  const draft = '调查草稿：对比首件检验记录';
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click(); p.step();
+  const input = page.getByRole('textbox', { name: '工作区输入' });
+  await input.fill(draft); p.step();
+
+  // 打开助理面板：有可编辑的对话输入与最近消息区
+  await page.getByTestId('assistant-chip').click(); p.step();
+  const panelInput = page.getByTestId('assistant-panel-input');
+  await expect(panelInput).toBeVisible();
+  await panelInput.fill('帮我把这份调查草稿整理成三个要点'); p.step();
+  await expect(panelInput).toBeEditable();
+  // 不暴露内部术语
+  await expect(page.getByTestId('assistant-panel')).not.toContainText('Soul');
+  await expect(page.getByTestId('assistant-panel')).not.toContainText('Taste');
+
+  // “调整助理”进设置中心对应分类（Soul/Taste 的表单在设置里也用用户语言）
+  await page.getByTestId('assistant-panel-settings').click(); p.step();
+  await expect(page.getByTestId('settings-panel')).toBeVisible();
+  await expect(page.getByTestId('settings-panel')).not.toContainText('Soul');
+  await expect(page.getByTestId('settings-panel')).not.toContainText('Taste');
+  await page.keyboard.press('Escape'); p.step();
+
+  // 关闭面板恢复下层：任务与草稿不变
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await expect(input).toHaveValue(draft);
+  expect(p.snapshot().full_page_navigations).toBe(0);
+});
+
 // 体验地图 UX-03（docs/experience-map/journeys/UX-03.md）：一句话委派复杂任务，后台运行时继续做别的事。
 // 只断言当前成立的约束 UX-03-I1、I2、I3；从卡片看到真实结果（I4）、完成时主动告知（I5）、
 // 不显示内部编号（I6）为欠账，见 2026-11-25 UX-03 基线审查。
@@ -372,6 +406,23 @@ test('E2E-UX06: 工作区“调整助理”直达助理设置，改名生效，�
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '返回桌面', exact: true }).click();
   await expect(page.getByTestId('home-assistant-name')).toContainText(original);
+});
+
+// UXFIX-F（#309，INTENT-2026-010，CH-U4）：设置中心不出现“（占位）”；
+// 未实现的分组显示“即将提供”且不可进入（已在 MOCK_REGISTRY 登记）。
+test('E2E-ADSETGROUPS: 设置中心无占位字样，未实现分组显示即将提供且不可进入', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('open-settings').click();
+  const panel = page.getByTestId('settings-panel');
+  await expect(panel).toBeVisible();
+  await expect(panel).not.toContainText('（占位）');
+  await expect(panel).toContainText('即将提供');
+  for (const id of ['desktop', 'notify', 'device', 'privacy']) {
+    await expect(page.getByTestId(`settings-cat-${id}`)).toBeDisabled();
+  }
+  // 可用分组（我的 AI 助理 / 连接与能力）不受影响
+  await expect(page.getByTestId('settings-cat-assistant')).toBeEnabled();
+  await expect(page.getByTestId('settings-cat-connect')).toBeEnabled();
 });
 
 // UX-04-I4（CH-U4、CH-U5，INTENT-2026-018）：普通模式下对话页不出现“内省”“节点”页签，
