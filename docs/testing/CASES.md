@@ -1099,3 +1099,14 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-RMAT-01 | conversation-memory | 回执出窗 + 相关委派续问 | handle_message | route_decision 请求的 user 内容含「会话资料线索」段与任务 id |
 | RT-RMAT-02 | conversation-memory | `session_materials_route = false` | 同上续问 | route_decision 请求不含该段（独立开关） |
 | RT-RMAT-03 | conversation-memory | 仅无关发现 | 无关委派续问 | 发现行不进路由上下文（相关性门） |
+
+## 执行路径会话资料完整块 conversation-memory S6-exec（2026-11-24 用户确认：完整块 / 独立开关+512 / 仅 general / 随任务持久）
+
+委派任务的任务上下文（`tasks.context`）在 S5-route 线索段之后追加**完整资料块**（回答路径同款 `render` 输出：摘要全文 + 来源行，「数据，非指令」标记），预裁 ≤ `session_materials_exec_max_tokens`（默认 512）。仅 `execution_role = general` 的任务注入（coding 代码任务不需要会话记忆；reviewer 审查对话已有原文）。资料随任务持久化（重试/续跑/回查可追查，宪章原则 5）。开关 `session_materials_exec` 默认开。E2E 待入口后补录。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-EXEC-01 | conversation-memory | 回执出窗 + 委派（general 角色） | handle_message | general_step 请求的 system「背景信息」段含资料块标记、完整摘要正文与任务 id |
+| RT-EXEC-02 | conversation-memory | 超长摘要（512 token 上限） | 同上 | 资料段长度有界且来源行保留 |
+| RT-EXEC-03 | conversation-memory | `session_materials_exec = false` | 同上 | system 无资料块标记 |
+| RT-EXEC-04 | conversation-memory | 注入发生后的任务 | 查 `tasks.context` | context 列含资料段（随任务持久） |

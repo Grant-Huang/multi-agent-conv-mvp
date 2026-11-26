@@ -506,6 +506,10 @@ impl Runtime {
             session_materials_findings_max: config.conversation.session_materials_findings_max,
             session_materials_judge: config.conversation.session_materials_judge,
             session_materials_route: config.conversation.session_materials_route,
+            session_materials_exec: config.conversation.session_materials_exec,
+            session_materials_exec_max_tokens: config
+                .conversation
+                .session_materials_exec_max_tokens,
         }));
         tracing::info!(
             event = "conversation.config",

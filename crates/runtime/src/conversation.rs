@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use an_core::{truncate_chars, FollowUpKind, Message, RouteLog, TaskRecord, TurnDecision};
+use an_core::{truncate_chars, FollowUpKind, Message, Role, RouteLog, TaskRecord, TurnDecision};
 use an_llm::{ChatMessage, LlmClient, Structured, StructuredError};
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -50,6 +50,8 @@ pub struct ConversationRuntime {
     session_materials_findings_max: u32,
     session_materials_judge: bool,
     session_materials_route: bool,
+    session_materials_exec: bool,
+    session_materials_exec_max_tokens: u32,
     /// 同一会话同一时刻只处理一条消息
     locks: ConvLocks,
     /// 会话资料源（conversation-memory 5.1）；默认读 Store，测试可注入
@@ -81,6 +83,8 @@ pub struct ConversationDeps {
     pub session_materials_findings_max: u32,
     pub session_materials_judge: bool,
     pub session_materials_route: bool,
+    pub session_materials_exec: bool,
+    pub session_materials_exec_max_tokens: u32,
 }
 
 /// 一轮对话的处理结果（HTTP 接口直接返回它）
@@ -261,6 +265,14 @@ fn to_decision(
     }
 }
 
+/// 委派输入（S6-exec：任务上下文与执行资料块分离传递）
+struct DelegateInput<'a> {
+    goal: &'a str,
+    ctx: &'a str,
+    exec_block: Option<&'a str>,
+    replaces_task: Option<&'a str>,
+}
+
 impl ConversationRuntime {
     pub fn new(d: ConversationDeps) -> Self {
         Self {
@@ -287,6 +299,8 @@ impl ConversationRuntime {
             session_materials_findings_max: d.session_materials_findings_max,
             session_materials_judge: d.session_materials_judge,
             session_materials_route: d.session_materials_route,
+            session_materials_exec: d.session_materials_exec,
+            session_materials_exec_max_tokens: d.session_materials_exec_max_tokens,
             locks: ConvLocks::new(),
             agents: d.agents,
         }
@@ -567,6 +581,16 @@ impl ConversationRuntime {
         } else {
             None
         };
+        let exec_block = if self.session_materials_exec {
+            session_materials
+                .as_ref()
+                .map(|m| {
+                    crate::session_materials::render(m, self.session_materials_exec_max_tokens)
+                })
+                .filter(|b| !b.is_empty())
+        } else {
+            None
+        };
         let (reply_block, style_block, judge_digest) = session_materials
             .as_ref()
             .map(|m| {
@@ -689,8 +713,18 @@ impl ConversationRuntime {
             }
             TurnDecision::Delegate { task_goal } => {
                 let goal = task_goal.clone();
-                self.delegate(log, started, decision, &goal, &ctx, None)
-                    .await
+                self.delegate(
+                    log,
+                    started,
+                    decision,
+                    DelegateInput {
+                        goal: &goal,
+                        ctx: ctx.as_str(),
+                        exec_block: exec_block.as_deref(),
+                        replaces_task: None,
+                    },
+                )
+                .await
             }
             TurnDecision::FollowUp {
                 task_id,
@@ -712,8 +746,18 @@ impl ConversationRuntime {
                     FollowUpKind::Supplement => {
                         // 先路由并校验补充要求，成功后才取消旧任务。
                         let goal = format!("{}\n\n补充要求：{}", old.goal, change);
-                        self.delegate(log, started, decision.clone(), &goal, &ctx, Some(task_id))
-                            .await
+                        self.delegate(
+                            log,
+                            started,
+                            decision.clone(),
+                            DelegateInput {
+                                goal: &goal,
+                                ctx: ctx.as_str(),
+                                exec_block: exec_block.as_deref(),
+                                replaces_task: Some(task_id),
+                            },
+                        )
+                        .await
                     }
                 }
             }
@@ -764,10 +808,14 @@ impl ConversationRuntime {
         mut log: RouteLog,
         started: Instant,
         decision: TurnDecision,
-        goal: &str,
-        ctx: &str,
-        replaces_task: Option<&str>,
+        input: DelegateInput<'_>,
     ) -> Result<TurnOutcome> {
+        let DelegateInput {
+            goal,
+            ctx,
+            exec_block,
+            replaces_task,
+        } = input;
         let conversation_id = log.conversation_id.clone();
         let examples = self.store.similar_feedback(goal, 5).unwrap_or_default();
         match self.router.route(goal, ctx, &examples).await {
@@ -779,10 +827,21 @@ impl ConversationRuntime {
                 if let Some(task_id) = replaces_task {
                     self.orchestrator.cancel(task_id)?;
                 }
+                // S6-exec：general 角色任务上下文追加完整资料块（随任务持久；coding/reviewer 不注入）
+                let ctx_task = if route.decision.execution_role == Role::General {
+                    match exec_block {
+                        Some(b) if !b.trim().is_empty() => {
+                            format!("{ctx}\n\n{b}")
+                        }
+                        _ => ctx.to_string(),
+                    }
+                } else {
+                    ctx.to_string()
+                };
                 let task = self.orchestrator.submit(
                     &conversation_id,
                     goal,
-                    ctx,
+                    &ctx_task,
                     route.decision.clone(),
                     route.policy.clone(),
                 )?;
