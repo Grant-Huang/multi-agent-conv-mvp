@@ -219,6 +219,49 @@ test('E2E-UX04: 对话中委派的任务完成后，打开任务详情不影响�
   expect(p.snapshot().full_page_navigations).toBe(0);
 });
 
+// UX-04-I3（CH-U2，INTENT-2026-019）：对话输入草稿按 Conversation 隔离持久——
+// 回桌面打开别的任务再回来、切到另一对话再切回，草稿都在；发送后清空。
+test('E2E-UX04-I3: 对话草稿离开再返回与切换会话后仍在，发送后清空', async ({ page }) => {
+  test.setTimeout(120_000);
+  const p = probe(page);
+  const goal = `写一份关于本地小模型选型的简短报告，保存成 Markdown ${Date.now()}`;
+  await page.goto('/');
+  await page.getByRole('button', { name: '＋ 新会话' }).click(); p.step();
+  const input = page.getByRole('textbox', { name: '输入消息' });
+  await input.fill(goal); p.step();
+  await input.press('Enter'); p.step();
+  await expect(page.getByRole('button', { name: /任务结束：COMPLETED/ })).toBeVisible({ timeout: 60_000 });
+
+  // 写一半的追问（草稿，不发送）
+  const draft = '再补一段关于功耗的对比，以及回流焊升温曲线';
+  await input.fill(draft); p.step();
+
+  // 回桌面打开 SMT-03 工作区，再返回桌面
+  await page.getByRole('button', { name: '我的桌面', exact: true }).click(); p.step();
+  await page.getByTestId('card-smt-03').click(); p.step();
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click(); p.step();
+
+  // 回到该对话：草稿仍在（会话标题取自首条消息，用目标文字定位）
+  const convEntry = page.getByRole('navigation', { name: '最近工作' }).getByRole('button').filter({ hasText: '本地小模型选型' });
+  await convEntry.first().click(); p.step();
+  await expect(input).toBeEditable();
+  await expect(input).toHaveValue(draft);
+
+  // 切到另一对话再切回：草稿仍在
+  await page.getByRole('button', { name: '＋ 新会话' }).click(); p.step();
+  await expect(input).toBeEditable();
+  await expect(input).toHaveValue('');
+  await convEntry.first().click(); p.step();
+  await expect(input).toHaveValue(draft);
+
+  // 发送后清空
+  await input.fill('收到，请按上面的补充继续'); p.step();
+  await input.press('Enter'); p.step();
+  await expect(input).toHaveValue('', { timeout: 15_000 });
+  expect(p.snapshot().full_page_navigations).toBe(0);
+});
+
 // 体验地图 UX-05（docs/experience-map/journeys/UX-05.md）：主动提醒 → 稍后处理 → 回来处理。
 // 只断言当前成立的约束 UX-05-I1、I2；“为你关注”实时出现（I3）、“稍后”不丢提醒（I4）、
 // 助理消息可直达对应工作（I5）为欠账，见 2026-11-25 UX-05 基线审查。

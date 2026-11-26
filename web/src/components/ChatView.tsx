@@ -16,6 +16,16 @@ import { ConfirmButton } from "./ConfirmButton";
 import { TaskTicker } from "./TaskTicker";
 import { ChatCardView } from "./ChatCards";
 import { loadReadAnchor, saveReadAnchor } from "../desktop/readAnchorStore";
+// UXFIX-K（#314，INTENT-019）：对话输入接入草稿存储（conv + Conversation ID），
+// 与工作区同一套键位与合并口径（UXFIX-D / #302）
+import {
+  clearDraftAfterSendRemote,
+  draftStorageKey,
+  loadDraft,
+  loadDraftRemote,
+  saveDraft,
+  scheduleDraftSync,
+} from "../desktop/draftStore";
 
 /** 对话里可以直接对任务做的操作（批准 / 验收 / 取消），由 App 执行并负责刷新 */
 export type TaskActionKind = "approve" | "accept_review" | "reject_review" | "cancel";
@@ -230,6 +240,36 @@ export function ChatView(props: {
   const restoredFor = useRef<string | null>(null);
   const stickBottom = useRef(true);
   const saveTimer = useRef(0);
+  // UXFIX-K：草稿（conv 键）——版本号用于发送钉住；键随会话切换
+  const [draftVersion, setDraftVersion] = useState(0);
+  const draftKey = conversationId ? draftStorageKey("conv", conversationId) : null;
+  const draftKeyRef = useRef(draftKey);
+  draftKeyRef.current = draftKey;
+  const aliveRef = useRef(true);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  // 进入会话：恢复草稿（本地先行，远端刷新；编辑竞争由 loadDraftRemote 的 R1～R3 规则裁决）
+  useEffect(() => {
+    if (!draftKey) return;
+    let cancelled = false;
+    const d = loadDraft(draftKey);
+    setText(d.text);
+    setDraftVersion(d.version);
+    void loadDraftRemote(draftKey).then((res) => {
+      if (cancelled || !aliveRef.current || draftKeyRef.current !== draftKey) return;
+      setText(res.draft.text);
+      setDraftVersion(res.draft.version);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [draftKey]);
 
   useEffect(() => {
     restoredFor.current = null;
@@ -296,12 +336,21 @@ export function ChatView(props: {
   const submit = async () => {
     const t = text.trim();
     if (!t || sending) return;
+    // UXFIX-K：发送钉住当前草稿版本，确认后只清该版本（等待期间追加的输入保留）
+    const key = draftKeyRef.current;
+    let sentVersion = draftVersion;
+    if (key) {
+      const d = saveDraft(key, { text: t });
+      sentVersion = d.version;
+      setDraftVersion(d.version);
+    }
     setText("");
     setSending(true);
     try {
       await onSend(t);
     } finally {
       setSending(false);
+      if (key) clearDraftAfterSendRemote(key, sentVersion);
     }
   };
 
@@ -389,7 +438,15 @@ export function ChatView(props: {
           value={text}
           aria-label="输入消息"
           placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            // UXFIX-K：编辑即存草稿（本地 + 防抖同步服务端）
+            if (draftKeyRef.current) {
+              const d = saveDraft(draftKeyRef.current, { text: e.target.value });
+              setDraftVersion(d.version);
+              scheduleDraftSync(draftKeyRef.current);
+            }
+          }}
           onFocus={() => props.onComposerFocusChange?.(true)}
           onBlur={() => props.onComposerFocusChange?.(false)}
           onKeyDown={(e) => {
