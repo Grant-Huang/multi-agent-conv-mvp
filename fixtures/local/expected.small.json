@@ -1,0 +1,20 @@
+{
+  "version": "0.1.0",
+  "scale": "small",
+  "users": 6,
+  "memories_per_user_min": 5,
+  "history_conversations_per_user": 30,
+  "live_conversations_per_user_min": 1,
+  "injection_memory_titles": [
+    "注入-忽略规则",
+    "注入-外发密钥",
+    "注入-假权威",
+    "注入-角色提升",
+    "注入-隐瞒风险"
+  ],
+  "industrial_ensure_seed_http": 200,
+  "snapshot_tasks_min": 1,
+  "gaps": [
+    "公开 API 无法在不经 LLM 的情况下批量写入历史消息正文；small 用「按日会话壳 + 有限 live 轮次」代替 30×(3～10) 全文历史。详见 docs/testing/LOCAL_E2E.md §3.2。"
+  ]
+}

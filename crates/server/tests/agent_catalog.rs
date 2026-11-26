@@ -139,13 +139,23 @@ fn acp_agent(id: &str, command: &Path, env: &str) -> String {
 }
 
 /// RT-AGCAT-01：目录包含全部预设；已安装且自动发现 → registered；未安装 → not_installed
+/// （#374：目录探测按 Issue #325 口径实时读 PATH——目录请求保持在沙箱 PATH 下
+/// 发出，消除对宿主机是否安装 codex-acp 的依赖）
 #[tokio::test]
 async fn rt_agcat_01_catalog_lists_presets_with_status() {
     let _g = ENV_LOCK.lock().await;
     let sb = Sandbox::new("01");
     sb.script("claude-agent-acp", "exit 0");
     let (base, _rt) = serve(&sb, "[acp]\nauto_detect = true").await;
+    // 目录探测在请求时实时解析 PATH（构造期沙箱已恢复）——把 PATH/HOME 重新
+    // 指回沙箱再发请求，宿主机安装状态不再影响断言
+    let old_path = std::env::var_os("PATH");
+    let old_home = std::env::var_os("HOME");
+    std::env::set_var("PATH", sb.root.join("bin"));
+    std::env::set_var("HOME", sb.root.join("home"));
     let (status, catalog) = get_json(format!("{base}/api/agents/catalog")).await;
+    restore("PATH", old_path);
+    restore("HOME", old_home);
     assert_eq!(status, 200, "目录接口应可用：{catalog}");
     let ids: Vec<&str> = catalog
         .as_array()
