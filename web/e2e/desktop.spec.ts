@@ -1001,9 +1001,16 @@ test('E2E-ADD01-02: 授权共享后桌面可见转写并可续写', async ({ pag
   await pageB.goto('/');
   await pageB.getByTestId('card-smt-03').click();
   await pageB.getByTestId('workspace-open-handoff').click();
-  await pageB.getByTestId('handoff-refresh').click();
-  await expect(pageB.getByTestId('handoff-voice-shared')).toHaveText('共享中');
-  await expect(pageB.getByTestId('handoff-peer-voice')).toHaveText(finalText);
+  // #351 / #335 范式：以服务端可见性为准轮询（每次点击刷新后断言），不放松最终断言、
+  // 不放宽为 any——共享状态与对端转写文本在服务端确认后必须完全一致。
+  await expect.poll(async () => {
+    await pageB.getByTestId('handoff-refresh').click();
+    return pageB.getByTestId('handoff-voice-shared').innerText().catch(() => '');
+  }, { timeout: 15_000 }).toBe('共享中');
+  await expect.poll(async () => {
+    await pageB.getByTestId('handoff-refresh').click();
+    return pageB.getByTestId('handoff-peer-voice').innerText().catch(() => '');
+  }, { timeout: 15_000 }).toBe(finalText);
   await expect(pageB.getByTestId('handoff-peer-link')).toHaveText(SMT03_TASK_ID);
 
   await pageB.getByTestId('handoff-desktop').fill('桌面续写草稿');
