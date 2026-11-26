@@ -33,7 +33,7 @@
 
    | 内容 | 权威位置 |
    |---|---|
-   | 研发线职责 | `INTEGRATION_PLAN.md` 五线表 |
+   | 研发线职责 | `INTEGRATION_PLAN.md`「研发线与近期汇合」表 |
    | 特性负责线 | `DESIGN.md` 第 0.3 节“负责线”列 |
    | 宪章条款 | `PRODUCT.md` |
    | 契约 | `contracts/` |

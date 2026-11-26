@@ -45,7 +45,7 @@
 
 | 内容 | 权威位置 | 其他文档怎么写 |
 |---|---|---|
-| 研发线的职责 | [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md)「五条研发线与近期汇合」表 | 只写线号，例如“第 4 线”，需要时链接到该表 |
+| 研发线的职责 | [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md)「研发线与近期汇合」表 | 只写线号，例如“第 4 线”，需要时链接到该表 |
 | 特性归哪条线 | [docs/DESIGN.md](docs/DESIGN.md) 第 0.3 节“负责线”列 | 只填线号，不复述职责 |
 | 宪章条款 | [docs/PRODUCT.md](docs/PRODUCT.md) | 引用条款编号（如 CH-G2c），可加一句要点 |
 | 共享约定 | [docs/contracts/](docs/contracts/README.md) | 引用不变量编号（如 A7） |
