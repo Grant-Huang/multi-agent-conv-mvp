@@ -120,14 +120,14 @@ flowchart TB
 | 分层记忆与会话上下文（含个人画像、风格和组织 taste） | 横切 · 第 5 线 | 5 | [conversation-memory 特性档案](features/conversation-memory/README.md)（服务宪章 §3 第 4 条及 §5） | [第 5 线计划](features/conversation-memory/PLAN.md) | `runtime/src/session_materials.rs`（会话资料注入）、`conversation.rs`（挂接点）；个人记忆存于 `desktop_memories` | 45–48、50；[五线分工](decisions/2026-11-22-five-workstreams.md)；[5.1 验收与默认开](decisions/2026-11-23-convmem-s1-acceptance-and-default-on.md)；[5.2a 生命周期与隔离](decisions/2026-11-23-convmem-s2a-lifecycle-and-isolation.md)；[5.2b 风格生效闸门](decisions/2026-11-23-convmem-s2b-style-gate.md) | 部分实现：5.1 回答路径会话资料注入已实现并默认开启（REQ-01）；5.2a 个人记忆保存、撤回与按说话人隔离 + 5.2b 预览→确认→下一会话生效闸门（preference/style，独立风格卡）已实现（REQ-02）；共享知识与内省接入（REQ-03/04）未开始 |
 | 组织知识（RelOS） | 横切 | 5 | 无设计文档；散见 [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) 第 6 节 | AI 桌面 C 阶段 | `server/src/mom_relos.rs`（仅 MOM 诊断调用） | — | 无设计 |
 | 业务执行网关（NexusOps） | 横切 | 3（配合 1 界面、4 审批契约） | [ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md](ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md)（方案草案，待用户确认） | World Adapter M4 | `server/src/mom_world_des.rs`、桌面审批网关 | — | 设计中（方案草案；实现未开工） |
-| 日志与诊断 | 横切 | 未定（各线共用） | 本文第 10 节 | — | `crates/observe` | — | 已实现 |
+| 日志与诊断 | 横切 | 4（第 2 线使用，第 1 线诊断界面） | 本文第 10 节 | — | `crates/observe` | — | 已实现 |
 | MOM 案例、方案与审批 | 工业业务 | 3 | [mom/DESIGN.md](mom/DESIGN.md)、[mom/IMPLEMENTATION.md](mom/IMPLEMENTATION.md) | [mom/MOCK_REGISTER.md](mom/MOCK_REGISTER.md) | `runtime/src/mom/`、`server/src/mom.rs`、`server/src/bin/an-mom.rs` | DES-n | 已实现（模拟沙盘，未接生产） |
 | 运营桌面与运营频道 | 工业业务 | 3（入口 1） | [mom/OPS_DESK.md](mom/OPS_DESK.md) | [PLAN.md](PLAN.md)「D0–D3」、[OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md) | `runtime/src/mom/ops_desk.rs`、`server/src/mom_ops.rs` | 56–58、60 | 已实现 D0–D2；D3 并入 World Adapter M0 |
 | World Adapter | 工业业务 | 3 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | [mom/WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)、`mom/WA_M*_TASKS.md` | `server/src/mom_world_des.rs`、`mom_world_mock.rs`、`mom_world_prod.rs` | 61（World Adapter）、DES-31、DES-32；[M3-1 生产读服务层](decisions/2026-11-22-wa-m3-1-prod-read-service-layer.md)；[M4 写入门控](decisions/2026-11-23-wa-m4-write-entry-gates.md) | 部分实现：M0–M2 已准出；M3 桩数据准出（M3-0～M3-5），真实站点验收待办；M4 写入门控已冻结，未开工 |
 | DES 仿真工厂与实验入口 | 世界 | 3 | [mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md)、[mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md) | 同上 | `crates/des`、`crates/des-mcp`、`server/src/mom_des_connector.rs`、`mom_sim.rs` | DES-n、62 | 已实现；实验入口随 World Adapter M0 交付 |
 | 生产世界接入 | 世界 | 3 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M3、M4（[WA_M3_TASKS.md](mom/WA_M3_TASKS.md)、[WA_M4_TASKS.md](mom/WA_M4_TASKS.md)） | `server/src/mom_world_prod.rs`（`/api/world/prod`，服务层桩数据） | 61（World Adapter） | 部分实现：只读接口以桩数据跑通（M3）；未接真实站点；写入未开工 |
 
-“负责线”按 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) 五线表与 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md) 填写；“未定”的条目待用户指定。
+“负责线”按 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) 五线表与 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md) 填写；
 
 助手接入管理、RelOS 和 NexusOps 仍待补独立权威设计，准入目前保留附节。
 
