@@ -156,6 +156,22 @@ guardrails:
     exception: null
     review_due: "2026-11-28"
 
+  - id: GR-3-WIP-LIMIT
+    layer: 3
+    objective: "控制在制品：每线待合并 PR ≤ 2，全仓 > 8 时暂停开新开发任务"
+    enforcement: "AGENTS.md“跨线分工”（DECLARED）；派工巡检每 4 小时统计并提示（不阻断）"
+    schedule: [pr, every_4h]
+    owner: "第 2 线；规则由用户批准"
+    status: proposed
+    evidence_level: DECLARED
+    evidence:
+      - "docs/fencing/INTEGRATION_PIPELINE.md 第 3 节；docs/decisions/2026-11-26-integration-pipeline.md"
+    last_verified: null
+    positive_test: null
+    negative_test: null
+    exception: "severity:high 缺陷、CI 与安全修复，PR 正文写明"
+    review_due: "2026-12-10"
+
   # ---------- 第四层：确定性自动验证 ----------
   - id: GR-4-RUST
     layer: 4
@@ -245,6 +261,22 @@ guardrails:
       mitigation: "PR 级的 web 作业（含 e2e 类型检查）与本地 verify 仍在"
       expires_at: "2026-11-28"
     review_due: "2026-11-28"
+
+  - id: GR-4-CI-TIERS
+    layer: 4
+    objective: "CI 分 T0～T3：T1 按路径分流 5 分钟内；T2 合并前组合验证（L2/L3 加 E2E）；T3 夜间全量并打基线 tag"
+    enforcement: "待第 2 线实施（ci.yml 路径分流、合并前 T2、夜间基线 tag）；实施前仍为每 PR 全量"
+    schedule: [pr, merge, nightly]
+    owner: "第 2 线"
+    status: proposed
+    evidence_level: DECLARED
+    evidence:
+      - "docs/fencing/INTEGRATION_PIPELINE.md 第 5～7 节"
+    last_verified: null
+    positive_test: null
+    negative_test: null
+    exception: null
+    review_due: "2026-12-10"
 
   # ---------- 第五层：独立 AI 审查 ----------
   - id: GR-5-NIGHTLY-REVIEW
@@ -341,6 +373,22 @@ guardrails:
     negative_test: "待做：用一个故意失败的 PR 确认无法合并"
     exception: null
     review_due: "2026-11-28"
+
+  - id: GR-6-MERGE-QUEUE
+    layer: 6
+    objective: "合并排队：按序把“最新主干 + PR”验证后合并；L0 绿后自动合并；冲突由作者合并 master 消除"
+    enforcement: "P0：AGENTS.md 规则（DECLARED）；P1：第 2 线集成 agent 简易队列（待实施）；原生 Merge Queue 可用性待核实"
+    schedule: [merge]
+    owner: "第 2 线"
+    status: proposed
+    evidence_level: DECLARED
+    evidence:
+      - "docs/fencing/INTEGRATION_PIPELINE.md 第 4 节"
+    last_verified: null
+    positive_test: null
+    negative_test: null
+    exception: null
+    review_due: "2026-12-10"
 
   # ---------- 第七层：发布、监控与恢复 ----------
   - id: GR-7-RELEASE-NOTES
