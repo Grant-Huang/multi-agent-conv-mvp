@@ -73,7 +73,7 @@ $ cargo test -p an-server --test restart_semantics rt_restart_09 → 1 passed（
 
 | 项 | 状态 |
 |---|---|
-| push @ `6d6a67b`（#338，run [45768847545](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45768847545)） | 记录时 **in_progress**；终态回填：（待回填） |
+| push @ `6d6a67b`（#338，run [45768847545](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45768847545)） | **success**——**rust 连续第六推绿**（467d6e0/6fbc83c/03373f2/75f55cb/25caa2b/6d6a67b）；Q-AR2-04：三绿样本自 81445e7 后未再复现，稳定性转好趋势维持 |
 | nightly 11-26 | 未触发（收稿时点）；ADREAD 未修，预计仍 2 红形态（ADREAD+UX05 抖动候选） |
 
 ## 4. 问题清单
