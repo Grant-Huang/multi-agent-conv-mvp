@@ -886,7 +886,8 @@
       "E2E-ADTESTCTRL",
 "E2E-UX03-I5",
 "E2E-ADSETGROUPS",
-"E2E-UX03-I7"
+"E2E-UX03-I7",
+"E2E-UX01-I6"
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",
