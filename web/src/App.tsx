@@ -342,6 +342,8 @@ export default function App() {
   };
 
   const [desktopSide, setDesktopSide] = useState<DesktopSide>(null);
+  // UXFIX-J：工作区来源对话（从对话任务卡 / S1 受理提示展开时记录）
+  const workspaceSourceRef = useRef<string | null>(null);
   const [assistantProfile, setAssistantProfile] = useState<AssistantProfile>(() => loadProfile());
   const [s1BgJob, setS1BgJob] = useState<S1BgJob | null>(null);
   const [s1Reply, setS1Reply] = useState<string | null>(null);
@@ -400,9 +402,23 @@ export default function App() {
     };
   }, []);
 
-  const openWorkspace = (taskId: string) => {
+  const openWorkspace = (taskId: string, fromConversationId?: string | null) => {
+    // UXFIX-J（INTENT-017）：记录来源对话；工作区「返回」回到来源对话而非桌面首页
+    workspaceSourceRef.current = fromConversationId ?? null;
     setMainView("workspace", taskId);
     setNavOpen(false);
+  };
+
+  /** 工作区返回：有来源对话时回到该对话（草稿与阅读锚点按会话恢复），否则回桌面首页 */
+  const backFromWorkspace = () => {
+    const source = workspaceSourceRef.current;
+    workspaceSourceRef.current = null;
+    setDesktopSide(null);
+    if (source && conversations.some((c) => c.id === source)) {
+      selectConversation(source);
+    } else {
+      setMainView("home");
+    }
   };
 
   const openSettings = (layer: SettingsLayer = "categories", categoryId: SettingsCategoryId | null = null) => {
@@ -694,6 +710,7 @@ export default function App() {
               if (!job.conversationId) return;
               selectConversation(job.conversationId);
             }}
+            onOpenTaskWorkspace={(id) => openWorkspace(id)}
           />
         )}
         {(mainView === "home" || mainView === "chat") && (
@@ -717,10 +734,7 @@ export default function App() {
         {mainView === "workspace" && workspaceTaskId && (
           <WorkspaceView
             taskId={workspaceTaskId}
-            onBack={() => {
-              setDesktopSide(null);
-              setMainView("home");
-            }}
+            onBack={backFromWorkspace}
             onOpenEvidence={() => openEvidence(workspaceTaskId)}
             onOpenSettings={() => openSettings("assistant", "assistant")}
             onOpenTask={(id) => openWorkspace(id)}
@@ -759,6 +773,7 @@ export default function App() {
             onTaskAction={taskAction}
             streaming={streaming}
             onComposerFocusChange={setComposingInput}
+            onOpenTask={(id) => openWorkspace(id, current)}
           />
         )}
       </main>

@@ -15,10 +15,12 @@ type Props = {
   onAsk: (text: string) => void;
   onDelegate: (text: string) => void;
   onOpenBgTask: (job: S1BgJob) => void;
+  /** UXFIX-J（INTENT-017）：受理提示「展开工作区」——按 Task ID 打开工作区 */
+  onOpenTaskWorkspace?: (taskId: string) => void;
 };
 
 /** S1 桌面问答：不强制进工作区；委派走真实 B1 受理（首页真实委派切片）。 */
-export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask }: Props) {
+export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask, onOpenTaskWorkspace }: Props) {
   const [text, setText] = useState("");
 
   const submitAsk = () => {
@@ -85,6 +87,16 @@ export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask }: Props) {
           >
             打开任务
           </button>
+          {onOpenTaskWorkspace && bgJob.status === "accepted" && bgJob.taskId !== "pending" && (
+            <button
+              type="button"
+              className="btn small"
+              data-testid="s1-bg-workspace"
+              onClick={() => onOpenTaskWorkspace(bgJob.taskId)}
+            >
+              展开工作区
+            </button>
+          )}
           {bgJob.error && (
             <p className="bad-text" data-testid="s1-bg-error" role="alert">
               {bgJob.error}

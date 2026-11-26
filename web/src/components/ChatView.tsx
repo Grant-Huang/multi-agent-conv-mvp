@@ -53,8 +53,10 @@ const MessageRow = memo(function MessageRow(props: {
   lines: string[];
   busy: boolean;
   onAct?: (kind: TaskActionKind, taskId: string) => void;
+  /** UXFIX-J（INTENT-017）：任务卡「展开工作区」——按 Task ID 打开同一工作区 */
+  onOpenTask?: (taskId: string) => void;
 }) {
-  const { m, task, tickerTask, rank, lines, busy, onAct, onCardChanged } = props;
+  const { m, task, tickerTask, rank, lines, busy, onAct, onCardChanged, onOpenTask } = props;
   // 有进度或仍在运行时才显示走马灯；没有任务的消息不显示
   // 失败任务也显示走马灯：失败原因就是历史的最后一行
   const showTicker = !!tickerTask && (isRunning(tickerTask) || lines.length > 0 || tickerTask.status === "FAILED");
@@ -84,6 +86,14 @@ const MessageRow = memo(function MessageRow(props: {
         )}
         {task && (
           <div className="task-live">
+            {/* UXFIX-J（INTENT-017）：按 Task ID 打开同一工作区（与首页卡片共用打开逻辑） */}
+            {onOpenTask && (
+              <div className="task-actions">
+                <button type="button" className="btn small" data-testid="open-workspace" onClick={() => onOpenTask(task.id)}>
+                  展开工作区
+                </button>
+              </div>
+            )}
             {/* 失败时状态已并入走马灯历史的最后一行，不再单独显示"失败"行 */}
             {task.status !== "FAILED" && (
               <div className={`task-status s-${task.status.toLowerCase()}`}>{taskStatusLine(task, rank)}</div>
@@ -226,6 +236,8 @@ export function ChatView(props: {
   onTaskAction?: (kind: TaskActionKind, taskId: string) => Promise<void>;
   /** 输入区焦点变化（A5.1 Attention：输入中不抢焦点） */
   onComposerFocusChange?: (focused: boolean) => void;
+  /** UXFIX-J（INTENT-017）：任务卡「展开工作区」→ 按 Task ID 打开工作区 */
+  onOpenTask?: (taskId: string) => void;
 }) {
   const { messages, onSend, conversationId } = props;
   const tasks = props.tasks ?? [];
@@ -357,6 +369,9 @@ export function ChatView(props: {
   // 通过 ref 读取最新的回调，使 act 的引用保持稳定，memo 才能跳过无关行的重渲染
   const actionRef = useRef(props.onTaskAction);
   actionRef.current = props.onTaskAction;
+  const openTaskRef = useRef(props.onOpenTask);
+  openTaskRef.current = props.onOpenTask;
+  const openTask = useCallback((taskId: string) => openTaskRef.current?.(taskId), []);
   const act = useCallback(async (kind: TaskActionKind, taskId: string) => {
     if (!actionRef.current) return;
     setBusyTask(taskId);
@@ -413,6 +428,7 @@ export function ChatView(props: {
               busy={!!task && busyTask === task.id}
               onAct={props.onTaskAction ? act : undefined}
               onCardChanged={props.onRefresh}
+              onOpenTask={openTask}
             />
           );
         })}

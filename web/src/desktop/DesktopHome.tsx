@@ -11,6 +11,8 @@ type Props = {
   onS1Ask?: (text: string) => void;
   onS1Delegate?: (text: string) => void;
   onOpenBgTask?: (job: S1BgJob) => void;
+  /** UXFIX-J（INTENT-017）：受理提示「展开工作区」→ 按 Task ID 打开工作区 */
+  onOpenTaskWorkspace?: (taskId: string) => void;
   s1Reply?: string | null;
 };
 
@@ -83,6 +85,7 @@ export function DesktopHome({
   onS1Ask,
   onS1Delegate,
   onOpenBgTask,
+  onOpenTaskWorkspace,
   s1Reply = null,
 }: Props) {
   const [cards, setCards] = useState<DesktopCard[] | null>(null);
@@ -113,7 +116,7 @@ export function DesktopHome({
       </header>
       {onS1Ask && onS1Delegate && onOpenBgTask && (
         <>
-          <S1AskBar bgJob={s1BgJob} onAsk={onS1Ask} onDelegate={onS1Delegate} onOpenBgTask={onOpenBgTask} />
+          <S1AskBar bgJob={s1BgJob} onAsk={onS1Ask} onDelegate={onS1Delegate} onOpenBgTask={onOpenBgTask} onOpenTaskWorkspace={onOpenTaskWorkspace} />
           {s1Reply && (
             <p className="s1-reply" data-testid="s1-reply" role="status">
               {s1Reply}
