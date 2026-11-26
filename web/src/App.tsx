@@ -342,6 +342,8 @@ export default function App() {
   };
 
   const [desktopSide, setDesktopSide] = useState<DesktopSide>(null);
+  // UXFIX-O：设置面板是否经场景捷径进入
+  const settingsViaShortcutRef = useRef(false);
   const [assistantProfile, setAssistantProfile] = useState<AssistantProfile>(() => loadProfile());
   const [s1BgJob, setS1BgJob] = useState<S1BgJob | null>(null);
   const [s1Reply, setS1Reply] = useState<string | null>(null);
@@ -410,7 +412,9 @@ export default function App() {
     setNavOpen(false);
   };
 
-  const openSettings = (layer: SettingsLayer = "categories", categoryId: SettingsCategoryId | null = null) => {
+  // UXFIX-O（INTENT-024）：记录是否经场景捷径进入设置（捷径一次返回即回原工作）
+  const openSettings = (layer: SettingsLayer = "categories", categoryId: SettingsCategoryId | null = null, viaShortcut = false) => {
+    settingsViaShortcutRef.current = viaShortcut;
     setDesktopSide({ kind: "settings", layer, categoryId, memoryId: null, search: "" });
   };
 
@@ -748,7 +752,7 @@ export default function App() {
               setMainView("home");
             }}
             onOpenEvidence={() => openEvidence(workspaceTaskId)}
-            onOpenSettings={() => openSettings("assistant", "assistant")}
+            onOpenSettings={() => openSettings("assistant", "assistant", true)}
             onOpenTask={(id) => openWorkspace(id)}
           />
         )}
@@ -824,6 +828,7 @@ export default function App() {
             categoryId={desktopSide.categoryId}
             memoryId={desktopSide.memoryId}
             search={desktopSide.search}
+            closeToSource={settingsViaShortcutRef.current}
             onNavigate={(next) =>
               setDesktopSide({
                 kind: "settings",

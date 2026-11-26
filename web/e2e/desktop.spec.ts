@@ -224,7 +224,7 @@ test('E2E-ADPROF: 助理设置保存、记忆返回与冲突不覆盖草稿', as
   await expect(page.getByTestId('profile-save-error')).toContainText('版本冲突');
   await expect(page.getByTestId('profile-name')).toHaveValue('冲突中的名称');
 
-  await page.getByTestId('settings-back').click();
+  // UXFIX-O（#327）：捷径进入设置后一次返回即关闭设置回工作区
   await page.getByTestId('settings-back').click();
   await expect(page.getByTestId('settings-panel')).toHaveCount(0);
   await expect(page.getByTestId('workspace-input')).toHaveValue('设置中应保留的草稿');
@@ -256,7 +256,7 @@ test('E2E-ADMEM: 记忆列表来自服务并可打开详情', async ({ page }) =
   await page.getByTestId('memory-back').click();
   await expect(page.getByTestId('settings-assistant')).toBeVisible();
 
-  await page.getByTestId('settings-back').click();
+  // UXFIX-O（#327）：捷径进入设置后一次返回即回工作区
   await page.getByTestId('settings-back').click();
   await expect(page.getByTestId('workspace-input')).toHaveValue('记忆页应保留的草稿');
 });
@@ -288,7 +288,7 @@ test('E2E-ADMEMW: 记忆纠错与撤回', async ({ page, request }) => {
   await expect(page.getByTestId('memory-item-mem-1')).toHaveCount(0);
 
   await page.getByTestId('memory-back').click();
-  await page.getByTestId('settings-back').click();
+  // UXFIX-O（#327）：捷径进入设置后一次返回即回工作区
   await page.getByTestId('settings-back').click();
   await expect(page.getByTestId('workspace-input')).toHaveValue('纠错时应保留的草稿');
 });

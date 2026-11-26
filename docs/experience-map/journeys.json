@@ -378,7 +378,7 @@
         "id": "UX-06-I5",
         "text": "从捷径进入设置后，一次返回即回到原工作",
         "charter": "CH-U2",
-        "debt": true
+        "case": "E2E-UX06-I5"
       },
       {
         "id": "UX-06-I6",
