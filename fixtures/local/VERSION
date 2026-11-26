@@ -1,0 +1,5 @@
+dataset_id=local-demo-plant
+version=0.1.0
+scale_default=small
+seed=42425001
+notes=本地演示厂 small：经公开 HTTP API 写入；历史会话壳（按日标题）+ 有限 live 轮次；工业数据依赖 [mom].world_mock

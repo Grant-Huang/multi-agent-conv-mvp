@@ -56,21 +56,24 @@
 
 ### 3.2 内容（首版）
 
+**版本**：`fixtures/local/VERSION` → `local-demo-plant` **0.1.0**（scale=`small`）。
+
 | 类别 | 内容 | 用途 |
 |---|---|---|
-| 人员与角色 | 5～8 个虚构用户：生产主管、质量工程师、设备工程师、运营值班、管理员（按身份契约的 principal 设定） | 隔离、权限、审批 |
-| 历史会话 | 每人 30 天、每天 3～10 轮对话，含追问、纠正、撤回 | 记忆选材、历史检索（L2）、长上下文 |
-| 任务 | 各种状态：进行中、待验收、失败、取消、长时间运行；含委派到本机 agent 的任务 | 任务视图、恢复、通知 |
-| 个人记忆 | fact / preference / style，已确认与未确认、已过期、已撤回各若干 | UX-08、UX-09、生效规则 |
-| 注入样本 | 资料、历史消息、文档中夹带指令（例如要求模型无视既有规则、把审批改为通过） | 注入防线 8 道（[分层记忆决策](../decisions/2026-11-26-memory-layers-and-history.md) 第 7 节） |
-| 工业数据 | 基于 `fixtures/mom/` 扩展：SMT 线、设备、批次、质量异常；MOM 案例、方案版本、审批与回执；DES 仿真世界 | UX-07、运营值班、World Adapter |
-| 内省样本 | 足以越过闸门（样本门槛 10）的业务数据 | 内省推送节奏与注意力预算 |
-| 大体量 | 一份 10 万条消息、1 万个任务的放大版（同一脚本加规模参数） | W4 与性能 |
+| 人员与角色 | 6 个虚构 principal（`users.json`）：生产主管、质量、设备、运营值班、管理员、班组长 | 隔离、权限、审批 |
+| 历史会话 | 每人 30 个「按日会话壳」（标题 `[local-demo YYYY-MM-DD] …`）。**正文轮次**：公开 API 无免 LLM 批量导入，故 small 用可选 `--live-turns` / desktop `requests` 补有限 live 轮；全文 30×(3～10) 列为接口缺口 | 记忆选材、历史检索（L2）、长上下文 |
+| 任务 | `POST /api/desktop/v1/snapshot/fixture/reset` 播种多状态夹具任务（需 `[desktop] test_fixtures`） | 任务视图、恢复、通知 |
+| 个人记忆 | 每用户 fact/preference/style：确认、未确认、纠正、撤回 + 注入记忆（`memories.json` / `injections.json`） | UX-08、UX-09、生效规则 |
+| 注入样本 | 8 道：5 条记忆正文 + 3 条 live 请求文案（`injections.json`） | 注入防线（[分层记忆决策](../decisions/2026-11-26-memory-layers-and-history.md) 第 7 节） |
+| 工业数据 | `POST /api/world/mock/ops/ensure-seed`（需 `[mom] world_mock=true`）；定义见 `industrial.json`，素材引用 `fixtures/mom/s1|s2|expert` | UX-07、运营值班、World Adapter |
+| 内省样本 | `POST /api/introspection/run`（需 `[introspection] enabled`） | 内省推送节奏与注意力预算 |
+| 大体量 | `--scale large` 参数已预留，本版只保证可解析，不生成 10 万级 | W4 与性能 |
 
 ### 3.3 交付物
 
-- `fixtures/local/`：数据定义（JSON/YAML）与版本说明。
-- `scripts/local/seed.*`：创建、重置、校验（`--scale small|large`）。
+- `fixtures/local/`：数据定义与 `expected.small.json`。
+- `scripts/local/seed.py`：`create` / `reset` / `verify`（`--scale small|large`，`--skip-live` / `--live-turns`）。
+- 证据：`docs/testing/evidence/local-dataset-2026-11-26.md`。
 - 本文第 3.2 节随数据集版本更新。
 
 ## 4. W3 真实环境旅程
