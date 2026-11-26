@@ -730,6 +730,7 @@
       "E2E-OPSCHANNEL",
       "E2E-OPSNOISE",
       "E2E-OPSAPPROVE",
+      "E2E-OPSRECEIPT",
       "E2E-OPSOFF"
     ],
     "runtime_cases": [
