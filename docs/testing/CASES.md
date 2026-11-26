@@ -651,7 +651,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-ADHISTORY | ai-desktop | 干净浏览器 | 打开「历史」；按标题筛选；固定一项后排序变化；打开 SMT-03；关闭后再开历史筛选仍在 | 推荐理由可见；固定后该项仍在列表前列；打开任务 ID 正确；筛选值恢复 |
 | E2E-ADPROF | ai-desktop | 打开 SMT-03 并写草稿 | 工作区点「调整助理」；改名称并保存；查看记忆再返回；注入冲突后再保存 | 侧栏/首页助理名同步；记忆面包屑回到助理分类；草稿仍在；冲突提示且输入框草稿未被存档覆盖 |
 | E2E-ADMEM | ai-desktop | 打开 SMT-03 工作区 | 调整助理 → 查看记忆；列表可见服务端条目；打开 mem-1 看正文；返回列表再回助理 | 列表标题含「质量报告偏好摘要格式」；详情正文与来源/有效期来自 HTTP；返回路径不丢草稿 |
-| E2E-ADMEMW | ai-desktop | 打开 SMT-03；夹具已 reset | 打开 mem-1 纠错正文并保存；撤回 mem-2；回列表 | mem-1 正文已更新；列表不再含 mem-2；工作区草稿仍在 |
+| E2E-ADMEMW | ai-desktop | 打开 SMT-03；夹具已 reset | 打开 mem-1 纠错正文并保存；再次打开 mem-1 撤回；回列表 | mem-1 正文已更新；撤回后列表不再含 mem-1；工作区草稿仍在 |
 | E2E-ADXR | ai-desktop | 干净浏览器；夹具 reset；双上下文同服务 | 端 A 见未读≥2 并标记 asst-msg-1 已读；端 B 刷新后 asst-msg-1 已读且未读减 1；端 B 再标其余；端 A 刷新未读为 0；重复提交已读 | 服务权威跨端一致；重复提交幂等；未读徽标来自 HTTP |
 | E2E-ADINPUT | ai-desktop | 干净浏览器 | 在 360/768/1024/1440 宽检查关键控件可达；设置中 Escape 关闭；会话输入 composition 期间 Enter 不发请求；`prefers-reduced-motion` 时根节点标注 | 各宽度可见「设置与管理」或抽屉入口；Esc 关掉设置；composition 中无 POST /messages；`html[data-reduced-motion]` 为 1 |
 | E2E-ADASK | ai-desktop | 干净浏览器 · 桌面首页 | S1 先问答；再委派复杂任务；后台芯片出现后继续问答；手动打开任务 | 问答后仍在桌面；委派先「提交中」再「已受理」且不强制进工作区；芯片为真实 task id；打开进入发起会话（聊天）并可看见该任务 |
@@ -699,15 +699,17 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADPREF-01 | ai-desktop | 空库 | `GET /api/desktop/v1/preferences` | **200**；默认字段与 `version=1` |
 | RT-ADPREF-02 | ai-desktop | 默认配置 | `PATCH` 带 `expected_version=1` | **200**；`version=2`；持久化 |
 | RT-ADPREF-03 | ai-desktop | 已 PATCH 成功 | 再用过期 `expected_version` PATCH | **409** `version_conflict`；不覆盖已存配置 |
-| RT-ADMEM-01 | ai-desktop | harness | `GET /api/desktop/v1/memories` | **200**；`items` ≥2；含 `mem-1`/`mem-2` 及 title/source/body/expires |
+| RT-ADMEM-01 | ai-desktop | harness | `GET /api/desktop/v1/memories` | **200**；`items` ≥1；含 `mem-1` 及 title/source/body/expires；不含设置来源条目（#354） |
 | RT-ADMEM-02 | ai-desktop | harness | `GET /api/desktop/v1/memories/mem-1` | **200**；正文与列表一致 |
 | RT-ADMEM-03 | ai-desktop | harness | `GET /api/desktop/v1/memories/no-such` | **404** `not_found` |
 | RT-ADMEM-04 | ai-desktop | reset 后 | `PATCH /memories/mem-1` 改 `body` | **200**；GET/列表正文已更新 |
-| RT-ADMEM-05 | ai-desktop | reset 后 | `DELETE /memories/mem-2` | **200**；默认列表不含 mem-2；再 DELETE 幂等 |
+| RT-ADMEM-05 | ai-desktop | reset 后 | `DELETE /memories/mem-1` | **200**；列表不含 mem-1；再 DELETE 幂等 |
 | RT-ADMEM-06 | ai-desktop | harness | `PATCH /memories/no-such` | **404** `not_found` |
 | RT-ADMEM-07 | ai-desktop | 同库路径；PATCH mem-1 后关闭 Runtime | 新进程/新 Runtime 打开同库再 `GET /memories/mem-1` | **200**；正文仍为纠错后内容（Store 权威，非进程夹具） |
-| RT-ADMEM-08 | ai-desktop | 两个全新库各起一个服务；库一纠错 mem-1 并撤回 mem-2 | 读库二的 `mem-1` / `mem-2` | 库二保持种子态：mem-1 为种子正文、mem-2 未撤回（进程状态不跨库泄漏） |
-| RT-ADMEM-09 | ai-desktop | mem-1 与 mem-2 全部撤回后关闭 Runtime | 同库重开服务，`GET /memories` 与 `GET /memories/mem-1` | 列表为空、mem-1 仍 **410** `revoked`（软删行使 ensure 播种不触发，撤回不得被重播种覆盖） |
+| RT-ADMEM-08 | ai-desktop | 两个全新库各起一个服务；库一纠错 mem-1 | 读库二的 `mem-1` | 库二保持种子态：mem-1 为种子正文（进程状态不跨库泄漏） |
+| RT-ADMEM-09 | ai-desktop | 种子（mem-1）撤回后关闭 Runtime | 同库重开服务，`GET /memories` 与 `GET /memories/mem-1` | 列表为空、mem-1 仍 **410** `revoked`（软删行使 ensure 播种不触发，撤回不得被重播种覆盖） |
+| RT-ADMEM-10 | ai-desktop | reset 后（INTENT-032 / #354） | `GET /api/desktop/v1/memories` | **200**；列表不含任何「设置」来源条目；免打扰时段等设置项不作为记忆存储 |
+| RT-ADMEM-11 | ai-desktop | reset 后（INTENT-032 / #354） | `GET /api/desktop/v1/memories` 逐条核对 | 来源含「用户确认」的条目 `confirmed` 为真；种子条目来源为系统生成的「用户保存 · 日期」 |
 | RT-ADXR-01 | ai-desktop | harness reset | `GET /api/desktop/v1/assistant/messages` | **200**；`items` ≥2 含 `asst-msg-1`/`asst-msg-2`；均 `read=false`；`unread_count`≥2 |
 | RT-ADXR-02 | ai-desktop | reset 后 | `POST .../assistant/messages/read` 带 `["asst-msg-1"]` | **200**；`newly_marked=1`；GET 列表该条 `read=true`；`unread_count` 减 1 |
 | RT-ADXR-03 | ai-desktop | 已标 asst-msg-1 | 同 ID 再 POST read | **200**；`newly_marked=0`；`read_ids` 不变 |
