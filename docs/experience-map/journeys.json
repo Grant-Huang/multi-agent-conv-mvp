@@ -245,7 +245,7 @@
         "id": "UX-04-I2",
         "text": "从对话一步进入该任务的工作区（S2 / S3），退回后回到原对话与位置",
         "charter": "CH-U2",
-        "debt": true
+        "case": "E2E-UX04-I2"
       },
       {
         "id": "UX-04-I3",
@@ -270,7 +270,6 @@
       "full_page_navigations": 0
     },
     "known_deviations": [
-      "INTENT-2026-017",
       "INTENT-2026-018"
     ]
   },

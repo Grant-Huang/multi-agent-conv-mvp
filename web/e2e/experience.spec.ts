@@ -221,8 +221,38 @@ test('E2E-UX04: 对话中委派的任务完成后，打开任务详情不影响�
 
 // UX-04-I3（CH-U2，INTENT-2026-019）：对话输入草稿按 Conversation 隔离持久——
 // 回桌面打开别的任务再回来、切到另一对话再切回，草稿都在；发送后清空。
-test('E2E-UX04-I3: 对话草稿离开再返回与切换会话后仍在，发送后清空', async ({ page }) => {
+// UX-04-I2（CH-U2、CH-N2，INTENT-2026-017）：对话中的任务完成后可“展开工作区”按 Task ID
+// 进入同一工作区（S2，可切 S3），返回回到来源对话且输入可用；全程无整页跳转。
+test('E2E-UX04-I2: 任务卡展开工作区，切专注后返回回到原对话且输入可用', async ({ page }) => {
   test.setTimeout(120_000);
+  const p = probe(page);
+  const goal = `写一份关于本地小模型选型的简短报告，保存成 Markdown ${Date.now()}`;
+  await page.goto('/');
+  await page.getByRole('button', { name: '＋ 新会话' }).click(); p.step();
+  const input = page.getByRole('textbox', { name: '输入消息' });
+  await input.fill(goal); p.step();
+  await input.press('Enter'); p.step();
+  await expect(page.getByRole('button', { name: /任务结束：COMPLETED/ })).toBeVisible({ timeout: 60_000 });
+
+  // 对话任务卡上的「展开工作区」：按 Task ID 打开同一工作区（非夹具任务）
+  const wsBtn = page.getByTestId('open-workspace').first(); p.step();
+  await wsBtn.click();
+  await expect(page.getByTestId('workspace-task-id')).toBeVisible();
+  const openedTask = await page.getByTestId('workspace-task-id').innerText();
+  expect(openedTask).not.toBe(SMT03_TASK_ID);
+
+  // 切专注 S3 后返回：回到来源对话，输入可用，草稿与现场恢复
+  await page.getByRole('button', { name: '专注 S3' }).click(); p.step();
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click(); p.step();
+  await expect(page.getByTestId('workspace')).toHaveCount(0);
+  await expect(input).toBeVisible();
+  await expect(input).toBeEditable();
+  await input.fill('展开工作区回来后的追问'); p.step();
+  await expect(input).toHaveValue('展开工作区回来后的追问');
+  expect(p.snapshot().full_page_navigations).toBe(0);
+});
+
+test('E2E-UX04-I3: 对话草稿离开再返回与切换会话后仍在，发送后清空', async ({ page }) => {  test.setTimeout(120_000);
   const p = probe(page);
   const goal = `写一份关于本地小模型选型的简短报告，保存成 Markdown ${Date.now()}`;
   await page.goto('/');
