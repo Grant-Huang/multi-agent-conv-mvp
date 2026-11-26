@@ -124,6 +124,9 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
                 "/api/desktop/v1/memories/{id}",
                 get(get_memory).patch(patch_memory).delete(delete_memory),
             )
+            // #346 片3 REQ-05：L2 历史记录检索（默认 180 天窗口）与本人消息真删除
+            .route("/api/desktop/v1/history/search", get(search_history_api))
+            .route("/api/desktop/v1/messages/{id}", delete(delete_message_api))
             // T-73：助理消息已读跨端（进程内夹具，无新表）
             .route(
                 "/api/desktop/v1/assistant/messages",
@@ -937,6 +940,83 @@ async fn reset_memories_fixture(State(rt): State<AppState>, headers: HeaderMap) 
     match rt.store.reset_desktop_memories(&user) {
         Ok(()) => (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response(),
         Err(e) => memory_store_err(e),
+    }
+}
+
+// ===== #346 片3 REQ-05：L2 历史记录检索与本人消息删除 =====
+
+#[derive(Debug, Deserialize)]
+struct HistorySearchQuery {
+    q: Option<String>,
+    /// 检索窗口天数；默认 180（REQ-05），更早需明确指定
+    days: Option<u32>,
+    limit: Option<usize>,
+}
+
+/// L2 历史记录检索。结果均为带时间与出处的资料：AI 历史回答 `kind = 当时的回答`，
+/// 只作参考不作事实来源（CH-G5）；已删除消息不在检索面。检索面 = 本库会话消息
+/// 与已完成任务回执（单用户桌面库；多用户隔离随服务端身份，REQ-03）。
+async fn search_history_api(
+    State(rt): State<AppState>,
+    Query(q): Query<HistorySearchQuery>,
+    _headers: HeaderMap,
+) -> Response {
+    let query = q.q.as_deref().unwrap_or("").trim().to_string();
+    if query.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "code": "invalid", "message": "检索关键词不能为空", "retryable": false })),
+        )
+            .into_response();
+    }
+    match rt
+        .store
+        .search_history(&query, q.days.unwrap_or(180), q.limit.unwrap_or(50))
+    {
+        Ok(hits) => {
+            let items: Vec<serde_json::Value> = hits
+                .iter()
+                .map(|h| {
+                    json!({
+                        "msg_id": h.source_id,
+                        "conv_id": h.conversation_id,
+                        "role": h.role,
+                        "kind": h.kind,
+                        "at": h.at,
+                        "snippet": h.snippet,
+                        "task_id": h.task_id,
+                    })
+                })
+                .collect();
+            (StatusCode::OK, Json(json!({ "results": items }))).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+/// 本人删除个人会话消息：真删除（REQ-05），删除后不再进入检索与引用。
+/// 任务、审批相关记录不在删除面（保留原件供审计）。
+async fn delete_message_api(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    _headers: HeaderMap,
+) -> Response {
+    match rt.store.delete_message(&id) {
+        Ok(true) => (StatusCode::OK, Json(json!({ "deleted": true }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "消息不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "code": "forbidden", "message": format!("{e:#}"), "retryable": false })),
+        )
+            .into_response(),
     }
 }
 
