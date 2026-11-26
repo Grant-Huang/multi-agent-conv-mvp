@@ -1209,6 +1209,27 @@
           "RT-EXEC-04"
         ],
         "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-05",
+        "title": "历史记录可检索（L2）",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-06",
+        "title": "按场合选材且所用记忆可说明",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-conversation-memory-07",
+        "title": "记忆与检索的注入防线",
+        "status": "提出",
+        "cases": [],
+        "since": null
       }
     ],
     "contracts": [
@@ -1216,7 +1237,9 @@
       "docs/contracts/events-and-trace.md"
     ],
     "decisions": [
-      "docs/decisions/2026-11-22-five-workstreams.md"
+      "docs/decisions/2026-11-22-five-workstreams.md",
+      "docs/decisions/2026-11-26-charter-v1-6-memory.md",
+      "docs/decisions/2026-11-26-memory-layers-and-history.md"
     ]
   },
   {
