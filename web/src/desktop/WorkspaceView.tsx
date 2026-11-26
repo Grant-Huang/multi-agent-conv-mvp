@@ -156,6 +156,8 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
           </aside>
         )}
         <section className="workspace-session" aria-label="会话与执行">
+          {/* CH-U7（#321）：输入框固定在会话栏可视位置，内容区单独滚动 */}
+          <div className="workspace-session-scroll">
           <button
             type="button"
             className="btn small"
@@ -240,6 +242,7 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
             </>
           )}
           <p className="workspace-hint">草稿与作用域按 Task 隔离（A2）。</p>
+          </div>
           <WorkspaceComposer taskId={taskId} />
         </section>
       </div>
