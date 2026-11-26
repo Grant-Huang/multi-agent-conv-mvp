@@ -4,8 +4,12 @@ import {
   writeWorkspaceLayout,
   type WorkspaceLayout,
   SMT03_TASK_ID,
+  FIXTURE_TASK_IDS,
 } from "./mockData";
 import { loadExecOpen, saveExecOpen } from "./readAnchorStore";
+import { taskStatusSubtitle } from "./taskStatusText";
+import { api } from "../api";
+import type { TaskRecord } from "../bindings/TaskRecord";
 import { WorkspaceComposer } from "./WorkspaceComposer";
 import { ApprovalMockPanel } from "./ApprovalMockPanel";
 import { ResumeMockPanel } from "./ResumeMockPanel";
@@ -23,6 +27,9 @@ type Props = {
   testFixtures?: boolean;
 };
 
+/** 真实任务信息加载态：null=加载中，"error"=加载失败（CH-P3：出错就报错，不回退模拟） */
+type RealTaskState = { task: TaskRecord } | "loading" | "error";
+
 export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, onOpenTask, testFixtures = false }: Props) {
   const [layout, setLayout] = useState<WorkspaceLayout>(() => readWorkspaceLayout());
   const [execOpen, setExecOpen] = useState(() => loadExecOpen(taskId));
@@ -31,10 +38,30 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
   const [showVoice, setShowVoice] = useState(false);
   const [showHandoff, setShowHandoff] = useState(false);
   const [showAccept, setShowAccept] = useState(false);
+  // UXFIX-E（INTENT-014）：任务信息与执行摘要按 Task ID 读取真实任务；夹具任务保留模拟内容
+  const isFixture = FIXTURE_TASK_IDS.has(taskId);
+  const [realTask, setRealTask] = useState<RealTaskState>("loading");
 
   useEffect(() => {
     setExecOpen(loadExecOpen(taskId));
   }, [taskId]);
+
+  useEffect(() => {
+    if (isFixture) return;
+    let cancelled = false;
+    setRealTask("loading");
+    api
+      .task(taskId)
+      .then((r) => {
+        if (!cancelled) setRealTask({ task: r.task });
+      })
+      .catch(() => {
+        if (!cancelled) setRealTask("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId, isFixture]);
 
   const toggleExec = () => {
     setExecOpen((v) => {
@@ -95,14 +122,37 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
       <div className="workspace-body">
         {layout === "s2" && (
           <aside className="workspace-task-pane" data-testid="workspace-task-pane" aria-label="任务信息">
-            <dl>
-              <dt>状态</dt>
-              <dd>执行中（模拟）</dd>
-              <dt>业务对象</dt>
-              <dd>质量批次 SMT-03</dd>
-              <dt>来源</dt>
-              <dd>桌面首页 Mock</dd>
-            </dl>
+            {isFixture ? (
+              <dl>
+                <dt>状态</dt>
+                <dd>执行中（模拟）</dd>
+                <dt>业务对象</dt>
+                <dd>质量批次 SMT-03</dd>
+                <dt>来源</dt>
+                <dd>桌面首页 Mock</dd>
+              </dl>
+            ) : realTask === "loading" ? (
+              <p className="muted" data-testid="workspace-task-loading">
+                任务信息加载中…
+              </p>
+            ) : realTask === "error" ? (
+              <p className="bad-text" data-testid="workspace-task-error" role="alert">
+                任务信息加载失败，请返回桌面重试。
+              </p>
+            ) : (
+              <dl>
+                <dt>状态</dt>
+                <dd data-testid="workspace-task-status">{taskStatusSubtitle(realTask.task.status)}</dd>
+                <dt>目标</dt>
+                <dd data-testid="workspace-task-goal">{realTask.task.goal}</dd>
+                <dt>产物</dt>
+                <dd data-testid="workspace-task-artifacts">
+                  {realTask.task.result && realTask.task.result.artifacts.length > 0
+                    ? realTask.task.result.artifacts.map((a) => a.name).join("、")
+                    : "暂无产物"}
+                </dd>
+              </dl>
+            )}
           </aside>
         )}
         <section className="workspace-session" aria-label="会话与执行">
@@ -117,7 +167,19 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
           </button>
           {execOpen && (
             <div className="workspace-exec" data-testid="workspace-exec">
-              <p>O-Agent 执行摘要（模拟）：已采集质量记录，等待核验。</p>
+              {isFixture ? (
+                <p>O-Agent 执行摘要（模拟）：已采集质量记录，等待核验。</p>
+              ) : realTask === "error" ? (
+                <p className="bad-text">执行信息加载失败。</p>
+              ) : realTask === "loading" ? (
+                <p className="muted">执行信息加载中…</p>
+              ) : (
+                <p data-testid="workspace-exec-summary">
+                  {realTask.task.result?.summary?.trim()
+                    ? realTask.task.result.summary
+                    : "还没有执行记录。"}
+                </p>
+              )}
             </div>
           )}
           {/* UXFIX-B：模拟测试控件只在测试模式渲染（服务端告知），正常界面不出现（CH-U5） */}

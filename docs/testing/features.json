@@ -757,6 +757,7 @@
       "web/src/App.tsx",
       "web/src/desktop/DesktopHome.tsx",
       "web/src/desktop/WorkspaceView.tsx",
+      "web/src/desktop/taskStatusText.ts",
       "web/src/desktop/draftStore.ts",
       "web/src/desktop/draftStore.test.ts",
       "web/src/desktop/WorkspaceComposer.tsx",
