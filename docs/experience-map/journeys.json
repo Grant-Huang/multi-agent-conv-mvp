@@ -201,7 +201,7 @@
         "id": "UX-03-I7",
         "text": "输入为空时不会代用户委派一个默认任务",
         "charter": "CH-U1",
-        "debt": true
+        "case": "E2E-UX03-I7"
       }
     ],
     "budget": {
@@ -214,8 +214,7 @@
       "full_page_navigations": 0
     },
     "known_deviations": [
-      "INTENT-2026-004",
-      "INTENT-2026-016"
+      "INTENT-2026-004"
     ]
   },
   {

@@ -1354,8 +1354,10 @@ async fn create_link_audit(
         Err(e) => drafts_internal_err(e),
     }
 }
-async fn list_assistant_messages(State(rt): State<AppState>) -> Response {
-    match rt.store.list_desktop_assistant_messages() {
+async fn list_assistant_messages(State(rt): State<AppState>, headers: HeaderMap) -> Response {
+    // M4（#361）：已读状态按调用者隔离；夹具头 x-desktop-principal 提供多用户测试口径，无头回退 local
+    let user = principal_or_local(&headers);
+    match rt.store.list_desktop_assistant_messages(&user) {
         Ok(rows) => {
             let items: Vec<_> = rows
                 .iter()
@@ -1388,8 +1390,9 @@ fn assistant_internal_err(e: anyhow::Error) -> Response {
         .into_response()
 }
 
-async fn get_assistant_reads(State(rt): State<AppState>) -> Response {
-    match rt.store.list_desktop_assistant_read_ids() {
+async fn get_assistant_reads(State(rt): State<AppState>, headers: HeaderMap) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.list_desktop_assistant_read_ids(&user) {
         Ok(mut read_ids) => {
             read_ids.sort();
             (StatusCode::OK, Json(json!({ "read_ids": read_ids }))).into_response()
@@ -1400,8 +1403,10 @@ async fn get_assistant_reads(State(rt): State<AppState>) -> Response {
 
 async fn mark_assistant_reads(
     State(rt): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<MarkAssistantReadBody>,
 ) -> Response {
+    let user = principal_or_local(&headers);
     let ids: Vec<String> = body
         .message_ids
         .into_iter()
@@ -1419,7 +1424,7 @@ async fn mark_assistant_reads(
         )
             .into_response();
     }
-    match rt.store.mark_desktop_assistant_reads(&ids) {
+    match rt.store.mark_desktop_assistant_reads(&user, &ids) {
         Ok((read_ids, newly_marked)) => (
             StatusCode::OK,
             Json(json!({
@@ -1432,8 +1437,9 @@ async fn mark_assistant_reads(
     }
 }
 
-async fn reset_assistant_read_fixture(State(rt): State<AppState>) -> Response {
-    match rt.store.reset_desktop_assistant_reads() {
+async fn reset_assistant_read_fixture(State(rt): State<AppState>, headers: HeaderMap) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.reset_desktop_assistant_reads(&user) {
         Ok(()) => (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response(),
         Err(e) => assistant_internal_err(e),
     }
