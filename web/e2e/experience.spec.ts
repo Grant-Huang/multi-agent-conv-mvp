@@ -407,3 +407,20 @@ test('E2E-UX06: 工作区“调整助理”直达助理设置，改名生效，�
   await page.getByRole('button', { name: '返回桌面', exact: true }).click();
   await expect(page.getByTestId('home-assistant-name')).toContainText(original);
 });
+
+// UXFIX-F（#309，INTENT-2026-010，CH-U4）：设置中心不出现“（占位）”；
+// 未实现的分组显示“即将提供”且不可进入（已在 MOCK_REGISTRY 登记）。
+test('E2E-ADSETGROUPS: 设置中心无占位字样，未实现分组显示即将提供且不可进入', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('open-settings').click();
+  const panel = page.getByTestId('settings-panel');
+  await expect(panel).toBeVisible();
+  await expect(panel).not.toContainText('（占位）');
+  await expect(panel).toContainText('即将提供');
+  for (const id of ['desktop', 'notify', 'device', 'privacy']) {
+    await expect(page.getByTestId(`settings-cat-${id}`)).toBeDisabled();
+  }
+  // 可用分组（我的 AI 助理 / 连接与能力）不受影响
+  await expect(page.getByTestId('settings-cat-assistant')).toBeEnabled();
+  await expect(page.getByTestId('settings-cat-connect')).toBeEnabled();
+});

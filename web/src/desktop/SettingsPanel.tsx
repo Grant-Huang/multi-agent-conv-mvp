@@ -226,6 +226,8 @@ export function SettingsPanel({
                     type="button"
                     className="settings-cat"
                     data-testid={`settings-cat-${c.id}`}
+                    disabled={"placeholder" in c && c.placeholder === true}
+                    aria-disabled={"placeholder" in c && c.placeholder === true || undefined}
                     onClick={() =>
                       onNavigate({
                         layer: c.id === "assistant" ? "assistant" : "categories",
@@ -235,7 +237,8 @@ export function SettingsPanel({
                     }
                   >
                     {c.title}
-                    {c.id !== "assistant" && c.id !== "connect" && <span className="muted">（占位）</span>}
+                    {/* UXFIX-F（INTENT-010）：未实现分组显示“即将提供”且不可进入，不出现“（占位）” */}
+                    {"placeholder" in c && c.placeholder === true && <span className="muted">即将提供</span>}
                   </button>
                 </li>
               ))}
