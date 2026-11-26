@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "requires": { "mom.world_mock": true },
+  "sources": [
+    {"path": "fixtures/mom/s1", "purpose": "SMT 线 / 事件 / 期望"},
+    {"path": "fixtures/mom/s2", "purpose": "扩展场景"},
+    {"path": "fixtures/mom/expert", "purpose": "专家绑定参考"}
+  ],
+  "api": {
+    "ensure_seed": "POST /api/world/mock/ops/ensure-seed",
+    "note": "完整 DES 写入留给 World Adapter；本卡只保证 Mock 种子可达"
+  },
+  "demo_lines": ["SMT-01", "SMT-02", "SMT-03"],
+  "demo_batches": ["B-7781", "B-7782", "B-9100"]
+}
