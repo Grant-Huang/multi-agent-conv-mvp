@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
 import { api, type DesktopAssistantMessageDto } from "../api";
 
+/** UXFIX-H（INTENT-015）：委派任务终结通知（客户端生成，按任务去重，带“查看结果”） */
+export type TaskNotice = { taskId: string; title: string; status: string };
+
+type Props = {
+  taskNotices?: TaskNotice[];
+  onOpenNotice?: (taskId: string) => void;
+};
+
 /** 助理消息已读跨端（T-73）：服务夹具权威；双端同未读。 */
-export function AssistantReadPanel() {
+export function AssistantReadPanel({ taskNotices = [], onOpenNotice }: Props) {
   const [items, setItems] = useState<DesktopAssistantMessageDto[]>([]);
   const [unread, setUnread] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -44,6 +52,23 @@ export function AssistantReadPanel() {
         </span>
       </div>
       <ul className="asst-read-list" data-testid="asst-read-list">
+        {taskNotices.map((n) => (
+          <li key={`notice-${n.taskId}`} className="asst-read-item" data-testid="task-notice">
+            <span className="muted">{n.status} · 普通优先级</span>
+            <strong>{n.title}</strong>
+            <span className="muted">任务 {n.taskId}</span>
+            {onOpenNotice && (
+              <button
+                type="button"
+                className="btn small"
+                data-testid="task-notice-open"
+                onClick={() => onOpenNotice(n.taskId)}
+              >
+                查看结果
+              </button>
+            )}
+          </li>
+        ))}
         {items.map((it) => (
           <li
             key={it.id}

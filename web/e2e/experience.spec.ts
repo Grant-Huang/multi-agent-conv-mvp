@@ -151,6 +151,35 @@ test('E2E-UX03: 首页一句话委派后留在桌面，后台运行时可去做�
   await info.attach('ux03-probe.json', { body: JSON.stringify({ journey: 'UX-03', ...metrics }, null, 2), contentType: 'application/json' });
 });
 
+// UX-03-I5（CH-U3，INTENT-2026-015）：任务完成后助理消息告知（普通优先级、带“查看结果”），
+// 受理提示同步为完成状态、不再显示“后台处理中”。
+test('E2E-UX03-I5: 任务完成后助理消息告知并可查看结果，受理提示同步', async ({ page }) => {
+  test.setTimeout(120_000);
+  const goal = `汇总本周 Line-A 质量异常并起草 8D 初稿 ${Date.now()}`;
+  await page.goto('/');
+  const s1 = page.getByRole('textbox', { name: 'S1 输入' });
+  await s1.fill(goal);
+  await page.getByRole('button', { name: '委派任务' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '已受理' })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('s1-bg-status')).toContainText('后台处理中');
+
+  // 去做别的事
+  await page.getByTestId('card-smt-03').click();
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+
+  // 完成后：受理提示不再“后台处理中”
+  const chip = page.getByTestId('s1-bg-status');
+  await expect(chip).not.toContainText('后台处理中', { timeout: 90_000 });
+  // 助理消息出现该任务的完成通知，带“查看结果”
+  const notice = page.getByTestId('task-notice').filter({ hasText: goal });
+  await expect(notice).toBeVisible({ timeout: 30_000 });
+  await expect(notice).toContainText('已完成');
+  // 点“查看结果”直达该任务的工作区（非夹具任务）
+  await notice.getByTestId('task-notice-open').click();
+  await expect(page.getByTestId('workspace-task-id')).toBeVisible();
+  await expect(page.getByTestId('workspace-task-id')).not.toHaveText(SMT03_TASK_ID);
+});
+
 // 体验地图 UX-04（docs/experience-map/journeys/UX-04.md）：在对话里处理任务，查看任务详情时不丢对话现场。
 // 只断言当前成立的约束 UX-04-I1；从对话进入工作区 / 专注模式（I2）、离开再返回草稿仍在（I3）、
 // 对话页不暴露内部页签与原始工具参数（I4）为欠账，见 2026-11-25 UX-04 基线审查。
