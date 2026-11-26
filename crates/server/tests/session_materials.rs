@@ -362,20 +362,14 @@ async fn rt_smat_08_materials_merged_into_single_leading_system() {
     let calls = llm.plain_calls();
     let req = calls.last().expect("应有回答请求");
     let msgs = req["messages"].as_array().unwrap();
-    let systems: Vec<_> = msgs
-        .iter()
-        .take_while(|m| m["role"] == "system")
-        .collect();
+    let systems: Vec<_> = msgs.iter().take_while(|m| m["role"] == "system").collect();
     assert_eq!(
         systems.len(),
         1,
         "回答请求 leading system 必须恰好 1 条（资料并入首条）：{systems:?}"
     );
     let c = systems[0]["content"].as_str().unwrap_or("");
-    assert!(
-        c.contains(MATERIALS_MARKER),
-        "首条 system 应含资料块：{c}"
-    );
+    assert!(c.contains(MATERIALS_MARKER), "首条 system 应含资料块：{c}");
     assert!(
         c.contains("来源：task-smat-08"),
         "首条 system 应带来源：{c}"
