@@ -127,7 +127,7 @@ fn seed_completed_linked_task(store: &Store, conv_id: &str, task_id: &str, summa
         created_at: an_core::now(),
         updated_at: an_core::now(),
     };
-    store.insert_task(&t, "").unwrap();
+    store.insert_task(&t, "", None).unwrap();
     match store
         .create_desktop_task_link(task_id, conv_id, &format!("op-{task_id}"), &[], "tester")
         .unwrap()

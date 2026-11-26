@@ -28,3 +28,5 @@ an-des.workspace = true
 # 阶段⑤a：模拟工厂服务与进程内内核的一致性（RT-DES-30）
 an-des.workspace = true
 tracing-subscriber.workspace = true
+# #360：外部 A2A 请求体的隔离回归用 mock HTTP 服务
+axum.workspace = true

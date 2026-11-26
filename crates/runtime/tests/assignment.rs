@@ -150,7 +150,7 @@ async fn rt_assign_01_completed_task_records_its_agent() {
     let conv = e.store.create_conversation("t").unwrap().id;
     let t = e
         .orch
-        .submit(&conv, "g", "", route(Risk::Low), auto())
+        .submit(&conv, "g", "", route(Risk::Low), auto(), None)
         .unwrap();
     let done = wait_for(&e.store, &t.id, &[TaskStatus::Completed]).await;
     let a = done.assignment.expect("完成的任务必须记录执行者");
@@ -171,11 +171,11 @@ async fn rt_assign_02_busy_primary_hands_task_to_backup() {
     let conv = e.store.create_conversation("t").unwrap().id;
     let t1 = e
         .orch
-        .submit(&conv, "g1", "", route(Risk::Low), auto())
+        .submit(&conv, "g1", "", route(Risk::Low), auto(), None)
         .unwrap();
     let t2 = e
         .orch
-        .submit(&conv, "g2", "", route(Risk::Low), auto())
+        .submit(&conv, "g2", "", route(Risk::Low), auto(), None)
         .unwrap();
     let r1 = wait_for(&e.store, &t1.id, &[TaskStatus::Running]).await;
     let r2 = wait_for(&e.store, &t2.id, &[TaskStatus::Running]).await;
@@ -198,12 +198,12 @@ async fn rt_assign_03_queued_task_records_wait_time() {
     let conv = e.store.create_conversation("t").unwrap().id;
     let t1 = e
         .orch
-        .submit(&conv, "g1", "", route(Risk::Low), auto())
+        .submit(&conv, "g1", "", route(Risk::Low), auto(), None)
         .unwrap();
     wait_for(&e.store, &t1.id, &[TaskStatus::Running]).await;
     let t2 = e
         .orch
-        .submit(&conv, "g2", "", route(Risk::Low), auto())
+        .submit(&conv, "g2", "", route(Risk::Low), auto(), None)
         .unwrap();
     let done = wait_for(&e.store, &t2.id, &[TaskStatus::Completed]).await;
     let a = done.assignment.expect("完成的任务必须记录执行者");

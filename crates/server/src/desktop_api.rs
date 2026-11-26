@@ -1267,7 +1267,10 @@ async fn snapshot_fixture_reset(State(rt): State<AppState>) -> Response {
         let mut task = snapshot_fixture_task(&conv.id, id, goal, role, status);
         task.created_at = ts.clone();
         task.updated_at = ts.clone();
-        if let Err(e) = rt.store.insert_task(&task, "desktop snapshot fixture") {
+        if let Err(e) = rt
+            .store
+            .insert_task(&task, "desktop snapshot fixture", None)
+        {
             return snapshot_internal_err(e);
         }
     }

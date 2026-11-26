@@ -175,7 +175,7 @@ fn seed_linked_task(rt: &Runtime, conv_id: &str, task_id: &str, summary: &str) {
         created_at: an_core::now(),
         updated_at: an_core::now(),
     };
-    rt.store.insert_task(&t, "").unwrap();
+    rt.store.insert_task(&t, "", None).unwrap();
     match rt
         .store
         .create_desktop_task_link(task_id, conv_id, &format!("op-{task_id}"), &[], "tester")
@@ -295,7 +295,7 @@ session_materials_route = false",
 
 /// RT-EXEC-04：资料随任务持久——tasks.context 列含资料段
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn rt_exec_04_materials_persist_in_task_context() {
+async fn rt_exec_04_materials_persist_in_exec_material_column() {
     let llm = MockLlm::start().await;
     let rt = runtime(&llm.base, "");
     let conv = rt.store.create_conversation("t").unwrap();
@@ -312,15 +312,27 @@ async fn rt_exec_04_materials_persist_in_task_context() {
         .unwrap();
     let task = out.task.expect("委派应产生任务");
     let _ = wait_first_step(&llm);
+    // #360 起资料块不再拼进 tasks.context（会随外部 A2A 请求出站），改为独立持久化：
+    // context 只留路由用的纯净摘录，资料段在 tasks.exec_material 列
     let ctx_col = rt
         .store
         .get_task_context(&task.id)
         .unwrap()
         .unwrap_or_default();
     assert!(
-        ctx_col.contains("PERSIST"),
-        "tasks.context 应持久含资料段：{}",
+        !ctx_col.contains("PERSIST"),
+        "#360 后 tasks.context 不应携带资料段：{}",
         ctx_col.chars().take(300).collect::<String>()
+    );
+    let material = rt
+        .store
+        .get_task_exec_material(&task.id)
+        .unwrap()
+        .unwrap_or_default();
+    assert!(
+        material.contains("PERSIST"),
+        "tasks.exec_material 应持久含资料段：{}",
+        material.chars().take(300).collect::<String>()
     );
 }
 
