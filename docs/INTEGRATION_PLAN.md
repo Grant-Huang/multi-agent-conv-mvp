@@ -23,15 +23,15 @@
 
 ### 五条研发线与近期汇合
 
-当前按[五线分工决定](decisions/2026-11-22-five-workstreams.md)排期，近期没有确定的工厂试点窗口。下表是近期工作范围，后文保留完整黄金场景及工作包。
+**下表是各研发线职责的唯一权威描述**；其他文档（DESIGN 第 0.3 节“负责线”列、PLAN、特性档案、方案文件、决策）只引用本表，不复述职责范围（[决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md) 第 8 项）。最初划分见[五线分工决定](decisions/2026-11-22-five-workstreams.md)，此后调整以本表为准。近期没有确定的工厂试点窗口；后文保留完整黄金场景及工作包。
 
 | 研发线 | 负责的交付 | 近期次序 |
 |---|---|---|
 | 1 AI 桌面产品入口 | 正常入口、交互反馈、任务和证据展示；**主动消息与注意力预算的统一出口**（所有主动消息含内省推送都经第 1 线的提醒管道与预算，第 5 线只提供候选；2026-11-26 起，见 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md)） | 首页真实委派优先。消费第 4 线的请求和任务状态；继续维护第 3 线的运营频道入口 |
 | 2 独立复跑与集成协调 | 跨组场景、复跑环境、验收证据、问题归属和复验；**CI 与夜间 E2E 健康、测试卫生、评测基建**（2026-11-26 起从第 3 线接过夜间监视，见 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md)） | 输入为任务卡、PR、Feature Map、CASES 和证据；按合入 SHA 复跑，分别记录 fixture、真实服务和未验项。沿用 [T-60](testing/evidence/t60-cross-group-acceptance.md) 和 [T-63](testing/evidence/t63-m2-reverify.md)；T-63 已验合同及 harness，远程 DES MCP 仍待本线独立复跑 |
 | 3 工业业务闭环 | DES、MOM、运营处置与 World Adapter；业务来源核验；**业务执行网关 NexusOps 主责**（第 1 线配合界面、第 4 线配合审批契约）（2026-11-26 起；夜间监视移交第 2 线） | 沿用 M2-6 准出与 [T-63](testing/evidence/t63-m2-reverify.md)；**M3 桩数据准出**（[wa-m3-5.md](testing/evidence/wa-m3-5.md)）；M4 写须过 [WA_M4_TASKS](mom/WA_M4_TASKS.md) 准入；下一待授权 **M4-1 候选站只读** |
-| 4 执行协议与共享契约 | 通用任务受理、编排、执行组、结果整合及跨模块一致语义；**交互与决策层**（C-Agent 会话前台、Router / Policy / Decision Harness、路由评测）；**服务端身份认证与权限的实现**（契约 A7）；S-Agent 结果整合的权威设计；MCP 能力目录、研究报告；**日志与诊断**（`crates/observe`、埋点规范，与事件契约同线；第 2 线使用、第 1 线诊断界面）（2026-11-26 起明确，见 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md)） | 先验持久受理、重试去重、可查分流；再把已合入的执行后人工验收（WP2，#215）纳入桌面主路径，并补终态结果可靠回传。运行中恢复按 WP7 分期 |
-| 5 内省、分层记忆与会话上下文；Agent 接入 | 内省发现、记忆生命周期及每轮上下文选材；**Agent 接入**（2026-11-25 起）：助手的发现、配置、诊断与对话式管理，Agent 准入，新 agent 类型（ACP、A2A、CLI 助手、跨机器节点）的接入与握手；**连接器标准与模型服务接入**（CH-G4，业务系统连接器仍由第 3 线按 World Adapter 实现）；**外发脱敏 DLP**；**组织知识 RelOS 设计**（2026-11-26 起，见 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md)） | 先走受控会话上下文切片，并行维持 INT 证据；分期见[特性计划](features/conversation-memory/PLAN.md)。Agent 接入按 [决定 2026-11-25-agent-integration-to-line5](decisions/2026-11-25-agent-integration-to-line5.md) 承接；执行组调度与执行协议仍归第 4 线 |
+| 4 执行协议与共享契约 | 通用任务受理、编排、执行组、结果整合及跨模块一致语义；**交互与决策层**（C-Agent 会话前台、Router / Policy / Decision Harness、路由评测）；**服务端身份认证与权限的实现**（契约 A7）；S-Agent 结果整合的权威设计；**Agent 与连接器的调度使用**（多 agent 分工协调：C / O / S-Agent 如何配合、按任务选用哪个 agent 或连接器 / 工具、执行组调度与回退；接入本身归第 5 线）；MCP 能力目录、研究报告；**日志与诊断**（`crates/observe`、埋点规范，与事件契约同线；第 2 线使用、第 1 线诊断界面）（2026-11-26 起明确，见 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md)） | 先验持久受理、重试去重、可查分流；再把已合入的执行后人工验收（WP2，#215）纳入桌面主路径，并补终态结果可靠回传。运行中恢复按 WP7 分期 |
+| 5 内省、分层记忆与会话上下文；Agent 接入 | 内省发现、记忆生命周期及每轮上下文选材；**Agent 接入**（2026-11-25 起）：助手的发现、配置、诊断与对话式管理，Agent 准入，新 agent 类型（ACP、A2A、CLI 助手、跨机器节点）的接入与握手；**连接器标准与模型服务接入**（CH-G4，业务系统连接器仍由第 3 线按 World Adapter 实现）。第 5 线只管“接进来、可用、可诊断”，**接入后如何调度使用归第 4 线**；**外发脱敏 DLP**；**组织知识 RelOS 设计**（2026-11-26 起，见 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md)） | 先走受控会话上下文切片，并行维持 INT 证据；分期见[特性计划](features/conversation-memory/PLAN.md)。Agent 接入按 [决定 2026-11-25-agent-integration-to-line5](decisions/2026-11-25-agent-integration-to-line5.md) 承接 |
 
 | 汇合场景 | 交付与独立复跑 |
 |---|---|
