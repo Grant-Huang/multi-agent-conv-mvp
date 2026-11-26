@@ -105,8 +105,10 @@ await writeFile(path.join(bin,'claude-agent-acp'),`#!/bin/sh\nexec ${JSON.string
 const broken=path.join(bin,'broken-agent');
 await writeFile(broken,`#!/bin/sh\necho "启动失败：客户 ACME 的配置不对" >&2\nexit 1\n`,{mode:0o755});
 const dlpFixture=path.join(root,'crates/server/tests/fixtures/dlp_server.py');
+// HARNESS_PORT：同机多线并行跑 E2E 时隔离端口（默认 18787 与 CI 一致）
+const appPort=Number(process.env.HARNESS_PORT||18787);
 const config=path.join(dir,'config.toml');
-const configText=`[server]\nbind="127.0.0.1:18787"\ndb_path=${JSON.stringify(path.join(dir,'app.db'))}\nstatic_dir=${JSON.stringify(path.join(root,'web/dist'))}\n[llm]\nbase_url="http://127.0.0.1:${modelPort}/v1"\nmodel="verification-model"\nmax_retries=0\ntimeout_secs=120\n[agents.general]\nworkspace_dir=${JSON.stringify(workspace)}\nwebsearch_command=""\n[agents.coding]\nenabled=false\nworkdir=${JSON.stringify(codeRepo)}\n[agents.reviewer]\nenabled=true\n[acp]\nauto_detect=false\n[[acp.agents]]\nid="hand"\nname="hand"\ncommand=${JSON.stringify(mockAcp)}\nrole="reviewer"\nenv={AN_MOCK_ACP_REPLY="建议检查 [CUSTOMER_001] 的配置文件"}\n[[acp.agents]]\nid="broken"\nname="broken"\ncommand=${JSON.stringify(broken)}\nrole="reviewer"\n[desktop]\ntest_fixtures=true\n[egress]\nmode="audit"\ndlp_command="python3"\ndlp_args=[${JSON.stringify(dlpFixture)}]\ntimeout_ms=5000\n[nodes]\ndiscovery=false\n[conversation]\nagent_management=true\n[mom]\nworld_mock=true\n[logging]\ndir=${JSON.stringify(path.join(dir,'logs'))}\n`;
+const configText=`[server]\nbind="127.0.0.1:${appPort}"\ndb_path=${JSON.stringify(path.join(dir,'app.db'))}\nstatic_dir=${JSON.stringify(path.join(root,'web/dist'))}\n[llm]\nbase_url="http://127.0.0.1:${modelPort}/v1"\nmodel="verification-model"\nmax_retries=0\ntimeout_secs=120\n[agents.general]\nworkspace_dir=${JSON.stringify(workspace)}\nwebsearch_command=""\n[agents.coding]\nenabled=false\nworkdir=${JSON.stringify(codeRepo)}\n[agents.reviewer]\nenabled=true\n[acp]\nauto_detect=false\n[[acp.agents]]\nid="hand"\nname="hand"\ncommand=${JSON.stringify(mockAcp)}\nrole="reviewer"\nenv={AN_MOCK_ACP_REPLY="建议检查 [CUSTOMER_001] 的配置文件"}\n[[acp.agents]]\nid="broken"\nname="broken"\ncommand=${JSON.stringify(broken)}\nrole="reviewer"\n[desktop]\ntest_fixtures=true\n[egress]\nmode="audit"\ndlp_command="python3"\ndlp_args=[${JSON.stringify(dlpFixture)}]\ntimeout_ms=5000\n[nodes]\ndiscovery=false\n[conversation]\nagent_management=true\n[mom]\nworld_mock=true\n[logging]\ndir=${JSON.stringify(path.join(dir,'logs'))}\n`;
 await writeFile(config,configText);
 const binary=path.join(root,'target/debug',process.platform==='win32'?'agentnexus.exe':'agentnexus');
 const child=spawn(binary,[config],{cwd:root,env:{...process.env,RUST_LOG:'info',PATH:`${bin}${path.delimiter}${process.env.PATH??''}`},stdio:['ignore','pipe','pipe']});
@@ -124,7 +126,7 @@ const ready=http.createServer((req,res)=>{
 ready.listen(readyPort,'127.0.0.1');
 (()=>{
   const t0=Date.now();
-  const probe=(p)=>fetch(`http://127.0.0.1:18787${p}`,{signal:AbortSignal.timeout(2000)});
+  const probe=(p)=>fetch(`http://127.0.0.1:${appPort}${p}`,{signal:AbortSignal.timeout(2000)});
   (async()=>{
     for(;;){
       try{
