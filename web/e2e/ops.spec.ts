@@ -479,3 +479,41 @@ test('E2E-OPSRECEIPT: 未执行不显示“已提交”；执行后回执分层�
   await expect(evidence).not.toContainText('现场照片与点检记录');
   await expect(evidence).toContainText(/mock-field-verification|obs:|暂无核验证据/);
 });
+
+// UX-07-I6 / UXFIX-Q（#342，INTENT-2026-028/029）：批准前看得到方案要点，约束与阶段用中文，
+// 批准按钮写明方案修订，批准后阶段显示“已批准，待执行”；卡片与工作台不出现英文状态码。
+test('E2E-OPSPLAN: 方案要点可见、约束中文可折叠、批准后阶段中文', async ({ page, request }) => {
+  const id = await scenario(request);
+  await openChannel(page);
+  const card = page.getByTestId('ops-card').filter({ hasText: id }).first();
+  await expect(card).toBeVisible();
+
+  // 批准前：查看方案显示要点（做什么 / 影响 / 关键参数 / 来源与版本）
+  await card.getByRole('button', { name: '查看方案', exact: true }).click();
+  const plan = card.getByTestId('ops-plan-points');
+  await expect(plan).toBeVisible();
+  await expect(plan).toContainText('方案修订 1');
+  await expect(plan).toContainText(/产量|产能/);
+  await expect(plan).toContainText('其他订单影响');
+
+  // 约束用中文、原文可折叠（默认不展示英文原文，展开后可见）
+  await expect(card).toContainText('不得绕过安全联锁或质量放行');
+  const original = card.getByText('Never bypass safety interlock').first();
+  await expect(original).not.toBeVisible();
+  await card.getByText('约束原文（英文）').click();
+  await expect(original).toBeVisible();
+
+  // 批准按钮写明批准的是哪个方案修订
+  await expect(card.getByRole('button', { name: /批准（方案修订 1）/ })).toBeVisible();
+
+  // 批准后：阶段不再显示“待批准”——MOM 模拟卡批准即执行（#376），
+  // 依次为“已批准，待执行”或执行状态（核验中 / 已关闭）
+  await card.getByRole('button', { name: /批准（方案修订 1）/ }).click();
+  await expect(card.getByTestId('ops-stage')).not.toContainText('待批准', { timeout: 15_000 });
+  await expect(card.getByTestId('ops-stage')).toContainText(/已批准，待执行|核验中|已关闭/);
+
+  // 工作台不出现英文状态码
+  await page.getByTestId('ops-entry-workbench').click();
+  await expect(page.getByTestId('mom-workbench')).toBeVisible();
+  await expect(page.getByTestId('mom-workbench')).not.toContainText(/WAITING_HUMAN|INVESTIGATING|BLOCKED/);
+});
