@@ -131,6 +131,37 @@ pub enum DesktopLinkOutcome {
     },
 }
 
+/// L2 历史记录检索命中（#346 REQ-05）。检索面 = 本库全部会话消息与已完成任务
+/// 回执（单用户桌面库；多用户隔离随服务端身份，REQ-03/第 4 线）。AI 历史回答
+/// kind =「当时的回答」——只作带来源的资料、不作事实来源（CH-G5）；引用带
+/// `at` 与 `source_id` 出处。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HistoryHit {
+    /// 消息 id 或任务 id（出处）
+    pub source_id: String,
+    pub conversation_id: String,
+    /// 用户消息 / 当时的回答 / 系统事件 / 任务回执
+    pub kind: String,
+    pub role: String,
+    /// 摘录（≤200 字符）
+    pub snippet: String,
+    /// 时间（RFC3339，引用带时间）
+    pub at: String,
+    pub task_id: Option<String>,
+}
+
+fn history_kind(role: &str) -> &'static str {
+    match role {
+        "user" => "用户消息",
+        "assistant" => "当时的回答",
+        _ => "系统事件",
+    }
+}
+
+fn history_snippet(s: &str) -> String {
+    s.chars().take(200).collect()
+}
+
 /// AI Desktop B3：个人配置
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DesktopPreferences {
@@ -3124,6 +3155,105 @@ impl Store {
         let mut v: Vec<Message> = rows.collect::<rusqlite::Result<_>>()?;
         v.reverse();
         Ok(v)
+    }
+
+    // ───────────── L2 历史记录检索（#346 REQ-05；HistoryHit 定义见文件头） ─────────────
+
+    /// L2 历史记录检索：关键词匹配消息正文与已完成任务回执摘要。
+    /// 默认只看最近 `days` 天（REQ-05：检索窗口默认 180 天，更早需明确指定）；
+    /// 删除的消息不在检索面（真删除）。`limit` 夹取 1..=100。
+    pub fn search_history(&self, query: &str, days: u32, limit: usize) -> Result<Vec<HistoryHit>> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Err(anyhow!("检索关键词不能为空"));
+        }
+        let limit = limit.clamp(1, 100);
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(days as i64))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let _timer = ReadTimer::new("search_history");
+        let conn = self.read();
+        let mut hits: Vec<HistoryHit> = Vec::new();
+        {
+            let mut st = conn.prepare(
+                "SELECT id, conversation_id, role, content, task_id, created_at FROM messages
+                 WHERE instr(content, ?1) > 0 AND created_at >= ?2
+                 ORDER BY created_at DESC, rowid DESC LIMIT ?3",
+            )?;
+            let rows = st.query_map(params![q, cutoff, limit as i64], |r| {
+                let role: String = r.get(2)?;
+                Ok(HistoryHit {
+                    source_id: r.get(0)?,
+                    conversation_id: r.get(1)?,
+                    kind: history_kind(&role).to_string(),
+                    role,
+                    snippet: history_snippet(r.get::<_, String>(3)?.as_str()),
+                    at: r.get(5)?,
+                    task_id: r.get(4)?,
+                })
+            })?;
+            for h in rows {
+                hits.push(h?);
+            }
+        }
+        {
+            let mut st = conn.prepare(
+                "SELECT id, conversation_id, result_json, updated_at FROM tasks
+                 WHERE status = 'completed' AND result_json IS NOT NULL
+                   AND instr(result_json, ?1) > 0 AND updated_at >= ?2
+                 ORDER BY updated_at DESC LIMIT ?3",
+            )?;
+            let rows = st.query_map(params![q, cutoff, limit as i64], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                ))
+            })?;
+            for row in rows {
+                let (id, conversation_id, result_json, updated_at) = row?;
+                let summary = serde_json::from_str::<serde_json::Value>(&result_json)
+                    .ok()
+                    .and_then(|v| v.get("summary").and_then(|s| s.as_str()).map(String::from));
+                let Some(summary) = summary else { continue };
+                if !summary.contains(q) {
+                    continue; // result_json 命中可能是 artifacts 等字段；摘要不含关键词不算回执命中
+                }
+                hits.push(HistoryHit {
+                    task_id: Some(id.clone()),
+                    source_id: id,
+                    conversation_id,
+                    kind: "任务回执".to_string(),
+                    role: "task".to_string(),
+                    snippet: history_snippet(&summary),
+                    at: updated_at,
+                });
+            }
+        }
+        hits.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| b.source_id.cmp(&a.source_id)));
+        hits.truncate(limit);
+        Ok(hits)
+    }
+
+    /// L2 删除语义（REQ-05）：个人会话中本人删除的消息真删除（行删除），
+    /// 删除后不再进入检索与引用。仅限本人发送的消息（role = user）；AI 回答、
+    /// 系统事件不是「本人的消息」，不可经此删除。任务、审批相关记录不在本方法
+    /// 范围内（保留原件）。`Ok(false)` = 不存在；`Err` = 存在但不可删。
+    pub fn delete_message(&self, message_id: &str) -> Result<bool> {
+        let conn = self.write();
+        let role: Option<String> = conn
+            .query_row(
+                "SELECT role FROM messages WHERE id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(role) = role else { return Ok(false) };
+        if role != "user" {
+            return Err(anyhow!("仅本人发送的消息可删除（该消息 role={role}）"));
+        }
+        conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])?;
+        Ok(true)
     }
 
     // ───────────── 任务 ─────────────
