@@ -1138,7 +1138,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-EXEC-04 | conversation-memory | 注入发生后的任务 | 查 `tasks.context` | context 列含资料段（随任务持久） |
 | RT-EXEC-05 | conversation-memory | 过闸门发现 + 委派（general 角色；#346 场合表落地） | handle_message | 执行背景与 `tasks.context` 不含发现 id；同发现回答路径仍按相关性门注入（守卫） |
 
-## 分层记忆细化（#346；RT-L2H-01～04 已实现（片 3 / 片 4a，2026-11-26），RT-ASEL-01～02 为实现前定义随片 4b 补可执行测试）
+## 分层记忆细化（#346；RT-L2H-01～04、RT-ASEL-02 已实现（片 3 / 片 4a / 片 4b，2026-11-26），RT-ASEL-01 为实现前定义随各入口线场合落地补可执行测试）
 
 需求与验收标准见特性档案 REQ-conversation-memory-05/06（2026-11-26 用户确认冻结；[设计规则](../decisions/2026-11-26-memory-layers-and-history.md) §5/§3）。内省克制族的「超日上限不发」由 RT-INT-20、「输入中不弹」由 RT-INT-24 + RT-UFND-01 + RT-JMAT-03 既有用例覆盖，不另设。
 
@@ -1148,5 +1148,5 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-L2H-02 | conversation-memory | 本人删除一条个人会话消息（`DELETE /api/desktop/v1/messages/{id}`，片 3） | 删除后再检索 | 删除即真删除，检索与消息列表均不再出现；AI 回答不可经此删除（403）；重复删除 404 |
 | RT-L2H-03 | conversation-memory | 180 天窗口内外的同类记录（片 3） | 默认检索 / `days` 显式指定 | 默认只返回最近 180 天；`days` 显式加大才返回更早记录，引用带原始时间；空关键词 400 |
 | RT-L2H-04 | conversation-memory | 被纠正的历史消息（`POST /api/desktop/v1/messages/{id}/correction`，片 4a） | 加更正注记后检索 | 更正单独记录、原文不改写；命中附 `correction` 并优先排序（优先给纠正后版本）；AI 回答 403、空注记 400、重复更正为替换；更正随消息删除 |
-| RT-ASEL-01 | conversation-memory | 六场合各自入口与状态（片 4 实现） | 各场合触发选材 | 按「必带 / 可带 / 不带」表选材：随口问答不带他任务现场与 L5；执行委派不带风格偏好与 L5；审批写入的画像与风格不影响内容（CH-G2b）；场合由程序按入口与状态判断 |
-| RT-ASEL-02 | conversation-memory | 任一发生注入的轮次（片 4 实现） | 查 `session.materials` 事件 | 事件可还原「带了哪些记忆、为什么」（来源 id、取舍原因；展示入口归第 1 线 #347） |
+| RT-ASEL-01 | conversation-memory | 六场合各自入口与状态（实现前定义：回到老任务/审批/值班/跨设备随对应入口线落地） | 各场合触发选材 | 按「必带 / 可带 / 不带」表选材：随口问答不带他任务现场与 L5；执行委派不带风格偏好与 L5（已由 RT-EXEC-05 落地）；审批写入的画像与风格不影响内容（CH-G2b）；场合由程序按入口与状态判断 |
+| RT-ASEL-02 | conversation-memory | 任一发生注入的轮次（片 4b：`session.materials` 事件补 `occasion`/`why`） | 查事件 | `occasion` 按状态确定性记录（新会话 / 会话续问）；`why` 逐段原因码（`receipts:in_window`、`memories:effective_fact`、`style:effective_style`、`findings:related_gate`）可还原「带了哪些记忆、为什么」；不含资料正文；来源 id 可追溯。展示入口归第 1 线 #347 |

@@ -25,6 +25,7 @@
 - [x] 片 2 CASES 与可执行测试（2026-11-26，先 Red）：REQ-05～07 用户确认冻结（会话确认，状态与用例挂接落 features.json）；注入基线 RT-SMAT-06/07（封装隔离 / 判断清单只带要点，既有行为补录）；**场合表落地修正**——S6-exec 执行块用 `render_exec` 剔除 L5 发现、S5 路由线索不再随任务上下文进执行背景（RT-EXEC-05，Red→Green）；内省克制族映射既有 RT-INT-20 / RT-INT-24 / RT-UFND-01 / RT-JMAT-03；L2 检索 RT-L2H-01～03 与场合选材 RT-ASEL-01～02 登记「实现前定义」随片 3/4 补测试；证据 `testing/evidence/convmem-layers-slice2.md`
 - [x] 片 3 L2 历史记录检索（2026-11-26，方案经用户批准）：`GET /api/desktop/v1/history/search`（principal 说明见端点文档；默认 180 天窗口、AI 历史回答标「当时的回答」、消息+已完成任务回执两路检索、引用带 `msg_id`/`conv_id`/`at`）+ `DELETE /api/desktop/v1/messages/{id}`（仅本人 user 消息真删除，AI 回答 403，重复 404）；RT-L2H-01～03；store.rs 新增 `search_history`/`delete_message`（只读查询 + 单条删除，无迁移）；证据 `testing/evidence/convmem-layers-slice3.md`
   - [x] 片 4a 更正注记（RT-L2H-04）：`POST /api/desktop/v1/messages/{id}/correction`（仅本人 user 消息，AI 回答 403、空注记 400）；`message_corrections` 新表（更正单独记录、原文不改写、重复更正替换、随消息删除）；检索命中附 `correction` 并优先排序（REQ-05「优先给纠正后版本」）；证据 `testing/evidence/convmem-layers-slice4a.md`
+  - [x] 片 4b 「带了哪些记忆、为什么」事件记录（RT-ASEL-02）：`session.materials` 事件补 `occasion`（新会话 / 会话续问，程序按状态判断）与 `why`（`receipts:in_window` / `memories:effective_fact` / `style:effective_style` / `findings:related_gate` 原因码）；DESIGN §10 事件字段同步；展示入口归第 1 线 #347；证据 `testing/evidence/convmem-layers-slice4b.md`
 - [ ] 片 4 按场合选材（六场合确定性判断）与「带了哪些记忆、为什么」记录
 - [ ] 片 5 注入防线落地（写入闸门外部候选、撤回影响追溯、长度预算）与注入测试集
 
