@@ -436,3 +436,46 @@ test('E2E-OPSOFF: 关闭开关（默认）时没有桌面页签和运营频道�
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.locator('.msg.assistant').last()).toContainText('你好，验证成功');
 });
+
+// UX-07-I5 / UXFIX-P（#341，INTENT-2026-026）：执行回执与核验证据来自引擎（CH-P6），
+// 分层显示已提交 → 源系统已受理 → 已核验并标来源；未执行时不显示“已提交”（CH-P8）。
+test('E2E-OPSRECEIPT: 未执行不显示“已提交”；执行后回执分层来自引擎并标来源', async ({ page, request }) => {
+  // A：批准但未执行——“查看执行”显示“尚未执行”，不出现“已提交”
+  const idA = await scenario(request);
+  const viewA = unwrap(await (await request.get(mom(`/cases/${idA}`))).json());
+  await command(request, idA, { command: 'approve', scope: 'production', plan_revision: viewA.plan_revision, actor: 'supervisor' });
+  await openChannel(page);
+  const cardA = page.getByTestId('ops-card').filter({ hasText: idA }).first();
+  await expect(cardA).toBeVisible();
+  await cardA.getByRole('button', { name: '查看执行', exact: true }).click();
+  const receiptA = cardA.getByTestId('execution-receipt');
+  await expect(receiptA).toContainText('尚未执行');
+  await expect(receiptA).not.toContainText('已提交');
+
+  // B：创建并等卡发布后再批准、执行——发布器在消费积压事件时按案例“当前”阶段分级，
+  // 若执行先于首个发布节拍（stage=VERIFYING）会被判 P1 而不新发卡（发布器缺陷已派
+  // 第 3 线：#384）；用例确定性起见，等卡发布（2 条）后再执行。
+  const idB = await scenario(request);
+  await expect.poll(async () => (await channelMessages(request)).length, { timeout: 15_000 }).toBe(2);
+  await page.reload();
+  const cardB = page.getByTestId('ops-card').filter({ hasText: idB }).first();
+  await expect(cardB).toBeVisible();
+  const viewB = unwrap(await (await request.get(mom(`/cases/${idB}`))).json());
+  await command(request, idB, { command: 'approve', scope: 'production', plan_revision: viewB.plan_revision, actor: 'supervisor' });
+  await command(request, idB, { command: 'execute', scope: 'production' });
+  await expect(cardB).toContainText('核验中', { timeout: 15_000 });
+  await cardB.getByRole('button', { name: '查看执行', exact: true }).click();
+  const receiptB = cardB.getByTestId('execution-receipt');
+  await expect(receiptB).toContainText('已受理');
+  await expect(receiptB).toContainText('mock-op:');
+  await expect(receiptB).toContainText('模拟');
+  await expect(receiptB).not.toContainText('受理 / 已提交'); // 写死文本必须移除
+
+  // C：核验证据来自引擎证据表，不再写死“现场照片与点检记录”
+  await command(request, idB, { command: 'advance', minutes: 5 });
+  await command(request, idB, { command: 'close' });
+  const evidence = cardB.getByTestId('verify-evidence');
+  await expect(evidence).toBeVisible();
+  await expect(evidence).not.toContainText('现场照片与点检记录');
+  await expect(evidence).toContainText(/mock-field-verification|obs:|暂无核验证据/);
+});

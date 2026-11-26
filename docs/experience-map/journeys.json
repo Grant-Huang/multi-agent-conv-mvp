@@ -453,7 +453,7 @@
         "id": "UX-07-I5",
         "text": "执行回执来自引擎或源系统，分层显示已提交 / 已受理 / 已核验并标来源；未执行时不显示“已提交”",
         "charter": "CH-P6",
-        "debt": true
+        "case": "E2E-OPSRECEIPT"
       },
       {
         "id": "UX-07-I6",
@@ -479,7 +479,6 @@
     },
     "known_deviations": [
       "INTENT-2026-018",
-      "INTENT-2026-026",
       "INTENT-2026-027",
       "INTENT-2026-028",
       "INTENT-2026-029"
