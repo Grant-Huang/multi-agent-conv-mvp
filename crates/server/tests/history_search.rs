@@ -1,0 +1,271 @@
+//! RT-L2H：L2 历史记录检索与本人消息删除（conversation-memory #346 片3，REQ-conversation-memory-05）。
+//! 用例定义见 docs/testing/CASES.md「分层记忆细化」。
+//! 口径（2026-11-26 用户确认冻结）：AI 历史回答标「当时的回答」不作事实来源；
+//! 删除即真删除；检索默认最近 180 天，更早需明确指定；引用带时间与出处。
+
+use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
+
+use tokio::sync::{Mutex, MutexGuard};
+
+use an_runtime::config::AppConfig;
+use an_runtime::store::Store;
+use an_runtime::Runtime;
+use serde_json::{json, Value};
+
+async fn serve(app: axum::Router) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}")
+}
+
+fn config() -> AppConfig {
+    toml::from_str(
+        "[llm]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\nmax_retries = 0\n\
+         [agents.general]\nenabled = false\n[agents.coding]\nenabled = false\n",
+    )
+    .unwrap()
+}
+
+struct Api {
+    base: String,
+    http: reqwest::Client,
+}
+
+impl Api {
+    async fn get(&self, path: &str) -> (u16, Value) {
+        let r = self
+            .http
+            .get(format!("{}{path}", self.base))
+            .send()
+            .await
+            .unwrap();
+        (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
+    }
+    async fn delete(&self, path: &str) -> (u16, Value) {
+        let r = self
+            .http
+            .delete(format!("{}{path}", self.base))
+            .send()
+            .await
+            .unwrap();
+        (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
+    }
+}
+
+fn l2h_test_gate() -> &'static Mutex<()> {
+    static GATE: OnceLock<Mutex<()>> = OnceLock::new();
+    GATE.get_or_init(|| Mutex::new(()))
+}
+
+/// 进程内夹具：串行化 + 每例全新库
+async fn boot() -> (Arc<Runtime>, Api, MutexGuard<'static, ()>) {
+    let guard = l2h_test_gate().lock().await;
+    let dir = std::env::temp_dir().join(an_core::new_id("an-l2h"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("an.db");
+    let rt = Arc::new(Runtime::new(config(), Store::open(&db).unwrap()).unwrap());
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap(),
+    };
+    (rt, api, guard)
+}
+
+fn results_of(v: &Value) -> Vec<Value> {
+    v["results"].as_array().cloned().unwrap_or_default()
+}
+
+/// RT-L2H-01：AI 历史回答标「当时的回答」；用户消息、系统事件分级；
+/// 每条命中带时间与出处（msg_id / conv_id / at）。任务回执命中 kind = 任务回执。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_l2h_01_past_answers_marked_and_sourced() {
+    let (rt, api, _gate) = boot().await;
+    let conv = rt.store.create_conversation("t").unwrap();
+    rt.store
+        .add_message(&conv.id, "user", "复盘一下 3 号产线 CPK 的情况。", None)
+        .unwrap();
+    rt.store
+        .add_message(
+            &conv.id,
+            "assistant",
+            "当时的回答正文：3 号产线 CPK 低于阈值。",
+            None,
+        )
+        .unwrap();
+    rt.store
+        .add_message(&conv.id, "system", "系统事件：CPK 报告已生成。", None)
+        .unwrap();
+
+    let (s, v) = api
+        .get("/api/desktop/v1/history/search?q=CPK&limit=50")
+        .await;
+    assert_eq!(s, 200, "{v}");
+    let hits = results_of(&v);
+    assert!(hits.len() >= 3, "三条记录都应命中：{v}");
+
+    let user_hit = hits
+        .iter()
+        .find(|h| h["role"] == "user")
+        .expect("应含用户消息");
+    assert_eq!(user_hit["kind"], "用户消息", "{user_hit}");
+    let ai_hit = hits
+        .iter()
+        .find(|h| h["role"] == "assistant")
+        .expect("应含 AI 历史回答");
+    assert_eq!(
+        ai_hit["kind"], "当时的回答",
+        "AI 历史回答必须标「当时的回答」（CH-G5）：{ai_hit}"
+    );
+    let sys_hit = hits
+        .iter()
+        .find(|h| h["role"] == "system")
+        .expect("应含系统事件");
+    assert_eq!(sys_hit["kind"], "系统事件", "{sys_hit}");
+
+    for h in &hits {
+        assert!(
+            !h["msg_id"].as_str().unwrap_or("").is_empty(),
+            "出处 msg_id：{h}"
+        );
+        assert!(
+            !h["conv_id"].as_str().unwrap_or("").is_empty(),
+            "出处 conv_id：{h}"
+        );
+        assert!(
+            !h["at"].as_str().unwrap_or("").is_empty(),
+            "引用带时间：{h}"
+        );
+        assert!(
+            h["snippet"].as_str().unwrap_or("").contains("CPK"),
+            "snippet 应含关键词：{h}"
+        );
+    }
+    assert_eq!(user_hit["conv_id"], json!(conv.id), "出处应指向所在会话");
+}
+
+/// RT-L2H-02：本人删除个人会话消息——真删除，检索与消息列表都不再出现；
+/// AI 回答不可经此删除；重复删除 404。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_l2h_02_deleted_message_gone_from_search_and_list() {
+    let (rt, api, _gate) = boot().await;
+    let conv = rt.store.create_conversation("t").unwrap();
+    let mid = rt
+        .store
+        .add_message(&conv.id, "user", "删除探针 DELETE-PROBE 的正文。", None)
+        .unwrap()
+        .id;
+    let ai_mid = rt
+        .store
+        .add_message(
+            &conv.id,
+            "assistant",
+            "当时的回答 DELETE-PROBE 附录。",
+            None,
+        )
+        .unwrap()
+        .id;
+
+    let (s, v) = api
+        .get("/api/desktop/v1/history/search?q=DELETE-PROBE")
+        .await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(results_of(&v).len(), 2, "删除前两条都应命中：{v}");
+
+    // AI 回答不可删（不是「本人的消息」）
+    let (s, v) = api
+        .delete(&format!("/api/desktop/v1/messages/{ai_mid}"))
+        .await;
+    assert_eq!(s, 403, "AI 回答不得经本人删除端点移除：{v}");
+    assert_eq!(v["code"], "forbidden", "{v}");
+
+    // 本人消息真删除
+    let (s, v) = api.delete(&format!("/api/desktop/v1/messages/{mid}")).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["deleted"], json!(true), "{v}");
+    let (s2, v2) = api
+        .get("/api/desktop/v1/history/search?q=DELETE-PROBE")
+        .await;
+    assert_eq!(s2, 200, "{v2}");
+    let hits = results_of(&v2);
+    assert!(
+        hits.iter().all(|h| h["msg_id"] != json!(mid)),
+        "已删除消息不得再被检索：{v2}"
+    );
+    assert_eq!(hits.len(), 1, "只剩 AI 回答命中：{v2}");
+    let listed = rt.store.list_messages(&conv.id, None).unwrap();
+    assert!(
+        listed.iter().all(|m| m.id != mid),
+        "真删除：消息列表不得再有该行"
+    );
+
+    // 重复删除 404
+    let (s3, v3) = api.delete(&format!("/api/desktop/v1/messages/{mid}")).await;
+    assert_eq!(s3, 404, "{v3}");
+    assert_eq!(v3["code"], "not_found", "{v3}");
+}
+
+/// RT-L2H-03：检索默认只看最近 180 天；更早记录需明确指定 days；
+/// 空关键词 400。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_l2h_03_default_window_180_days_with_explicit_override() {
+    let guard = l2h_test_gate().lock().await;
+    let dir = std::env::temp_dir().join(an_core::new_id("an-l2h-old"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db: PathBuf = dir.join("an.db");
+    let rt = Arc::new(Runtime::new(config(), Store::open(&db).unwrap()).unwrap());
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap(),
+    };
+    let conv = rt.store.create_conversation("t").unwrap();
+    rt.store
+        .add_message(&conv.id, "user", "旧记录探针 OLD-PROBE 的正文。", None)
+        .unwrap();
+    // 直接回填 200 天前的 created_at（REQ-05：保留原件、检索窗口 180 天）
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute(
+            "UPDATE messages SET created_at = '2026-05-01T00:00:00.000Z'
+             WHERE content LIKE '%OLD-PROBE%'",
+            [],
+        )
+        .unwrap();
+    }
+
+    let (s, v) = api.get("/api/desktop/v1/history/search?q=OLD-PROBE").await;
+    assert_eq!(s, 200, "{v}");
+    assert!(
+        results_of(&v).is_empty(),
+        "默认窗口（180 天）不得返回 200 天前记录：{v}"
+    );
+    let (s2, v2) = api
+        .get("/api/desktop/v1/history/search?q=OLD-PROBE&days=180")
+        .await;
+    assert_eq!(s2, 200, "{v2}");
+    assert!(results_of(&v2).is_empty(), "显式 180 天同样不返回：{v2}");
+    let (s3, v3) = api
+        .get("/api/desktop/v1/history/search?q=OLD-PROBE&days=400")
+        .await;
+    assert_eq!(s3, 200, "{v3}");
+    let hits = results_of(&v3);
+    assert_eq!(hits.len(), 1, "明确指定更早窗口应返回：{v3}");
+    assert_eq!(
+        hits[0]["at"],
+        json!("2026-05-01T00:00:00.000Z"),
+        "引用带原始时间：{hits:?}"
+    );
+
+    let (s4, v4) = api.get("/api/desktop/v1/history/search?q=").await;
+    assert_eq!(s4, 400, "空关键词应拒绝：{v4}");
+    assert_eq!(v4["code"], "invalid", "{v4}");
+    drop(guard);
+}
