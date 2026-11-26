@@ -165,10 +165,10 @@ export async function resetMemoriesFixture(): Promise<void> {
 
 export const SETTINGS_CATEGORIES = [
   { id: "assistant", title: "我的 AI 助理" },
-  { id: "desktop", title: "工作与桌面" },
-  { id: "notify", title: "通知与主动性" },
-  { id: "device", title: "设备与语音" },
-  { id: "privacy", title: "隐私与权限" },
+  { id: "desktop", title: "工作与桌面", placeholder: true },
+  { id: "notify", title: "通知与主动性", placeholder: true },
+  { id: "device", title: "设备与语音", placeholder: true },
+  { id: "privacy", title: "隐私与权限", placeholder: true },
   { id: "connect", title: "连接与能力" },
 ] as const;
 
