@@ -244,12 +244,11 @@ test('E2E-ADMEM: 记忆列表来自服务并可打开详情', async ({ page }) =
   await expect(page.getByTestId('settings-memory')).toBeVisible();
   await expect(page.getByTestId('memory-list')).toBeVisible();
   await expect(page.getByTestId('memory-item-mem-1')).toContainText('质量报告偏好摘要格式');
-  await expect(page.getByTestId('memory-item-mem-2')).toContainText('免打扰时段');
 
   await page.getByTestId('memory-item-mem-1').click();
   await expect(page.getByTestId('memory-detail')).toBeVisible();
   await expect(page.getByTestId('memory-body')).toContainText('先给结论');
-  await expect(page.getByTestId('memory-source')).toContainText('用户确认');
+  await expect(page.getByTestId('memory-source')).toContainText('用户保存');
   await expect(page.getByTestId('memory-expires')).toContainText('2027');
 
   await page.getByTestId('memory-detail-back').click();
@@ -281,12 +280,12 @@ test('E2E-ADMEMW: 记忆纠错与撤回', async ({ page, request }) => {
   await expect(page.getByTestId('memory-body')).toContainText('纠错后的摘要格式说明');
 
   await page.getByTestId('memory-detail-back').click();
-  await expect(page.getByTestId('memory-item-mem-2')).toBeVisible();
-  await page.getByTestId('memory-item-mem-2').click();
+  await expect(page.getByTestId('memory-item-mem-1')).toBeVisible();
+  // #354 夹具口径：种子只剩 mem-1，撤回流程改用 mem-1 验证
+  await page.getByTestId('memory-item-mem-1').click();
   await page.getByTestId('memory-withdraw').click();
   await expect(page.getByTestId('memory-list')).toBeVisible();
-  await expect(page.getByTestId('memory-item-mem-2')).toHaveCount(0);
-  await expect(page.getByTestId('memory-item-mem-1')).toBeVisible();
+  await expect(page.getByTestId('memory-item-mem-1')).toHaveCount(0);
 
   await page.getByTestId('memory-back').click();
   await page.getByTestId('settings-back').click();

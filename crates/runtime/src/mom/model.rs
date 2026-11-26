@@ -85,6 +85,27 @@ pub struct Approval {
     pub approver: String,
     pub expires_at: u64,
     pub resource_version: u64,
+    /// 过期提醒只发一次（决定 2026-11-26-ops-approve-auto-execute）；旧快照缺省为 false。
+    #[serde(default)]
+    pub expiry_notified: bool,
+}
+/// 批准后执行受阻的提示性记录：不是业务状态，供运营卡摘要展示；执行成功即清除。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExecutionBlock {
+    pub scope: String,
+    pub reason: String,
+    pub at: u64,
+}
+
+/// `Engine::approve_and_execute` 的结果（决定 2026-11-26-ops-approve-auto-execute）。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub enum ApproveOutcome {
+    /// 已有有效批准且动作已派发（幂等查询）
+    Already,
+    /// 本次批准并执行成功
+    Executed,
+    /// 批准已保留，执行受阻（reason 为引擎拒绝原因；到期前可重试）
+    Blocked { reason: String },
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Action {
@@ -129,6 +150,9 @@ pub struct Case {
     pub eight_d: Option<Value>,
     pub approvals: BTreeMap<String, Approval>,
     pub actions: BTreeMap<String, Action>,
+    /// 最近一次「批准后执行受阻」的提示（`#[serde(default)]` 兼容旧快照）
+    #[serde(default)]
+    pub execution_block: Option<ExecutionBlock>,
     pub children: Vec<Child>,
     pub outbox: Vec<Value>,
     pub world: Value,

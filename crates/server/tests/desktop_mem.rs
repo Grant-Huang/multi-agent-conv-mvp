@@ -104,10 +104,9 @@ async fn rt_admem_01_list_returns_fixture_items() {
     let (s, v) = api.get("/api/desktop/v1/memories").await;
     assert_eq!(s, 200, "{v}");
     let items = v["items"].as_array().expect("items array");
-    assert!(items.len() >= 2, "{v}");
+    assert!(!items.is_empty(), "{v}");
     let ids: Vec<&str> = items.iter().filter_map(|i| i["id"].as_str()).collect();
     assert!(ids.contains(&"mem-1"), "{v}");
-    assert!(ids.contains(&"mem-2"), "{v}");
     let mem1 = items.iter().find(|i| i["id"] == "mem-1").unwrap();
     assert!(mem1["title"].as_str().unwrap().contains("质量报告"));
     assert!(!mem1["source"].as_str().unwrap().is_empty());
@@ -172,7 +171,8 @@ async fn rt_admem_04_patch_updates_body() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rt_admem_05_delete_hides_from_list_and_is_idempotent() {
     let (api, _gate) = boot().await;
-    let (s, v) = api.delete("/api/desktop/v1/memories/mem-2").await;
+    // #354 夹具口径：种子只剩 mem-1（mem-2 设置项已移除），撤回语义不改
+    let (s, v) = api.delete("/api/desktop/v1/memories/mem-1").await;
     assert_eq!(s, 200, "{v}");
     assert_eq!(v["revoked"], true);
     let (s2, list) = api.get("/api/desktop/v1/memories").await;
@@ -183,12 +183,11 @@ async fn rt_admem_05_delete_hides_from_list_and_is_idempotent() {
         .iter()
         .filter_map(|i| i["id"].as_str())
         .collect();
-    assert!(!ids.contains(&"mem-2"), "{list}");
-    assert!(ids.contains(&"mem-1"), "{list}");
-    let (s3, v3) = api.get("/api/desktop/v1/memories/mem-2").await;
+    assert!(!ids.contains(&"mem-1"), "{list}");
+    let (s3, v3) = api.get("/api/desktop/v1/memories/mem-1").await;
     assert_eq!(s3, 410, "{v3}");
     assert_eq!(v3["code"], "revoked");
-    let (s4, v4) = api.delete("/api/desktop/v1/memories/mem-2").await;
+    let (s4, v4) = api.delete("/api/desktop/v1/memories/mem-1").await;
     assert_eq!(s4, 200, "{v4}");
     assert_eq!(v4["revoked"], true);
 }
@@ -267,10 +266,8 @@ async fn rt_admem_08_fresh_db_starts_from_seed_not_process_state() {
     let (s, seed) = api_b.get("/api/desktop/v1/memories/mem-1").await;
     assert_eq!(s, 200, "{seed}");
     let seed_body = seed["body"].as_str().unwrap().to_string();
-    let (s, _) = api_b.get("/api/desktop/v1/memories/mem-2").await;
-    assert_eq!(s, 200, "库二种子态应含 mem-2");
 
-    // 库一：纠错 mem-1 并撤回 mem-2
+    // 库一：纠错 mem-1
     let rt_a = make_api(&db1);
     let api_a = Api {
         base: serve(an_server::api(rt_a)).await,
@@ -290,8 +287,6 @@ async fn rt_admem_08_fresh_db_starts_from_seed_not_process_state() {
         )
         .await;
     assert_eq!(s, 200, "{v}");
-    let (s, v) = api_a.delete("/api/desktop/v1/memories/mem-2").await;
-    assert_eq!(s, 200, "{v}");
 
     // 库二（全新库）必须仍看到种子态
     let (s, v) = api_b.get("/api/desktop/v1/memories/mem-1").await;
@@ -301,8 +296,6 @@ async fn rt_admem_08_fresh_db_starts_from_seed_not_process_state() {
         "进程级状态泄漏到了另一个全新库"
     );
     assert_eq!(v["body"], seed_body, "新库的 mem-1 应保持种子正文");
-    let (s2, _) = api_b.get("/api/desktop/v1/memories/mem-2").await;
-    assert_eq!(s2, 200, "新库的 mem-2 应为种子态（未撤回）");
 }
 
 /// RT-ADMEM-09：全部撤回后重启，撤回状态不得被重播种覆盖（软删行使 COUNT>0，
@@ -325,11 +318,10 @@ async fn rt_admem_09_all_revoked_restart_keeps_revoked() {
         .post("/api/desktop/v1/memories/fixture/reset", json!({}))
         .await;
     assert_eq!(s, 200);
-    for id in ["mem-1", "mem-2"] {
-        let (s, v) = api.delete(&format!("/api/desktop/v1/memories/{id}")).await;
-        assert_eq!(s, 200, "{v}");
-        assert_eq!(v["revoked"], true);
-    }
+    // #354 夹具口径：种子为 mem-1 一条（mem-2 设置项已移除）
+    let (s, v) = api.delete("/api/desktop/v1/memories/mem-1").await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["revoked"], true);
     drop(rt);
 
     let rt2 = Arc::new(Runtime::new(config(), Store::open(&db).unwrap()).unwrap());
@@ -347,4 +339,57 @@ async fn rt_admem_09_all_revoked_restart_keeps_revoked() {
     let (s1, v1) = api2.get("/api/desktop/v1/memories/mem-1").await;
     assert_eq!(s1, 410, "{v1}");
     assert_eq!(v1["code"], "revoked");
+}
+
+/// RT-ADMEM-10（INTENT-032 / #354）：设置项只存在于设置，不作为记忆。
+/// 夹具重置后的记忆列表不得包含「设置」来源的条目（免打扰时段等）；
+/// 用户在记忆里撤回的副本本就不会改变设置，同一件事不允许出现两个来源。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_admem_10_fixture_has_no_settings_sourced_entries() {
+    let (api, _gate) = boot().await;
+    let (s, v) = api.get("/api/desktop/v1/memories").await;
+    assert_eq!(s, 200, "{v}");
+    let items = v["items"].as_array().expect("items array");
+    for i in items {
+        let src = i["source"].as_str().unwrap_or("");
+        assert!(
+            !src.contains("设置"),
+            "记忆列表不得包含设置来源条目: {} ({src})",
+            i["id"]
+        );
+    }
+    let ids: Vec<&str> = items.iter().filter_map(|i| i["id"].as_str()).collect();
+    assert!(
+        !ids.contains(&"mem-2"),
+        "免打扰时段等设置项不得作为记忆存储: {v}"
+    );
+}
+
+/// RT-ADMEM-11（INTENT-032 / #354）：source 文字与确认状态一致。
+/// 来源写「用户确认」的条目 confirmed 必须为真；种子条目来源由系统按真实来源
+/// 生成（「用户保存 · 日期」，与 POST 端点同一词汇），不得出现「用户确认」却
+/// confirmed 为假的矛盾。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_admem_11_source_consistent_with_confirmation() {
+    let (api, _gate) = boot().await;
+    let (s, v) = api.get("/api/desktop/v1/memories").await;
+    assert_eq!(s, 200, "{v}");
+    let items = v["items"].as_array().expect("items array");
+    for i in items {
+        let src = i["source"].as_str().unwrap_or("");
+        let confirmed = i["confirmed"].as_bool();
+        if src.contains("用户确认") {
+            assert_eq!(
+                confirmed,
+                Some(true),
+                "来源声称「用户确认」但 confirmed 为假: {i}"
+            );
+        }
+    }
+    let mem1 = items.iter().find(|i| i["id"] == "mem-1").expect("mem-1");
+    let src = mem1["source"].as_str().unwrap();
+    assert!(
+        src.starts_with("用户保存 · "),
+        "种子来源应为系统生成的「用户保存 · 日期」: {src}"
+    );
 }

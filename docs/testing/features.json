@@ -730,7 +730,9 @@
       "E2E-OPSCHANNEL",
       "E2E-OPSNOISE",
       "E2E-OPSAPPROVE",
-      "E2E-OPSOFF"
+      "E2E-OPSOFF",
+      "E2E-OPSAUTOEXEC",
+      "E2E-OPSEXPIRE"
     ],
     "runtime_cases": [
       "RT-OPSDESK-01",
@@ -743,7 +745,9 @@
       "RT-OPSDESK-08",
       "RT-OPSDESK-09",
       "RT-OPSDESK-10",
-      "RT-OPSDESK-11"
+      "RT-OPSDESK-11",
+      "RT-OPSDESK-12",
+      "RT-OPSDESK-13"
     ]
   },
   {
@@ -753,6 +757,8 @@
       "web/src/App.tsx",
       "web/src/desktop/DesktopHome.tsx",
       "web/src/desktop/WorkspaceView.tsx",
+      "web/src/desktop/draftStore.ts",
+      "web/src/desktop/draftStore.test.ts",
       "web/src/desktop/WorkspaceComposer.tsx",
       "web/src/desktop/EvidencePanel.tsx",
       "web/src/desktop/principalStore.ts",
@@ -864,6 +870,8 @@
       "E2E-RESTART",
       "E2E-UX01",
       "E2E-UX01-I5",
+      "E2E-UX01-I7",
+      "E2E-UX01-I8",
       "E2E-UX02",
       "E2E-UX03",
       "E2E-UX04",
@@ -904,6 +912,8 @@
       "RT-ADMEM-07",
       "RT-ADMEM-08",
       "RT-ADMEM-09",
+      "RT-ADMEM-10",
+      "RT-ADMEM-11",
       "RT-ADDRAFTS-01",
       "RT-ADDRAFTS-02",
       "RT-ADDRAFTS-03",
