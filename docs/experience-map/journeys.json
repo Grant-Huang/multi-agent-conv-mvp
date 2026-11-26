@@ -128,7 +128,7 @@
         "id": "UX-02-I4",
         "text": "“我的助理”入口打开可对话的助理面板",
         "charter": "CH-U1",
-        "debt": true
+        "case": "E2E-UX02-I4"
       }
     ],
     "budget": {
@@ -142,8 +142,7 @@
     },
     "known_deviations": [
       "INTENT-2026-002",
-      "INTENT-2026-003",
-      "INTENT-2026-012"
+      "INTENT-2026-003"
     ]
   },
   {

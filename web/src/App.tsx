@@ -18,6 +18,7 @@ import { DesktopHome } from "./desktop/DesktopHome";
 import { DesExperiment } from "./desktop/DesExperiment";
 import { MomWorkbench } from "./desktop/MomWorkbench";
 import { WorkspaceView } from "./desktop/WorkspaceView";
+import { AssistantChatPanel } from "./desktop/AssistantChatPanel";
 import { EvidencePanel, type EvidenceLayer } from "./desktop/EvidencePanel";
 import { HistoryPanel } from "./desktop/HistoryPanel";
 import { SettingsPanel, type SettingsLayer } from "./desktop/SettingsPanel";
@@ -348,6 +349,8 @@ export default function App() {
   // 无服务端存储（issue：新增存储先出方案）——本机 sessionStorage 留存，按任务去重。
   const [taskNotices, setTaskNotices] = useState<Array<{ taskId: string; title: string; status: string }>>([]);
   const [s1Reply, setS1Reply] = useState<string | null>(null);
+  // UXFIX-G（INTENT-012）：「我的助理」打开可对话的个人助理面板（不再是设置表单）
+  const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
   /** UXFIX-A（INTENT-001）：首页问答走真实会话；同一次驻留内沿用同一会话（DESIGN §2「下一轮沿用会话」） */
   const s1AskConvRef = useRef<string | null>(null);
   const [composingInput, setComposingInput] = useState(false);
@@ -599,7 +602,7 @@ export default function App() {
           type="button"
           className="btn assistant-chip"
           data-testid="assistant-chip"
-          onClick={() => openSettings("assistant", "assistant")}
+          onClick={() => setAssistantPanelOpen(true)}
         >
           {assistantProfile.avatar} {assistantProfile.name}
         </button>
@@ -798,6 +801,22 @@ export default function App() {
               setAttnMuted(muted);
               setAttnRevision((v) => v + 1);
             }}
+          />
+        )}
+        {assistantPanelOpen && (
+          <AssistantChatPanel
+            name={assistantProfile.name}
+            avatar={assistantProfile.avatar}
+            reply={s1Reply}
+            onAsk={(text) => {
+              // 与首页 S1 问答同一条链路（#304 接真后此处同步为真实回答）
+              setS1Reply(`问答（模拟，留在桌面）：${text.slice(0, 80)}`);
+            }}
+            onOpenSettings={() => {
+              setAssistantPanelOpen(false);
+              openSettings("assistant", "assistant");
+            }}
+            onClose={() => setAssistantPanelOpen(false)}
           />
         )}
         {mainView === "mom-workbench" && (

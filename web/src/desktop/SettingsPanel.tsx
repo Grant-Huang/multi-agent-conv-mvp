@@ -282,8 +282,8 @@ export function SettingsPanel({
                   ["name", "名称"],
                   ["avatar", "头像"],
                   ["role", "工作定位"],
-                  ["soul", "沟通原则（Soul）"],
-                  ["taste", "质量偏好（Taste）"],
+                  ["soul", "沟通方式"],
+                  ["taste", "判断标准"],
                   ["memoryPrinciple", "记忆原则"],
                   ["proactivity", "主动性"],
                 ] as const
