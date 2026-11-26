@@ -9,10 +9,11 @@
    MOM 业务工作台的 UI / UE 设计与开发还须遵守 [主界面设计原则](docs/mom/UI_UX_PRINCIPLES.md)，其场景验收要求作为界面变更评审基线。
 2. 需求没有验收条件、或找不到有效的授权来源（`DEV_STANDARD.md` 第 5 节）时，先提问，不要开始写代码。
 3. 查看 `git status` 和 `git diff`，确认不会覆盖用户未提交的改动。
-4. 查看派给本线的 open Issue：GitHub 标签 `dispatch` 加 `line:N`（N 为本线编号，见 `docs/INTEGRATION_PLAN.md`「五条研发线与近期汇合」表）。先做 `severity:high`。**开始做一个 Issue 时必须先在 Issue 留言认领**（写明本线、计划和预计 PR）；暂时不做的也要留言说明原因和预计时间。完成的 PR 正文写 `Closes #N`，合并后 Issue 自动关闭。
+4. 查看派给本线的 open Issue：GitHub 标签 `dispatch` 加 `line:N`（N 为本线编号，见 `docs/INTEGRATION_PLAN.md`「研发线与近期汇合」表）。先做 `severity:high`。**开始做一个 Issue 时必须先在 Issue 留言认领**（写明本线、计划和预计 PR）；暂时不做的也要留言说明原因和预计时间。完成的 PR 正文写 `Closes #N`，合并后 Issue 自动关闭。
 
 ## 修改范围
 - 不改与当前任务无关的模块。
+- **一件事只在一处描述**：研发线职责、特性负责线、宪章条款、契约、用例、决策等都有唯一权威位置（见 `DEV_STANDARD.md` 第 3.1 节）；其他文档最多写一句要点并链接。改权威内容时，同一个 PR 里把别处的复述改成引用。
 - 新特性或新主线开工前，先在 `docs/DESIGN.md` 第 0.3 节登记，写明为 `docs/PRODUCT.md` 哪一条服务；改动触及共享契约（`docs/contracts/`）或宪章时，先出方案、经用户批准。
 - 不随意改公开接口：HTTP API、`config.toml` 字段、`AgentAdapter` trait。必须改时先说明理由。
 - 修改数据库表结构必须附迁移，参考 `crates/runtime/src/store.rs` 中补列的写法。
@@ -22,7 +23,7 @@
 - `web/src/bindings/` 下的 TypeScript 类型由 `an-core` 的 Rust 类型生成，不要手改：改了 `an-core` 的导出类型或 `web/` 用到的接口类型后，运行 `CARGO_TARGET_DIR=target cargo test -p an-core` 重新生成并一起提交（CI 会检查是否最新）。
 
 ## 跨线分工
-- 研发线的划分以 `docs/INTEGRATION_PLAN.md`「五条研发线与近期汇合」表为准；线的数量和职责会变，派工前重读，不凭记忆。
+- 研发线的划分以 `docs/INTEGRATION_PLAN.md`「研发线与近期汇合」表为准；线的数量和职责会变，派工前重读，不凭记忆。
 - 发现明确属于其他线的工作（缺陷、改进、测试缺口、文档），不要顺手做：开 GitHub Issue 派给对应线，标签 `dispatch` + `line:N`（可加 `severity:high|medium|low`），标题以“[第N线]”开头，正文写来源、问题、证据、验收标准。跨线的写明主责线和配合线。
 - 拿不准归属时标 `line:2`（独立复跑与集成协调，负责问题归属），或先问用户。
 - 本线任务依赖其他线先交付时，同样开 Issue 派过去，并在本线 PR 或 Issue 里引用。
