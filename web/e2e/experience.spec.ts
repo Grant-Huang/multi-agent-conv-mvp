@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { SMT03_TASK_ID } from '../src/desktop/mockData';
 
 // 体验地图 UX-01（docs/experience-map/journeys/UX-01.md）的确定性约束。
@@ -343,4 +345,34 @@ test('E2E-UX06: 工作区“调整助理”直达助理设置，改名生效，�
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '返回桌面', exact: true }).click();
   await expect(page.getByTestId('home-assistant-name')).toContainText(original);
+});
+// UXFIX-R（#344）：渲染界面不出现字符图标（☰ ⚠ ✓ ✗ ▴ ▾ ← ◇）与 emoji；
+// 图标统一为 SVG 线性（icons.tsx，DESIGN §11）。
+test('E2E-ADICONS: 界面与源码无字符图标与 emoji', async ({ page }) => {
+  // 源码静态扫描（web/src 下 ts/tsx/css，排除本文件）
+  const root = fileURLToPath(new URL('../src/', import.meta.url));
+  const forbidden = ['☰', '⚠', '▴', '▾', '←', '◇'];
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const p = dir + name;
+      if (statSync(p).isDirectory()) { walk(p + '/'); continue; }
+      if (!/\.(tsx?|css)$/.test(name) || p.endsWith('experience.spec.ts')) continue;
+      const text = readFileSync(p, 'utf8');
+      for (const ch of forbidden) if (text.includes(ch)) offenders.push(`${p}: ${ch}`);
+    }
+  };
+  walk(root);
+  expect(offenders, offenders.join('\n')).toEqual([]);
+
+  // 渲染层扫描：桌面与工作区不出现字符图标与 emoji；纯图标按钮有可访问名称
+  const chars = ['☰', '⚠', '✓', '✗', '▴', '▾', '←', '◇', '🔲', '🔵'];
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await expect(page.getByTestId('workspace-input')).toBeVisible();
+  const body = await page.locator('body').innerText();
+  for (const ch of chars) {
+    expect(body, `界面出现字符图标 ${ch}`).not.toContain(ch);
+  }
+  await expect(page.getByRole('button', { name: '会话' })).toBeVisible();
 });

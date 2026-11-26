@@ -5,6 +5,7 @@
 // - 每张卡都写清楚"做什么、为什么、怎么撤销"；
 // - 使用水平（uiLevel）先预留：目前一律按"专业"展示，"详细设置"默认展开。
 import { useState } from "react";
+import { IconCheck, IconCross, IconWarning } from "./icons";
 import type { CatalogItem } from "../bindings/CatalogItem";
 import type { InstallStep } from "../bindings/InstallStep";
 import type { ProbeOutcome } from "../bindings/ProbeOutcome";
@@ -208,7 +209,7 @@ export function ConfirmCard(props: {
       {p.warnings.length > 0 && (
         <ul className="warnings">
           {p.warnings.map((w, i) => (
-            <li key={i}>⚠ {w}</li>
+            <li key={i}><IconWarning size={12} /> {w}</li>
           ))}
         </ul>
       )}
@@ -284,7 +285,7 @@ export function ResultCard(props: {
   );
 }
 
-const CHECK_MARK: Record<string, string> = { ok: "✓", problem: "✗", skipped: "–", error: "!" };
+/** UXFIX-R：状态符号用线性图标渲染（不再使用字符图标，见 docs/ai-desktop/DESIGN.md 第 11 节） */
 
 /** 可以当帮手的助手（已接入、已连通、不是出问题的那个） */
 export type HelperOption = { id: string; name: string };
@@ -366,7 +367,7 @@ export function DiagnoseCard(props: {
         <ul className="checks">
           {r.checks.map((c) => (
             <li key={c.key} className={`check ${c.status}`}>
-              {CHECK_MARK[c.status] ?? "·"} {c.name}：{c.detail}
+              {c.status === "ok" ? <IconCheck size={12} /> : c.status === "problem" ? <IconCross size={12} /> : "·"} {c.name}：{c.detail}
             </li>
           ))}
         </ul>
