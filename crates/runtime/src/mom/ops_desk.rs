@@ -49,6 +49,10 @@ const P0_KINDS: &[&str] = &[
     "SlaBreached",
     "CompensationRequired",
     "BudgetExhausted",
+    // 决策请求本身就是“等待人决定”：按事件种类固定 P0，不用消费时刻的案例阶段
+    // 回溯定级（#384——案例在首个发布节拍前已被批准并执行时，其创建期决策请求
+    // 事件按当时阶段应得 P0，但按消费时刻阶段会被误判 P1 吞掉）。
+    "DecisionRequested",
 ];
 const P2_KINDS: &[&str] = &[
     "ObservationRecorded",

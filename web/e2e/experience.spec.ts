@@ -131,6 +131,32 @@ test('E2E-UX01-I8: 发送记录与受理回执离开再返回后仍在', async (
   await expect(log).toContainText('已受理（模拟）');
 });
 
+// UX-01-I5 首页部分（CH-U1，INTENT-2026-001）：首页问答接真实会话，浮层显示助手回答，
+// 不离开桌面、首页卡片仍在；会话接口不可达时显示明确不可用说明，不静默回退模拟文本。
+test('E2E-UX01-I5: 首页问答得到真实回答且留在桌面；会话接口不可达时明确说明不可用', async ({ page }) => {
+  const p = probe(page);
+  await page.goto('/');
+  const s1 = page.getByRole('textbox', { name: 'S1 输入' });
+  await s1.fill(`你好，验证一下首页问答 ${Date.now()}`); p.step();
+  await page.getByTestId('s1-ask-send').click(); p.step();
+  const reply = page.getByTestId('s1-reply');
+  await expect(reply).toBeVisible({ timeout: 60_000 });
+  await expect(reply).not.toContainText('问答（模拟'); // 不得静默回退模拟文本
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
+  await expect(page.getByTestId('card-smt-03')).toBeVisible();
+  expect(p.snapshot().full_page_navigations).toBe(0);
+
+  // 会话消息接口不可达：明确不可用说明（CH-P3），不出现模拟文本
+  await page.route('**/api/conversations/*/messages', (route) => {
+    if (route.request().method() === 'POST') return route.abort();
+    return route.continue();
+  });
+  await s1.fill('你好，这条应当提示不可用'); p.step();
+  await page.getByTestId('s1-ask-send').click(); p.step();
+  await expect(reply).toContainText('不可用', { timeout: 15_000 });
+  await expect(reply).not.toContainText('问答（模拟');
+});
+
 // 体验地图 UX-02（docs/experience-map/journeys/UX-02.md）：做事中途临时提问，不被带离当前工作。
 // 只断言当前成立的约束 UX-02-I1；草稿保留（I2）、得到回答（I3）、助理入口可对话（I4）为欠账。
 test('E2E-UX02: 任务中切到独立话题临时提问再切回，不离开工作区且任务与作用域恢复', async ({ page }) => {
