@@ -321,9 +321,9 @@ export const api = {
       `/api/mom/desk/cases/${encodeURIComponent(id)}/open-in-channel`,
       { method: "POST", body: "{}" },
     ),
-  /** 运营频道卡片批准（决定 60）；过期方案回 409 */
+  /** 运营频道卡片批准（决定 60；批准即执行见决定 2026-11-26-ops-approve-auto-execute）；过期方案回 409 */
   opsApprove: (id: string, body: { scope: string; plan_revision: number }) =>
-    request<{ already: boolean; approver: string }>(
+    request<{ already: boolean; approver: string; executed?: boolean; blocked_reason?: string }>(
       `/api/mom/desk/cases/${encodeURIComponent(id)}/approve`,
       { method: "POST", body: JSON.stringify(body) },
     ),
