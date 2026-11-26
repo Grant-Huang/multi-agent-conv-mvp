@@ -425,3 +425,143 @@ fn rt_opsdesk_09_unread_counts_new_messages_until_read() {
     assert_eq!(p.unread().unwrap(), 1);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// INTENT-027（Issue #340，决定 2026-11-26-ops-approve-auto-execute）：批准即执行。
+fn approval_expiry_of(e: &Engine, id: &str, scope: &str) -> u64 {
+    e.case(id)
+        .unwrap()
+        .approvals
+        .get(scope)
+        .map(|a| a.expires_at)
+        .expect("approval recorded")
+}
+fn card_summary(store: &Store) -> String {
+    match &ops_cards(store)[0] {
+        an_core::ChatCard::OpsCase { summary, .. } => summary.clone(),
+        other => panic!("expected ops case card, got {other:?}"),
+    }
+}
+
+#[test]
+fn rt_opsdesk_12_approve_and_execute_dispatches_or_blocks_with_approval_kept() {
+    // 正常案例：批准即执行，动作派发、无受阻提示
+    let mut e = Engine::memory().unwrap();
+    let id = pending_case(&mut e, "RT12A");
+    let revision = e.case(&id).unwrap().plan_revision;
+    let outcome = e
+        .approve_and_execute(&id, revision, "production", "supervisor")
+        .unwrap();
+    assert_eq!(outcome, ApproveOutcome::Executed);
+    let c = e.case(&id).unwrap();
+    assert_eq!(c.stage, "VERIFYING");
+    assert!(c
+        .actions
+        .contains_key(&format!("{id}:{revision}:production:mro.transfer")));
+    assert!(c.execution_block.is_none());
+    // 幂等：同批准再点只是查询
+    let outcome = e
+        .approve_and_execute(&id, revision, "production", "supervisor")
+        .unwrap();
+    assert_eq!(outcome, ApproveOutcome::Already);
+    // 错误方案版本：整体失败，什么都不留
+    let mut e = Engine::memory().unwrap();
+    let id = pending_case(&mut e, "RT12B");
+    assert!(e
+        .approve_and_execute(&id, 99, "production", "supervisor")
+        .is_err());
+    assert!(e.case(&id).unwrap().approvals.is_empty());
+    // 受阻案例：批准保留、无动作、受阻原因入卡、事件发出
+    let mut e = Engine::memory().unwrap();
+    let id = pending_case(&mut e, "RT12C");
+    e.change_world(&id, "resources_available", serde_json::json!(false))
+        .unwrap();
+    let revision = e.case(&id).unwrap().plan_revision;
+    let outcome = e
+        .approve_and_execute(&id, revision, "production", "supervisor")
+        .unwrap();
+    let ApproveOutcome::Blocked { reason } = outcome else {
+        panic!("expected Blocked, got {outcome:?}")
+    };
+    assert!(reason.contains("resources unavailable"), "reason: {reason}");
+    let c = e.case(&id).unwrap();
+    assert_eq!(c.stage, "WAITING_HUMAN");
+    assert!(c.actions.is_empty());
+    assert_eq!(
+        c.execution_block.as_ref().map(|b| b.reason.as_str()),
+        Some(reason.as_str())
+    );
+    let events: Vec<_> = e
+        .pending_events(0, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|ev| ev.kind == "ExecutionBlocked")
+        .collect();
+    assert_eq!(events.len(), 1);
+    // 到期前重试：仍受阻，批准不重复登记（有效期不变）
+    let expiry_before = approval_expiry_of(&e, &id, "production");
+    let outcome = e
+        .approve_and_execute(&id, revision, "production", "supervisor")
+        .unwrap();
+    assert!(matches!(outcome, ApproveOutcome::Blocked { .. }));
+    assert_eq!(approval_expiry_of(&e, &id, "production"), expiry_before);
+}
+
+#[test]
+fn rt_opsdesk_13_approval_expiry_emits_once_and_card_prompts_reapproval() {
+    let dir = std::env::temp_dir().join(format!("ops-rt13-{}", an_core::new_id("t")));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = store();
+    let mut e = Engine::memory().unwrap();
+    let id = pending_case(&mut e, "RT13");
+    e.change_world(&id, "resources_available", serde_json::json!(false))
+        .unwrap();
+    let revision = e.case(&id).unwrap().plan_revision;
+    assert!(matches!(
+        e.approve_and_execute(&id, revision, "production", "supervisor")
+            .unwrap(),
+        ApproveOutcome::Blocked { .. }
+    ));
+    let expiry = approval_expiry_of(&e, &id, "production");
+    let mut p = OpsPublisher::memory(store.clone(), cfg(0, 10)).unwrap();
+    p.tick(&mut e, 1000).unwrap();
+    assert!(
+        !card_summary(&store).contains("批准已过期"),
+        "未到期不应提示：{}",
+        card_summary(&store)
+    );
+    // 越过有效期：发一次 ApprovalExpired，卡片提示重新批准
+    e.advance(expiry + 1).unwrap();
+    e.advance(expiry + 2).unwrap();
+    let expired_events: Vec<_> = e
+        .pending_events(0, 500)
+        .unwrap()
+        .into_iter()
+        .filter(|ev| ev.kind == "ApprovalExpired")
+        .collect();
+    assert_eq!(expired_events.len(), 1, "过期提醒只发一次");
+    p.tick(&mut e, 1001).unwrap();
+    let summary = card_summary(&store);
+    assert!(summary.contains("批准已过期"), "summary: {summary}");
+    assert!(summary.contains("需重新批准"), "summary: {summary}");
+    // 批准记录保留（审计），approver 仍在卡上
+    assert_eq!(
+        e.case(&id).unwrap().approvals["production"].approver,
+        "supervisor"
+    );
+    // 恢复资源 + 刷新方案（现行补救路径）后重新批准：即执行成功，新有效期刷新
+    e.change_world(&id, "resources_available", serde_json::json!(true))
+        .unwrap();
+    e.refresh_plan(&id).unwrap();
+    e.advance(e.now() + 3).unwrap();
+    let revision = e.case(&id).unwrap().plan_revision;
+    assert_eq!(e.case(&id).unwrap().stage, "WAITING_HUMAN");
+    let outcome = e
+        .approve_and_execute(&id, revision, "production", "supervisor")
+        .unwrap();
+    assert_eq!(outcome, ApproveOutcome::Executed);
+    assert!(approval_expiry_of(&e, &id, "production") > expiry);
+    assert!(e.case(&id).unwrap().execution_block.is_none());
+    p.tick(&mut e, 1002).unwrap();
+    assert!(card_summary(&store).contains("核验中") || e.case(&id).unwrap().stage == "VERIFYING");
+    let _ = std::fs::remove_dir_all(dir);
+}

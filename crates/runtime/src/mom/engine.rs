@@ -269,85 +269,264 @@ impl Engine {
             actor == "supervisor",
             "only fixture supervisor may approve; enterprise authentication not implemented"
         );
-        self.update(|s, events| {
-            let c = s.cases.get_mut(id).context("unknown case")?;
-            ensure_active(c)?;
-            ensure!(c.stage != "BLOCKED", "case blocked");
-            ensure!(revision == c.plan_revision, "stale plan approval");
-            match scope {
-                "production" => ensure!(
-                    c.scenario == "s1"
-                        && c.proposal.as_ref().is_some_and(|p| p["feasible"] == true),
-                    "no feasible production plan"
-                ),
-                "initial_response" => ensure!(
-                    c.scenario == "s2" && c.initial_report.is_some(),
-                    "report unavailable"
-                ),
-                "eight_d" => ensure!(c.scenario == "s2" && c.eight_d.is_some(), "8D unavailable"),
-                _ => bail!("unknown approval scope"),
-            }
-            ensure!(
-                s.now <= c.resource_observed_at + fixture_policy(&c.scenario).snapshot_ttl_minutes,
-                "evidence snapshot stale; refresh plan"
-            );
-            c.approvals.insert(
-                scope.into(),
-                Approval {
-                    plan_revision: revision,
-                    scope: scope.into(),
-                    approver: actor.into(),
-                    expires_at: s.now + fixture_policy(&c.scenario).approval_ttl_minutes,
-                    resource_version: c.resource_version,
-                },
-            );
-            emit(
-                c,
-                s.now,
-                "DecisionApproved",
-                json!({"scope":scope,"plan_revision":revision}),
-                events,
-            );
-            Ok(())
-        })
+        self.update(|s, events| record_approval(s, id, revision, scope, events))
     }
     pub fn execute(&mut self, id: &str, scope: &str) -> Result<()> {
-        self.update(|s,events|{
-            let resources_busy=s.cases.iter().any(|(other,c)|other!=id&&c.world["reservations"].as_object().is_some_and(|r|!r.is_empty()));
-            let c=s.cases.get_mut(id).context("unknown case")?;ensure_active(c)?;ensure!(c.stage!="BLOCKED","case blocked");
-            // A completed idempotent command can be queried again even after approval expires.
-            let group=format!("{}:{}:{}",c.id,c.plan_revision,scope);
-            let existing: Vec<_> = c.actions.values().filter(|a|a.key.starts_with(&format!("{group}:"))).collect();
-            if !existing.is_empty() {
-                ensure!(existing.iter().all(|a| matches!(a.state.as_str(), "ACCEPTED" | "UNKNOWN" | "VERIFIED")), "existing dispatch failed; receipt reconciliation required");
-                return Ok(());
-            }
-            let a=c.approvals.get(scope).context("approval required")?;
-            ensure!(a.plan_revision==c.plan_revision&&s.now<=a.expires_at&&a.resource_version==c.resource_version,"approval stale or expired");
-            ensure!(s.now<=c.resource_observed_at+fixture_policy(&c.scenario).snapshot_ttl_minutes,"snapshot expired");
-            if scope=="production" {
-                ensure!(!resources_busy,"resources reserved by another case");
-                ensure!(c.world["resources_available"]==true&&c.world["certified"]==true&&c.world["tool_available"]==true&&c.world["resource_conflict"]!=true,"resources unavailable");
-                charge_tools(c,3)?;
-                c.world["reservations"]["tool-32"]=json!(c.id);c.world["reservations"]["XY-XZ"]=json!(c.id);
-                for tool in ["mro.transfer","eam.maintenance","mes.reschedule"] {
-                    let key=format!("{group}:{tool}");let failed=tool=="mes.reschedule"&&c.world["dispatch_failure"]==true;
-                    c.actions.insert(key.clone(),Action{key:key.clone(),tool:tool.into(),state:if failed{"FAILED"}else if c.world["lost_receipt"]==true{"UNKNOWN"}else{"ACCEPTED"}.into(),accepted_at:s.now,complete_at:s.now+2,receipt:format!("mock-op:{key}"),verification:None});
-                }
-                c.stage=if c.world["dispatch_failure"]==true {c.world["reservations"]=json!({});"PARTIAL"}else{"VERIFYING"}.into();
-                if c.stage=="PARTIAL"{emit(c, s.now,"CompensationRequired",json!({"released":"reservations","irreversible":"accepted maintenance and transfer need operator review"}),events);}
-            }else {
-                charge_tools(c,1)?;
-                let report=if scope=="initial_response"{c.initial_report.clone()}else{c.eight_d.clone()}.context("report missing")?;
-                let key=format!("{group}:customer.send");
-                c.actions.insert(key.clone(),Action{key:key.clone(),tool:"customer.send".into(),state:"ACCEPTED".into(),accepted_at:s.now,complete_at:s.now+1,receipt:format!("mock-op:{key}"),verification:None});
-                c.outbox.push(json!({"key":key,"customer":c.customer,"report":report,"provenance":"mock","mock_ids":["M16"],"sent_at":s.now}));
-                c.stage="INVESTIGATING".into();
-            }
-            emit(c, s.now,"ActionAccepted",json!({"scope":scope,"provenance":"mock"}),events);Ok(())})?;
+        self.update(|s, events| dispatch_approved(s, id, scope, events))?;
         // 车间 DES 案例（阶段③）：按选定方案把动作记为仿真干预，并由仿真决定动作完成时刻；其他案例不受影响。
         self.des_after_execute(id, scope)
     }
+}
+impl Engine {
+    /// 运营频道批准入口：一个事务里登记批准并立即按批准执行（INTENT-027，决定
+    /// 2026-11-26-ops-approve-auto-execute）。批准校验失败时整体失败、什么都不留
+    /// （与 `approve` 一致）；执行受阻时批准保留并记录 `ExecutionBlocked` 事件与
+    /// 提示字段，不回滚批准。
+    pub fn approve_and_execute(
+        &mut self,
+        id: &str,
+        revision: u64,
+        scope: &str,
+        actor: &str,
+    ) -> Result<ApproveOutcome> {
+        ensure!(
+            actor == "supervisor",
+            "only fixture supervisor may approve; enterprise authentication not implemented"
+        );
+        let outcome = self.update(|s, events| {
+            // 幂等：已有有效批准且该范围的动作已派发，再点批准只是查询
+            {
+                let c = s.cases.get_mut(id).context("unknown case")?;
+                if let Some(a) = c.approvals.get(scope) {
+                    let group = format!("{}:{}:{}", c.id, c.plan_revision, scope);
+                    let existing = c.actions.keys().any(|k| k.starts_with(&group));
+                    if existing && a.plan_revision == revision && s.now <= a.expires_at {
+                        ensure!(
+                            c.actions.values().all(|a| {
+                                matches!(a.state.as_str(), "ACCEPTED" | "UNKNOWN" | "VERIFIED")
+                            }),
+                            "existing dispatch failed; receipt reconciliation required"
+                        );
+                        return Ok(ApproveOutcome::Already);
+                    }
+                }
+            }
+            record_approval(s, id, revision, scope, events)?;
+            match dispatch_approved(s, id, scope, events) {
+                Ok(()) => Ok(ApproveOutcome::Executed),
+                Err(error) => {
+                    let reason = error.to_string();
+                    let c = s.cases.get_mut(id).context("unknown case")?;
+                    c.execution_block = Some(ExecutionBlock {
+                        scope: scope.into(),
+                        reason: reason.clone(),
+                        at: s.now,
+                    });
+                    emit(
+                        c,
+                        s.now,
+                        "ExecutionBlocked",
+                        json!({"scope":scope,"reason":reason}),
+                        events,
+                    );
+                    Ok(ApproveOutcome::Blocked { reason })
+                }
+            }
+        })?;
+        if outcome == ApproveOutcome::Executed {
+            self.des_after_execute(id, scope)?;
+        }
+        Ok(outcome)
+    }
+}
+
+/// 登记批准：`approve` 的全部校验与落账（决定 60 批准链路）。失败时不产生任何变更。
+fn record_approval(
+    s: &mut Snapshot,
+    id: &str,
+    revision: u64,
+    scope: &str,
+    events: &mut Emissions,
+) -> Result<()> {
+    let c = s.cases.get_mut(id).context("unknown case")?;
+    ensure_active(c)?;
+    ensure!(c.stage != "BLOCKED", "case blocked");
+    ensure!(revision == c.plan_revision, "stale plan approval");
+    match scope {
+        "production" => ensure!(
+            c.scenario == "s1" && c.proposal.as_ref().is_some_and(|p| p["feasible"] == true),
+            "no feasible production plan"
+        ),
+        "initial_response" => ensure!(
+            c.scenario == "s2" && c.initial_report.is_some(),
+            "report unavailable"
+        ),
+        "eight_d" => ensure!(c.scenario == "s2" && c.eight_d.is_some(), "8D unavailable"),
+        _ => bail!("unknown approval scope"),
+    }
+    ensure!(
+        s.now <= c.resource_observed_at + fixture_policy(&c.scenario).snapshot_ttl_minutes,
+        "evidence snapshot stale; refresh plan"
+    );
+    c.approvals.insert(
+        scope.into(),
+        Approval {
+            plan_revision: revision,
+            scope: scope.into(),
+            approver: "supervisor".into(),
+            expires_at: s.now + fixture_policy(&c.scenario).approval_ttl_minutes,
+            resource_version: c.resource_version,
+            expiry_notified: false,
+        },
+    );
+    emit(
+        c,
+        s.now,
+        "DecisionApproved",
+        json!({"scope":scope,"plan_revision":revision}),
+        events,
+    );
+    Ok(())
+}
+
+/// 按既有批准派发动作：`execute` 的全部校验与派发（决定 60/61 语义不变）。
+/// 成功时清除执行受阻提示。失败时不产生任何变更（调用方决定回滚或转为受阻记录）。
+fn dispatch_approved(
+    s: &mut Snapshot,
+    id: &str,
+    scope: &str,
+    events: &mut Emissions,
+) -> Result<()> {
+    {
+        let resources_busy = s.cases.iter().any(|(other, c)| {
+            other != id
+                && c.world["reservations"]
+                    .as_object()
+                    .is_some_and(|r| !r.is_empty())
+        });
+        let c = s.cases.get_mut(id).context("unknown case")?;
+        ensure_active(c)?;
+        ensure!(c.stage != "BLOCKED", "case blocked");
+        // A completed idempotent command can be queried again even after approval expires.
+        let group = format!("{}:{}:{}", c.id, c.plan_revision, scope);
+        let existing: Vec<_> = c
+            .actions
+            .values()
+            .filter(|a| a.key.starts_with(&format!("{group}:")))
+            .collect();
+        if !existing.is_empty() {
+            ensure!(
+                existing
+                    .iter()
+                    .all(|a| matches!(a.state.as_str(), "ACCEPTED" | "UNKNOWN" | "VERIFIED")),
+                "existing dispatch failed; receipt reconciliation required"
+            );
+            return Ok(());
+        }
+        let a = c.approvals.get(scope).context("approval required")?;
+        ensure!(
+            a.plan_revision == c.plan_revision
+                && s.now <= a.expires_at
+                && a.resource_version == c.resource_version,
+            "approval stale or expired"
+        );
+        ensure!(
+            s.now <= c.resource_observed_at + fixture_policy(&c.scenario).snapshot_ttl_minutes,
+            "snapshot expired"
+        );
+        if scope == "production" {
+            ensure!(!resources_busy, "resources reserved by another case");
+            ensure!(
+                c.world["resources_available"] == true
+                    && c.world["certified"] == true
+                    && c.world["tool_available"] == true
+                    && c.world["resource_conflict"] != true,
+                "resources unavailable"
+            );
+            charge_tools(c, 3)?;
+            c.world["reservations"]["tool-32"] = json!(c.id);
+            c.world["reservations"]["XY-XZ"] = json!(c.id);
+            for tool in ["mro.transfer", "eam.maintenance", "mes.reschedule"] {
+                let key = format!("{group}:{tool}");
+                let failed = tool == "mes.reschedule" && c.world["dispatch_failure"] == true;
+                c.actions.insert(
+                    key.clone(),
+                    Action {
+                        key: key.clone(),
+                        tool: tool.into(),
+                        state: if failed {
+                            "FAILED"
+                        } else if c.world["lost_receipt"] == true {
+                            "UNKNOWN"
+                        } else {
+                            "ACCEPTED"
+                        }
+                        .into(),
+                        accepted_at: s.now,
+                        complete_at: s.now + 2,
+                        receipt: format!("mock-op:{key}"),
+                        verification: None,
+                    },
+                );
+            }
+            c.stage = if c.world["dispatch_failure"] == true {
+                c.world["reservations"] = json!({});
+                "PARTIAL"
+            } else {
+                "VERIFYING"
+            }
+            .into();
+            if c.stage == "PARTIAL" {
+                emit(
+                    c,
+                    s.now,
+                    "CompensationRequired",
+                    json!({"released":"reservations","irreversible":"accepted maintenance and transfer need operator review"}),
+                    events,
+                );
+            }
+        } else {
+            charge_tools(c, 1)?;
+            let report = if scope == "initial_response" {
+                c.initial_report.clone()
+            } else {
+                c.eight_d.clone()
+            }
+            .context("report missing")?;
+            let key = format!("{group}:customer.send");
+            c.actions.insert(
+                key.clone(),
+                Action {
+                    key: key.clone(),
+                    tool: "customer.send".into(),
+                    state: "ACCEPTED".into(),
+                    accepted_at: s.now,
+                    complete_at: s.now + 1,
+                    receipt: format!("mock-op:{key}"),
+                    verification: None,
+                },
+            );
+            c.outbox.push(
+                json!({"key":key,"customer":c.customer,"report":report,"provenance":"mock","mock_ids":["M16"],"sent_at":s.now}),
+            );
+            c.stage = "INVESTIGATING".into();
+        }
+    }
+    // 执行成功：清除执行受阻提示（如有）
+    if let Some(c) = s.cases.get_mut(id) {
+        c.execution_block = None;
+    }
+    emit(
+        s.cases.get_mut(id).context("unknown case")?,
+        s.now,
+        "ActionAccepted",
+        json!({"scope":scope,"provenance":"mock"}),
+        events,
+    );
+    Ok(())
+}
+
+impl Engine {
     pub fn close(&mut self, id: &str) -> Result<()> {
         self.update(|s, events| {
             let c = s.cases.get_mut(id).context("unknown case")?;
@@ -767,6 +946,7 @@ fn new_case(id: &str, e: &EventInput, received_at: u64) -> Case {
         eight_d: None,
         approvals: BTreeMap::new(),
         actions: BTreeMap::new(),
+        execution_block: None,
         children: vec![],
         outbox: vec![],
         world: fixture_world(&e.scenario),
@@ -991,6 +1171,27 @@ fn tick(c: &mut Case, now: u64, events: &mut Emissions) -> Result<()> {
     }
     if c.cancelled || matches!(c.stage.as_str(), "CLOSED" | "BLOCKED") {
         return Ok(());
+    }
+    // 批准到期未被动作消费：发一次 ApprovalExpired 事件驱动运营卡提示（INTENT-027，
+    // 决定 2026-11-26-ops-approve-auto-execute）。批准记录保留供审计。
+    let expired: Vec<String> = c
+        .approvals
+        .iter()
+        .filter(|(scope, a)| {
+            !a.expiry_notified
+                && now > a.expires_at
+                && !c
+                    .actions
+                    .keys()
+                    .any(|k| k.starts_with(&format!("{}:{}:{}:", c.id, c.plan_revision, scope)))
+        })
+        .map(|(scope, _)| scope.clone())
+        .collect();
+    for scope in expired {
+        if let Some(a) = c.approvals.get_mut(&scope) {
+            a.expiry_notified = true;
+        }
+        emit(c, now, "ApprovalExpired", json!({"scope":scope}), events);
     }
     let due: Vec<_> = c
         .nodes

@@ -7,9 +7,12 @@ import {
   listTaskLinkAudits,
   loadDraft,
   loadDraftRemote,
+  onDraftConflict,
   saveDraft,
   scheduleDraftSync,
+  type DraftConflict,
   type DraftScope,
+  type DraftVariant,
   type TaskLinkAudit,
 } from "./draftStore";
 import { ScopeControls } from "./ScopeControls";
@@ -20,6 +23,32 @@ type Props = {
 };
 
 const LATE_PREFIX = "an.desktop.late.v1:";
+const SENT_PREFIX = "an.desktop.sent.v1:";
+
+/** UXFIX-D（INTENT-011）：已发送消息与受理回执按任务持久，离开再返回后仍在 */
+export type SentEntry = { text: string; note: string; at: number; late?: boolean };
+
+function sentKey(taskId: string): string {
+  return `${SENT_PREFIX}task:${taskId}`;
+}
+
+function loadSent(taskId: string): SentEntry[] {
+  try {
+    const raw = sessionStorage.getItem(sentKey(taskId));
+    return raw ? (JSON.parse(raw) as SentEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function appendSent(taskId: string, entry: SentEntry): void {
+  const all = [...loadSent(taskId), entry];
+  try {
+    sessionStorage.setItem(sentKey(taskId), JSON.stringify(all.slice(-10)));
+  } catch {
+    /* 忽略 */
+  }
+}
 
 function loadLate(taskId: string): string[] {
   try {
@@ -39,9 +68,10 @@ function pushLate(taskId: string, text: string) {
   }
 }
 
-/** 工作区输入：草稿按 Task 隔离；模拟延迟发送，迟到结果不覆盖当前输入 */
+/** 工作区输入：草稿按 Task 隔离；模拟延迟发送，迟到结果不覆盖当前输入。
+ *  UXFIX-D：作用域（继续任务 / 独立话题）分存草稿；跨会话冲突保留本机并提示；
+ *  发送记录离开再返回后仍在。 */
 export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
-  const key = draftStorageKey("task", taskId);
   const taskRef = useRef(taskId);
   taskRef.current = taskId;
   const aliveRef = useRef(true);
@@ -55,9 +85,16 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
   const [audits, setAudits] = useState<TaskLinkAudit[]>([]);
   const [auditErr, setAuditErr] = useState<string | null>(null);
   const [late, setLate] = useState<string[]>([]);
+  const [sent, setSent] = useState<SentEntry[]>([]);
   const [localReply, setLocalReply] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<DraftConflict | null>(null);
   const composingRef = useRef(false);
   const [, bumpComposing] = useState(0);
+
+  const variant: DraftVariant = scope === "independent" ? "independent" : "base";
+  const key = draftStorageKey("task", taskId, variant);
+  const keyRef = useRef(key);
+  keyRef.current = key;
 
   useEffect(() => {
     aliveRef.current = true;
@@ -76,23 +113,44 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
   );
 
   useEffect(() => {
+    setLate(loadLate(taskId));
+    setSent(loadSent(taskId));
+    loadAudits(taskId);
+  }, [taskId, loadAudits]);
+
+  // 草稿加载（按作用域键）：本地先行，远端刷新；冲突保留本机并提示（UXFIX-D）
+  useEffect(() => {
     const d = loadDraft(key);
     setText(d.text);
     setVersion(d.version);
-    setScope(d.scope === "auto" ? "continue" : d.scope);
-    setContinueTaskId(d.continueTaskId ?? taskId);
-    setLocalReply(null);
-    setLate(loadLate(taskId));
-    loadAudits(taskId);
-    // T-84：以服务端草稿为准刷新（跨设备/清存储后不丢）；失败保留本地缓存
-    void loadDraftRemote(key).then((remote) => {
-      if (!aliveRef.current || taskRef.current !== taskId) return;
-      setText(remote.text);
-      setVersion(remote.version);
-      setScope(remote.scope === "auto" ? "continue" : remote.scope);
-      setContinueTaskId(remote.continueTaskId ?? taskId);
+    setConflict(null);
+    if (variant === "base") {
+      // base 键只承载自动关联 / 继续任务；遗留数据里存过 independent 的钳制为 continue，
+      // 独立话题草稿自 UXFIX-D 起分存在 independent 键
+      const s = d.scope === "continue" ? "continue" : "auto";
+      setScope(s === "auto" ? "continue" : s);
+      setContinueTaskId(d.continueTaskId ?? taskId);
+    }
+    // T-84：以服务端草稿为准刷新（跨设备/清存储后不丢）；冲突时保留本地（UXFIX-D）
+    let cancelled = false;
+    void loadDraftRemote(key).then((res) => {
+      if (cancelled || !aliveRef.current || keyRef.current !== key) return;
+      setText(res.draft.text);
+      setVersion(res.draft.version);
+      if (variant === "base") {
+        const s = res.draft.scope === "continue" ? "continue" : "auto";
+        setScope(s === "auto" ? "continue" : s);
+        setContinueTaskId(res.draft.continueTaskId ?? taskId);
+      }
     });
-  }, [key, taskId]);
+    const off = onDraftConflict(key, (c) => {
+      if (!cancelled && aliveRef.current && keyRef.current === key) setConflict(c);
+    });
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, [key, variant, taskId]);
 
   const writeText = (next: string) => {
     const d = saveDraft(key, { text: next });
@@ -102,14 +160,16 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
   };
 
   const onScope = (s: DraftScope, tid: string | null) => {
-    const d = saveDraft(key, {
+    if (s === scope) return;
+    // 切换作用域前先把当前文字存回原作用域键（先存后取，INTENT-013）
+    saveDraft(key, {
       text,
-      scope: s,
-      continueTaskId: s === "continue" ? tid ?? taskId : null,
+      scope,
+      continueTaskId: scope === "continue" ? continueTaskId ?? taskId : null,
     });
-    setScope(d.scope);
-    setContinueTaskId(d.continueTaskId);
     scheduleDraftSync(key);
+    setScope(s);
+    setContinueTaskId(s === "continue" ? tid ?? taskId : null);
   };
 
   const reason =
@@ -130,15 +190,17 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
     const note = `已受理（模拟）：${sentText.slice(0, 40)}`;
     const stillHere = aliveRef.current && taskRef.current === boundTask;
     if (stillHere) {
-      const d = clearDraftAfterSend(key, sentVersion);
+      const d = clearDraftAfterSend(keyRef.current, sentVersion);
       setText(d.text);
       setVersion(d.version);
-      clearDraftAfterSendRemote(key, sentVersion);
+      clearDraftAfterSendRemote(keyRef.current, sentVersion);
       setLocalReply(note);
       setSending(false);
     } else {
       pushLate(boundTask, note);
     }
+    appendSent(boundTask, { text: sentText, note, at: Date.now(), late: !stillHere });
+    setSent(loadSent(boundTask));
   };
 
   const recordAudit = (action: TaskLinkAudit["action"]) => {
@@ -159,6 +221,15 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
     onScope("independent", null);
   };
 
+  const adoptConflictText = () => {
+    if (!conflict) return;
+    const d = saveDraft(key, { text: conflict.serverText });
+    setText(d.text);
+    setVersion(d.version);
+    scheduleDraftSync(key);
+    setConflict(null);
+  };
+
   return (
     <div className="workspace-composer" data-testid="workspace-composer">
       <ScopeControls
@@ -172,6 +243,16 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
         canConvert={!linked || scope === "independent"}
         canCorrect={linked && scope !== "independent"}
       />
+      {conflict && (
+        <p className="draft-conflict" data-testid="draft-conflict" role="alert">
+          {conflict.kind === "kept_local"
+            ? "检测到其他设备的草稿版本，已保留本机内容。"
+            : "已按版本改为其他设备的草稿，本机先前内容已被替换。"}{" "}
+          <button type="button" className="btn small" data-testid="draft-conflict-adopt" onClick={adoptConflictText}>
+            {conflict.kind === "kept_local" ? "改用其他设备的草稿" : "恢复本机先前内容"}
+          </button>
+        </p>
+      )}
       <div className="composer">
         <textarea
           aria-label="工作区输入"
@@ -210,6 +291,17 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
         <p className="workspace-reply" data-testid="workspace-reply">
           {localReply}
         </p>
+      )}
+      {sent.length > 0 && (
+        <ul className="workspace-sent-log" data-testid="workspace-sent-log" aria-label="发送记录">
+          {sent.map((s, i) => (
+            <li key={i} className="workspace-sent-item" data-testid="workspace-sent-item">
+              发送：{s.text}
+              {s.late ? " · 迟到回执：" : " · "}
+              {s.note}
+            </li>
+          ))}
+        </ul>
       )}
       {late.map((n, i) => (
         <p key={i} className="workspace-late" data-testid="workspace-late">

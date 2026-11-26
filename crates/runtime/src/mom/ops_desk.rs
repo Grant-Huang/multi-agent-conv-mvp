@@ -248,8 +248,10 @@ impl OpsPublisher {
                         report.skipped += 1;
                         continue;
                     }
-                    self.store
-                        .update_message_card(&mid, &card_for(case, OpsLevel::parse(&level)))?;
+                    self.store.update_message_card(
+                        &mid,
+                        &card_for(case, OpsLevel::parse(&level), engine.now()),
+                    )?;
                     self.db.execute(
                         "UPDATE ops_cases SET dirty=0,last_posted_at=?2 WHERE case_id=?1",
                         params![case_id, now],
@@ -275,7 +277,7 @@ impl OpsPublisher {
                         report.summarized += 1;
                         continue;
                     }
-                    let card = card_for(case, OpsLevel::parse(&level));
+                    let card = card_for(case, OpsLevel::parse(&level), engine.now());
                     let content = format!("[模拟] 运营案例 {case_id}（详情见卡片）");
                     let msg = self.store.add_message_with_card(
                         OPS_CHANNEL_ID,
@@ -391,7 +393,7 @@ fn card_scope(case: &Case) -> Option<String> {
     }
 }
 
-fn card_for(case: &Case, level: OpsLevel) -> an_core::ChatCard {
+fn card_for(case: &Case, level: OpsLevel, now: u64) -> an_core::ChatCard {
     let level = if needs_human(&case.stage) {
         OpsLevel::P0
     } else {
@@ -402,16 +404,39 @@ fn card_for(case: &Case, level: OpsLevel) -> an_core::ChatCard {
         .as_ref()
         .and_then(|s| case.approvals.get(s).map(|a| a.approver.clone()))
         .or_else(|| case.approvals.values().next().map(|a| a.approver.clone()));
+    let constraints = case.constraints.join("、");
+    // INTENT-027（决定 2026-11-26-ops-approve-auto-execute）：批准后未执行的卡片状态
+    // 由引擎状态推导——已批准待执行（含受阻原因）/ 批准已过期需重新批准。
+    let consumed = scope.as_ref().is_some_and(|s| {
+        let group = format!("{}:{}:{}", case.id, case.plan_revision, s);
+        case.actions.keys().any(|k| k.starts_with(&group))
+    });
+    let summary = if case.stage == "WAITING_HUMAN" && !consumed {
+        let approval = scope
+            .as_ref()
+            .and_then(|s| case.approvals.get(s))
+            .or_else(|| case.approvals.values().next());
+        match approval {
+            Some(a) if now > a.expires_at => format!("批准已过期，需重新批准；约束：{constraints}"),
+            Some(_) => {
+                let blocked = case
+                    .execution_block
+                    .as_ref()
+                    .map(|b| format!("（执行受阻：{}）", b.reason))
+                    .unwrap_or_default();
+                format!("已批准，待执行{blocked}；约束：{constraints}")
+            }
+            None => format!("待批准，约束：{constraints}"),
+        }
+    } else {
+        format!("{}，约束：{}", stage_label(&case.stage), constraints)
+    };
     an_core::ChatCard::OpsCase {
         case_id: case.id.clone(),
         title: case_title(case),
         level: level.as_str().into(),
         stage: case.stage.clone(),
-        summary: format!(
-            "{}，约束：{}",
-            stage_label(&case.stage),
-            case.constraints.join("、")
-        ),
+        summary,
         owner: "调度".into(),
         approver,
         scope,
@@ -438,7 +463,7 @@ impl OpsPublisher {
             .flatten();
         if let Some(mid) = mid {
             self.store
-                .update_message_card(&mid, &card_for(case, OpsLevel::P0))?;
+                .update_message_card(&mid, &card_for(case, OpsLevel::P0, engine.now()))?;
         }
         Ok(())
     }
@@ -464,7 +489,7 @@ impl OpsPublisher {
         if let Some(mid) = existing {
             return Ok(mid);
         }
-        let card = card_for(case, OpsLevel::P0);
+        let card = card_for(case, OpsLevel::P0, engine.now());
         let content = format!("[模拟] 运营案例 {case_id}（详情见卡片）");
         let msg = self
             .store
