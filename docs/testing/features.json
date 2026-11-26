@@ -883,7 +883,8 @@
       "E2E-UX05-I3I4",
       "E2E-UX06",
       "E2E-ADTESTCTRL",
-      "E2E-UX01-I6"
+"E2E-UX03-I5",
+"E2E-UX01-I6"
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",
