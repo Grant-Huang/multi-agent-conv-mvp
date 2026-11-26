@@ -9,7 +9,7 @@
    MOM 业务工作台的 UI / UE 设计与开发还须遵守 [主界面设计原则](docs/mom/UI_UX_PRINCIPLES.md)，其场景验收要求作为界面变更评审基线。
 2. 需求没有验收条件、或找不到有效的授权来源（`DEV_STANDARD.md` 第 5 节）时，先提问，不要开始写代码。
 3. 查看 `git status` 和 `git diff`，确认不会覆盖用户未提交的改动。
-4. 查看派给本线的 open Issue：GitHub 标签 `dispatch` 加 `line:N`（N 为本线编号，见 `docs/INTEGRATION_PLAN.md`「五条研发线与近期汇合」表）。先做 `severity:high`；认领时在 Issue 留言，完成的 PR 正文写 `Closes #N`。
+4. 查看派给本线的 open Issue：GitHub 标签 `dispatch` 加 `line:N`（N 为本线编号，见 `docs/INTEGRATION_PLAN.md`「五条研发线与近期汇合」表）。先做 `severity:high`。**开始做一个 Issue 时必须先在 Issue 留言认领**（写明本线、计划和预计 PR）；暂时不做的也要留言说明原因和预计时间。完成的 PR 正文写 `Closes #N`，合并后 Issue 自动关闭。
 
 ## 修改范围
 - 不改与当前任务无关的模块。
@@ -26,6 +26,8 @@
 - 发现明确属于其他线的工作（缺陷、改进、测试缺口、文档），不要顺手做：开 GitHub Issue 派给对应线，标签 `dispatch` + `line:N`（可加 `severity:high|medium|low`），标题以“[第N线]”开头，正文写来源、问题、证据、验收标准。跨线的写明主责线和配合线。
 - 拿不准归属时标 `line:2`（独立复跑与集成协调，负责问题归属），或先问用户。
 - 本线任务依赖其他线先交付时，同样开 Issue 派过去，并在本线 PR 或 Issue 里引用。
+- 分诊结论自己落地，不停在“建议”：判定已修复的、与其他 Issue 重复的，分诊方直接关闭并写明依据（重复的标 duplicate 并指向保留的 Issue）；写了“拟派第 N 线”的，当场开出派工 Issue 并在原 Issue 贴链接。拿不准是否该关的，留言说明后标 `line:2`。
+- 派工 Issue 超过 48 小时没有认领留言，会被自动巡检提醒并汇总给用户。
 
 ## 禁止
 - 不得修改或删除已有测试来让失败的测试通过。
