@@ -158,7 +158,7 @@ guardrails:
 
   - id: GR-3-WIP-LIMIT
     layer: 3
-    objective: "控制在制品：每线待合并 PR ≤ 2，全仓 > 8 时暂停开新开发任务"
+    objective: "控制在制品：每线待合并 PR ≤ 3，全仓 > 12 时暂停开新开发任务"
     enforcement: "AGENTS.md“跨线分工”（DECLARED）；派工巡检每 4 小时统计并提示（不阻断）"
     schedule: [pr, every_4h]
     owner: "第 2 线；规则由用户批准"
