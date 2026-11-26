@@ -43,7 +43,7 @@ AgentNexus 是**面向制造业组织的 AI 工作桌面**。个人、协作团�
 - **产品主轴只有一条：AI 桌面**（决定 61（AI 桌面），2026-11-20 用户确认，不做双轨）。MOM 与 World Adapter 是桌面里的工业业务能力，不是另一个产品。
 - 2026-11-04 起实现的多 agent 对话调度 MVP（第 1–17 节）是**执行引擎层**，它的部件（Conversation、Router、Policy、Orchestrator、执行组、ACP 适配器、节点、日志诊断）都是引擎里的构件。
 - 多 agent 执行、业务内省、个人记忆、外发脱敏等都是必要的产品特性，在 0.3 节逐项登记。
-- 五条研发线分工与近期汇合点见 [集成计划](INTEGRATION_PLAN.md)。第 5 线是相对独立的横切特性线，服务同一个 AI 桌面。
+- 各研发线的职责以 [集成计划](INTEGRATION_PLAN.md)「研发线与近期汇合」表为唯一权威描述，本文只引用线号，不复述职责。
 - 分工一句话：频道（Channel）管沟通，任务（Task）管工作，业务对象（Business Object）管业务事实，agent 跨三者协调。
 
 ### 0.2 分层架构
@@ -93,7 +93,7 @@ flowchart TB
 | 执行引擎 | 编排、执行组、agent 适配、节点、质检返工、结果整合 | Orchestrator、注册表、`crates/agents`、`crates/node`、Composer | 本文第 6–8 节 |
 | 工业业务能力 | 案例、方案版本、审批与动作记录（MOM 是权威来源）；运营投影；统一世界访问 | `crates/runtime/src/mom/`、`crates/server/src/mom*.rs` | [mom/DESIGN.md](mom/DESIGN.md)、[mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) |
 | 世界 | 仿真工厂；生产系统 | `crates/des`、`crates/des-mcp`；生产侧未接 | [mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md) |
-| 横切 · 第 5 线 | 业务内省、分层记忆及会话上下文选材；Agent 接入（发现、配置、诊断、准入、新 agent 类型接入） | 内省已有运行实现；分层记忆与注入在设计中 | [分层记忆特性档案](features/conversation-memory/README.md)、[业务内省](memory/INTROSPECTION_PLAN.md) |
+| 横切：内省、记忆与 Agent 接入 | 业务内省、分层记忆及会话上下文选材；Agent 与连接器的接入（发现、配置、诊断、准入）。接入后的调度使用属“交互与决策”“执行引擎”层 | 内省已有运行实现；分层记忆与注入在设计中 | [分层记忆特性档案](features/conversation-memory/README.md)、[业务内省](memory/INTROSPECTION_PLAN.md) |
 | 其他横切产品特性 | 见 0.3 节 | 见 0.3 节 | 见 0.3 节 |
 | 工程治理（不是产品特性） | 围栏、CI 门禁、夜间评审与修复 | `tools/ci/`、`.github/` | [fencing/README.md](fencing/README.md)、[CI_GATES.md](CI_GATES.md)、`REVIEW.md`、`FIX.md` |
 
@@ -103,29 +103,31 @@ flowchart TB
 
 每个产品特性只有一个**权威设计**入口。状态口径：**已实现** / **部分实现** / **设计已确认**（未开工）/ **设计中** / **无设计**（还没有设计文档，待补）。状态以 [PLAN.md](PLAN.md) 和各计划文档的勾选为准，本表随之更新。
 
-| 特性 | 层 | 权威设计 | 计划与进度 | 主要代码 | 相关决策 | 状态（2026-11-24 核对 `e22208b`） |
-|---|---|---|---|---|---|---|
-| AI 桌面外壳 | 外壳 | [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) | [ai-desktop/PLAN.md](ai-desktop/PLAN.md)、[MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md)、[MIC_REAL_PLAN.md](ai-desktop/MIC_REAL_PLAN.md) | `web/src/desktop/`、`server/src/desktop_api.rs` | 61（AI 桌面）、66–69；[2026-11-21-ai-desktop-c2-gateway-attn](decisions/2026-11-21-ai-desktop-c2-gateway-attn.md)、[2026-11-21-ai-desktop-d-voice-handoff](decisions/2026-11-21-ai-desktop-d-voice-handoff.md)、[2026-11-23-ai-desktop-mic-real-plan](decisions/2026-11-23-ai-desktop-mic-real-plan.md)（待确认） | 部分实现：A、B1–B3、C1、C2、D（fixture）、M3 夹具收口；D 的真机 mic 首刀（T-75，#229）、可选远端 ASR stub（T-76）、双设备 D01（T-77）已合入，第二物理机另验；首页真实委派（#235/#238）、首页快照（T-82）、记忆持久化（T-78）、草稿上云（T-86）已合入 |
-| 对话前台与派发 | 交互与决策 | 本文第 5、9 节 | [PLAN.md](PLAN.md) M4、FT | `runtime/src/conversation.rs`、`router.rs`、`policy.rs`、`prompts.rs` | 18–43 | 已实现 |
-| 多 agent 执行与执行组 | 执行引擎 | 本文第 7 节 | — | `crates/agents`、`runtime/src/registry.rs`、`orchestrator.rs` | — | 已实现 |
-| 跨机器节点 | 执行引擎 | 本文第 8 节 | — | `crates/node`、`runtime/src/nodes.rs` | — | 已实现（局域网明文 HTTP，见第 13 节） |
-| 质检、返工与人工验收 | 执行引擎 | 本文第 7.6 节；[fencing/REVIEW_VERDICT_DESIGN.md](fencing/REVIEW_VERDICT_DESIGN.md)；[fencing/WP2_IMPLEMENTATION_PLAN.md](fencing/WP2_IMPLEMENTATION_PLAN.md) | [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) WP2 | `runtime/src/orchestrator.rs`、`policy.rs` | 59（围栏）；[2026-11-22-wp2-review-acceptance-plan](decisions/2026-11-22-wp2-review-acceptance-plan.md) | 部分实现：验收出口已合入（#215）；文案/E2E 见 WP2 |
-| 任务拆分与模板并行 | 执行引擎 | 本文第 9.6 节；[fencing/WP4_IMPLEMENTATION_PLAN.md](fencing/WP4_IMPLEMENTATION_PLAN.md) | [PLAN.md](PLAN.md) M4.3、INTEGRATION_PLAN WP4 | `runtime/src/template.rs`、`builtin_templates.rs`、`orchestrator.rs`、`store.rs` | [2026-11-22-wp4-task-split-template-plan](decisions/2026-11-22-wp4-task-split-template-plan.md) | **已实现（WP4）**：内置模板接入编排；RT-TPL-11～16 / E2E-TPL；不做动态 DAG / M4.4 |
-| 研究报告与网页搜索 | 执行引擎 | 本文第 9.5 节；[tools/websearch/DESIGN.md](../tools/websearch/DESIGN.md) | [PLAN.md](PLAN.md) M2、M3 | `agents/src/report.rs`、`tools/websearch/` | — | 已实现 |
-| MCP 能力目录与 General Harness | 执行引擎 | [mcp/DESIGN.md](mcp/DESIGN.md) | [mcp/PLAN.md](mcp/PLAN.md) | `agents/src/mcp.rs`、`agents/src/tools.rs` | — | 已实现首期（`GET /api/capabilities`） |
-| 助手接入与管理（对话式） | 横切 · 第 5 线 | 无独立设计文档；目前在 [PLAN.md](PLAN.md)「AG」一节 | 同左 | `runtime/src/agent_catalog.rs`、`agent_config.rs`、`agent_diagnose.rs`、`agent_chat.rs` | 1–14、21、44、59（AG.4）、60 | 已实现；对话里管理助手默认关闭 |
-| Agent 准入 | 横切 · 第 5 线 | 无独立设计文档；本文末尾附节 + 第 10.3、10.4 节 | — | `runtime/src/admission.rs`、`server/src/admission_api.rs` | — | 已实现；调用者身份认证未做 |
-| 外发脱敏（DLP） | 横切 | [dlp/CONTRACT.md](dlp/CONTRACT.md)、[mcp/DLP_EGRESS_DEPLOYMENT.md](mcp/DLP_EGRESS_DEPLOYMENT.md) | [PLAN.md](PLAN.md)「DLP 外发脱敏」、[mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md](mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md) | `tools/dlp-egress/`、`agents/src/egress.rs` | 12、15–17、41、42（R-20261118-M2）、DECISIONS 第八节 D-n | 部分实现：只检查登记过的出口 |
-| 业务内省 | 横切 · 第 5 线 | [memory/INTROSPECTION_PLAN.md](memory/INTROSPECTION_PLAN.md) | [PLAN.md](PLAN.md)「INT」、[INTROSPECTION_PLAYBOOK.md](memory/INTROSPECTION_PLAYBOOK.md) | `runtime/src/introspect/`、`server/src/introspection_api.rs` | 45、49、51–55、64、65 | 已实现 S0–S8；默认关闭 |
-| 分层记忆与会话上下文（含个人画像、风格和组织 taste） | 横切 · 第 5 线 | [conversation-memory 特性档案](features/conversation-memory/README.md)（服务宪章 §3 第 4 条及 §5） | [第 5 线计划](features/conversation-memory/PLAN.md) | `runtime/src/session_materials.rs`（会话资料注入）、`conversation.rs`（挂接点）；个人记忆存于 `desktop_memories` | 45–48、50；[五线分工](decisions/2026-11-22-five-workstreams.md)；[5.1 验收与默认开](decisions/2026-11-23-convmem-s1-acceptance-and-default-on.md)；[5.2a 生命周期与隔离](decisions/2026-11-23-convmem-s2a-lifecycle-and-isolation.md)；[5.2b 风格生效闸门](decisions/2026-11-23-convmem-s2b-style-gate.md) | 部分实现：5.1 回答路径会话资料注入已实现并默认开启（REQ-01）；5.2a 个人记忆保存、撤回与按说话人隔离 + 5.2b 预览→确认→下一会话生效闸门（preference/style，独立风格卡）已实现（REQ-02）；共享知识与内省接入（REQ-03/04）未开始 |
-| 组织知识（RelOS） | 横切 | 无设计文档；散见 [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) 第 6 节 | AI 桌面 C 阶段 | `server/src/mom_relos.rs`（仅 MOM 诊断调用） | — | 无设计 |
-| 业务执行网关（NexusOps） | 横切 | [ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md](ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md)（方案草案，待用户确认） | World Adapter M4 | `server/src/mom_world_des.rs`、桌面审批网关 | — | 设计中（方案草案；实现未开工） |
-| 日志与诊断 | 横切 | 本文第 10 节 | — | `crates/observe` | — | 已实现 |
-| MOM 案例、方案与审批 | 工业业务 | [mom/DESIGN.md](mom/DESIGN.md)、[mom/IMPLEMENTATION.md](mom/IMPLEMENTATION.md) | [mom/MOCK_REGISTER.md](mom/MOCK_REGISTER.md) | `runtime/src/mom/`、`server/src/mom.rs`、`server/src/bin/an-mom.rs` | DES-n | 已实现（模拟沙盘，未接生产） |
-| 运营桌面与运营频道 | 工业业务 | [mom/OPS_DESK.md](mom/OPS_DESK.md) | [PLAN.md](PLAN.md)「D0–D3」、[OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md) | `runtime/src/mom/ops_desk.rs`、`server/src/mom_ops.rs` | 56–58、60 | 已实现 D0–D2；D3 并入 World Adapter M0 |
-| World Adapter | 工业业务 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | [mom/WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)、`mom/WA_M*_TASKS.md` | `server/src/mom_world_des.rs`、`mom_world_mock.rs`、`mom_world_prod.rs` | 61（World Adapter）、DES-31、DES-32；[M3-1 生产读服务层](decisions/2026-11-22-wa-m3-1-prod-read-service-layer.md)；[M4 写入门控](decisions/2026-11-23-wa-m4-write-entry-gates.md) | 部分实现：M0–M2 已准出；M3 桩数据准出（M3-0～M3-5），真实站点验收待办；M4 写入门控已冻结，未开工 |
-| DES 仿真工厂与实验入口 | 世界 | [mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md)、[mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md) | 同上 | `crates/des`、`crates/des-mcp`、`server/src/mom_des_connector.rs`、`mom_sim.rs` | DES-n、62 | 已实现；实验入口随 World Adapter M0 交付 |
-| 生产世界接入 | 世界 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M3、M4（[WA_M3_TASKS.md](mom/WA_M3_TASKS.md)、[WA_M4_TASKS.md](mom/WA_M4_TASKS.md)） | `server/src/mom_world_prod.rs`（`/api/world/prod`，服务层桩数据） | 61（World Adapter） | 部分实现：只读接口以桩数据跑通（M3）；未接真实站点；写入未开工 |
+| 特性 | 层 | 负责线（职责见[集成计划](INTEGRATION_PLAN.md)） | 权威设计 | 计划与进度 | 主要代码 | 相关决策 | 状态（2026-11-24 核对 `e22208b`） |
+|---|---|---|---|---|---|---|---|
+| AI 桌面外壳 | 外壳 | 1 | [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) | [ai-desktop/PLAN.md](ai-desktop/PLAN.md)、[MOCK_REGISTRY.md](ai-desktop/MOCK_REGISTRY.md)、[MIC_REAL_PLAN.md](ai-desktop/MIC_REAL_PLAN.md) | `web/src/desktop/`、`server/src/desktop_api.rs` | 61（AI 桌面）、66–69；[2026-11-21-ai-desktop-c2-gateway-attn](decisions/2026-11-21-ai-desktop-c2-gateway-attn.md)、[2026-11-21-ai-desktop-d-voice-handoff](decisions/2026-11-21-ai-desktop-d-voice-handoff.md)、[2026-11-23-ai-desktop-mic-real-plan](decisions/2026-11-23-ai-desktop-mic-real-plan.md)（待确认） | 部分实现：A、B1–B3、C1、C2、D（fixture）、M3 夹具收口；D 的真机 mic 首刀（T-75，#229）、可选远端 ASR stub（T-76）、双设备 D01（T-77）已合入，第二物理机另验；首页真实委派（#235/#238）、首页快照（T-82）、记忆持久化（T-78）、草稿上云（T-86）已合入 |
+| 对话前台与派发 | 交互与决策 | 4 | 本文第 5、9 节 | [PLAN.md](PLAN.md) M4、FT | `runtime/src/conversation.rs`、`router.rs`、`policy.rs`、`prompts.rs` | 18–43 | 已实现 |
+| 多 agent 执行与执行组 | 执行引擎 | 4 | 本文第 7 节 | — | `crates/agents`、`runtime/src/registry.rs`、`orchestrator.rs` | — | 已实现 |
+| 跨机器节点 | 执行引擎 | 4（执行）；5（接入） | 本文第 8 节 | — | `crates/node`、`runtime/src/nodes.rs` | — | 已实现（局域网明文 HTTP，见第 13 节） |
+| 质检、返工与人工验收 | 执行引擎 | 4 | 本文第 7.6 节；[fencing/REVIEW_VERDICT_DESIGN.md](fencing/REVIEW_VERDICT_DESIGN.md)；[fencing/WP2_IMPLEMENTATION_PLAN.md](fencing/WP2_IMPLEMENTATION_PLAN.md) | [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) WP2 | `runtime/src/orchestrator.rs`、`policy.rs` | 59（围栏）；[2026-11-22-wp2-review-acceptance-plan](decisions/2026-11-22-wp2-review-acceptance-plan.md) | 部分实现：验收出口已合入（#215）；文案/E2E 见 WP2 |
+| 任务拆分与模板并行 | 执行引擎 | 4 | 本文第 9.6 节；[fencing/WP4_IMPLEMENTATION_PLAN.md](fencing/WP4_IMPLEMENTATION_PLAN.md) | [PLAN.md](PLAN.md) M4.3、INTEGRATION_PLAN WP4 | `runtime/src/template.rs`、`builtin_templates.rs`、`orchestrator.rs`、`store.rs` | [2026-11-22-wp4-task-split-template-plan](decisions/2026-11-22-wp4-task-split-template-plan.md) | **已实现（WP4）**：内置模板接入编排；RT-TPL-11～16 / E2E-TPL；不做动态 DAG / M4.4 |
+| 研究报告与网页搜索 | 执行引擎 | 4 | 本文第 9.5 节；[tools/websearch/DESIGN.md](../tools/websearch/DESIGN.md) | [PLAN.md](PLAN.md) M2、M3 | `agents/src/report.rs`、`tools/websearch/` | — | 已实现 |
+| MCP 能力目录与 General Harness | 执行引擎 | 4 | [mcp/DESIGN.md](mcp/DESIGN.md) | [mcp/PLAN.md](mcp/PLAN.md) | `agents/src/mcp.rs`、`agents/src/tools.rs` | — | 已实现首期（`GET /api/capabilities`） |
+| 助手接入与管理（对话式） | 横切 | 5（接入、配置、诊断）；4（调度使用） | 无独立设计文档；目前在 [PLAN.md](PLAN.md)「AG」一节 | 同左 | `runtime/src/agent_catalog.rs`、`agent_config.rs`、`agent_diagnose.rs`、`agent_chat.rs` | 1–14、21、44、59（AG.4）、60 | 已实现；对话里管理助手默认关闭 |
+| Agent 准入 | 横切 | 5 | 无独立设计文档；本文末尾附节 + 第 10.3、10.4 节 | — | `runtime/src/admission.rs`、`server/src/admission_api.rs` | — | 已实现；调用者身份认证未做 |
+| 外发脱敏（DLP） | 横切 | 5 | [dlp/CONTRACT.md](dlp/CONTRACT.md)、[mcp/DLP_EGRESS_DEPLOYMENT.md](mcp/DLP_EGRESS_DEPLOYMENT.md) | [PLAN.md](PLAN.md)「DLP 外发脱敏」、[mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md](mcp/DLP_EGRESS_ENFORCEMENT_PLAN.md) | `tools/dlp-egress/`、`agents/src/egress.rs` | 12、15–17、41、42（R-20261118-M2）、DECISIONS 第八节 D-n | 部分实现：只检查登记过的出口 |
+| 业务内省 | 横切 | 5 | [memory/INTROSPECTION_PLAN.md](memory/INTROSPECTION_PLAN.md) | [PLAN.md](PLAN.md)「INT」、[INTROSPECTION_PLAYBOOK.md](memory/INTROSPECTION_PLAYBOOK.md) | `runtime/src/introspect/`、`server/src/introspection_api.rs` | 45、49、51–55、64、65 | 已实现 S0–S8；默认关闭 |
+| 分层记忆与会话上下文（含个人画像、风格和组织 taste） | 横切 | 5 | [conversation-memory 特性档案](features/conversation-memory/README.md)（服务宪章 §3 第 4 条及 §5） | [第 5 线计划](features/conversation-memory/PLAN.md) | `runtime/src/session_materials.rs`（会话资料注入）、`conversation.rs`（挂接点）；个人记忆存于 `desktop_memories` | 45–48、50；[五线分工](decisions/2026-11-22-five-workstreams.md)；[5.1 验收与默认开](decisions/2026-11-23-convmem-s1-acceptance-and-default-on.md)；[5.2a 生命周期与隔离](decisions/2026-11-23-convmem-s2a-lifecycle-and-isolation.md)；[5.2b 风格生效闸门](decisions/2026-11-23-convmem-s2b-style-gate.md) | 部分实现：5.1 回答路径会话资料注入已实现并默认开启（REQ-01）；5.2a 个人记忆保存、撤回与按说话人隔离 + 5.2b 预览→确认→下一会话生效闸门（preference/style，独立风格卡）已实现（REQ-02）；共享知识与内省接入（REQ-03/04）未开始 |
+| 组织知识（RelOS） | 横切 | 5 | 无设计文档；散见 [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) 第 6 节 | AI 桌面 C 阶段 | `server/src/mom_relos.rs`（仅 MOM 诊断调用） | — | 无设计 |
+| 业务执行网关（NexusOps） | 横切 | 3（配合 1 界面、4 审批契约） | [ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md](ai-desktop/NEXUSOPS_REAL_WRITE_PLAN.md)（方案草案，待用户确认） | World Adapter M4 | `server/src/mom_world_des.rs`、桌面审批网关 | — | 设计中（方案草案；实现未开工） |
+| 日志与诊断 | 横切 | 4（第 2 线使用，第 1 线诊断界面） | 本文第 10 节 | — | `crates/observe` | — | 已实现 |
+| MOM 案例、方案与审批 | 工业业务 | 3 | [mom/DESIGN.md](mom/DESIGN.md)、[mom/IMPLEMENTATION.md](mom/IMPLEMENTATION.md) | [mom/MOCK_REGISTER.md](mom/MOCK_REGISTER.md) | `runtime/src/mom/`、`server/src/mom.rs`、`server/src/bin/an-mom.rs` | DES-n | 已实现（模拟沙盘，未接生产） |
+| 运营桌面与运营频道 | 工业业务 | 3（入口 1） | [mom/OPS_DESK.md](mom/OPS_DESK.md) | [PLAN.md](PLAN.md)「D0–D3」、[OPS_DESK_TASKS.md](mom/OPS_DESK_TASKS.md) | `runtime/src/mom/ops_desk.rs`、`server/src/mom_ops.rs` | 56–58、60 | 已实现 D0–D2；D3 并入 World Adapter M0 |
+| World Adapter | 工业业务 | 3 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | [mom/WORLD_ADAPTER_PLAN.md](mom/WORLD_ADAPTER_PLAN.md)、`mom/WA_M*_TASKS.md` | `server/src/mom_world_des.rs`、`mom_world_mock.rs`、`mom_world_prod.rs` | 61（World Adapter）、DES-31、DES-32；[M3-1 生产读服务层](decisions/2026-11-22-wa-m3-1-prod-read-service-layer.md)；[M4 写入门控](decisions/2026-11-23-wa-m4-write-entry-gates.md) | 部分实现：M0–M2 已准出；M3 桩数据准出（M3-0～M3-5），真实站点验收待办；M4 写入门控已冻结，未开工 |
+| DES 仿真工厂与实验入口 | 世界 | 3 | [mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md)、[mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md) | 同上 | `crates/des`、`crates/des-mcp`、`server/src/mom_des_connector.rs`、`mom_sim.rs` | DES-n、62 | 已实现；实验入口随 World Adapter M0 交付 |
+| 生产世界接入 | 世界 | 3 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M3、M4（[WA_M3_TASKS.md](mom/WA_M3_TASKS.md)、[WA_M4_TASKS.md](mom/WA_M4_TASKS.md)） | `server/src/mom_world_prod.rs`（`/api/world/prod`，服务层桩数据） | 61（World Adapter） | 部分实现：只读接口以桩数据跑通（M3）；未接真实站点；写入未开工 |
+
+“负责线”按 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) 研发线表与 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md) 填写；
 
 助手接入管理、RelOS 和 NexusOps 仍待补独立权威设计，准入目前保留附节。
 

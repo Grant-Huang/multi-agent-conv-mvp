@@ -344,6 +344,9 @@ export default function App() {
   const [desktopSide, setDesktopSide] = useState<DesktopSide>(null);
   const [assistantProfile, setAssistantProfile] = useState<AssistantProfile>(() => loadProfile());
   const [s1BgJob, setS1BgJob] = useState<S1BgJob | null>(null);
+  // UXFIX-H（INTENT-015）：委派任务终结时在助理消息区提示（普通优先级，按任务去重，带“查看结果”）。
+  // 无服务端存储（issue：新增存储先出方案）——本机 sessionStorage 留存，按任务去重。
+  const [taskNotices, setTaskNotices] = useState<Array<{ taskId: string; title: string; status: string }>>([]);
   const [s1Reply, setS1Reply] = useState<string | null>(null);
   /** UXFIX-A（INTENT-001）：首页问答走真实会话；同一次驻留内沿用同一会话（DESIGN §2「下一轮沿用会话」） */
   const s1AskConvRef = useRef<string | null>(null);
@@ -352,6 +355,21 @@ export default function App() {
   // UXFIX-N（INTENT-023）：注意力列表每次同步递增，驱动首页“为你关注”实时刷新
   const [attnRevision, setAttnRevision] = useState(0);
   const [attnMuted, setAttnMuted] = useState(false);
+  // UXFIX-B（INTENT-003）：测试模式由服务端告知（snapshot.test_fixtures）；正常界面不渲染测试控件
+  const [testFixtures, setTestFixtures] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .desktopSnapshot()
+      .then((r) => {
+        if (!cancelled) setTestFixtures(!!r.test_fixtures);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -409,6 +427,55 @@ export default function App() {
     setMainView("workspace", taskId);
     setNavOpen(false);
   };
+
+  // UXFIX-H：委派任务状态轮询——终结时更新受理提示并生成助理消息通知
+  useEffect(() => {
+    const job = s1BgJob;
+    if (!job || job.status !== "accepted" || job.taskId === "pending") return;
+    let cancelled = false;
+    const t = setInterval(() => {
+      api
+        .task(job.taskId)
+        .then((r) => {
+          if (cancelled) return;
+          const st = r.task.status;
+          if (st !== "COMPLETED" && st !== "FAILED" && st !== "NEEDS_HUMAN" && st !== "CANCELLED") return;
+          setS1BgJob((prev) => (prev && prev.taskId === job.taskId ? { ...prev, status: st === "FAILED" ? "failed" : "done" } : prev));
+          setTaskNotices((prev) => {
+            if (prev.some((n) => n.taskId === job.taskId)) return prev;
+            const next = [
+              ...prev,
+              {
+                taskId: job.taskId,
+                title: job.label,
+                status: st === "COMPLETED" ? "已完成" : st === "NEEDS_HUMAN" ? "需要你处理" : st === "CANCELLED" ? "已取消" : "失败",
+              },
+            ];
+            try {
+              sessionStorage.setItem("an.desktop.tasknotice.v1", JSON.stringify(next.slice(-10)));
+            } catch {
+              /* 忽略 */
+            }
+            return next;
+          });
+        })
+        .catch(() => {});
+    }, 5_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [s1BgJob]);
+
+  // 恢复本会话已有的任务通知（按任务去重，已在列表内不重复生成）
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("an.desktop.tasknotice.v1");
+      if (raw) setTaskNotices(JSON.parse(raw) as Array<{ taskId: string; title: string; status: string }>);
+    } catch {
+      /* 忽略 */
+    }
+  }, []);
 
   const openSettings = (layer: SettingsLayer = "categories", categoryId: SettingsCategoryId | null = null) => {
     setDesktopSide({ kind: "settings", layer, categoryId, memoryId: null, search: "" });
@@ -750,6 +817,7 @@ export default function App() {
             onOpenEvidence={() => openEvidence(workspaceTaskId)}
             onOpenSettings={() => openSettings("assistant", "assistant")}
             onOpenTask={(id) => openWorkspace(id)}
+            testFixtures={testFixtures}
           />
         )}
         {mainView === "des-experiment" && (
@@ -800,6 +868,7 @@ export default function App() {
               setDesktopSide({ ...desktopSide, layer, evidenceId })
             }
             onClose={() => setDesktopSide(null)}
+            testFixtures={testFixtures}
             onDemoEmpty={() =>
               setDesktopSide({
                 kind: "evidence",
@@ -824,6 +893,7 @@ export default function App() {
             categoryId={desktopSide.categoryId}
             memoryId={desktopSide.memoryId}
             search={desktopSide.search}
+            testFixtures={testFixtures}
             onNavigate={(next) =>
               setDesktopSide({
                 kind: "settings",
@@ -845,7 +915,13 @@ export default function App() {
             onClose={() => setDesktopSide(null)}
           />
         ) : mainView !== "chat" ? (
-          <AssistantReadPanel />
+          <AssistantReadPanel
+            taskNotices={taskNotices}
+            onOpenNotice={(taskId) => {
+              openWorkspace(taskId);
+              setDesktopSide(null);
+            }}
+          />
         ) : (
           <>
             <div className="tabs" role="tablist">

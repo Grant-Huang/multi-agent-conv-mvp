@@ -6,7 +6,8 @@ export type S1BgJob = {
   conversationId: string;
   requestId: string | null;
   label: string;
-  status: "submitting" | "accepted" | "failed";
+  /** UXFIX-H（INTENT-015）：done=任务已终结（完成/需处理），受理提示同步、不再显示后台处理中 */
+  status: "submitting" | "accepted" | "failed" | "done";
   error?: string | null;
 };
 
@@ -39,7 +40,9 @@ export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask }: Props) {
       ? "提交中…"
       : bgJob?.status === "failed"
         ? "受理失败"
-        : "后台处理中（已受理）";
+        : bgJob?.status === "done"
+          ? "已完成"
+          : "后台处理中（已受理）";
 
   return (
     <div className="s1-ask" data-testid="s1-ask-bar">
