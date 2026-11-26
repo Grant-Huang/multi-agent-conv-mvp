@@ -639,15 +639,18 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|---|
 | E2E-ADNAV | ai-desktop | 干净浏览器；Mock 首页种子含 SMT-03 | 打开 `/`；从首页卡打开任务；返回桌面；再从侧栏「最近」打开同一任务；查看运营入口 | 见「我的 AI 桌面」与三区；工作区 Task ID 为 `TASK-2026-018`；返回后仍在桌面首页；再次打开仍为同一 ID；`[mom]` 未开时无「运营桌面」页签且可见「运营模块未启用」说明 |
 | E2E-ADLAYOUT | ai-desktop | 已从首页打开 SMT-03 工作区 | S2→S3→S2；刷新页面 | 仍在同一 Task；布局偏好恢复为离开前的 S2 或 S3；执行区展开状态可观察 |
+| E2E-ADLAYOUT-CHU7 | ai-desktop | 首页快照夹具；本地模拟模型 | CH-U7（#321，INTENT-2026-020）：360/768/1024/1440 四宽度下测页面滚动；首页与工作区把内容区滚到底再滚到顶（展开执行构造溢出）；1024 宽会话页发消息后滚消息区 | 页面 scrollHeight ≤ 视口（无页面级滚动）；首页 S1 输入框与工作区输入框滚动前后位置不变且在视口内；会话页输入框位置不随消息区滚动变化 |
 | E2E-UX01 | ai-desktop | 首页快照夹具含 SMT-03（标“模拟”） | 体验地图 UX-01：卡片进入工作区 → 写草稿 → 打开再关闭证据 → S3 再回 S2 → 打开设置后 Esc → 返回桌面再从卡片进入 | 每一步对话输入可用；草稿与任务恢复；关闭证据回到原工作区；全程无整页跳转；探针记录步数与整页跳转（基线补录，见 docs/experience-map/journeys/UX-01.md）；前置清理已随 UXFIX-D 移除 |
 | E2E-UX01-I7 | ai-desktop | 路由拦截注入服务端旧草稿（另一会话，PUT 一律 409 应答） | UXFIX-D（INTENT-2026-008）：打开 SMT-03 工作区 → 远端快照返回前输入新内容 → 返回桌面再从卡片进入 | 本会话新输入保留、不被旧草稿覆盖；出现含“其他设备”的冲突提示；可一键改用其他设备草稿（单元级并发序列另见 draftStore.test.ts） |
 | E2E-UX01-I8 | ai-desktop | 首页快照夹具含 SMT-03 | UXFIX-D（INTENT-2026-011）：工作区发送消息 → 出现“已受理（模拟）”回执 → 返回桌面再从卡片进入 | 发送记录含已发送正文与受理回执，离开再返回后仍在原位 |
 | E2E-UX02 | ai-desktop | 首页快照夹具含 SMT-03 | 体验地图 UX-02：进入 SMT-03 工作区 → 写任务草稿 → 切“独立话题” → 输入并发送临时问题 → 切回“继续当前任务” | 全程在同一任务工作区；作用域按钮状态正确切换并恢复；回到任务后原任务草稿仍在（UXFIX-D，INTENT-2026-013）；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-02.md） |
+| E2E-UX01-I5 | ai-desktop | 首页快照夹具；本地模拟模型 | UXFIX-A（INTENT-2026-001）：首页 S1 输入问题 → 点“问答” → 浮层出现助手回答 → 再问一次（会话接口拦截为不可达） | 回答来自真实会话（不含“问答（模拟）”文本）；全程留在桌面、首页卡片仍在、无整页跳转；接口不可达时浮层显示“不可用”说明而非模拟文本 |
 | E2E-UX03 | ai-desktop | 首页快照夹具含 SMT-03；本地模拟模型 | 体验地图 UX-03：首页输入一句话目标 → 点“委派任务” → 打开 SMT-03 工作区 → 返回桌面 → 等待完成 → 从“我的工作”卡片打开该任务再返回 | 委派后仍在桌面，受理状态可见，首页输入清空可用；可进出其他任务；委派的任务出现在“我的工作”并显示“已完成”；从卡片打开后工作区显示该任务自己的目标、“已完成”与产物名，不出现夹具模拟内容（UXFIX-E，INTENT-2026-009/014，卡片与工作区状态词一致）；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-03.md） |
 
 | E2E-UX03-I7 | ai-desktop | 首页快照夹具 | UXFIX-I（INTENT-2026-016）：S1 输入为空 → 「委派任务」状态与点击结果 → 填写目标后恢复 | 输入为空时按钮禁用并提示「先说说要做什么」；点击不产生受理提示/任务 chip；填写后按钮恢复可用 |
 | E2E-UX04 | ai-desktop | 本地模拟模型 | 体验地图 UX-04：“＋ 新会话”发任务 → 等完成 → 在对话输入写追问草稿 → 点右侧任务条目展开详情 | 任务详情展开；对话输入仍可编辑、草稿不变；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-04.md） |
 | E2E-UX05 | ai-desktop | 首页快照夹具含 SMT-03；提醒经测试 API 注入（`desktop.test_fixtures`） | 体验地图 UX-05：S1 输入框写字并聚焦 → 注入关联 SMT-03 的普通提醒 → 重新打开桌面 → 点“为你关注”中的提醒 → 返回桌面 | 提醒浮层出现且不抢焦点、不清空输入；“为你关注”中的提醒直达 SMT-03 工作区；返回后提醒仍在；处理过程无整页跳转（基线补录，见 docs/experience-map/journeys/UX-05.md） |
+| E2E-UX05-I3I4 | ai-desktop | 首页快照夹具；提醒经测试 API 注入（不刷新页面） | UXFIX-N（INTENT-2026-021/023）：桌面打开时注入提醒 → 浮层与“为你关注”出现 → 点浮层“稍后” → 再注入第二条 → 点浮层“打开” → 返回桌面 → 点“忽略” | 不刷新时“为你关注”实时出现提醒；浮层展示原因与来源（普通建议 · 关联任务 TASK-2026-018）；稍后浮层收起且“为你关注”仍在；打开直达关联任务；忽略时明示会移除，浮层与“为你关注”一致移除 |
 | E2E-UX06 | ai-desktop | 首页快照夹具含 SMT-03 | 体验地图 UX-06：SMT-03 工作区写草稿 → “调整助理” → 改助理名称并保存 → 查看记忆 → 返回助理分类 → 关闭设置 → 返回桌面（末尾恢复原名称） | 捷径直达“我的 AI 助理”分类；记忆子层返回原分类；关闭后回到同一任务且草稿不变；首页显示新名称；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-06.md） |
 | E2E-ADDRAFT | ai-desktop | 首页可打开 SMT-03 与产品改进两卡 | 两任务分别写草稿并来回切换；SMT-03 点发送（模拟延迟）后立刻改草稿并切到另一任务，再返回 | 各任务草稿隔离恢复；发送期间追加的输入保留；迟到回执不覆盖当前输入框正文 |
 | E2E-ADSCOPE | ai-desktop | 已打开 SMT-03 工作区 | 选「独立话题」；再选「继续当前任务」；点「纠正关联」；再「转为任务」 | 独立话题文案可见；继续时显示固定 Task ID；纠正后有撤回记录；转为任务后有建立关联记录且可继续固定任务 |
@@ -789,6 +792,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-OPSAPPROVE | ops-desk | 开启桥的实例，有待批准案例 | 桌面点「在频道中处理」→ 卡上点「批准」 | 卡显示 supervisor；桌面无「批准」按钮；引擎 decision_inbox 含批准人 |
 | E2E-OPSAUTOEXEC | ops-desk | 开启桥的实例，有待批准案例（INTENT-027，决定 2026-11-26-ops-approve-auto-execute） | 桌面点「在频道中处理」→ 卡上点「批准」；全程不调用执行 API | 卡变「核验中」并显示执行回执；引擎 stage=VERIFYING 且 actions 非空；桌面「待批准 0」，该事项行显示「核验中」 |
 | E2E-OPSEXPIRE | ops-desk | 开启桥的实例，待批准案例，已注入 `resources_available=false`（INTENT-027） | 卡上点「批准」；用 `advance` 推进引擎时间越过批准有效期；恢复资源并 `refresh_plan` 后在卡上再点「批准」 | 受阻时卡显示「已批准」「执行受阻」且引擎无 actions、批准保留；过期后卡显示「批准已过期」「需重新批准」并有重新批准按钮；刷新方案重评后重新批准即执行成功（VERIFYING），新批准有效期刷新（expires_at 变大） |
+
+| E2E-OPSRECEIPT | ops-desk | 开启桥的实例；两个 s1 场景案例 | UXFIX-P（INTENT-2026-026，UX-07-I5）：案例 A 批准不执行 → 卡上「查看执行」；案例 B 等卡发布后批准、经 API 执行并推进关闭 → 「查看执行」与「查看核验证据」 | A 显示「尚未执行」且不出现「已提交」；B 回执分层来自引擎（已提交 → 源系统已受理，含回执编号 `mock-op:*` 与时间，标「模拟」），不出现写死文本「受理 / 已提交」；核验证据来自引擎证据表（`mock-field-verification:*` 等），不出现写死「现场照片与点检记录」 |
 | E2E-OPSOFF | ops-desk | 默认 harness，未配置 `[mom]`（基线：现状本来就通过，用于防止回归） | 注入 MOM 案例，打开页面，发一句问候 | 没有“运营桌面”页签、没有运营频道、`/api/mom/desk` 为 404；原有会话回复正常 |
 | E2E-ADREAD | ai-desktop | 开关打开；频道内 ≥6 张运营卡；窄视口 | 滚到中间卡使其位于列表顶部；切到桌面再回运营频道；工作区收起执行后离开再打开 | 锚点=滚动停止时首条可见消息及其偏移（几何钳制时为钳制位置的可见消息）；返回后该锚点消息仍为首可见、偏移恢复（阅读位置精确还原）；工作区执行区保持收起 |
 
@@ -811,6 +816,7 @@ Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_ops
 | RT-OPSDESK-10 | ops-desk | 服务端同时挂 MOM 与运营桌面路由，已创建 s1 案例 | `GET /api/mom/desk`；`GET …/cases/{id}`；对同一案例 `POST …/open-in-channel` 两次；对不存在案例 GET/POST | desk 200 且 rows 案例集合与 `/mom/api/mom/cases` 相同；详情含 `projection_seq`；两次 open 返回同一 `message_id`；不存在案例 404 |
 | RT-OPSDESK-12 | ops-desk | 文件库引擎，一个待批准案例（s1）；另一组先注入 `resources_available=false` | 调用 `approve_and_execute`：正常案例；受阻案例；受阻案例到期前再次调用；错误方案版本 | 正常：返回已执行，stage=VERIFYING、actions 非空、无 execution_block；受阻：批准保留、无 actions、execution_block 记录原因、事件 `ExecutionBlocked`；到期前重试：仍受阻、批准不重复登记；错误版本：整体失败，无批准无事件 |
 | RT-OPSDESK-13 | ops-desk | 文件库引擎，受阻批准（`approve_and_execute` 已 Blocked） | `advance` 越过批准有效期后再 `advance`；随后重新 `approve_and_execute`；发布器 tick 后看卡片 | 首次越过有效期发一次 `ApprovalExpired`，再推进不重复发；重新批准后有效期刷新、过期标记清零；卡片摘要含「批准已过期，需重新批准」（过期后）与「已批准」（重新批准后） |
+| RT-OPSDESK-14 | ops-desk | 同一引擎两个待批准案例；发布器未 tick 前其中一个已被批准并执行（stage 已到 VERIFYING）（#384） | 发布器一次 tick；查 skip_log | 两个案例都出卡；被执行案例没有 `p1_no_card` 跳过记录；`DecisionRequested` 事件按种类固定 P0，与消费时刻的阶段无关 |
 
 说明：RT-OPSDESK-06/07 属 D1-1；RT-OPSDESK-10/11 属 D1-2/D2（`crates/server/tests/mom_ops.rs`）。证据见 `ops-desk-d1-*.md`、`ops-desk-d2.md`。 RT-OPSDESK-12/13 属 INTENT-027（批准即执行，决定 2026-11-26-ops-approve-auto-execute），见 `docs/testing/evidence/ops-approve-execute.md`。
 
