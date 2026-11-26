@@ -90,10 +90,10 @@ UX-08 旅程（journeys.json）：charter=CH-G1/CH-G2/CH-G5/CH-U2，features=ai-
 
 ## 5. 待用户决策与待批方案（主轴差距清单）
 
-**需要用户拍板（评审「需要人决定的事」，对应阻塞卡）：**
-1. **H1 撤回语义**：撤回后已存任务 context 是否失效？评审推荐：**是，按宪章 CH-G2e**，修订 S6 决策第 4 条 → 阻塞 #358。
-2. **M8 断言去留**：恢复「执行区收起重进保持」E2E 断言，还是从 CASES 删？评审推荐：**恢复**（desktop.spec 播种 SMT-03）→ 阻塞 #366。
-3. **FIX-A 门**：维持「M4 生产写入开工前必须先合 FIX-A（H1/H2/H5）」？评审推荐：**维持**（同 11-25 报告）。
+**用户已拍板（2026-11-26，评审「需要人决定的事」三项全按推荐采纳；决策记录见 `docs/decisions/`，随本 PR 合入）：**
+1. **H1 撤回语义**：✅ **是**——撤回效力及于已存任务 context（按宪章 CH-G2e，S6 第 4 条修订）。决策 `2026-11-26-h1-revoked-memory-task-context`；[#358](https://github.com/Grant-Huang/multi-agent-conv-mvp/issues/358) 已解锁（触 orchestrator 仍须先出方案）。
+2. **M8 断言去留**：✅ **恢复**「执行区收起重进保持」断言（desktop.spec 播种 SMT-03）。决策 `2026-11-26-m8-execute-collapse-assertion-restore`；[#366](https://github.com/Grant-Huang/multi-agent-conv-mvp/issues/366) 已解锁。
+3. **FIX-A 门**：✅ **维持**——M4 生产写入开工前必须先合 FIX-A（T-92）。决策 `2026-11-26-fix-a-gate-maintenance`；解锁条件=FIX-A 合入 master。
 
 **待批方案（fixer 已提交、明确等批准，未改任何代码）：**
 - `docs/fix-plans/r-20261124-h4-store-regression.md`（H4 确定性根因回归，#357）
