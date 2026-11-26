@@ -144,7 +144,9 @@ async fn open_in_channel(State(s): State<OpsState>, Path(id): Path<String>) -> A
     }
 }
 
-/// 运营频道卡片上的批准（决定 60）。操作人固定 supervisor；不从请求体读 actor。
+/// 运营频道卡片上的批准（决定 60；批准即执行见决定 2026-11-26-ops-approve-auto-execute）。
+/// 操作人固定 supervisor；不从请求体读 actor。批准成功后引擎立即按批准执行：
+/// 执行成功回 `executed:true`；受阻时批准保留，回 `executed:false` 与 `blocked_reason`。
 async fn approve(
     State(s): State<OpsState>,
     Path(id): Path<String>,
@@ -152,22 +154,28 @@ async fn approve(
 ) -> ApiResult {
     let mut engine = s.engine.lock().map_err(fail)?;
     let publisher = s.publisher.lock().map_err(fail)?;
-    let already = match engine.case(&id) {
-        Ok(c) => c
-            .approvals
-            .get(&body.scope)
-            .filter(|a| a.plan_revision == body.plan_revision)
-            .map(|a| a.approver.clone()),
-        Err(_) => return Err(not_found(&id)),
-    };
-    if let Some(approver) = already {
-        publisher.refresh_case(&engine, &id).map_err(fail)?;
-        return Ok(Json(json!({"already": true, "approver": approver})));
+    if engine.case(&id).is_err() {
+        return Err(not_found(&id));
     }
-    match engine.approve(&id, body.plan_revision, &body.scope, "supervisor") {
-        Ok(()) => {
+    match engine.approve_and_execute(&id, body.plan_revision, &body.scope, "supervisor") {
+        Ok(outcome) => {
             publisher.refresh_case(&engine, &id).map_err(fail)?;
-            Ok(Json(json!({"already": false, "approver": "supervisor"})))
+            let mut body = json!({"approver": "supervisor"});
+            match outcome {
+                an_runtime::mom::ApproveOutcome::Already => {
+                    body["already"] = json!(true);
+                }
+                an_runtime::mom::ApproveOutcome::Executed => {
+                    body["already"] = json!(false);
+                    body["executed"] = json!(true);
+                }
+                an_runtime::mom::ApproveOutcome::Blocked { reason } => {
+                    body["already"] = json!(false);
+                    body["executed"] = json!(false);
+                    body["blocked_reason"] = json!(reason);
+                }
+            }
+            Ok(Json(body))
         }
         Err(e) => {
             let msg = e.to_string();

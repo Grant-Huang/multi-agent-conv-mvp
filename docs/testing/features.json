@@ -730,7 +730,9 @@
       "E2E-OPSCHANNEL",
       "E2E-OPSNOISE",
       "E2E-OPSAPPROVE",
-      "E2E-OPSOFF"
+      "E2E-OPSOFF",
+      "E2E-OPSAUTOEXEC",
+      "E2E-OPSEXPIRE"
     ],
     "runtime_cases": [
       "RT-OPSDESK-01",
@@ -743,7 +745,9 @@
       "RT-OPSDESK-08",
       "RT-OPSDESK-09",
       "RT-OPSDESK-10",
-      "RT-OPSDESK-11"
+      "RT-OPSDESK-11",
+      "RT-OPSDESK-12",
+      "RT-OPSDESK-13"
     ]
   },
   {

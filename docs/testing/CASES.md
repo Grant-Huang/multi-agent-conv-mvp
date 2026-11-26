@@ -783,6 +783,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-OPSCHANNEL | ops-desk | 开关打开；注入一个待批准案例 | 查看页签未读数，打开运营频道，再批准该案例 | 未读数为 1，打开后清零；频道里该案例只有一张带“模拟”的卡；批准后同一张卡更新（含批准人）、频道消息条数不变；频道没有模型回复，也没有任务 |
 | E2E-OPSNOISE | ops-desk | 开关打开，每小时上限 10；一个已有卡片的案例，再来 12 个新案例 | 对已有卡片的案例重复上报 10 次观测；再注入 12 个新案例 | 重复观测不新增频道消息；卡片总数为 10，另有一张“另有 3 条”汇总卡；桌面仍有全部 13 个事项 |
 | E2E-OPSAPPROVE | ops-desk | 开启桥的实例，有待批准案例 | 桌面点「在频道中处理」→ 卡上点「批准」 | 卡显示 supervisor；桌面无「批准」按钮；引擎 decision_inbox 含批准人 |
+| E2E-OPSAUTOEXEC | ops-desk | 开启桥的实例，有待批准案例（INTENT-027，决定 2026-11-26-ops-approve-auto-execute） | 桌面点「在频道中处理」→ 卡上点「批准」；全程不调用执行 API | 卡变「核验中」并显示执行回执；引擎 stage=VERIFYING 且 actions 非空；桌面「待批准 0」，该事项行显示「核验中」 |
+| E2E-OPSEXPIRE | ops-desk | 开启桥的实例，待批准案例，已注入 `resources_available=false`（INTENT-027） | 卡上点「批准」；用 `advance` 推进引擎时间越过批准有效期；恢复资源并 `refresh_plan` 后在卡上再点「批准」 | 受阻时卡显示「已批准」「执行受阻」且引擎无 actions、批准保留；过期后卡显示「批准已过期」「需重新批准」并有重新批准按钮；刷新方案重评后重新批准即执行成功（VERIFYING），新批准有效期刷新（expires_at 变大） |
 | E2E-OPSOFF | ops-desk | 默认 harness，未配置 `[mom]`（基线：现状本来就通过，用于防止回归） | 注入 MOM 案例，打开页面，发一句问候 | 没有“运营桌面”页签、没有运营频道、`/api/mom/desk` 为 404；原有会话回复正常 |
 | E2E-ADREAD | ai-desktop | 开关打开；频道内 ≥6 张运营卡；窄视口 | 滚到中间卡使其位于列表顶部；切到桌面再回运营频道；工作区收起执行后离开再打开 | 锚点=滚动停止时首条可见消息及其偏移（几何钳制时为钳制位置的可见消息）；返回后该锚点消息仍为首可见、偏移恢复（阅读位置精确还原）；工作区执行区保持收起 |
 
@@ -803,8 +805,10 @@ Rust 运行时用例（`crates/runtime/tests/ops_desk.rs`，函数前缀 `rt_ops
 | RT-OPSDESK-09 | ops-desk | 发布器（文件库），先后发出几张卡 | 查看未读、批准已发卡的案例、再发新卡、标记已读、重启 | 无消息时未读为 0；每张新卡、汇总卡各加 1；就地更新原卡不增加；标记已读后为 0；已读位置重启后仍在 |
 | RT-OPSDESK-11 | ops-desk | 服务端挂桌面路由，已发卡的待批准案例 | approve 两次；错误 plan_revision；不存在案例 | 首次 already=false；再次 already=true；卡 approver=supervisor；错误版本 409；不存在 404 |
 | RT-OPSDESK-10 | ops-desk | 服务端同时挂 MOM 与运营桌面路由，已创建 s1 案例 | `GET /api/mom/desk`；`GET …/cases/{id}`；对同一案例 `POST …/open-in-channel` 两次；对不存在案例 GET/POST | desk 200 且 rows 案例集合与 `/mom/api/mom/cases` 相同；详情含 `projection_seq`；两次 open 返回同一 `message_id`；不存在案例 404 |
+| RT-OPSDESK-12 | ops-desk | 文件库引擎，一个待批准案例（s1）；另一组先注入 `resources_available=false` | 调用 `approve_and_execute`：正常案例；受阻案例；受阻案例到期前再次调用；错误方案版本 | 正常：返回已执行，stage=VERIFYING、actions 非空、无 execution_block；受阻：批准保留、无 actions、execution_block 记录原因、事件 `ExecutionBlocked`；到期前重试：仍受阻、批准不重复登记；错误版本：整体失败，无批准无事件 |
+| RT-OPSDESK-13 | ops-desk | 文件库引擎，受阻批准（`approve_and_execute` 已 Blocked） | `advance` 越过批准有效期后再 `advance`；随后重新 `approve_and_execute`；发布器 tick 后看卡片 | 首次越过有效期发一次 `ApprovalExpired`，再推进不重复发；重新批准后有效期刷新、过期标记清零；卡片摘要含「批准已过期，需重新批准」（过期后）与「已批准」（重新批准后） |
 
-说明：RT-OPSDESK-06/07 属 D1-1；RT-OPSDESK-10/11 属 D1-2/D2（`crates/server/tests/mom_ops.rs`）。证据见 `ops-desk-d1-*.md`、`ops-desk-d2.md`。
+说明：RT-OPSDESK-06/07 属 D1-1；RT-OPSDESK-10/11 属 D1-2/D2（`crates/server/tests/mom_ops.rs`）。证据见 `ops-desk-d1-*.md`、`ops-desk-d2.md`。 RT-OPSDESK-12/13 属 INTENT-027（批准即执行，决定 2026-11-26-ops-approve-auto-execute），见 `docs/testing/evidence/ops-approve-execute.md`。
 
 说明：原草案 RT-OPSDESK-03 的“不进入记忆抽取”本期无法验证——仓库里还没有个人记忆抽取模块（见 `docs/memory/` 的缺口 G-9）。这里改为断言消息带结构化案例卡，日后的抽取器按卡片类型跳过即可；等记忆模块出现时再补断言。原 RT-OPSDESK-04 的“无桌面接口和发布器”属于服务层，放到 D0b 的服务端测试。
 

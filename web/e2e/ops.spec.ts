@@ -229,6 +229,71 @@ test('E2E-OPSAPPROVE: 桌面进频道后在卡上批准，卡与引擎同步，�
   await expect(page.getByRole('button', { name: '批准执行' })).toHaveCount(0);
 });
 
+// INTENT-027（Issue #340）：批准即执行——频道卡批准后引擎按批准自动执行，不设单独执行入口。
+test('E2E-OPSAUTOEXEC: 频道卡批准即自动执行，卡片与桌面显示真实执行状态', async ({ page, request }) => {
+  const id = await scenario(request);
+  await openDesk(page);
+  const row = rows(page).filter({ hasText: id }).first();
+  await row.getByRole('button', { name: '在频道中处理' }).click();
+  const card = page.getByTestId('ops-card').filter({ hasText: id });
+  await expect(card).toBeVisible();
+  // 批准即执行：点批准后案例自动进入核验，全程只点卡片按钮，不调用执行 API
+  await card.getByRole('button', { name: '批准', exact: true }).click();
+  await expect(card).toContainText('核验中');
+  await expect(card.getByTestId('execution-receipt')).toBeVisible();
+  // 引擎侧：动作已派发（GET 只读核对面，不触发执行）
+  const view = unwrap(await (await request.get(mom(`/cases/${id}`))).json());
+  expect(view.stage).toBe('VERIFYING');
+  expect(Object.keys(view.actions ?? {}).length).toBeGreaterThan(0);
+  // 桌面同步：该案例离开待批准，事项行显示核验中
+  await page.getByTestId('ops-entry-desk').click();
+  await expect(page.getByTestId('ops-strip')).toBeVisible();
+  await expect(strip(page)).toContainText('待批准 0');
+  await expect(rows(page).filter({ hasText: id }).first()).toContainText('核验中');
+});
+
+// INTENT-027（Issue #340）：执行受阻时批准保留，批准到期后卡片明确提示重新批准。
+// 注：证据快照 TTL 与批准 TTL 同为 5 分钟，过期后按现行补救路径先 refresh_plan 再批准。
+test('E2E-OPSEXPIRE: 执行受阻的批准到期后卡片提示已过期，刷新方案后可重新批准', async ({ page, request }) => {
+  const id = await scenario(request);
+  // 测试布置：注入资源故障，让执行前提不满足（批准校验不查资源可用性）
+  await command(request, id, { command: 'fault', key: 'resources_available', value: false });
+  await openDesk(page);
+  const row = rows(page).filter({ hasText: id }).first();
+  await row.getByRole('button', { name: '在频道中处理' }).click();
+  const card = page.getByTestId('ops-card').filter({ hasText: id });
+  await expect(card).toBeVisible();
+  await card.getByRole('button', { name: '批准', exact: true }).click();
+  // 批准保留、执行受阻：卡片显示已批准待执行与受阻原因，引擎无动作
+  await expect(card).toContainText('已批准');
+  await expect(card).toContainText('执行受阻');
+  const view = unwrap(await (await request.get(mom(`/cases/${id}`))).json());
+  expect(view.stage).toBe('WAITING_HUMAN');
+  expect(JSON.stringify(view.decision_inbox)).toContain('supervisor');
+  expect(Object.keys(view.actions ?? {})).toHaveLength(0);
+  const firstExpiry = view.decision_inbox[0].approved.production.expires_at;
+  // 推进引擎时间越过批准有效期（TTL 5 分钟），不调用任何执行接口
+  await command(request, id, { command: 'advance', minutes: 10 });
+  // 卡片明确提示批准已过期，需重新批准；重新批准入口可见
+  await expect(card).toContainText('批准已过期');
+  await expect(card).toContainText('需重新批准');
+  await expect(card.getByRole('button', { name: '重新批准' })).toBeVisible();
+  // 恢复资源并刷新方案（现行补救路径，非执行入口）：方案重评为可行，回到待批准（plan_revision+1）
+  await command(request, id, { command: 'fault', key: 'resources_available', value: true });
+  await command(request, id, { command: 'refresh_plan' });
+  await command(request, id, { command: 'advance', minutes: 3 });
+  await expect(card).toContainText('待批准');
+  // 刷新后在卡上重新批准：批准即执行成功，卡片显示核验中，新批准有效期刷新
+  await card.getByRole('button', { name: '批准', exact: true }).click();
+  await expect(card).toContainText('核验中');
+  const view2 = unwrap(await (await request.get(mom(`/cases/${id}`))).json());
+  expect(view2.stage).toBe('VERIFYING');
+  const renewed = view2.decision_inbox[0].approved.production;
+  expect(renewed.approver).toBe('supervisor');
+  expect(renewed.expires_at).toBeGreaterThan(firstExpiry);
+  expect(Object.keys(view2.actions ?? {}).length).toBeGreaterThan(0);
+});
+
 test('E2E-ADREAD: 运营频道阅读锚点离开后恢复', async ({ page, request }) => {
   test.setTimeout(120_000);
   await page.addInitScript(() => {
