@@ -29,10 +29,14 @@ Conversation Agent + Router + 3 个执行 Agent 的最小可运行骨架。后�
 
 ## 快速开始
 
-前置：Rust 1.80+、Node 20+、已启动的 llama.cpp server（默认 `http://127.0.0.1:8098/v1`）、可选的 Codex CLI。
+前置：Rust 1.80+、Node 20+、已启动的 llama.cpp / OpenAI 兼容模型服务（样例默认 `http://127.0.0.1:8098/v1`；本机 35B 常见为 `8200`）、可选的本机 agent（Claude Code / Codex 等，见 [手册·接入助手](docs/manual/03-connect-agents.md)）。
 
 ```bash
-cp config.example.toml config.toml   # 按需修改模型地址、codex 路径、工作目录
+cp config.example.toml config.toml   # 按需修改模型地址、本机 agent、工作目录
+# 常用可选节（样例里有注释，默认多为关闭）：
+#   [desktop] test_fixtures     — 仅本地/测试挂载桌面夹具接口，生产勿开
+#   [mom] chat_bridge / world_mock — 开启同源「MOM 运营沙盘」与 World Mock
+#   [introspection] enabled=true — 业务内省定时分析（真实环境测试常打开）
 ```
 
 ```bash
@@ -40,10 +44,18 @@ cd web && npm install && npm run build && cd ..
 ```
 
 ```bash
-cargo run --release --bin agentnexus
+cargo run --release --bin agentnexus -- config.toml
+# 或：./target/release/agentnexus config.toml
 ```
 
-打开 http://127.0.0.1:8787 。左下角会显示 LLM 和各 Agent 的连接状态。
+打开 http://127.0.0.1:8787 。
+
+- 左下角：LLM 与各 Agent 连接状态。
+- 左侧「我的桌面」：AI 桌面首页（委派、工作卡、关注）；工作区可开语音、设置与**个人记忆**。
+- 配置打开 `[mom] chat_bridge` 后：左侧「MOM 运营沙盘」进入同源 `/mom/`。
+- 配置打开 `[introspection]` 后：右侧「内省」可查看业务发现。
+
+更细的操作见 [docs/manual](docs/manual/README.md)；本地真实环境测试设计见 [docs/testing/LOCAL_E2E.md](docs/testing/LOCAL_E2E.md)。
 
 前端开发模式（热更新）：后端照常运行，另开终端 `cd web && npm run dev`，访问 http://127.0.0.1:5173 。
 
