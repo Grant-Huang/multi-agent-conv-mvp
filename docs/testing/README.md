@@ -22,6 +22,16 @@ verify 顺序：地图检查→Vite/TS构建→Cargo build（CARGO_TARGET_DIR=ta
 
 只执行已构建的浏览器测试可用 npm run test:e2e。无需真实模型密钥、搜索或 ACP 安装；外部模型是受控替身，应用/HTTP/SSE/SQLite/文件工具真实运行。
 
+## 测试分类
+
+测试分为静态检查、单元、集成与契约、仿真、浏览器 E2E、长程与真实环境、安全与依赖七类。各类在哪一层 CI 运行、耗时上限多少，以 [集成流水线](../fencing/INTEGRATION_PIPELINE.md) 第 5.1 节为准。放置约定：
+
+- **单元测试**：Rust 写在 crate 的 `src/` 内（`#[cfg(test)]`），web 写在 `web/src/**/*.test.ts`。
+- **集成与契约测试**：写在 `crates/<crate>/tests/`。
+- **仿真测试**：文件名以 `mom_des` 或 `des_` 开头。
+- **浏览器 E2E**：写在 `web/e2e/`。
+- 单个用例预计超过本类上限（单元 5 秒、集成 30 秒、仿真与 E2E 60 秒）时，在用例注释里写明原因，并在 PR 正文说明。
+
 ## 证据与判定
 
 web/test-results/results.json、junit.xml、cases 下截图/失败 trace，playwright-report 下 HTML。runtime 下保存后端日志、模型事件和临时数据位置。HTML 可用 npx playwright show-report 在本机查看；不为云 onboarding 制造 localhost 预览链接。
