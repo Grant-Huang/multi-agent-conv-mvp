@@ -35,6 +35,8 @@ type Props = {
   onProfileSaved: (profile: AssistantProfile) => void;
   /** UXFIX-O（INTENT-024）：经场景捷径直达分类时，“返回 / Escape”直接关闭设置回到来源 */
   closeToSource?: boolean;
+  /** UXFIX-B（INTENT-003）：服务端告知的测试模式；仅在 true 时渲染“注入冲突（测试）” */
+  testFixtures?: boolean;
 };
 
 export function SettingsPanel({
@@ -46,6 +48,7 @@ export function SettingsPanel({
   onClose,
   onProfileSaved,
   closeToSource = false,
+  testFixtures = false,
 }: Props) {
   const [profile, setProfile] = useState<AssistantProfile | null>(null);
   const [draft, setDraft] = useState<AssistantProfile | null>(null);
@@ -314,6 +317,7 @@ export function SettingsPanel({
                 >
                   保存
                 </button>
+                {testFixtures && (
                 <button
                   type="button"
                   className="btn small"
@@ -333,6 +337,7 @@ export function SettingsPanel({
                 >
                   注入冲突（测试）
                 </button>
+                )}
                 <button
                   type="button"
                   className="btn small"
