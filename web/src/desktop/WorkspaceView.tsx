@@ -23,12 +23,14 @@ type Props = {
   onOpenEvidence?: () => void;
   onOpenSettings?: () => void;
   onOpenTask?: (taskId: string) => void;
+  /** UXFIX-B（INTENT-003）：服务端告知的测试模式；仅在 true 时渲染模拟测试控件 */
+  testFixtures?: boolean;
 };
 
 /** 真实任务信息加载态：null=加载中，"error"=加载失败（CH-P3：出错就报错，不回退模拟） */
 type RealTaskState = { task: TaskRecord } | "loading" | "error";
 
-export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, onOpenTask }: Props) {
+export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, onOpenTask, testFixtures = false }: Props) {
   const [layout, setLayout] = useState<WorkspaceLayout>(() => readWorkspaceLayout());
   const [execOpen, setExecOpen] = useState(() => loadExecOpen(taskId));
   const [showAppr, setShowAppr] = useState(false);
@@ -182,7 +184,10 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
               )}
             </div>
           )}
-          <div className="workspace-mock-toggles">
+          {/* UXFIX-B：模拟测试控件只在测试模式渲染（服务端告知），正常界面不出现（CH-U5） */}
+          {testFixtures && (
+            <>
+              <div className="workspace-mock-toggles" data-testid="workspace-mock-toggles">
             <button
               type="button"
               className="btn small"
@@ -234,6 +239,8 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
           {showVoice && <VoiceMockPanel taskId={taskId} />}
           {showHandoff && <HandoffMockPanel taskId={taskId} />}
           {showAccept && <AcceptMockPanel taskId={taskId} />}
+            </>
+          )}
           <p className="workspace-hint">草稿与作用域按 Task 隔离（A2）。</p>
           </div>
           <WorkspaceComposer taskId={taskId} />
