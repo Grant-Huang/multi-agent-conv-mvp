@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0",
+  "users": [
+    {"principal": "supervisor-east", "display": "东区生产主管（虚构）", "role": "production_supervisor"},
+    {"principal": "qa-line3", "display": "三线质量工程师（虚构）", "role": "quality"},
+    {"principal": "equip-smt", "display": "SMT 设备工程师（虚构）", "role": "equipment"},
+    {"principal": "ops-duty", "display": "运营值班（虚构）", "role": "ops"},
+    {"principal": "admin-demo", "display": "演示管理员（虚构）", "role": "admin"},
+    {"principal": "leader-smt-a", "display": "SMT-A 班组长（虚构）", "role": "line_leader"}
+  ]
+}
