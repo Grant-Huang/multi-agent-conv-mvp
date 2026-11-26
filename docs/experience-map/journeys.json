@@ -50,7 +50,7 @@
         "id": "UX-01-I6",
         "text": "窄屏下工作区对话输入在首屏可见",
         "charter": "CH-U1",
-        "debt": true
+        "case": "E2E-UX01-I6"
       },
       {
         "id": "UX-01-I7",
@@ -79,7 +79,6 @@
       "INTENT-2026-002",
       "INTENT-2026-003",
       "INTENT-2026-004",
-      "INTENT-2026-005",
       "INTENT-2026-006",
       "INTENT-2026-007",
       "INTENT-2026-008",

@@ -656,6 +656,13 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
 .workspace-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border, #ddd); flex-wrap: wrap; }
 .workspace-title { margin: 0; font-size: 15px; flex: 1; }
 .workspace-body { display: flex; flex: 1; min-height: 0; }
+/* UXFIX-C（INTENT-005）：窄屏下工作区默认单栏——任务信息折叠到顶部（自身可滚），
+ * 会话栏占满宽度，对话输入在首屏可见可用（INTENT-005 建议：窄屏默认单栏） */
+@media (max-width: 900px) {
+  .workspace-body { flex-direction: column; }
+  .workspace-task-pane { width: auto; border-right: 0; border-bottom: 1px solid var(--border, #ddd); max-height: 168px; }
+  .workspace-session { flex: 1; min-height: 0; }
+}
 .workspace-task-pane { width: 240px; border-right: 1px solid var(--border, #ddd); padding: 12px; overflow: auto; font-size: 13px; }
 .workspace-task-pane dl { margin: 0; }
 .workspace-task-pane dt { color: #888; margin-top: 8px; }

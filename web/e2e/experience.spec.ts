@@ -261,3 +261,23 @@ test('E2E-UX06: 工作区“调整助理”直达助理设置，改名生效，�
   await page.getByRole('button', { name: '返回桌面', exact: true }).click();
   await expect(page.getByTestId('home-assistant-name')).toContainText(original);
 });
+
+// UX-01-I6（CH-U1，INTENT-2026-005）：窄屏（390 宽）下工作区的对话输入在首屏可见——
+// 窄屏默认单栏（任务信息折叠），S2 双栏挤压不再把输入挤出首屏。
+test('E2E-UX01-I6: 窄屏下工作区对话输入在首屏可见', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  const box = await page.getByTestId('workspace-input').boundingBox();
+  expect(box).not.toBeNull();
+  // 首屏内完整可见：纵向不被挤出视口，横向可用宽度足够（窄屏单栏，不被任务栏挤压）
+  expect(box!.y, '输入框应在首屏内').toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height, '输入框不应被挤出首屏').toBeLessThanOrEqual(844);
+  expect(box!.width, '输入框可用宽度不应被 S2 双栏挤压').toBeGreaterThanOrEqual(200);
+  // 任务信息栏不与会话栏并排挤压（窄屏单栏：任务栏在输入框上方）
+  const paneBox = await page.getByTestId('workspace-task-pane').boundingBox();
+  if (paneBox) {
+    expect(paneBox.y + paneBox.height, '任务信息栏应在输入框上方（窄屏单栏）').toBeLessThanOrEqual(box!.y + 1);
+  }
+});
