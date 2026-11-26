@@ -73,10 +73,21 @@ $ cargo test -p an-server --test restart_semantics rt_restart_09 → 1 passed（
 
 | 项 | 状态 |
 |---|---|
-| push @ `6d6a67b`（#338，run [45768847545](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45768847545)） | **success**——**rust 连续第六推绿**（467d6e0/6fbc83c/03373f2/75f55cb/25caa2b/6d6a67b）；Q-AR2-04：三绿样本自 81445e7 后未再复现，稳定性转好趋势维持 |
+| push @ `6d6a67b`（#338，run [45768847545](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45768847545)） | **success**——rust 连续第六推绿；**PR #339（本线 docs 分支）rust 首跑红 = Q-AR2-04 第四样本（ETXTBSY，PR 级首例），失败作业 rerun 后同提交转绿（10m10s）——抖动经重试实证**；详见 Q-AR10-01 |
 | nightly 11-26 | 未触发（收稿时点）；ADREAD 未修，预计仍 2 红形态（ADREAD+UX05 抖动候选） |
 
 ## 4. 问题清单
+
+### Q-AR10-01 — acp_probe rt_i325_01 CI ETXTBSY（Q-AR2-04 第四样本，PR 级首例；阻塞本线 docs PR）
+
+| 字段 | 内容 |
+|---|---|
+| 事实 | PR #339（docs-only）rust 红：`rt_i325_01_probe_reresolves_command_appearing_after_construction`（acp_probe.rs:206，#334 新增测试）`HandshakeFailed Some("无法启动：Text file busy (os error 26)")`——测试 re-launch mock 二进制时该文件被并发构建写持有（ETXTBSY） |
+| 本地 | 本线初跑因未建 an-mock-acp 失败（183 行，环境缺失非缺陷）；补建后 **5/5 passed**——本地无并发重建不触发 |
+| 定性 | **测试内直接 exec 其他包产物二进制 + CI 并行构建竞争** = ETXTBSY；与 Q-AR2-04 前三样本同类（IO/时序竞争），但签名明确可修 |
+| 修复范式 | acp_probe 测试 helper 对 ETXTBSY 短暂重试；或启动前将二进制拷贝到临时路径再 spawn（消除写持有冲突）；或确保测试前置依赖声明（build hint） |
+| 归属 | 第 4 线（acp_probe 作者链，#334）；已按派工约定开 Issue（见 §4） |
+| 备注 | 本 PR 为 docs-only，rust 红与本 PR 内容无关；已 rerun failed job 验证抖动性（结果见 §3 补记） |
 
 ### 在账确认（severity 序）
 
