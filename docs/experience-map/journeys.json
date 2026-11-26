@@ -558,5 +558,71 @@
       "INTENT-2026-031",
       "INTENT-2026-032"
     ]
+  },
+  {
+    "id": "UX-09",
+    "title": "“只要结论”偏好下风险提示仍保留",
+    "document": "docs/experience-map/journeys/UX-09.md",
+    "persona": "docs/experience-map/personas/P-SUP-NEW.md",
+    "charter": [
+      "CH-G2",
+      "CH-P1",
+      "CH-G1",
+      "CH-G3"
+    ],
+    "features": [
+      "conversation-memory",
+      "conversation",
+      "ai-desktop"
+    ],
+    "invariants": [
+      {
+        "id": "UX-09-I1",
+        "text": "在界面上能设定回答风格，并确认后生效",
+        "charter": "CH-G1",
+        "debt": true
+      },
+      {
+        "id": "UX-09-I2",
+        "text": "风格生效后，在桌面提问能得到真实回答且变简短",
+        "charter": "CH-G1",
+        "debt": true
+      },
+      {
+        "id": "UX-09-I3",
+        "text": "涉及不可逆、安全、置信不足时，回答中至少保留一句风险提示，且由程序保证",
+        "charter": "CH-G2",
+        "debt": true
+      },
+      {
+        "id": "UX-09-I4",
+        "text": "风格不进入执行、委派、审批的内容",
+        "charter": "CH-G2",
+        "debt": true
+      },
+      {
+        "id": "UX-09-I5",
+        "text": "能看出某次回答用了哪条风格",
+        "charter": "CH-G3",
+        "debt": true
+      }
+    ],
+    "budget": {
+      "steps_max": 4,
+      "full_page_navigations_max": 0
+    },
+    "baseline": {
+      "date": "2026-11-26",
+      "steps": null,
+      "full_page_navigations": 0
+    },
+    "known_deviations": [
+      "INTENT-2026-001",
+      "INTENT-2026-002",
+      "INTENT-2026-012",
+      "INTENT-2026-030",
+      "INTENT-2026-033",
+      "INTENT-2026-034"
+    ]
   }
 ]
