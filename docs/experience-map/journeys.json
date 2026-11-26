@@ -251,7 +251,7 @@
         "id": "UX-04-I3",
         "text": "离开对话做别的事再返回，未发送草稿仍在",
         "charter": "CH-U2",
-        "debt": true
+        "case": "E2E-UX04-I3"
       },
       {
         "id": "UX-04-I4",
@@ -271,8 +271,7 @@
     },
     "known_deviations": [
       "INTENT-2026-017",
-      "INTENT-2026-018",
-      "INTENT-2026-019"
+      "INTENT-2026-018"
     ]
   },
   {
