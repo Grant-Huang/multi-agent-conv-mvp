@@ -1149,6 +1149,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-EXEC-03 | conversation-memory | `session_materials_exec = false` | 同上 | system 无资料块标记 |
 | RT-EXEC-04 | conversation-memory | 注入发生后的任务 | 查 `tasks.context` | context 列含资料段（随任务持久） |
 | RT-EXEC-05 | conversation-memory | 过闸门发现 + 委派（general 角色；#346 场合表落地） | handle_message | 执行背景与 `tasks.context` 不含发现 id；同发现回答路径仍按相关性门注入（守卫） |
+| RT-EXEC-06 | conversation-memory | fact 记忆 + 委派（high 风险 → NEEDS_HUMAN）后撤回该记忆再批准（#358 / CH-G2e） | 批准后查 General 首步请求与 `tasks.exec_material` / `tasks.context` | 执行请求与两列均不含该记忆正文和 id（撤回即失效，清扫未终态任务；#360 后缺陷面为 exec_material 快照列）；已终态任务保留原件；重试 / 重启续跑同源生效 |
 
 ## 分层记忆细化（#346；RT-L2H-01～04、RT-ASEL-02 已实现（片 3 / 片 4a / 片 4b，2026-11-26），RT-ASEL-01 为实现前定义随各入口线场合落地补可执行测试）
 

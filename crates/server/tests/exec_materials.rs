@@ -29,15 +29,20 @@ struct MockLlm {
 
 impl MockLlm {
     async fn start() -> Self {
-        Self::start_with_mode(false).await
+        Self::start_with_mode(false, false).await
     }
 
     /// respond_mode：turn_decision 返回 respond（回答路径守卫断言用）
     async fn start_respond() -> Self {
-        Self::start_with_mode(true).await
+        Self::start_with_mode(true, false).await
     }
 
-    async fn start_with_mode(respond_mode: bool) -> Self {
+    /// high_risk：route_decision 返回 high → 待人工审批（#358 撤回后批准场景）
+    async fn start_high_risk() -> Self {
+        Self::start_with_mode(false, true).await
+    }
+
+    async fn start_with_mode(respond_mode: bool, high_risk: bool) -> Self {
         let requests: Arc<Mutex<Vec<Value>>> = Arc::default();
         let log = requests.clone();
         let app = axum::Router::new().route(
@@ -58,7 +63,7 @@ impl MockLlm {
                                 json!({"action":"delegate","question":"","task_goal":"整理产线报告","task_id":"","follow_up_kind":"","change":""}).to_string()
                             }
                         }
-                        "route_decision" => json!({"task_class":"L3","execution_role":"general","required_tools":["write_file"],"risk_level":"medium","reason":"受控验证路由","template_id":"","deliverable":"","slots_ok":"no"}).to_string(),
+                        "route_decision" => json!({"task_class":"L3","execution_role":"general","required_tools":["write_file"],"risk_level":if high_risk {"high"} else {"medium"},"reason":"受控验证路由","template_id":"","deliverable":"","slots_ok":"no"}).to_string(),
                         "general_step" => json!({"thought":"完成","action":"final","tool":"","args":{},"answer":"已根据会话资料完成整理。"}).to_string(),
                         _ => "你好，验证成功。".to_string(),
                     };
@@ -441,5 +446,96 @@ async fn rt_exec_05_exec_block_excludes_introspection_findings() {
     assert!(
         mat.contains("intf-exec-05"),
         "回答路径仍应注入该发现（守卫断言）：{mat}"
+    );
+}
+
+/// RT-EXEC-06（#358 / 宪章 CH-G2e）：撤回个人记忆后，待批任务批准时执行者
+/// 不得再拿到该记忆的正文或 id；持久化的 tasks.context 已在撤回时清扫
+/// （批准 / 重试 / 重启续跑都从库读 context，清扫即全部生效）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_exec_06_revoked_memory_cleaned_from_pending_task_context() {
+    let llm = MockLlm::start_high_risk().await;
+    let rt = runtime(&llm.base, "");
+    let conv = rt.store.create_conversation("t").unwrap();
+    let mem = rt
+        .store
+        .create_desktop_memory(
+            "local",
+            "REVOKEDSECRET-7788 口径",
+            "REVOKEDSECRET-7788 的正文。",
+            "2099-01-01",
+            "fact",
+        )
+        .unwrap();
+    for i in 0..12 {
+        rt.store
+            .add_message(&conv.id, "user", &format!("历史填充{i}"), None)
+            .unwrap();
+    }
+    let out = rt
+        .conversation
+        .handle_message(&conv.id, "你好，3 号产线 CPK 那个任务的结论整理成报告")
+        .await
+        .unwrap();
+    let task = out.task.expect("委派应产生任务");
+    // high → 待人工审批；批准前 context 含撤回前注入的记忆（这正是要修的缺陷面）
+    let mut needs_human = false;
+    for _ in 0..40 {
+        if let Some(t) = rt.store.get_task(&task.id).unwrap() {
+            if t.status == TaskStatus::NeedsHuman {
+                needs_human = true;
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(needs_human, "high 风险任务应进入 NEEDS_HUMAN");
+    // #360 改版：执行资料独立存于 tasks.exec_material（submit 快照，批准 / 重试 /
+    // 续跑注入本机执行者）——缺陷面从 context 转移到该列
+    let mat_before = rt
+        .store
+        .get_task_exec_material(&task.id)
+        .unwrap()
+        .unwrap_or_default();
+    assert!(
+        mat_before.contains("REVOKEDSECRET-7788"),
+        "守卫：批准前 exec_material 确实含有该记忆（缺陷复现面）"
+    );
+
+    // 撤回 → 批准
+    rt.store
+        .revoke_desktop_memory("local", &mem.id)
+        .unwrap()
+        .expect("撤回应命中");
+    rt.orchestrator.approve(&task.id).unwrap();
+
+    let sys = step_system(&wait_first_step(&llm));
+    assert!(
+        !sys.contains("REVOKEDSECRET-7788"),
+        "撤回后批准，执行者不得再拿到记忆正文（CH-G2e）：{sys}"
+    );
+    assert!(
+        !sys.contains(mem.id.as_str()),
+        "撤回后批准，执行者请求不得含记忆 id：{sys}"
+    );
+    let mat_after = rt
+        .store
+        .get_task_exec_material(&task.id)
+        .unwrap()
+        .unwrap_or_default();
+    let ctx_after = rt
+        .store
+        .get_task_context(&task.id)
+        .unwrap()
+        .unwrap_or_default();
+    assert!(
+        !mat_after.contains("REVOKEDSECRET-7788") && !mat_after.contains(mem.id.as_str()),
+        "tasks.exec_material 应在撤回时清扫（重试 / 重启续跑同源）：{}",
+        mat_after.chars().take(300).collect::<String>()
+    );
+    assert!(
+        !ctx_after.contains("REVOKEDSECRET-7788"),
+        "context 亦不得残留：{}",
+        ctx_after.chars().take(200).collect::<String>()
     );
 }
