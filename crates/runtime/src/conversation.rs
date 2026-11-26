@@ -610,9 +610,34 @@ impl ConversationRuntime {
                 } else {
                     String::new()
                 };
+                // #346 片4b（REQ-06）：每轮记录「带了哪些记忆、为什么」——
+                // occasion 由入口与状态确定性判断（history 含当前消息：仅当前一条 =
+                // 新会话，否则 = 会话续问）；why 为各段入选原因码（回执=窗口内未撤回
+                // 回执、记忆=fact 已生效、风格=已确认生效、发现=相关性门达标），
+                // 跳过原因沿用 skipped。
+                let occasion = if history.len() <= 1 {
+                    "新会话"
+                } else {
+                    "会话续问"
+                };
+                let mut why: Vec<&'static str> = Vec::new();
+                if !m.items.is_empty() {
+                    why.push("receipts:in_window");
+                }
+                if !m.memories.is_empty() {
+                    why.push("memories:effective_fact");
+                }
+                if !m.style.is_empty() {
+                    why.push("style:effective_style");
+                }
+                if !m.findings.is_empty() {
+                    why.push("findings:related_gate");
+                }
                 tracing::info!(
                     event = "session.materials",
                     conv_id = %conversation_id,
+                    occasion = %occasion,
+                    why = %why.join(";"),
                     selected = %m.items.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
                     memories = %m.memories.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
                     style = %m.style.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),

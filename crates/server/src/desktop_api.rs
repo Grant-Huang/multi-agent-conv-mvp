@@ -127,6 +127,11 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
             // #346 片3 REQ-05：L2 历史记录检索（默认 180 天窗口）与本人消息真删除
             .route("/api/desktop/v1/history/search", get(search_history_api))
             .route("/api/desktop/v1/messages/{id}", delete(delete_message_api))
+            // #346 片4a REQ-05：本人历史消息的「更正」注记（更正单独记录，原文不改写）
+            .route(
+                "/api/desktop/v1/messages/{id}/correction",
+                post(correct_message_api),
+            )
             // T-73：助理消息已读跨端（进程内夹具，无新表）
             .route(
                 "/api/desktop/v1/assistant/messages",
@@ -985,6 +990,7 @@ async fn search_history_api(
                         "at": h.at,
                         "snippet": h.snippet,
                         "task_id": h.task_id,
+                        "correction": h.correction,
                     })
                 })
                 .collect();
@@ -1008,6 +1014,48 @@ async fn delete_message_api(
     match rt.store.delete_message(&id) {
         Ok(true) => (StatusCode::OK, Json(json!({ "deleted": true }))).into_response(),
         Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "消息不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "code": "forbidden", "message": format!("{e:#}"), "retryable": false })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CorrectionBody {
+    note: String,
+}
+
+/// 本人给历史消息加「更正」注记（REQ-05）：更正单独记录、原文不改写；
+/// 检索命中被纠正消息时附注记并优先展示纠正后版本。
+async fn correct_message_api(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<CorrectionBody>,
+) -> Response {
+    if body.note.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "code": "invalid", "message": "更正内容不能为空", "retryable": false })),
+        )
+            .into_response();
+    }
+    match rt.store.correct_message(&id, &body.note) {
+        Ok(Some(c)) => (
+            StatusCode::OK,
+            Json(json!({
+                "message_id": c.message_id,
+                "note": c.note,
+                "created_at": c.created_at,
+            })),
+        )
+            .into_response(),
+        Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "code": "not_found", "message": "消息不存在", "retryable": false })),
         )

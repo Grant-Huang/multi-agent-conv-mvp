@@ -924,7 +924,7 @@ Router 只做封闭选择题，不承担工序知识。输出保持扁平 JSON�
 |---|---|---|
 | 启动 | `server.started`、`log.file`、`log.file_unavailable`、`agent.registered`、`agent.detected`、`agent.not_installed`、`pool.resolved`、`pool.invalid`、`config.unknown_key`、`task.interrupted`、`llm.connected`、`llm.unreachable` | 启动时的状态和配置问题 |
 | 对话 | `conversation.turn`、`conversation.reply`、`conversation.reply_stream_failed`、`conversation.reply_failed`、`conversation.config` | 每轮对话一条（决策、角色、任务、尝试次数、耗时）；直接回答的生成（是否流式、字数、耗时）；启动时的审查模式 |
-| 会话资料 | `session.materials` | 回答路径注入会话资料时一条（conversation-memory 5.1/5.2a/5.2b）：`selected`（任务回执）、`memories`（fact 记忆）、`style`（生效风格卡）、`skipped`（来源 id 与原因，如 `revoked`、`missing`、`timeout`、`expired`、`draft`、`not_effective`、`over_limit`）、`chars`、`style_chars`；只记来源 id 和原因，不记资料正文与用户正文 |
+| 会话资料 | `session.materials` | 回答路径注入会话资料时一条（conversation-memory 5.1/5.2a/5.2b）：`selected`（任务回执）、`memories`（fact 记忆）、`style`（生效风格卡）、`skipped`（来源 id 与原因，如 `revoked`、`missing`、`timeout`、`expired`、`draft`、`not_effective`、`over_limit`）、`chars`、`style_chars`；#346 片4b（REQ-06）补 `occasion`（新会话 / 会话续问，程序按状态判断）与 `why`（各段入选原因码 `receipts:in_window`、`memories:effective_fact`、`style:effective_style`、`findings:related_gate`，分号分隔）；只记来源 id 和原因，不记资料正文与用户正文 |
 | 模型 | `llm.request_failed`、`llm.format_retry`、`llm.structured_failed`、`llm.structured_ok`（debug 级别） | 请求失败、格式不合格重试、最终失败 |
 | Agent 排查 | `agent.diagnose`、`agent.diagnose_unmatched`、`agent.diagnose_sent` | 一次排查（分类、命中的结论数）；没有命中任何规则时只记分类和错误输出的长度，不记内容；第 4 层发给帮手时记帮手、内容摘要和长度（`task_id` 为 DLP 映射的作用域），不记内容 |
 | Agent 配置 | `agent.config_proposed`、`agent.config_applied`、`agent.config_reverted`、`agent.config_rejected`、`agent.managed_invalid`、`agent.env_missing` | 托管配置的提议、确认、撤销、被拒（凭证错误 / 过期）；托管文件读取失败；托管 agent 引用的环境变量没有设置 |

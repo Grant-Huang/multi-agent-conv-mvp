@@ -44,6 +44,16 @@ impl Api {
             .unwrap();
         (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
     }
+    async fn post(&self, path: &str, body: Value) -> (u16, Value) {
+        let r = self
+            .http
+            .post(format!("{}{path}", self.base))
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
+    }
     async fn delete(&self, path: &str) -> (u16, Value) {
         let r = self
             .http
@@ -268,4 +278,111 @@ async fn rt_l2h_03_default_window_180_days_with_explicit_override() {
     assert_eq!(s4, 400, "空关键词应拒绝：{v4}");
     assert_eq!(v4["code"], "invalid", "{v4}");
     drop(guard);
+}
+
+/// RT-L2H-04（片 4a）：本人给历史消息加「更正」注记——更正单独记录、原文不改写；
+/// 检索命中被纠正消息时附 correction 并优先排序；AI 回答不可加注；随消息删除。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_l2h_04_correction_note_attaches_ranks_first_and_stays_original() {
+    let (rt, api, _gate) = boot().await;
+    let conv = rt.store.create_conversation("t").unwrap();
+    let mid_u = rt
+        .store
+        .add_message(&conv.id, "user", "更正探针 CORR-PROBE 原始正文。", None)
+        .unwrap()
+        .id;
+    let mid_a = rt
+        .store
+        .add_message(&conv.id, "assistant", "当时的回答 CORR-PROBE 附录。", None)
+        .unwrap()
+        .id;
+
+    // AI 回答 / 空注记 / 未知消息的边界
+    let (s, v) = api
+        .post(
+            &format!("/api/desktop/v1/messages/{mid_a}/correction"),
+            json!({ "note": "不该被允许" }),
+        )
+        .await;
+    assert_eq!(s, 403, "AI 回答不可加更正注记：{v}");
+    let (s, v) = api
+        .post(
+            &format!("/api/desktop/v1/messages/{mid_u}/correction"),
+            json!({ "note": "   " }),
+        )
+        .await;
+    assert_eq!(s, 400, "空注记应拒绝：{v}");
+    let (s, v) = api
+        .post(
+            "/api/desktop/v1/messages/no-such/correction",
+            json!({ "note": "x" }),
+        )
+        .await;
+    assert_eq!(s, 404, "{v}");
+
+    // 本人加注：200，检索命中附 correction 且排第一；原文不改写
+    let note = "更正：CPK 数字以审计报告为准。";
+    let (s, v) = api
+        .post(
+            &format!("/api/desktop/v1/messages/{mid_u}/correction"),
+            json!({ "note": note }),
+        )
+        .await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["message_id"], json!(mid_u), "{v}");
+    assert!(!v["created_at"].as_str().unwrap_or("").is_empty(), "{v}");
+
+    let (s, v) = api.get("/api/desktop/v1/history/search?q=CORR-PROBE").await;
+    assert_eq!(s, 200, "{v}");
+    let hits = results_of(&v);
+    assert_eq!(hits.len(), 2, "{v}");
+    assert_eq!(
+        hits[0]["msg_id"],
+        json!(mid_u),
+        "被纠正消息应优先排序（优先给纠正后版本）：{v}"
+    );
+    assert_eq!(hits[0]["correction"], json!(note), "{v}");
+    assert!(
+        hits[1]["correction"].is_null(),
+        "未纠正消息不得带 correction：{v}"
+    );
+    let listed = rt.store.list_messages(&conv.id, None).unwrap();
+    let original = listed.iter().find(|m| m.id == mid_u).expect("原文仍在");
+    assert!(
+        original.content.contains("原始正文"),
+        "更正不得改写原文：{}",
+        original.content
+    );
+
+    // 重复更正为替换；更正可被检索到最新值
+    let note2 = "更正（第二次）：以月度台账为准。";
+    let (s, _) = api
+        .post(
+            &format!("/api/desktop/v1/messages/{mid_u}/correction"),
+            json!({ "note": note2 }),
+        )
+        .await;
+    assert_eq!(s, 200);
+    let (_, v) = api.get("/api/desktop/v1/history/search?q=CORR-PROBE").await;
+    let hits = results_of(&v);
+    assert_eq!(
+        hits[0]["correction"],
+        json!(note2),
+        "替换后应为最新注记：{v}"
+    );
+    assert_eq!(
+        rt.store.get_correction(&mid_u).unwrap().as_deref(),
+        Some(note2)
+    );
+
+    // 更正随消息删除（真删除语义）
+    let (s, _) = api
+        .delete(&format!("/api/desktop/v1/messages/{mid_u}"))
+        .await;
+    assert_eq!(s, 200);
+    assert_eq!(
+        rt.store.get_correction(&mid_u).unwrap(),
+        None,
+        "更正注记应随消息删除"
+    );
 }

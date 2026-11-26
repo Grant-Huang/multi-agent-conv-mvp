@@ -148,6 +148,8 @@ pub struct HistoryHit {
     /// 时间（RFC3339，引用带时间）
     pub at: String,
     pub task_id: Option<String>,
+    /// 更正注记（本人加注，原文不改写；命中被纠正消息时非空，且排序优先给纠正后版本）
+    pub correction: Option<String>,
 }
 
 fn history_kind(role: &str) -> &'static str {
@@ -156,6 +158,14 @@ fn history_kind(role: &str) -> &'static str {
         "assistant" => "当时的回答",
         _ => "系统事件",
     }
+}
+
+/// L2 更正注记（#346 片4a，REQ-05）：更正单独记录、原文不改写。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MessageCorrection {
+    pub message_id: String,
+    pub note: String,
+    pub created_at: String,
 }
 
 fn history_snippet(s: &str) -> String {
@@ -374,6 +384,12 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at);
+-- #346 片4a（REQ-05）：L2 更正注记——更正单独记录，原文不改写；消息删除时随删
+CREATE TABLE IF NOT EXISTS message_corrections (
+    message_id TEXT PRIMARY KEY,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
@@ -3189,6 +3205,7 @@ impl Store {
                     snippet: history_snippet(r.get::<_, String>(3)?.as_str()),
                     at: r.get(5)?,
                     task_id: r.get(4)?,
+                    correction: None,
                 })
             })?;
             for h in rows {
@@ -3227,10 +3244,31 @@ impl Store {
                     role: "task".to_string(),
                     snippet: history_snippet(&summary),
                     at: updated_at,
+                    correction: None,
                 });
             }
         }
-        hits.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| b.source_id.cmp(&a.source_id)));
+        // 更正注记（片 4a）：命中被纠正消息时附注记，排序优先给纠正后版本（REQ-05）
+        for h in hits.iter_mut() {
+            if h.role == "task" {
+                continue;
+            }
+            let corr: Option<String> = conn
+                .query_row(
+                    "SELECT note FROM message_corrections WHERE message_id = ?1",
+                    params![h.source_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            h.correction = corr;
+        }
+        hits.sort_by(|a, b| {
+            b.correction
+                .is_some()
+                .cmp(&a.correction.is_some())
+                .then_with(|| b.at.cmp(&a.at))
+                .then_with(|| b.source_id.cmp(&a.source_id))
+        });
         hits.truncate(limit);
         Ok(hits)
     }
@@ -3253,7 +3291,65 @@ impl Store {
             return Err(anyhow!("仅本人发送的消息可删除（该消息 role={role}）"));
         }
         conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])?;
+        // 更正注记随消息删除（真删除语义）
+        conn.execute(
+            "DELETE FROM message_corrections WHERE message_id = ?1",
+            params![message_id],
+        )?;
         Ok(true)
+    }
+
+    /// L2 更正注记（REQ-05 / 决策 §6：本人给历史消息加「更正」，更正单独记录、
+    /// 原文不改写）。仅限本人发送（role = user）的消息；重复更正为替换。
+    /// `Ok(None)` = 消息不存在；`Err` = 存在但不可更正。
+    pub fn correct_message(
+        &self,
+        message_id: &str,
+        note: &str,
+    ) -> Result<Option<MessageCorrection>> {
+        let note = note.trim();
+        if note.is_empty() {
+            return Err(anyhow!("更正内容不能为空"));
+        }
+        let conn = self.write();
+        let role: Option<String> = conn
+            .query_row(
+                "SELECT role FROM messages WHERE id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(role) = role else { return Ok(None) };
+        if role != "user" {
+            return Err(anyhow!(
+                "仅本人发送的消息可加更正注记（该消息 role={role}）"
+            ));
+        }
+        let created_at = now();
+        conn.execute(
+            "INSERT INTO message_corrections (message_id, note, created_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(message_id) DO UPDATE SET note = excluded.note, created_at = excluded.created_at",
+            params![message_id, note, created_at],
+        )?;
+        Ok(Some(MessageCorrection {
+            message_id: message_id.to_string(),
+            note: note.to_string(),
+            created_at,
+        }))
+    }
+
+    /// 读取某条消息的更正注记（无则 None）。
+    pub fn get_correction(&self, message_id: &str) -> Result<Option<String>> {
+        let conn = self.read();
+        let note: Option<String> = conn
+            .query_row(
+                "SELECT note FROM message_corrections WHERE message_id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(note)
     }
 
     // ───────────── 任务 ─────────────

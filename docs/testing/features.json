@@ -1173,7 +1173,9 @@
       "RT-EXEC-05",
       "RT-L2H-01",
       "RT-L2H-02",
-      "RT-L2H-03"
+      "RT-L2H-03",
+      "RT-L2H-04",
+      "RT-ASEL-02"
     ],
     "requirements": [
       {
