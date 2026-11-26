@@ -129,7 +129,7 @@ test('E2E-UX01-I8: 发送记录与受理回执离开再返回后仍在', async (
   await expect(log).toBeVisible();
   await expect(log).toContainText(sent);
   await expect(log).toContainText('已受理（模拟）');
->>>>>>> origin/master
+});
 
 // UX-01-I5 首页部分（CH-U1，INTENT-2026-001）：首页问答接真实会话，浮层显示助手回答，
 // 不离开桌面、首页卡片仍在；会话接口不可达时显示明确不可用说明，不静默回退模拟文本。
