@@ -787,3 +787,9 @@ html[data-reduced-motion="1"] .btn {
 .appr-mock h3, .resume-mock h3, .voice-mock h3, .handoff-mock h3, .accept-mock h3 { margin: 0 0 8px; font-size: 14px; }
 .resume-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .resume-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+
+/* UXFIX-N：主动消息浮层动作区（打开 / 稍后 / 忽略）与来源行 */
+.attn-source { display: block; font-size: 11px; }
+.attn-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.attn-snooze-select { font: inherit; font-size: 12px; padding: 2px 4px; border: 1px solid var(--border, #ddd); border-radius: 4px; background: var(--panel, #fff); color: inherit; }
+.attn-dismiss-hint { display: block; font-size: 11px; color: var(--muted, #888); margin-top: 2px; }

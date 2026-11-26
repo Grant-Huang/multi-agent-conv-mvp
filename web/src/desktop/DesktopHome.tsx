@@ -7,6 +7,8 @@ type Props = {
   onOpenTask: (taskId: string, source: string) => void;
   onOpenEvidence: (taskId: string) => void;
   assistantName?: string;
+  /** UXFIX-N（INTENT-023）：注意力列表同步序号；变化时重读快照，“为你关注”实时更新 */
+  attentionRevision?: number;
   s1BgJob?: S1BgJob | null;
   onS1Ask?: (text: string) => void;
   onS1Delegate?: (text: string) => void;
@@ -79,6 +81,7 @@ export function DesktopHome({
   onOpenTask,
   onOpenEvidence,
   assistantName,
+  attentionRevision = 0,
   s1BgJob = null,
   onS1Ask,
   onS1Delegate,
@@ -99,6 +102,11 @@ export function DesktopHome({
   useEffect(() => {
     load();
   }, [load]);
+
+  // UXFIX-N：提醒浮层轮询/动作使序号变化时重读快照，新提醒实时进入“为你关注”
+  useEffect(() => {
+    if (attentionRevision > 0) load();
+  }, [attentionRevision, load]);
 
   const open = (c: DesktopCard) => onOpenTask(c.entityId, "home-card");
   return (

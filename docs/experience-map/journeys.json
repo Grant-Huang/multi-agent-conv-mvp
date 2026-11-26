@@ -307,13 +307,13 @@
         "id": "UX-05-I3",
         "text": "新提醒到达时“为你关注”实时出现，不需刷新",
         "charter": "CH-U3",
-        "debt": true
+        "case": "E2E-UX05-I3I4"
       },
       {
         "id": "UX-05-I4",
         "text": "可以选择“稍后”，提醒保留在“为你关注”而不丢失；忽略后各处一致",
         "charter": "CH-U3",
-        "debt": true
+        "case": "E2E-UX05-I3I4"
       },
       {
         "id": "UX-05-I5",
@@ -333,9 +333,7 @@
     },
     "known_deviations": [
       "INTENT-2026-006",
-      "INTENT-2026-021",
-      "INTENT-2026-022",
-      "INTENT-2026-023"
+      "INTENT-2026-022"
     ]
   },
   {

@@ -78,3 +78,52 @@ export function dismissAttention(id: string): void {
 export function clearAttentionQueue(): void {
   writeQueue([]);
 }
+
+// ===== UXFIX-N（#322，INTENT-021）：“稍后”——只收起浮层，不动服务端，“为你关注”保留 =====
+
+const SNOOZE_KEY = "an.desktop.attn.snooze.v1";
+
+function loadSnooze(): Record<string, number> {
+  try {
+    const raw = sessionStorage.getItem(SNOOZE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 稍后：到点前不再在浮层出现；不删除服务端记录，“为你关注”不受影响 */
+export function snoozeAttention(id: string, minutes: number): void {
+  try {
+    const all = loadSnooze();
+    all[id] = Date.now() + minutes * 60_000;
+    sessionStorage.setItem(SNOOZE_KEY, JSON.stringify(all));
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/** 过滤掉仍在“稍后”中的提醒（过期的顺手清理） */
+export function filterSnoozed<T extends { id: string }>(items: T[]): T[] {
+  const all = loadSnooze();
+  const now = Date.now();
+  let changed = false;
+  const out = items.filter((it) => {
+    const until = all[it.id];
+    if (until === undefined) return true;
+    if (until <= now) {
+      delete all[it.id];
+      changed = true;
+      return true;
+    }
+    return false;
+  });
+  if (changed) {
+    try {
+      sessionStorage.setItem(SNOOZE_KEY, JSON.stringify(all));
+    } catch {
+      /* 忽略 */
+    }
+  }
+  return out;
+}
