@@ -29,7 +29,9 @@ export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask }: Props) {
   };
 
   const submitDelegate = () => {
-    const t = text.trim() || "继续调查并整理证据链";
+    // UXFIX-I（INTENT-016）：不代用户编造默认任务——输入为空时按钮不可用
+    const t = text.trim();
+    if (!t) return;
     onDelegate(t);
     setText("");
   };
@@ -61,7 +63,14 @@ export function S1AskBar({ bgJob, onAsk, onDelegate, onOpenBgTask }: Props) {
         <button type="button" className="btn small" data-testid="s1-ask-send" onClick={submitAsk}>
           问答
         </button>
-        <button type="button" className="btn primary small" data-testid="s1-delegate" onClick={submitDelegate}>
+        <button
+          type="button"
+          className="btn primary small"
+          data-testid="s1-delegate"
+          title={text.trim() ? undefined : "先说说要做什么"}
+          disabled={!text.trim()}
+          onClick={submitDelegate}
+        >
           委派任务
         </button>
       </div>

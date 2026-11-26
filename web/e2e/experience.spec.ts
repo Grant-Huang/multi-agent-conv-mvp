@@ -261,3 +261,20 @@ test('E2E-UX06: 工作区“调整助理”直达助理设置，改名生效，�
   await page.getByRole('button', { name: '返回桌面', exact: true }).click();
   await expect(page.getByTestId('home-assistant-name')).toContainText(original);
 });
+
+// UX-03-I7（CH-U1，INTENT-2026-016）：输入为空时不代用户委派默认任务——
+// “委派任务”不可用，不产生任何任务；填写后恢复可用。
+test('E2E-UX03-I7: 输入为空时委派不可用且不产生默认任务', async ({ page }) => {
+  await page.goto('/');
+  const s1 = page.getByRole('textbox', { name: 'S1 输入' });
+  const btn = page.getByRole('button', { name: '委派任务' });
+  await expect(btn).toBeDisabled();
+  await expect(btn).toHaveAttribute('title', '先说说要做什么');
+  await btn.click({ force: true }).catch(() => {});
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('s1-bg-chip')).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: '已受理' })).toHaveCount(0);
+  // 填写后恢复可用
+  await s1.fill('检查 SMT-03 首件记录');
+  await expect(btn).toBeEnabled();
+});
