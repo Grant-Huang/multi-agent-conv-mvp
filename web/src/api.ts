@@ -1001,6 +1001,9 @@ export type DesktopSnapshotDto = {
   counts: { tasks_active: number; attention_unread: number };
   cursor: string;
   generated_at: string;
+  /** UXFIX-B（INTENT-003）：服务端告知测试模式（与 desktop.test_fixtures 一致）；
+   *  旧后端可能不带该字段，按 false 处理（正常界面不显示测试控件） */
+  test_fixtures?: boolean;
 };
 
 export type DesktopAcceptDto = {

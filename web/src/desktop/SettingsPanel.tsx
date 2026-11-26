@@ -34,6 +34,8 @@ type Props = {
   }) => void;
   onClose: () => void;
   onProfileSaved: (profile: AssistantProfile) => void;
+  /** UXFIX-B（INTENT-003）：服务端告知的测试模式；仅在 true 时渲染“注入冲突（测试）” */
+  testFixtures?: boolean;
 };
 
 export function SettingsPanel({
@@ -44,6 +46,7 @@ export function SettingsPanel({
   onNavigate,
   onClose,
   onProfileSaved,
+  testFixtures = false,
 }: Props) {
   const [profile, setProfile] = useState<AssistantProfile | null>(null);
   const [draft, setDraft] = useState<AssistantProfile | null>(null);
@@ -305,6 +308,7 @@ export function SettingsPanel({
                 >
                   保存
                 </button>
+                {testFixtures && (
                 <button
                   type="button"
                   className="btn small"
@@ -324,6 +328,7 @@ export function SettingsPanel({
                 >
                   注入冲突（测试）
                 </button>
+                )}
                 <button
                   type="button"
                   className="btn small"

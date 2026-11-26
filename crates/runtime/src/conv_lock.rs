@@ -118,7 +118,9 @@ mod tests {
         let locks = Arc::new(ConvLocks::new());
         {
             let g = locks.lock("c1").await;
-            assert_eq!((g.waited_ms, locks.len()), (0, 1));
+            // 无竞争判据用分支布尔 waited（try_lock 快路径），不用计时值 waited_ms：
+            // 慢机/加压下无竞争 elapsed 也可能 ≥1ms，计时判据会把无竞争误判成排队（R-20261126-M7，#359）
+            assert_eq!((g.waited, locks.len()), (false, 1));
         }
         assert!(locks.is_empty());
         // 有人排队时不清理，全部结束后才清理
