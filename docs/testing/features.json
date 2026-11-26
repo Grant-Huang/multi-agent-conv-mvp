@@ -887,7 +887,8 @@
 "E2E-UX03-I5",
 "E2E-ADSETGROUPS",
 "E2E-UX03-I7",
-"E2E-UX04-I4"
+"E2E-UX04-I4",
+"E2E-UX01-I6"
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",
@@ -1174,7 +1175,9 @@
       "RT-EXEC-05",
       "RT-L2H-01",
       "RT-L2H-02",
-      "RT-L2H-03"
+      "RT-L2H-03",
+      "RT-L2H-04",
+      "RT-ASEL-02"
     ],
     "requirements": [
       {

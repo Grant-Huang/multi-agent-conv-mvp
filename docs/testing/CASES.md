@@ -652,6 +652,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-UX03-I5 | ai-desktop | 首页快照夹具；本地模拟模型 | UXFIX-H（INTENT-2026-015）：首页委派 → 受理提示“后台处理中” → 打开其他任务再返回 → 等任务终结 | 受理提示不再显示“后台处理中”（同步为完成状态）；助理消息区出现该任务的完成通知（普通优先级、按任务去重）含“查看结果”；点“查看结果”直达该任务工作区 |
 | E2E-ADSETGROUPS | ai-desktop | 首页快照夹具 | UXFIX-F（INTENT-2026-010）：打开「设置与管理」→ 检查分组列表 | 不出现「（占位）」字样；未实现分组（工作与桌面/通知与主动性/设备与语音/隐私与权限）显示「即将提供」且按钮禁用；「我的 AI 助理」「连接与能力」可用 |
 | E2E-UX03-I7 | ai-desktop | 首页快照夹具 | UXFIX-I（INTENT-2026-016）：S1 输入为空 → 「委派任务」状态与点击结果 → 填写目标后恢复 | 输入为空时按钮禁用并提示「先说说要做什么」；点击不产生受理提示/任务 chip；填写后按钮恢复可用 |
+| E2E-UX01-I6 | ai-desktop | 首页快照夹具；视口 390×844 | UXFIX-C（INTENT-2026-005）：窄屏打开 SMT-03 工作区，测量对话输入框几何 | 窄屏单栏：输入框完整在首屏内（含高度）、可用宽度 ≥200px、任务信息栏在输入框上方（折叠到顶部） |
 | E2E-UX04 | ai-desktop | 本地模拟模型 | 体验地图 UX-04：“＋ 新会话”发任务 → 等完成 → 在对话输入写追问草稿 → 点右侧任务条目展开详情 | 任务详情展开；对话输入仍可编辑、草稿不变；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-04.md） |
 | E2E-UX04-I4 | ai-desktop | 本地模拟模型 | UXFIX-L（INTENT-2026-018）：普通模式对话发任务 → 完成后展开进度历史 → 切开发者模式再展开 | 普通模式无「内省」「节点」页签；进度历史不含「参数 {」与「调用工具 …」原文（工具映射为用户语言，如「写入文件 路径」）；开发者模式页签恢复、原文可见 |
 | E2E-UX05 | ai-desktop | 首页快照夹具含 SMT-03；提醒经测试 API 注入（`desktop.test_fixtures`） | 体验地图 UX-05：S1 输入框写字并聚焦 → 注入关联 SMT-03 的普通提醒 → 重新打开桌面 → 点“为你关注”中的提醒 → 返回桌面 | 提醒浮层出现且不抢焦点、不清空输入；“为你关注”中的提醒直达 SMT-03 工作区；返回后提醒仍在；处理过程无整页跳转（基线补录，见 docs/experience-map/journeys/UX-05.md） |
@@ -1141,15 +1142,15 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-EXEC-04 | conversation-memory | 注入发生后的任务 | 查 `tasks.context` | context 列含资料段（随任务持久） |
 | RT-EXEC-05 | conversation-memory | 过闸门发现 + 委派（general 角色；#346 场合表落地） | handle_message | 执行背景与 `tasks.context` 不含发现 id；同发现回答路径仍按相关性门注入（守卫） |
 
-## 分层记忆细化（#346；RT-L2H-01～03 已随片 3 实现（2026-11-26），RT-L2H-04 与 RT-ASEL-01～02 为实现前定义随片 4/5 补可执行测试）
+## 分层记忆细化（#346；RT-L2H-01～04、RT-ASEL-02 已实现（片 3 / 片 4a / 片 4b，2026-11-26），RT-ASEL-01 为实现前定义随各入口线场合落地补可执行测试）
 
-需求与验收标准见特性档案 REQ-conversation-memory-05/06（2026-11-26 用户确认冻结；[设计规则](../decisions/2026-11-26-memory-layers-and-history.md) §5/§3）。内省克制族的「超日上限不发」由 RT-INT-20、「输入中不弹」由 RT-INT-24 + RT-UFND-01 + RT-JMAT-03 既有用例覆盖，不另设。**片 3 边界**：被纠正/撤回的带标记与「优先给纠正后版本」拆入 RT-L2H-04（纠正注记能力，尚未实现）；本片的「撤回」语义由删除即不在检索面覆盖。
+需求与验收标准见特性档案 REQ-conversation-memory-05/06（2026-11-26 用户确认冻结；[设计规则](../decisions/2026-11-26-memory-layers-and-history.md) §5/§3）。内省克制族的「超日上限不发」由 RT-INT-20、「输入中不弹」由 RT-INT-24 + RT-UFND-01 + RT-JMAT-03 既有用例覆盖，不另设。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
 | RT-L2H-01 | conversation-memory | 本人参与会话中的历史消息、AI 历史回答（`GET /api/desktop/v1/history/search`，片 3） | 检索关键词 | AI 历史回答标「当时的回答」；用户消息/系统事件/任务回执分级；每条命中带 `msg_id`/`conv_id`/`at` 出处 |
 | RT-L2H-02 | conversation-memory | 本人删除一条个人会话消息（`DELETE /api/desktop/v1/messages/{id}`，片 3） | 删除后再检索 | 删除即真删除，检索与消息列表均不再出现；AI 回答不可经此删除（403）；重复删除 404 |
 | RT-L2H-03 | conversation-memory | 180 天窗口内外的同类记录（片 3） | 默认检索 / `days` 显式指定 | 默认只返回最近 180 天；`days` 显式加大才返回更早记录，引用带原始时间；空关键词 400 |
-| RT-L2H-04 | conversation-memory | 被纠正的历史消息与更正注记（实现前定义，片 4/5） | 检索被纠正话题 | 被纠正/撤回的带标记，优先给纠正后版本；更正注记单独记录、原文不改写 |
-| RT-ASEL-01 | conversation-memory | 六场合各自入口与状态（片 4 实现） | 各场合触发选材 | 按「必带 / 可带 / 不带」表选材：随口问答不带他任务现场与 L5；执行委派不带风格偏好与 L5；审批写入的画像与风格不影响内容（CH-G2b）；场合由程序按入口与状态判断 |
-| RT-ASEL-02 | conversation-memory | 任一发生注入的轮次（片 4 实现） | 查 `session.materials` 事件 | 事件可还原「带了哪些记忆、为什么」（来源 id、取舍原因；展示入口归第 1 线 #347） |
+| RT-L2H-04 | conversation-memory | 被纠正的历史消息（`POST /api/desktop/v1/messages/{id}/correction`，片 4a） | 加更正注记后检索 | 更正单独记录、原文不改写；命中附 `correction` 并优先排序（优先给纠正后版本）；AI 回答 403、空注记 400、重复更正为替换；更正随消息删除 |
+| RT-ASEL-01 | conversation-memory | 六场合各自入口与状态（实现前定义：回到老任务/审批/值班/跨设备随对应入口线落地） | 各场合触发选材 | 按「必带 / 可带 / 不带」表选材：随口问答不带他任务现场与 L5；执行委派不带风格偏好与 L5（已由 RT-EXEC-05 落地）；审批写入的画像与风格不影响内容（CH-G2b）；场合由程序按入口与状态判断 |
+| RT-ASEL-02 | conversation-memory | 任一发生注入的轮次（片 4b：`session.materials` 事件补 `occasion`/`why`） | 查事件 | `occasion` 按状态确定性记录（新会话 / 会话续问）；`why` 逐段原因码（`receipts:in_window`、`memories:effective_fact`、`style:effective_style`、`findings:related_gate`）可还原「带了哪些记忆、为什么」；不含资料正文；来源 id 可追溯。展示入口归第 1 线 #347 |
