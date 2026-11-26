@@ -347,6 +347,8 @@ export default function App() {
   const [s1Reply, setS1Reply] = useState<string | null>(null);
   const [composingInput, setComposingInput] = useState(false);
   const [attnItems, setAttnItems] = useState<AttentionItem[]>([]);
+  // UXFIX-N（INTENT-023）：注意力列表每次同步递增，驱动首页“为你关注”实时刷新
+  const [attnRevision, setAttnRevision] = useState(0);
   const [attnMuted, setAttnMuted] = useState(false);
 
   useEffect(() => {
@@ -388,6 +390,7 @@ export default function App() {
             })),
           );
           setAttnMuted(r.mute_ordinary);
+          setAttnRevision((v) => v + 1);
         })
         .catch(() => {
           /* harness 未就绪时忽略 */
@@ -640,6 +643,7 @@ export default function App() {
             onOpenTask={(id) => openWorkspace(id)}
             onOpenEvidence={(id) => openEvidence(id)}
             assistantName={assistantProfile.name}
+            attentionRevision={attnRevision}
             s1BgJob={s1BgJob}
             s1Reply={s1Reply}
             onS1Ask={(text) => {
@@ -701,9 +705,11 @@ export default function App() {
             items={attnItems}
             muted={attnMuted}
             composing={composingInput}
+            onOpenTask={(id) => openWorkspace(id)}
             onChange={({ items, muted }) => {
               setAttnItems(items);
               setAttnMuted(muted);
+              setAttnRevision((v) => v + 1);
             }}
           />
         )}
