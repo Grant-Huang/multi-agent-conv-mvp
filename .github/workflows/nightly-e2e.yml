@@ -61,12 +61,12 @@ jobs:
           - 提交：\`${{ github.sha }}\`
           - 流程：\`docs/fencing/EVAL_LOOP.md\`
 
-          归属：第 3 线（夜间监视）先分诊；属于其他线的，按 AGENTS.md「跨线分工」新开 Issue 派给对应线（标签 dispatch + line:N）。
+          归属：第 2 线（CI 与夜间 E2E 健康）先分诊；属于其他线的，按 AGENTS.md「跨线分工」新开 Issue 派给对应线（标签 dispatch + line:N）。
           请按 FIX.md 开修复 PR；修好后关闭本 issue。"
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"
           else
-            # 派工标签：第 3 线负责夜间监视与分诊（docs/fencing/GR4_NIGHTLY_REVIEW_2026-11-28.md）
-            gh issue create --title "$title" --label "nightly-e2e" --label "dispatch" --label "line:3" --body "$body" || \
+            # 派工标签：第 2 线负责夜间 E2E 健康与分诊（2026-11-26 由第 3 线移交，决定 2026-11-26-workstream-realignment）
+            gh issue create --title "$title" --label "nightly-e2e" --label "dispatch" --label "line:2" --body "$body" || \
               gh issue create --title "$title" --body "$body"
           fi
