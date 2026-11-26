@@ -1,7 +1,9 @@
 // 运营频道里的卡片（docs/mom/OPS_DESK.md，决定 60）：引擎状态快照；批准只在 OpsCase 卡上。
 // World Adapter M0-3：world_mock 投影卡含方案/执行/核验入口（DES-UI）。
 // World Adapter M2-5：provenance=des 走 approve-execute / 查证结果 / execution-evidence。
-import { useState } from "react";
+// UXFIX-P（#341，INTENT-2026-026）：执行回执与核验证据从引擎读取（CH-P6），
+// 分层显示 已提交 → 源系统已受理 → 已核验，标来源；未执行时显示“尚未执行”（CH-P8）。
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { ChatCard } from "../bindings/ChatCard";
 
@@ -14,6 +16,32 @@ const STAGE_LABEL: Record<string, string> = {
   BUDGET_EXHAUSTED: "预算耗尽",
   INVESTIGATING: "调查中",
   ASSESS: "评估中",
+};
+
+/** 引擎案例视图（GET /api/mom/desk/cases/{id} → human_view）中回执相关字段的窄化类型 */
+type OpsActionView = {
+  key: string;
+  tool: string;
+  state: string;
+  accepted_at: number;
+  complete_at: number;
+  receipt: string;
+  verification: string | null;
+};
+type OpsOutboxView = { key?: string; sent_at?: number; provenance?: string };
+type OpsEvidenceView = { source?: string; provenance?: string };
+type OpsCaseView = {
+  actions?: Record<string, OpsActionView>;
+  outbox?: OpsOutboxView[];
+  evidence?: Record<string, OpsEvidenceView>;
+  provenance?: string;
+};
+
+const PROV_LABEL: Record<string, string> = {
+  mock: "模拟",
+  world_mock: "模拟",
+  simulation: "仿真",
+  des: "仿真",
 };
 
 type OpsCase = Extract<ChatCard, { type: "ops_case" }>;
@@ -36,6 +64,8 @@ export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: ()
   const [localWorldId, setLocalWorldId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [confirmedEvidence, setConfirmedEvidence] = useState<string | null>(null);
+  // UXFIX-P：引擎案例视图（回执 / 证据 / 来源），null=加载中，"error"=读取失败
+  const [caseView, setCaseView] = useState<OpsCaseView | null | "error">(null);
   const approver = localApprover ?? card.approver;
   const planRevision =
     card.plan_revision == null ? null : Number(card.plan_revision);
@@ -73,6 +103,25 @@ export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: ()
     panel === "verify";
   const showDesEvidence =
     isDes && !!executionId && (confirmedEvidence != null || card.stage === "VERIFYING" || card.stage === "CLOSED");
+
+  // 引擎回执数据：非 DES 案例从 human_view 读取；阶段变化时重读（就地更新）
+  useEffect(() => {
+    if (isDes) return;
+    let cancelled = false;
+    api
+      .opsDeskCase(card.case_id)
+      .then((d) => {
+        if (!cancelled) setCaseView(d as OpsCaseView);
+      })
+      .catch(() => {
+        if (!cancelled) setCaseView("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [card.case_id, card.stage, isDes]);
+
+  const provLabel = PROV_LABEL[caseView && caseView !== "error" ? (caseView.provenance ?? "") : ""] ?? PROV_LABEL[card.provenance] ?? "模拟";
 
   const approve = async () => {
     if (!card.scope || planRevision == null) return;
@@ -189,10 +238,46 @@ export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: ()
         </p>
       )}
       {showReceipt && (
-        <p className="hint" data-testid="execution-receipt">
-          执行回执：受理 / 已提交
-          {card.stage === "VERIFYING" || card.summary?.includes("回执") ? " / 已确认" : ""}
-        </p>
+        <div className="hint" data-testid="execution-receipt">
+          {isDes ? (
+            <p>
+              执行回执（仿真）：已提交 → 已受理（{executionId}）
+              {confirmedEvidence ? ` → 已核验（${confirmedEvidence}）` : ""}
+            </p>
+          ) : caseView === null ? (
+            <p>执行回执：读取中…</p>
+          ) : caseView === "error" ? (
+            <p className="bad-text">执行回执：暂不可获取（引擎无此案例记录或读取失败）。</p>
+          ) : (caseView.actions == null || Object.keys(caseView.actions).length === 0) &&
+            (caseView.outbox == null || caseView.outbox.length === 0) ? (
+            <p>
+              执行回执（{provLabel}）：尚未执行
+            </p>
+          ) : (
+            <>
+              <p>
+                执行回执（{provLabel}，来自引擎）：
+              </p>
+              <ul>
+                {(caseView.outbox ?? []).map((o, i) => (
+                  <li key={`outbox-${i}`}>
+                    已提交
+                    {o.sent_at != null ? `（t=${o.sent_at}）` : ""}
+                    {o.key ? ` · ${o.key}` : ""}
+                  </li>
+                ))}
+                {Object.values(caseView.actions ?? {}).map((a) => (
+                  <li key={`action-${a.key}`}>
+                    {a.key} · {a.tool}：已提交 → 源系统已受理（回执 {a.receipt} · t={a.accepted_at}）
+                    {a.verification != null ? ` → 已核验（t=${a.complete_at} · ${a.verification}）` : ""}
+                    {a.state === "FAILED" ? " · 执行失败" : ""}
+                    {a.state === "UNKNOWN" ? " · 受理状态未知（未收到回执）" : ""}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
       )}
       {isDes && executionId && (
         <p className="hint" data-testid="execution-id">
@@ -205,9 +290,29 @@ export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: ()
         </p>
       )}
       {showVerify && (
-        <p className="hint" data-testid="verify-evidence">
-          核验证据：现场照片与点检记录（模拟）
-        </p>
+        <div className="hint" data-testid="verify-evidence">
+          {isDes ? (
+            <p>核验证据（仿真）：{confirmedEvidence ?? executionId ?? "暂无核验证据"}</p>
+          ) : caseView === null ? (
+            <p>核验证据：读取中…</p>
+          ) : caseView === "error" ? (
+            <p className="bad-text">核验证据：暂不可获取（引擎无此案例记录或读取失败）。</p>
+          ) : caseView.evidence && Object.keys(caseView.evidence).length > 0 ? (
+            <>
+              <p>核验证据（来自引擎）：</p>
+              <ul>
+                {Object.entries(caseView.evidence).map(([k, v]) => (
+                  <li key={k}>
+                    {k} · {v.source ?? "来源未知"}
+                    {v.provenance ? `（${PROV_LABEL[v.provenance] ?? v.provenance}）` : ""}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p>核验证据（{provLabel}）：暂无核验证据（未执行或未核验）。</p>
+          )}
+        </div>
       )}
       {error && (
         <p className="hint" role="alert">

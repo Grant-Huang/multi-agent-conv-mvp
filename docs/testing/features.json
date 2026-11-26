@@ -730,6 +730,7 @@
       "E2E-OPSCHANNEL",
       "E2E-OPSNOISE",
       "E2E-OPSAPPROVE",
+      "E2E-OPSRECEIPT",
       "E2E-OPSOFF",
       "E2E-OPSAUTOEXEC",
       "E2E-OPSEXPIRE"
@@ -747,7 +748,8 @@
       "RT-OPSDESK-10",
       "RT-OPSDESK-11",
       "RT-OPSDESK-12",
-      "RT-OPSDESK-13"
+      "RT-OPSDESK-13",
+      "RT-OPSDESK-14"
     ]
   },
   {
@@ -837,6 +839,7 @@
     "cases": [
       "E2E-ADNAV",
       "E2E-ADLAYOUT",
+      "E2E-ADLAYOUT-CHU7",
       "E2E-ADDRAFT",
       "E2E-ADSCOPE",
       "E2E-ADEVID",
@@ -870,14 +873,20 @@
       "E2E-HOMEREJ",
       "E2E-RESTART",
       "E2E-UX01",
+      "E2E-UX01-I5",
       "E2E-UX01-I7",
       "E2E-UX01-I8",
       "E2E-UX02",
       "E2E-UX03",
       "E2E-UX04",
       "E2E-UX05",
+<<<<<<< HEAD
       "E2E-UX06",
       "E2E-UX02-I4"
+=======
+      "E2E-UX05-I3I4",
+      "E2E-UX06"
+>>>>>>> origin/master
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",

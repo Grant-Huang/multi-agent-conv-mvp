@@ -502,7 +502,15 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
   margin: 12px 0 4px;
   padding: 0 4px;
 }
-.desktop-home { padding: 16px 20px; overflow: auto; height: 100%; }
+.desktop-home {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 20px;
+  overflow: hidden;
+}
+/* CH-U7（#321）：首页卡片内容区单独滚动，S1 输入框固定在可视位置不随内容滚走 */
+.desktop-home-scroll { flex: 1; min-height: 0; overflow: auto; }
 .desktop-home-header h1 { margin: 0 0 4px; font-size: 22px; }
 .desktop-home-lead { margin: 0 0 8px; color: #666; font-size: 13px; }
 .desktop-ops-off { margin: 0 0 12px; font-size: 13px; color: #856404; background: #fff3cd; padding: 6px 10px; border-radius: 4px; }
@@ -660,7 +668,16 @@ code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--
 .workspace-task-pane dl { margin: 0; }
 .workspace-task-pane dt { color: #888; margin-top: 8px; }
 .workspace-task-pane dd { margin: 2px 0 0; }
-.workspace-session { flex: 1; padding: 12px; overflow: auto; }
+.workspace-session {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  overflow: hidden;
+}
+/* CH-U7（#321）：工作区输入框固定在会话栏可视位置，内容区单独滚动 */
+.workspace-session-scroll { flex: 1; min-height: 0; overflow: auto; }
 .workspace-exec { margin-top: 8px; padding: 8px; background: rgba(127,127,127,.08); border-radius: 6px; font-size: 13px; }
 .workspace-hint { font-size: 12px; color: #888; margin-top: 12px; }
 .workspace-layout-toggle .btn.active { outline: 2px solid #4a7; }
@@ -785,3 +802,8 @@ html[data-reduced-motion="1"] .btn {
 .assistant-panel-line { margin: 0; font-size: 13px; }
 .assistant-panel-inputrow { display: flex; gap: 6px; }
 .assistant-panel-inputrow input { flex: 1; font: inherit; padding: 6px 8px; border: 1px solid var(--border, #ddd); border-radius: 6px; background: var(--bg, #fff); color: inherit; }
+/* UXFIX-N：主动消息浮层动作区（打开 / 稍后 / 忽略）与来源行 */
+.attn-source { display: block; font-size: 11px; }
+.attn-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.attn-snooze-select { font: inherit; font-size: 12px; padding: 2px 4px; border: 1px solid var(--border, #ddd); border-radius: 4px; background: var(--panel, #fff); color: inherit; }
+.attn-dismiss-hint { display: block; font-size: 11px; color: var(--muted, #888); margin-top: 2px; }
