@@ -11,6 +11,8 @@ use an_core::{
     PolicyVerdict, Risk, Role, RouteDecision, TaskClass, TaskResult, TaskStatus, WorkerStatus,
 };
 use an_runtime::config::AppConfig;
+use an_runtime::introspect::model::IntrospectionFinding;
+use an_runtime::session_materials::MATERIALS_MARKER;
 use an_runtime::store::{DesktopLinkOutcome, Store};
 use an_runtime::Runtime;
 use axum::response::IntoResponse;
@@ -18,7 +20,8 @@ use axum::routing::post;
 use axum::Json;
 use serde_json::{json, Value};
 
-/// 假模型：turn_decision → delegate；route_decision → general；general_step → final；记录请求体
+/// 假模型：turn_decision → delegate（respond_mode=true 时 → respond）；route_decision → general；
+/// general_step → final；记录请求体
 struct MockLlm {
     base: String,
     requests: Arc<Mutex<Vec<Value>>>,
@@ -26,6 +29,15 @@ struct MockLlm {
 
 impl MockLlm {
     async fn start() -> Self {
+        Self::start_with_mode(false).await
+    }
+
+    /// respond_mode：turn_decision 返回 respond（回答路径守卫断言用）
+    async fn start_respond() -> Self {
+        Self::start_with_mode(true).await
+    }
+
+    async fn start_with_mode(respond_mode: bool) -> Self {
         let requests: Arc<Mutex<Vec<Value>>> = Arc::default();
         let log = requests.clone();
         let app = axum::Router::new().route(
@@ -39,7 +51,13 @@ impl MockLlm {
                         .to_string();
                     log.lock().unwrap().push(req);
                     let content = match schema.as_str() {
-                        "turn_decision" => json!({"action":"delegate","question":"","task_goal":"整理产线报告","task_id":"","follow_up_kind":"","change":""}).to_string(),
+                        "turn_decision" => {
+                            if respond_mode {
+                                json!({"action":"respond","question":"","task_goal":"","task_id":"","follow_up_kind":"","change":""}).to_string()
+                            } else {
+                                json!({"action":"delegate","question":"","task_goal":"整理产线报告","task_id":"","follow_up_kind":"","change":""}).to_string()
+                            }
+                        }
                         "route_decision" => json!({"task_class":"L3","execution_role":"general","required_tools":["write_file"],"risk_level":"medium","reason":"受控验证路由","template_id":"","deliverable":"","slots_ok":"no"}).to_string(),
                         "general_step" => json!({"thought":"完成","action":"final","tool":"","args":{},"answer":"已根据会话资料完成整理。"}).to_string(),
                         _ => "你好，验证成功。".to_string(),
@@ -70,6 +88,17 @@ impl MockLlm {
             .unwrap()
             .iter()
             .filter(|r| r["response_format"]["json_schema"]["name"] == json!("general_step"))
+            .cloned()
+            .collect()
+    }
+
+    /// 无 schema 的请求 = 回答路径生成（守卫断言用）
+    fn plain_calls(&self) -> Vec<Value> {
+        self.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r["response_format"]["json_schema"]["name"].is_null())
             .cloned()
             .collect()
     }
@@ -292,5 +321,113 @@ async fn rt_exec_04_materials_persist_in_task_context() {
         ctx_col.contains("PERSIST"),
         "tasks.context 应持久含资料段：{}",
         ctx_col.chars().take(300).collect::<String>()
+    );
+}
+
+/// 种一条过闸门的发现（与 introspection_materials 的 seed_finding 同构，本地副本避免跨测试文件耦合）
+fn seed_gated_finding(rt: &Runtime, id: &str, hypothesis: &str) {
+    let json = json!({
+        "template": "方案采纳模式",
+        "hypothesis": hypothesis,
+        "next_step": "复核原始记录",
+        "case_ids": ["case-e5"],
+        "key": "CPK",
+    })
+    .to_string();
+    let ts = an_core::now();
+    rt.store
+        .introspection_insert_finding(&IntrospectionFinding {
+            id: id.into(),
+            job_id: format!("job-{id}"),
+            topic: "方案采纳模式".into(),
+            json,
+            verification: "supported".into(),
+            gate_score: Some(0.8),
+            gate_reason: "测试直过".into(),
+            pushed: false,
+            verdict: None,
+            verdict_note: None,
+            created_at: ts.clone(),
+            updated_at: ts,
+        })
+        .unwrap();
+}
+
+/// RT-EXEC-05（#346 场合选材表「执行、委派」行）：执行块不带内省发现（L5 待核实，
+/// 不作执行依据）。过相关性门的发现在回答路径仍按需引用（守卫断言），
+/// 但不得进入 General 执行背景，也不得随任务持久（tasks.context）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_exec_05_exec_block_excludes_introspection_findings() {
+    let llm = MockLlm::start().await;
+    let rt = runtime(&llm.base, "");
+    let conv = rt.store.create_conversation("t").unwrap();
+    seed_linked_task(&rt, &conv.id, "task-exec-05", "产线执行摘要EXEC05。");
+    seed_gated_finding(
+        &rt,
+        "intf-exec-05",
+        "报废工单集中在 3 号产线，CPK 低于阈值后方案仍被重复采纳。",
+    );
+    for i in 0..12 {
+        rt.store
+            .add_message(&conv.id, "user", &format!("历史填充{i}"), None)
+            .unwrap();
+    }
+    let out = rt
+        .conversation
+        .handle_message(&conv.id, "你好，3 号产线 CPK 那个任务的结论整理成报告")
+        .await
+        .unwrap();
+    let task = out.task.expect("委派应产生任务");
+    let sys = step_system(&wait_first_step(&llm));
+    assert!(
+        sys.contains(MATERIALS_MARKER),
+        "执行背景应仍含资料块：{sys}"
+    );
+    assert!(
+        sys.contains("task-exec-05"),
+        "执行背景应仍含任务回执（只剔除发现，不误伤回执与记忆）：{sys}"
+    );
+    assert!(
+        !sys.contains("intf-exec-05"),
+        "执行背景不得带入内省发现（场合表：执行、委派不带 L5）：{sys}"
+    );
+    let ctx = rt
+        .store
+        .get_task_context(&task.id)
+        .unwrap()
+        .unwrap_or_default();
+    assert!(
+        !ctx.contains("intf-exec-05"),
+        "随任务持久的上下文不得带入发现：{}",
+        ctx.chars().take(300).collect::<String>()
+    );
+    // 守卫：同一发现在回答路径仍按相关性门正常注入（证明其确实通过了门，而非未进候选）。
+    // 用 respond 模式的独立 runtime 验证（exec 桩固定 delegate，不产生回答请求）。
+    let llm2 = MockLlm::start_respond().await;
+    let rt2 = runtime(&llm2.base, "");
+    let conv2 = rt2.store.create_conversation("t2").unwrap();
+    seed_gated_finding(
+        &rt2,
+        "intf-exec-05",
+        "报废工单集中在 3 号产线，CPK 低于阈值后方案仍被重复采纳。",
+    );
+    rt2.conversation
+        .handle_message(&conv2.id, "你好，3 号产线 CPK 的情况？")
+        .await
+        .unwrap();
+    let calls2 = llm2.plain_calls();
+    let answer_req = calls2.last().expect("回答路径应有请求");
+    let mat = answer_req["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|m| {
+            let c = m["content"].as_str()?;
+            c.contains(MATERIALS_MARKER).then(|| c.to_string())
+        })
+        .unwrap_or_default();
+    assert!(
+        mat.contains("intf-exec-05"),
+        "回答路径仍应注入该发现（守卫断言）：{mat}"
     );
 }

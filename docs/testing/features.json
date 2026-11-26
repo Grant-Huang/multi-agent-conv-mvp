@@ -757,6 +757,7 @@
       "web/src/App.tsx",
       "web/src/desktop/DesktopHome.tsx",
       "web/src/desktop/WorkspaceView.tsx",
+      "web/src/desktop/taskStatusText.ts",
       "web/src/desktop/draftStore.ts",
       "web/src/desktop/draftStore.test.ts",
       "web/src/desktop/WorkspaceComposer.tsx",
@@ -1126,6 +1127,8 @@
       "RT-SMAT-03",
       "RT-SMAT-04",
       "RT-SMAT-05",
+      "RT-SMAT-06",
+      "RT-SMAT-07",
       "RT-UMEM-01",
       "RT-UMEM-02",
       "RT-UMEM-03",
@@ -1153,7 +1156,8 @@
       "RT-EXEC-01",
       "RT-EXEC-02",
       "RT-EXEC-03",
-      "RT-EXEC-04"
+      "RT-EXEC-04",
+      "RT-EXEC-05"
     ],
     "requirements": [
       {
@@ -1224,22 +1228,33 @@
       {
         "id": "REQ-conversation-memory-05",
         "title": "历史记录可检索（L2）",
-        "status": "提出",
-        "cases": [],
+        "status": "已确认",
+        "cases": [
+          "RT-L2H-01",
+          "RT-L2H-02",
+          "RT-L2H-03"
+        ],
         "since": null
       },
       {
         "id": "REQ-conversation-memory-06",
         "title": "按场合选材且所用记忆可说明",
-        "status": "提出",
-        "cases": [],
+        "status": "已确认",
+        "cases": [
+          "RT-ASEL-01",
+          "RT-ASEL-02",
+          "RT-EXEC-05"
+        ],
         "since": null
       },
       {
         "id": "REQ-conversation-memory-07",
         "title": "记忆与检索的注入防线",
-        "status": "提出",
-        "cases": [],
+        "status": "已确认",
+        "cases": [
+          "RT-SMAT-06",
+          "RT-SMAT-07"
+        ],
         "since": null
       }
     ],

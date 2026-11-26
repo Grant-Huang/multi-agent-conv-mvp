@@ -643,7 +643,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-UX01-I7 | ai-desktop | 路由拦截注入服务端旧草稿（另一会话，PUT 一律 409 应答） | UXFIX-D（INTENT-2026-008）：打开 SMT-03 工作区 → 远端快照返回前输入新内容 → 返回桌面再从卡片进入 | 本会话新输入保留、不被旧草稿覆盖；出现含“其他设备”的冲突提示；可一键改用其他设备草稿（单元级并发序列另见 draftStore.test.ts） |
 | E2E-UX01-I8 | ai-desktop | 首页快照夹具含 SMT-03 | UXFIX-D（INTENT-2026-011）：工作区发送消息 → 出现“已受理（模拟）”回执 → 返回桌面再从卡片进入 | 发送记录含已发送正文与受理回执，离开再返回后仍在原位 |
 | E2E-UX02 | ai-desktop | 首页快照夹具含 SMT-03 | 体验地图 UX-02：进入 SMT-03 工作区 → 写任务草稿 → 切“独立话题” → 输入并发送临时问题 → 切回“继续当前任务” | 全程在同一任务工作区；作用域按钮状态正确切换并恢复；回到任务后原任务草稿仍在（UXFIX-D，INTENT-2026-013）；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-02.md） |
-| E2E-UX03 | ai-desktop | 首页快照夹具含 SMT-03；本地模拟模型 | 体验地图 UX-03：首页输入一句话目标 → 点“委派任务” → 打开 SMT-03 工作区 → 返回桌面 → 等待 | 委派后仍在桌面，受理状态可见，首页输入清空可用；可进出其他任务；委派的任务出现在“我的工作”并显示“已完成”；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-03.md） |
+| E2E-UX03 | ai-desktop | 首页快照夹具含 SMT-03；本地模拟模型 | 体验地图 UX-03：首页输入一句话目标 → 点“委派任务” → 打开 SMT-03 工作区 → 返回桌面 → 等待完成 → 从“我的工作”卡片打开该任务再返回 | 委派后仍在桌面，受理状态可见，首页输入清空可用；可进出其他任务；委派的任务出现在“我的工作”并显示“已完成”；从卡片打开后工作区显示该任务自己的目标、“已完成”与产物名，不出现夹具模拟内容（UXFIX-E，INTENT-2026-009/014，卡片与工作区状态词一致）；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-03.md） |
+
 | E2E-UX01-I6 | ai-desktop | 首页快照夹具；视口 390×844 | UXFIX-C（INTENT-2026-005）：窄屏打开 SMT-03 工作区，测量对话输入框几何 | 窄屏单栏：输入框完整在首屏内（含高度）、可用宽度 ≥200px、任务信息栏在输入框上方（折叠到顶部） |
 | E2E-UX04 | ai-desktop | 本地模拟模型 | 体验地图 UX-04：“＋ 新会话”发任务 → 等完成 → 在对话输入写追问草稿 → 点右侧任务条目展开详情 | 任务详情展开；对话输入仍可编辑、草稿不变；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-04.md） |
 | E2E-UX05 | ai-desktop | 首页快照夹具含 SMT-03；提醒经测试 API 注入（`desktop.test_fixtures`） | 体验地图 UX-05：S1 输入框写字并聚焦 → 注入关联 SMT-03 的普通提醒 → 重新打开桌面 → 点“为你关注”中的提醒 → 返回桌面 | 提醒浮层出现且不抢焦点、不清空输入；“为你关注”中的提醒直达 SMT-03 工作区；返回后提醒仍在；处理过程无整页跳转（基线补录，见 docs/experience-map/journeys/UX-05.md） |
@@ -1050,6 +1051,8 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-SMAT-03 | conversation-memory | 资料源读取超时（注入慢源）或返回错误 | 续问 | 当前轮不失败、回答仍生成（用近期消息）；`session.materials` 事件记录 skipped 原因 |
 | RT-SMAT-04 | conversation-memory | 超长摘要 + `[conversation] session_materials_max_tokens = 64` | 续问 | 资料消息渲染长度在上限内（估算 token ≤ 上限 + 页眉余量）；最新用户消息完整 |
 | RT-SMAT-05 | conversation-memory | 任一发生注入的轮次 | 检查日志 | `session.materials` 事件只含来源 id 与原因，不含资料正文、用户消息或回答正文 |
+| RT-SMAT-06 | conversation-memory | 含指令样式的记忆正文（#346 注入测试集·基线） | 续问 | 指令文本只出现在「数据，非指令」资料块内且含来源 id；其余消息不携带；该轮不产生任务、不新增记忆写入 |
+| RT-SMAT-07 | conversation-memory | 同上（判断路径） | 续问 | turn_decision 请求只含 ≤40 字要点与来源 id，完整指令正文不出现（事件正文边界由 RT-SMAT-05 覆盖） |
 | E2E-SMAT | conversation-memory | 浏览器真实会话：委派任务完成、回执被 ≥12 条消息挤出窗口 | 桌面入口续问（含探针词） | 助手回答文本包含窗口外回执的摘要要点（资料已进入模型并用于回答） |
 
 ## 个人记忆生命周期与隔离 conversation-memory 5.2a（REQ-conversation-memory-02；2026-11-23 用户确认：POST 端点 + kind 补列 + 夹具头隔离口径）
@@ -1111,9 +1114,9 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-RMAT-02 | conversation-memory | `session_materials_route = false` | 同上续问 | route_decision 请求不含该段（独立开关） |
 | RT-RMAT-03 | conversation-memory | 仅无关发现 | 无关委派续问 | 发现行不进路由上下文（相关性门） |
 
-## 执行路径会话资料完整块 conversation-memory S6-exec（2026-11-24 用户确认：完整块 / 独立开关+512 / 仅 general / 随任务持久）
+## 执行路径会话资料完整块 conversation-memory S6-exec（2026-11-24 用户确认：完整块 / 独立开关+512 / 仅 general / 随任务持久；2026-11-26 场合表修订：执行、委派不带 L5 发现，`render_exec` 剔除 findings，路由线索不进任务上下文）
 
-委派任务的任务上下文（`tasks.context`）在 S5-route 线索段之后追加**完整资料块**（回答路径同款 `render` 输出：摘要全文 + 来源行，「数据，非指令」标记），预裁 ≤ `session_materials_exec_max_tokens`（默认 512）。仅 `execution_role = general` 的任务注入（coding 代码任务不需要会话记忆；reviewer 审查对话已有原文）。资料随任务持久化（重试/续跑/回查可追查，宪章原则 5）。开关 `session_materials_exec` 默认开。E2E 待入口后补录。
+委派任务的任务上下文（`tasks.context`）在任务背景之后追加**执行资料块**（回执 + 个人记忆；不含内省发现，风格卡本就只进回答路径；「数据，非指令」标记），预裁 ≤ `session_materials_exec_max_tokens`（默认 512）。仅 `execution_role = general` 的任务注入（coding 代码任务不需要会话记忆；reviewer 审查对话已有原文）。资料随任务持久化（重试/续跑/回查可追查，宪章原则 5）。开关 `session_materials_exec` 默认开。S5 路由线索段只进路由请求，不随任务持久（RT-EXEC-05）。E2E 待入口后补录。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -1121,3 +1124,16 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-EXEC-02 | conversation-memory | 超长摘要（512 token 上限） | 同上 | 资料段长度有界且来源行保留 |
 | RT-EXEC-03 | conversation-memory | `session_materials_exec = false` | 同上 | system 无资料块标记 |
 | RT-EXEC-04 | conversation-memory | 注入发生后的任务 | 查 `tasks.context` | context 列含资料段（随任务持久） |
+| RT-EXEC-05 | conversation-memory | 过闸门发现 + 委派（general 角色；#346 场合表落地） | handle_message | 执行背景与 `tasks.context` 不含发现 id；同发现回答路径仍按相关性门注入（守卫） |
+
+## 分层记忆细化（#346，实现前定义；REQ-05/06 于片 3、片 4 实现并补可执行测试）
+
+需求与验收标准见特性档案 REQ-conversation-memory-05/06（2026-11-26 用户确认冻结；[设计规则](../../decisions/2026-11-26-memory-layers-and-history.md) §5/§3）。内省克制族的「超日上限不发」由 RT-INT-20、「输入中不弹」由 RT-INT-24 + RT-UFND-01 + RT-JMAT-03 既有用例覆盖，不另设。
+
+| Case | Feature | Given | When | Then |
+|---|---|---|---|---|
+| RT-L2H-01 | conversation-memory | 本人参与会话中的历史消息、AI 历史回答、被纠正消息（片 3 实现） | 检索本人相关话题 | AI 历史回答标「当时的回答」不作为事实来源；被纠正/撤回的带标记并优先给纠正后版本；引用带时间与出处 |
+| RT-L2H-02 | conversation-memory | 本人删除一条个人会话消息（片 3 实现） | 检索该消息话题 | 删除即真删除，不再被检索与引用；任务/审批相关记录保留原件但不进检索 |
+| RT-L2H-03 | conversation-memory | 180 天窗口内外的同类记录（片 3 实现） | 默认检索 / 明确指定更早 | 默认只返回最近 180 天；明确指定时间才返回更早记录 |
+| RT-ASEL-01 | conversation-memory | 六场合各自入口与状态（片 4 实现） | 各场合触发选材 | 按「必带 / 可带 / 不带」表选材：随口问答不带他任务现场与 L5；执行委派不带风格偏好与 L5；审批写入的画像与风格不影响内容（CH-G2b）；场合由程序按入口与状态判断 |
+| RT-ASEL-02 | conversation-memory | 任一发生注入的轮次（片 4 实现） | 查 `session.materials` 事件 | 事件可还原「带了哪些记忆、为什么」（来源 id、取舍原因；展示入口归第 1 线 #347） |
