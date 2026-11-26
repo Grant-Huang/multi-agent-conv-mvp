@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 版本 | v0.3，2026-11-24 |
+| 版本 | v0.4，2026-11-26 |
 | 状态 | 第 1～8 节有效（2026-11-21 用户确认）；特性档案、需求编号与登记表扩展字段从 World Adapter 试点开始执行，其余特性迁移前沿用现有文档 |
 | 地位 | **唯一的研发规范**：需求 → 设计 → 实现 → 质量 → 版本怎么对齐、风险怎么分级、谁能授权。Agent 入口文件（`AGENTS.md`、`CLAUDE.md`）只引用本文，不复制 |
 | 围栏 | 七层围栏、检查节奏、证据等级、围栏登记表见 [docs/fencing/README.md](docs/fencing/README.md) |
@@ -38,6 +38,28 @@
 | 为什么这样定 | [docs/decisions/](docs/decisions/README.md)，一条一个文件；档案“决策”一节列出相关文件 | 文件名 | 做决定的会话；来源如实标注 |
 
 **不允许**：在计划、任务卡、决策、宪章里重新描述某个特性的意图或设计。需要时写一句要点并链接到特性档案。
+
+### 3.1 一件事只在一处描述（单一权威来源）
+
+上面的“唯一位置”不只适用于特性：**任何会被多处提到的内容，只在一个权威位置完整描述，其他文档引用它**（2026-11-26 用户确认，见 [决定 2026-11-26-single-source-docs](docs/decisions/2026-11-26-single-source-docs.md)）。
+
+| 内容 | 权威位置 | 其他文档怎么写 |
+|---|---|---|
+| 研发线的职责 | [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md)「五条研发线与近期汇合」表 | 只写线号，例如“第 4 线”，需要时链接到该表 |
+| 特性归哪条线 | [docs/DESIGN.md](docs/DESIGN.md) 第 0.3 节“负责线”列 | 只填线号，不复述职责 |
+| 宪章条款 | [docs/PRODUCT.md](docs/PRODUCT.md) | 引用条款编号（如 CH-G2c），可加一句要点 |
+| 共享约定 | [docs/contracts/](docs/contracts/README.md) | 引用不变量编号（如 A7） |
+| 验收用例 | [docs/testing/CASES.md](docs/testing/CASES.md) | 引用用例编号 |
+| 为什么这样定 | [docs/decisions/](docs/decisions/README.md) | 引用决策文件名 |
+| 研发规则 | 本文 | `AGENTS.md`、`CLAUDE.md` 只列要点并链接 |
+| 其他内容 | 第一次完整写下它的地方即为权威；需要改位置时记决策 | 一句要点 + 链接 |
+
+规则：
+
+1. 非权威处最多写**一句要点**并链接到权威位置；不复制表格、清单或长段说明。
+2. 改权威内容时，同一个 PR 里检索（`grep`）其他文档中的复述，改成引用；不属于本线的文档，开 Issue 派给负责的研发线。
+3. 发现两处描述不一致时，以权威位置为准，把其他处改成引用；权威位置本身有错，按改动等级走流程修正。
+4. 历史记录（证据、评审报告、已取代的决策）保留当时原文，不追改。
 
 ## 4. 特性档案与登记表
 
@@ -147,3 +169,4 @@
 | v0.1 | 2026-11-21 | 草案，位于 `docs/spec/README.md` | [2026-11-21-doc-rules-enforcement](docs/decisions/2026-11-21-doc-rules-enforcement.md) |
 | v0.2 | 2026-11-21 | 移到根目录作为唯一研发规范；加入编号约定、授权、风险对照与底线、例外管理、按任务类型的 TDD、同步分阶段、证据等级、里程碑结论 | [2026-11-21-dev-standard-and-guardrails](docs/decisions/2026-11-21-dev-standard-and-guardrails.md) |
 | v0.3 | 2026-11-24 | 第 12 节：更新试点状态、基线 tag 现状，记录论文约束解除 | [2026-11-24-lift-paper-constraint](docs/decisions/2026-11-24-lift-paper-constraint.md) |
+| v0.4 | 2026-11-26 | 新增第 3.1 节：一件事只在一处描述（单一权威来源），列出常见内容的权威位置 | [2026-11-26-single-source-docs](docs/decisions/2026-11-26-single-source-docs.md) |
