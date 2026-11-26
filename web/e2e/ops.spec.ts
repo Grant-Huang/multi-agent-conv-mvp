@@ -245,20 +245,42 @@ test('E2E-ADREAD: 运营频道阅读锚点离开后恢复', async ({ page, reque
   await openChannel(page);
   await expect(page.getByTestId('chat-messages')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('ops-card').first()).toBeVisible();
+  // A2.1 恢复用 smooth scrollIntoView；等入场动画结束（scrollTop 稳定）再测锚点写入，
+  // 否则恢复动画与测试赋值竞争，锚点被写到恢复位置（Q-T87/#333 签名）
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-testid="chat-messages"]') as HTMLElement | null;
+    if (!el) return false;
+    const w = window as unknown as { __adreadPrev?: number };
+    if (w.__adreadPrev === el.scrollTop) return true;
+    w.__adreadPrev = el.scrollTop;
+    return false;
+  }, undefined, { timeout: 15_000, polling: 250 });
 
   const targetId = ids[2];
   const targetCard = page.getByTestId('ops-card').filter({ hasText: targetId }).first();
   await expect(targetCard).toBeVisible();
   const messageId = await targetCard.evaluate((el) => el.closest('[data-message-id]')?.getAttribute('data-message-id'));
   expect(messageId).toBeTruthy();
-  await page.getByTestId('chat-messages').evaluate((root, mid) => {
+  // 把目标卡滚进视口（内容高度不足以将其置顶时钳到底部——产品锚点如实记录
+  // 「当前首条可见消息」，期望值按同一规则在页内计算，不假设可达位置）
+  const expectedAnchor = await page.getByTestId('chat-messages').evaluate((root, mid) => {
     const box = root as HTMLElement;
     const msg = box.querySelector(`[data-message-id="${mid}"]`) as HTMLElement | null;
     if (!msg) throw new Error('missing message');
-    const rel = msg.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
-    box.scrollTop = rel;
+    box.scrollTop = Math.min(
+      msg.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop,
+      box.scrollHeight - box.clientHeight,
+    );
+    const rootTop = box.getBoundingClientRect().top;
+    for (const el of Array.from(box.querySelectorAll<HTMLElement>('[data-message-id]'))) {
+      const rel = el.getBoundingClientRect().top - rootTop + box.scrollTop;
+      if (rel + el.offsetHeight > box.scrollTop + 1) return el.getAttribute('data-message-id');
+    }
+    return null;
   }, messageId as string);
-  await page.waitForTimeout(200);
+  expect(expectedAnchor).toBeTruthy();
+  // 滚动事件 → persistAnchor（debounce 50ms）落盘
+  await page.waitForTimeout(300);
   await expect
     .poll(async () =>
       page.evaluate((cid) => {
@@ -271,7 +293,7 @@ test('E2E-ADREAD: 运营频道阅读锚点离开后恢复', async ({ page, reque
       }, CHANNEL),
       { timeout: 10_000 },
     )
-    .toBe(messageId);
+    .toBe(expectedAnchor);
 
   // 软切换：避免整页刷新打乱恢复时序
   await page.getByRole('button', { name: '我的桌面', exact: true }).click();
@@ -293,17 +315,30 @@ test('E2E-ADREAD: 运营频道阅读锚点离开后恢复', async ({ page, reque
       }),
       { timeout: 10_000 },
     )
-    .toBe(messageId);
+    .toBe(expectedAnchor);
 
-  await page.getByRole('button', { name: '我的桌面', exact: true }).click();
-  await page.getByTestId('card-smt-03').click();
-  await expect(page.getByTestId('workspace-exec')).toBeVisible();
-  await page.getByTestId('workspace-exec-toggle').click();
-  await expect(page.getByTestId('workspace-exec')).toHaveCount(0);
-  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
-  await page.getByTestId('card-smt-03').click();
-  await expect(page.getByTestId('workspace-exec')).toHaveCount(0);
-  await expect(page.getByTestId('workspace-exec-toggle')).toHaveAttribute('aria-expanded', 'false');
+  // 更深的离开路径：进仿真实验再回频道（T-88 后首页卡片改为真实任务数据源，
+  // ops 实例无 SMT-03 任务卡；锚点须在更深导航往返后保持）
+  await page.getByTestId('ops-entry-des').click();
+  await expect(page.getByTestId('des-experiment')).toBeVisible();
+  await page.getByRole('navigation', { name: '最近工作' }).getByRole('button', { name: /运营频道/ }).click();
+  await expect(page.getByTestId('chat-messages')).toBeVisible();
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const root = document.querySelector('[data-testid="chat-messages"]') as HTMLElement | null;
+        if (!root) return null;
+        const rootTop = root.getBoundingClientRect().top;
+        for (const n of Array.from(root.querySelectorAll('[data-message-id]'))) {
+          const el = n as HTMLElement;
+          const rel = el.getBoundingClientRect().top - rootTop + root.scrollTop;
+          if (rel + el.offsetHeight > root.scrollTop + 1) return el.getAttribute('data-message-id');
+        }
+        return null;
+      }),
+      { timeout: 10_000 },
+    )
+    .toBe(expectedAnchor);
 });
 
 test('E2E-OPSOFF: 关闭开关（默认）时没有桌面页签和运营频道，原有会话行为不变', async ({ page, request }) => {
