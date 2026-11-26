@@ -76,7 +76,7 @@ $ 隔离复跑 ADD01-02 ×3 → 1 绿 / 2 红（间歇性确认，Issue #351 已
 
 | 项 | 状态 |
 |---|---|
-| push @ `a383e26`（#349，run [45777690632](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45777690632)） | 记录时 **in_progress**；终态回填：（待回填） |
+| push @ `a383e26`（#349，run [45777690632](https://github.com/Grant-Huang/multi-agent-conv-mvp/actions/runs/45777690632)） | **success**（8m55s）——**rust 连续第七推绿**（467d6e0 → … → a383e26；81445e7 后零复现；Q-AR2-04 观察：余二样本按 #335 范式处置的建议维持） |
 | nightly 11-26 | 未触发（收稿时点）；预期形态：**≤1 红**（ADD01-02 间歇 + UX05 抖动候选），ADREAD 应转绿 |
 
 ## 4. 问题清单
