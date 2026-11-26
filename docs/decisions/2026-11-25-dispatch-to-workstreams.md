@@ -6,7 +6,7 @@
 | 来源 | 用户确认（2026-11-25 对话：“我有另外 5 条任务线……如果你发现有些任务跟他们相关，直接派发给他们，不要自己开发”）；具体归属与卡片拆分为助手建议 |
 | 状态 | 有效 |
 | 影响范围 | 产品意图审查（本会话与每周守护者）；第 1 线（AI 桌面产品入口） |
-| 相关设计 | [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md)「五条研发线与近期汇合」；[2026-11-22-five-workstreams](2026-11-22-five-workstreams.md)；[UX-03 基线审查](../review/product-intent/2026-11-25-ux03-baseline.md)；[GUARDIAN.md](../experience-map/GUARDIAN.md) 第 2 节第 1 步第 4 条 |
+| 相关设计 | [INTEGRATION_PLAN.md](../INTEGRATION_PLAN.md)「五条研发线与近期汇合」；[2026-11-22-five-workstreams](2026-11-22-five-workstreams.md)；[UX-03 基线审查](../review/product-intent/2026-11-25-ux03-baseline.md)；[GUARDIAN.md](../experience-map/GUARDIAN.md) 第 2 节第 1 步第 5 条 |
 
 **一句话结论**：产品意图审查只做审查、定约束用例和派卡，不改产品代码；每条发现按 `INTEGRATION_PLAN.md` 的研发线表找归属，直接派卡，不再逐条等用户决定；UX-03 的 014、015、016 都归第 1 线。
 
@@ -70,6 +70,11 @@
 | #327 | UXFIX-O：从设置捷径一次返回即回原工作（INTENT-024，UX-06） | 1 |
 | #309（补充） | UXFIX-F 加入 INTENT-025：从提醒直达“通知与主动性”设置 | 1 |
 | #325 | Claude Code 接入：体检找到命令但检测报 not_installed | 5 |
+| #333 | E2E-ADREAD 夜间持续失败（代第 3 线落地分诊） | 1 |
+| #340 | 运营案例批准后没有执行入口（INTENT-027，UX-07；配合第 1 线） | 3 |
+| #341 | UXFIX-P：运营卡执行回执写死（INTENT-026，UX-07；配合第 3 线） | 1 |
+| #342 | UXFIX-Q：批准前看方案、批准后状态、中文化（INTENT-028、029，UX-07） | 1 |
+| #344 | UXFIX-R：统一简洁 SVG 图标，替换字符图标（决策 2026-11-26-ui-icons-svg） | 1 |
 | #149、#191、#208、#256、#275 | nightly-e2e 失败分诊（用户 2026-11-25 确认） | 3 |
 
 ## 简单设计
