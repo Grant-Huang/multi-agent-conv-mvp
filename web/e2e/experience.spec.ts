@@ -131,6 +131,32 @@ test('E2E-UX01-I8: 发送记录与受理回执离开再返回后仍在', async (
   await expect(log).toContainText('已受理（模拟）');
 });
 
+// UX-01-I5 首页部分（CH-U1，INTENT-2026-001）：首页问答接真实会话，浮层显示助手回答，
+// 不离开桌面、首页卡片仍在；会话接口不可达时显示明确不可用说明，不静默回退模拟文本。
+test('E2E-UX01-I5: 首页问答得到真实回答且留在桌面；会话接口不可达时明确说明不可用', async ({ page }) => {
+  const p = probe(page);
+  await page.goto('/');
+  const s1 = page.getByRole('textbox', { name: 'S1 输入' });
+  await s1.fill(`你好，验证一下首页问答 ${Date.now()}`); p.step();
+  await page.getByTestId('s1-ask-send').click(); p.step();
+  const reply = page.getByTestId('s1-reply');
+  await expect(reply).toBeVisible({ timeout: 60_000 });
+  await expect(reply).not.toContainText('问答（模拟'); // 不得静默回退模拟文本
+  await expect(page.getByTestId('desktop-home')).toBeVisible();
+  await expect(page.getByTestId('card-smt-03')).toBeVisible();
+  expect(p.snapshot().full_page_navigations).toBe(0);
+
+  // 会话消息接口不可达：明确不可用说明（CH-P3），不出现模拟文本
+  await page.route('**/api/conversations/*/messages', (route) => {
+    if (route.request().method() === 'POST') return route.abort();
+    return route.continue();
+  });
+  await s1.fill('你好，这条应当提示不可用'); p.step();
+  await page.getByTestId('s1-ask-send').click(); p.step();
+  await expect(reply).toContainText('不可用', { timeout: 15_000 });
+  await expect(reply).not.toContainText('问答（模拟');
+});
+
 // 体验地图 UX-02（docs/experience-map/journeys/UX-02.md）：做事中途临时提问，不被带离当前工作。
 // 只断言当前成立的约束 UX-02-I1；草稿保留（I2）、得到回答（I3）、助理入口可对话（I4）为欠账。
 test('E2E-UX02: 任务中切到独立话题临时提问再切回，不离开工作区且任务与作用域恢复', async ({ page }) => {
@@ -188,6 +214,20 @@ test('E2E-UX03: 首页一句话委派后留在桌面，后台运行时可去做�
   // UX-03-I3（CH-U3）：不用守着，委派的任务出现在“我的工作”并最终显示已完成
   const card = page.getByRole('region', { name: '我的工作' }).getByRole('button').filter({ hasText: goal });
   await expect(card).toContainText('已完成', { timeout: 60_000 });
+
+  // UX-03-I4（CH-P8）：从卡片打开委派的真实任务，工作区显示该任务自己的目标、状态与产物，
+  // 不出现夹具的模拟内容；工作区状态词与卡片一致
+  const cardSubtitle = await card.locator('.desktop-card-sub').innerText();
+  expect(cardSubtitle).toBe('已完成');
+  await card.click(); p.step();
+  const pane = page.getByTestId('workspace-task-pane');
+  await expect(page.getByTestId('workspace-task-status')).toHaveText('已完成');
+  await expect(page.getByTestId('workspace-task-goal')).toContainText(goal);
+  await expect(page.getByTestId('workspace-task-artifacts')).toContainText('verification.md');
+  await expect(pane).not.toContainText('质量批次 SMT-03');
+  await expect(pane).not.toContainText('桌面首页 Mock');
+  await expect(pane).not.toContainText('执行中（模拟）');
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
 
   const metrics = p.snapshot();
   expect(metrics.full_page_navigations).toBe(0);
