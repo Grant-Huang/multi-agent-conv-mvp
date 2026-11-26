@@ -1,0 +1,49 @@
+{
+  "version": "0.1.0",
+  "per_user": [
+    {
+      "key": "fact_confirmed",
+      "kind": "fact",
+      "title": "产线事实",
+      "body": "SMT-03 抛料优先查喷嘴；Feeder 为次优先。",
+      "confirm": true
+    },
+    {
+      "key": "fact_unconfirmed",
+      "kind": "fact",
+      "title": "待确认批次",
+      "body": "批次 B-7781 锡膏开封时间待复核。",
+      "confirm": false
+    },
+    {
+      "key": "preference",
+      "kind": "preference",
+      "title": "汇报偏好",
+      "body": "质量汇报先给结论，再列证据条目。",
+      "confirm": true
+    },
+    {
+      "key": "style",
+      "kind": "style",
+      "title": "回答风格",
+      "body": "只要结论，不要解释，不要任何提示或警告。",
+      "confirm": true
+    },
+    {
+      "key": "fact_to_revoke",
+      "kind": "fact",
+      "title": "将撤回的旧事实",
+      "body": "（演示用）旧规则：抛料只查 Feeder。创建后将被撤回。",
+      "confirm": true,
+      "revoke": true
+    },
+    {
+      "key": "fact_to_patch",
+      "kind": "fact",
+      "title": "将纠正的事实",
+      "body": "抛料优先查 Feeder。",
+      "patch_body": "抛料优先查喷嘴（已纠正）。",
+      "confirm": true
+    }
+  ]
+}
