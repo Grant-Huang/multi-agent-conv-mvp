@@ -278,6 +278,22 @@ guardrails:
     exception: null
     review_due: "2026-12-10"
 
+  - id: GR-4-CI-BUDGET
+    layer: 4
+    objective: "测试按类别分层并设耗时预算；每周统计各作业耗时与最慢用例，超预算开 Issue"
+    enforcement: "INTEGRATION_PIPELINE.md 第 5.1 节（DECLARED）；第 2 线每周统计（待实施，#437、#434）；超时先警告不阻断"
+    schedule: [pr, weekly]
+    owner: "第 2 线"
+    status: proposed
+    evidence_level: DECLARED
+    evidence:
+      - "docs/fencing/INTEGRATION_PIPELINE.md 第 5.1 节；运行 45903293352 的作业 140193964580 计时"
+    last_verified: null
+    positive_test: null
+    negative_test: null
+    exception: null
+    review_due: "2026-12-10"
+
   # ---------- 第五层：独立 AI 审查 ----------
   - id: GR-5-NIGHTLY-REVIEW
     layer: 5
