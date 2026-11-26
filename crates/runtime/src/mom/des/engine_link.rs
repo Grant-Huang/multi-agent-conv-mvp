@@ -839,6 +839,7 @@ impl Engine {
                         eight_d: None,
                         approvals: BTreeMap::new(),
                         actions: BTreeMap::new(),
+                        execution_block: None,
                         children: vec![],
                         outbox: vec![],
                         world,

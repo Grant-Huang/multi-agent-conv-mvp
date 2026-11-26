@@ -41,11 +41,27 @@ export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: ()
     card.plan_revision == null ? null : Number(card.plan_revision);
   const isWorldMock = card.provenance === "world_mock";
   const isDes = card.provenance === "des";
+  // MOM 模拟卡（provenance=simulation）：批准即执行（决定 2026-11-26-ops-approve-auto-execute）。
+  // 已批准未执行时按钮仍在：受阻未过期=重试执行；过期=重新批准。
+  // 标签与可见性以卡片携带的引擎状态为准（localApprover 只用于点击后到卡片刷新前的即时反馈，
+  // 方案刷新会清掉引擎侧批准，此时按钮必须回到「批准」）。
+  const isMomSim = card.provenance === "simulation";
   const executionId =
     localExecutionId ?? fieldFromSummary(card.summary, "execution_id");
   const worldId = localWorldId ?? fieldFromSummary(card.summary, "world_id");
+  const approvalExpired = card.summary?.includes("批准已过期") ?? false;
+  const cardApprover = card.approver;
   const canApprove =
-    card.stage === "WAITING_HUMAN" && !approver && !!card.scope && planRevision != null && !Number.isNaN(planRevision);
+    card.stage === "WAITING_HUMAN" &&
+    !!card.scope &&
+    planRevision != null &&
+    !Number.isNaN(planRevision) &&
+    (isMomSim || !cardApprover);
+  const approveLabel = !cardApprover
+    ? "批准"
+    : approvalExpired
+      ? "重新批准"
+      : "重试执行";
   const showReceipt =
     card.stage === "VERIFYING" ||
     card.stage === "CLOSED" ||
@@ -142,7 +158,7 @@ export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: ()
         </button>
         {canApprove && (
           <button type="button" className="btn small" disabled={busy} onClick={approve}>
-            批准
+            {approveLabel}
           </button>
         )}
         <button
