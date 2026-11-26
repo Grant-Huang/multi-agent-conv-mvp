@@ -216,7 +216,11 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
         )
         // T-64 harness fixture（resume/fixture/*）改为按 test_fixtures 开关条件挂载，见函数尾部（T-95/FIX-C/H4）
         // T-82 首页快照：三区卡片读模型（只读；fixture 种子仅测试/演示模式，标注「模拟」）
-        .route("/api/desktop/v1/snapshot", get(get_snapshot))
+        .route(
+            // UXFIX-B（INTENT-003）：快照携带 test_fixtures，界面测试控件由服务端告知的开关控制
+            "/api/desktop/v1/snapshot",
+            get(move |state: State<AppState>| async move { get_snapshot(state, test_fixtures).await }),
+        )
         .route(
             "/api/desktop/v1/snapshot/fixture/reset",
             post(snapshot_fixture_reset),
@@ -1005,7 +1009,7 @@ fn snapshot_internal_err(e: anyhow::Error) -> Response {
         .into_response()
 }
 
-async fn get_snapshot(State(rt): State<AppState>) -> Response {
+async fn get_snapshot(State(rt): State<AppState>, test_fixtures: bool) -> Response {
     let tasks = match rt.store.list_tasks(None) {
         Ok(t) => t,
         Err(e) => return snapshot_internal_err(e),
@@ -1054,6 +1058,7 @@ async fn get_snapshot(State(rt): State<AppState>) -> Response {
         },
         "cursor": cursor,
         "generated_at": cursor,
+        "test_fixtures": test_fixtures,
     });
     (StatusCode::OK, Json(body)).into_response()
 }

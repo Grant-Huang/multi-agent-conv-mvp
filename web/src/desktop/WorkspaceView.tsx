@@ -19,9 +19,11 @@ type Props = {
   onOpenEvidence?: () => void;
   onOpenSettings?: () => void;
   onOpenTask?: (taskId: string) => void;
+  /** UXFIX-B（INTENT-003）：服务端告知的测试模式；仅在 true 时渲染模拟测试控件 */
+  testFixtures?: boolean;
 };
 
-export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, onOpenTask }: Props) {
+export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, onOpenTask, testFixtures = false }: Props) {
   const [layout, setLayout] = useState<WorkspaceLayout>(() => readWorkspaceLayout());
   const [execOpen, setExecOpen] = useState(() => loadExecOpen(taskId));
   const [showAppr, setShowAppr] = useState(false);
@@ -118,7 +120,10 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
               <p>O-Agent 执行摘要（模拟）：已采集质量记录，等待核验。</p>
             </div>
           )}
-          <div className="workspace-mock-toggles">
+          {/* UXFIX-B：模拟测试控件只在测试模式渲染（服务端告知），正常界面不出现（CH-U5） */}
+          {testFixtures && (
+            <>
+              <div className="workspace-mock-toggles" data-testid="workspace-mock-toggles">
             <button
               type="button"
               className="btn small"
@@ -170,6 +175,8 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
           {showVoice && <VoiceMockPanel taskId={taskId} />}
           {showHandoff && <HandoffMockPanel taskId={taskId} />}
           {showAccept && <AcceptMockPanel taskId={taskId} />}
+            </>
+          )}
           <p className="workspace-hint">草稿与作用域按 Task 隔离（A2）。</p>
           <WorkspaceComposer taskId={taskId} />
         </section>
