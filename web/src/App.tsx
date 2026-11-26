@@ -345,6 +345,8 @@ export default function App() {
   const [assistantProfile, setAssistantProfile] = useState<AssistantProfile>(() => loadProfile());
   const [s1BgJob, setS1BgJob] = useState<S1BgJob | null>(null);
   const [s1Reply, setS1Reply] = useState<string | null>(null);
+  /** UXFIX-A（INTENT-001）：首页问答走真实会话；同一次驻留内沿用同一会话（DESIGN §2「下一轮沿用会话」） */
+  const s1AskConvRef = useRef<string | null>(null);
   const [composingInput, setComposingInput] = useState(false);
   const [attnItems, setAttnItems] = useState<AttentionItem[]>([]);
   const [attnMuted, setAttnMuted] = useState(false);
@@ -643,7 +645,25 @@ export default function App() {
             s1BgJob={s1BgJob}
             s1Reply={s1Reply}
             onS1Ask={(text) => {
-              setS1Reply(`问答（模拟，留在桌面）：${text.slice(0, 80)}`);
+              void (async () => {
+                setS1Reply("正在思考…");
+                try {
+                  let cid = s1AskConvRef.current;
+                  if (!cid) {
+                    const c = await api.createConversation();
+                    cid = c.id;
+                    s1AskConvRef.current = cid;
+                  }
+                  const outcome = await api.send(cid, text);
+                  const reply = outcome.reply?.content?.trim();
+                  setS1Reply(reply || "（模型没有返回内容）");
+                  // 问答会话进「最近」，浮层收起后可从历史恢复（DESIGN §2）
+                  loadConversations().catch(() => {});
+                } catch {
+                  // CH-P3：出错就报错，不静默回退到模拟文本
+                  setS1Reply("问答暂不可用：无法连接会话服务，请稍后重试。");
+                }
+              })();
             }}
             onS1Delegate={(text) => {
               setS1Reply(null);
