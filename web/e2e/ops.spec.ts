@@ -245,6 +245,9 @@ test('E2E-ADREAD: 运营频道阅读锚点离开后恢复', async ({ page, reque
   await openChannel(page);
   await expect(page.getByTestId('chat-messages')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('ops-card').first()).toBeVisible();
+  // T-100：ops 服务器无桌面 fixture 任务；回首页前播种 home 快照卡（与 desktop.spec 的 beforeEach reset 等价）
+  const fr = await request.post(on + '/api/desktop/v1/snapshot/fixture/reset');
+  expect(fr.ok()).toBeTruthy();
 
   const targetId = ids[2];
   const targetCard = page.getByTestId('ops-card').filter({ hasText: targetId }).first();
@@ -259,6 +262,20 @@ test('E2E-ADREAD: 运营频道阅读锚点离开后恢复', async ({ page, reque
     box.scrollTop = rel;
   }, messageId as string);
   await page.waitForTimeout(200);
+  // 锚点语义（DESIGN §3）：记录滚动停止时视口顶可见的首条消息及其偏移。
+  // 目标卡可能超出最大滚动（钳制），此时锚点=钳制位置的首条可见消息——语义仍忠实。
+  const topVisibleAfterScroll = await page.evaluate(() => {
+    const root = document.querySelector('[data-testid="chat-messages"]') as HTMLElement | null;
+    if (!root) return null;
+    const rootTop = root.getBoundingClientRect().top;
+    for (const n of Array.from(root.querySelectorAll('[data-message-id]'))) {
+      const el = n as HTMLElement;
+      const rel = el.getBoundingClientRect().top - rootTop + root.scrollTop;
+      if (rel + el.offsetHeight > root.scrollTop + 1) return el.getAttribute('data-message-id');
+    }
+    return null;
+  }, CHANNEL);
+  expect(topVisibleAfterScroll).toBeTruthy();
   await expect
     .poll(async () =>
       page.evaluate((cid) => {
@@ -271,7 +288,7 @@ test('E2E-ADREAD: 运营频道阅读锚点离开后恢复', async ({ page, reque
       }, CHANNEL),
       { timeout: 10_000 },
     )
-    .toBe(messageId);
+    .toBe(topVisibleAfterScroll);
 
   // 软切换：避免整页刷新打乱恢复时序
   await page.getByRole('button', { name: '我的桌面', exact: true }).click();
@@ -293,7 +310,7 @@ test('E2E-ADREAD: 运营频道阅读锚点离开后恢复', async ({ page, reque
       }),
       { timeout: 10_000 },
     )
-    .toBe(messageId);
+    .toBe(topVisibleAfterScroll);
 
   await page.getByRole('button', { name: '我的桌面', exact: true }).click();
   await page.getByTestId('card-smt-03').click();
