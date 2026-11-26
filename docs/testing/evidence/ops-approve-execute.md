@@ -38,7 +38,7 @@ Rust 侧（`CARGO_TARGET_DIR=target`，仓库根）：
 
 - `cargo test --locked -p an-runtime`：全绿（含既有引擎契约测试 `changed_resource_and_expired_approval_prevent_dispatch` 等，`approve`/`execute` 原语语义未变）；新增 `rt_opsdesk_12_approve_and_execute_dispatches_or_blocks_with_approval_kept`、`rt_opsdesk_13_approval_expiry_emits_once_and_card_prompts_reapproval` 通过。
 - `cargo test --locked -p an-server --test mom_ops --test mom --test mom_des`：16 passed / 0 failed（含既有 `rt_opsdesk_11_approve_is_idempotent_and_rejects_stale`）。
-- `cargo test --locked --workspace`：见下（回填）。
+- `cargo test --locked --workspace`：除 `rt_adm_14_admission_http_end_to_end` 外全绿。该测试为已知 flake（第 4 线记录「rt_adm_14 flake 勿当新缺陷」）；基线核实：pristine `origin/master`（6e784a4）独立 worktree 冷构建复跑同样失败（同一 10s「任务未结束」超时签名，`crates/server/tests/admission.rs:203`），属既有本地环境敏感问题，与本改动无代码交集（admission 测试不含 `[mom]` 配置）。
 - `cargo clippy --locked --all-targets -- -D warnings`：退出码 0（仅 master 既有的 workspace manifest 警告）。
 - `cargo fmt --all -- --check`：干净。
 
