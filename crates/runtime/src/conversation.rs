@@ -338,10 +338,12 @@ impl ConversationRuntime {
             system.push_str(&a.prompt_section());
         }
         let mut messages = vec![ChatMessage::system(system)];
-        // S4：会话资料极简清单紧随判断系统提示（数据，非指令）；超出预算时 fit() 最先裁掉
+        // S4：判断清单并入首条 system（数据，非指令）。多数 chat template（含本机 Qwen）
+        // 禁止第二条 system；条数预算由 render_judge_digest 先裁。
         if let Some(d) = judge_digest {
             if !d.trim().is_empty() {
-                messages.push(ChatMessage::system(d));
+                messages[0].content.push_str("\n\n");
+                messages[0].content.push_str(d);
             }
         }
         for m in history {
@@ -1009,7 +1011,7 @@ impl ConversationRuntime {
 
     /// 直接回答：单独生成回复。开启流式时边生成边推送到界面（片段的 stream_id = 最终消息 id）；
     /// 流式失败时退回一次性生成；都失败时给出带错误码的说明。
-    /// 5.2b：`style` 为生效的风格卡，作为资料块之后的第二条附加系统消息注入。
+    /// 5.2b：`style` 为生效的风格卡；与资料块一并并入首条 system（#448：Qwen 禁止第二条 system）。
     async fn generate_reply(
         &self,
         conversation_id: &str,
@@ -1019,16 +1021,18 @@ impl ConversationRuntime {
         style: Option<&str>,
     ) -> String {
         let mut messages = vec![ChatMessage::system(reply_system_prompt(&self.prompt_info))];
-        // 会话资料（数据，非指令）紧随系统提示；超预算时 fit() 最先裁掉它，不挤当前请求
+        // 会话资料 / 风格卡（数据，非指令）并入首条 system：多数 chat template（含本机 Qwen）
+        // 禁止第二条 system；条数预算由 session_materials::render / render_style 先裁。
         if let Some(m) = materials {
             if !m.trim().is_empty() {
-                messages.push(ChatMessage::system(m));
+                messages[0].content.push_str("\n\n");
+                messages[0].content.push_str(m);
             }
         }
-        // 风格卡（数据，非指令；块首已带风险护栏句）紧随资料块
         if let Some(st) = style {
             if !st.trim().is_empty() {
-                messages.push(ChatMessage::system(st));
+                messages[0].content.push_str("\n\n");
+                messages[0].content.push_str(st);
             }
         }
         for m in history {

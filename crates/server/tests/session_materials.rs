@@ -203,9 +203,11 @@ async fn continuation(rt: &Runtime, conv_id: &str) -> an_core::Message {
 /// 指定回答请求里是否有资料块；返回（资料块内容，提示词里最后一条 user 内容）
 fn materials_and_last_user(req: &Value) -> (Option<String>, String) {
     let msgs = req["messages"].as_array().unwrap();
+    // 资料可并入首条 system：只量标记起的资料段（CASES：资料消息渲染长度）
     let mat = msgs.iter().find_map(|m| {
         let c = m["content"].as_str()?;
-        c.contains(MATERIALS_MARKER).then(|| c.to_string())
+        let i = c.find(MATERIALS_MARKER)?;
+        Some(c[i..].to_string())
     });
     let last_user = msgs
         .iter()
@@ -344,6 +346,39 @@ async fn rt_smat_04_oversized_summary_clipped_to_budget() {
     assert!(
         last_user.contains("之前那个任务"),
         "最新用户消息必须完整保留：{last_user}"
+    );
+}
+
+/// RT-SMAT-08（#448）：资料注入后回答请求仅一条 leading system（并入首条，兼容 Qwen 模板）
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_smat_08_materials_merged_into_single_leading_system() {
+    let llm = MockLlm::start().await;
+    let rt = runtime(&llm.base, "");
+    let conv = rt.store.create_conversation("t").unwrap();
+    seed_completed_linked_task(&rt.store, &conv.id, "task-smat-08", "结论：稳定。");
+    push_window_out(&rt, &conv.id).await;
+    let reply = continuation(&rt, &conv.id).await;
+    assert!(!reply.content.is_empty());
+    let calls = llm.plain_calls();
+    let req = calls.last().expect("应有回答请求");
+    let msgs = req["messages"].as_array().unwrap();
+    let systems: Vec<_> = msgs
+        .iter()
+        .take_while(|m| m["role"] == "system")
+        .collect();
+    assert_eq!(
+        systems.len(),
+        1,
+        "回答请求 leading system 必须恰好 1 条（资料并入首条）：{systems:?}"
+    );
+    let c = systems[0]["content"].as_str().unwrap_or("");
+    assert!(
+        c.contains(MATERIALS_MARKER),
+        "首条 system 应含资料块：{c}"
+    );
+    assert!(
+        c.contains("来源：task-smat-08"),
+        "首条 system 应带来源：{c}"
     );
 }
 
