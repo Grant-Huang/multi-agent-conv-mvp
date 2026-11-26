@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use an_agents::acp::{AcpConfig, PermissionMode};
@@ -169,4 +170,45 @@ async fn probe_session_new_cwd_is_canonical() {
         base.join(&rel).canonicalize().unwrap(),
         "canonical 路径应与相对 workdir 解析结果一致"
     );
+}
+
+/// Issue #325：适配器创建时命令不存在 → 之后命令出现在磁盘（模拟 npm install -g）
+/// → 再次探测应重新解析并完成握手，而不是永远 not_installed
+/// （此前体检能找到命令、检测却报 not_installed 的矛盾根因）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn rt_i325_01_probe_reresolves_command_appearing_after_construction() {
+    let dir = Dir::new("i325");
+    let late = dir.0.join("late-acp");
+    let mock = mock_acp_binary();
+    assert!(
+        mock.is_file(),
+        "缺少 {}，请先 cargo build -p an-server --bin an-mock-acp",
+        mock.display()
+    );
+
+    // 1) 创建适配器时命令还不存在
+    let a = Arc::new(agent(&dir, late.to_string_lossy().into_owned()));
+    let out = a.probe_detailed(Duration::from_secs(10)).await;
+    assert_eq!(
+        out.kind,
+        ProbeKind::NotInstalled,
+        "命令不存在时应判 not_installed：{:?}",
+        out.detail
+    );
+    assert!(!a.is_installed(), "创建时未安装");
+
+    // 2) 之后命令出现在磁盘（npm install -g 的时序模拟），内容为可完成 ACP 握手的真二进制
+    std::fs::copy(&mock, &late).unwrap();
+    std::fs::set_permissions(&late, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    // 3) 再次探测：重新解析 + 握手成功（不再永远 not_installed）
+    let out = a.probe_detailed(Duration::from_secs(10)).await;
+    assert_eq!(
+        out.kind,
+        ProbeKind::Ok,
+        "命令出现后再次探测应重新解析并握手成功：{:?} {:?}",
+        out.kind,
+        out.detail
+    );
+    assert!(a.is_installed(), "探测自愈后 is_installed 应与体检口径一致");
 }

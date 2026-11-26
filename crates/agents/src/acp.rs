@@ -262,7 +262,15 @@ impl AcpAgent {
 
     /// 本机是否安装了该 agent
     pub fn is_installed(&self) -> bool {
-        self.resolved.is_some()
+        self.re_resolved().is_some()
+    }
+
+    /// Issue #325：命令可能在适配器创建后才安装（npm install -g）——探测/执行前
+    /// 重新解析，与诊断体检（resolve_command 实时查找）保持同一口径。
+    fn re_resolved(&self) -> Option<PathBuf> {
+        self.resolved
+            .clone()
+            .or_else(|| resolve_command(&self.cfg.command))
     }
 
     /// 本 agent 的配置（只读）
@@ -287,7 +295,7 @@ impl AcpAgent {
     /// - 握手出错：按 ACP 错误码和进程错误输出分类（见 [`classify_probe_error`]）。
     pub async fn probe_detailed(&self, timeout: Duration) -> ProbeOutcome {
         let id = self.cfg.id.clone();
-        let Some(command) = self.resolved.clone() else {
+        let Some(command) = self.re_resolved() else {
             return probe_outcome(
                 id,
                 ProbeKind::NotInstalled,
@@ -739,7 +747,7 @@ impl AgentAdapter for AcpAgent {
     }
 
     async fn run(&self, task: TaskSpec, events: EventSink) -> Result<TaskResult> {
-        let Some(command) = self.resolved.clone() else {
+        let Some(command) = self.re_resolved() else {
             return Err(AgentError::new(
                 codes::AGENT_NOT_INSTALLED,
                 self.card.disabled_reason.clone().unwrap_or_default(),
