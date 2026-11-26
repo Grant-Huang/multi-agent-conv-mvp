@@ -486,5 +486,81 @@
       "INTENT-2026-028",
       "INTENT-2026-029"
     ]
+  },
+  {
+    "id": "UX-08",
+    "title": "纠正或撤回一条个人记忆",
+    "document": "docs/experience-map/journeys/UX-08.md",
+    "persona": "docs/experience-map/personas/P-SUP-NEW.md",
+    "charter": [
+      "CH-G1",
+      "CH-G2",
+      "CH-G5",
+      "CH-U2"
+    ],
+    "features": [
+      "ai-desktop",
+      "conversation-memory"
+    ],
+    "invariants": [
+      {
+        "id": "UX-08-I1",
+        "text": "能看到自己的记忆列表与详情（正文、来源、有效期）",
+        "charter": "CH-G1",
+        "case": "E2E-ADMEM"
+      },
+      {
+        "id": "UX-08-I2",
+        "text": "可以纠正记忆正文，保存后立即显示新内容",
+        "charter": "CH-G2",
+        "case": "E2E-ADMEMW"
+      },
+      {
+        "id": "UX-08-I3",
+        "text": "可以撤回记忆，撤回后列表不再出现；全程工作区草稿不丢",
+        "charter": "CH-G2",
+        "case": "E2E-ADMEMW"
+      },
+      {
+        "id": "UX-08-I4",
+        "text": "回答可说明用了哪些记忆，撤回后下一次回答不再参考",
+        "charter": "CH-G1",
+        "debt": true
+      },
+      {
+        "id": "UX-08-I5",
+        "text": "可以主动保存为记忆，并确认待确认的偏好或风格",
+        "charter": "CH-G1",
+        "debt": true
+      },
+      {
+        "id": "UX-08-I6",
+        "text": "撤回前确认、可撤销、可查撤回记录；可改有效期；显示类型与确认状态",
+        "charter": "CH-G2",
+        "debt": true
+      },
+      {
+        "id": "UX-08-I7",
+        "text": "记忆里不混入设置项；来源文字与确认状态一致",
+        "charter": "CH-G5",
+        "debt": true
+      }
+    ],
+    "budget": {
+      "steps_max": 5,
+      "full_page_navigations_max": 0
+    },
+    "baseline": {
+      "date": "2026-11-26",
+      "steps": 4,
+      "full_page_navigations": 0
+    },
+    "known_deviations": [
+      "INTENT-2026-003",
+      "INTENT-2026-012",
+      "INTENT-2026-030",
+      "INTENT-2026-031",
+      "INTENT-2026-032"
+    ]
   }
 ]
