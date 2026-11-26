@@ -7,6 +7,8 @@ type Props = {
   onOpenTask: (taskId: string, source: string) => void;
   onOpenEvidence: (taskId: string) => void;
   assistantName?: string;
+  /** UXFIX-N（INTENT-023）：注意力列表同步序号；变化时重读快照，“为你关注”实时更新 */
+  attentionRevision?: number;
   s1BgJob?: S1BgJob | null;
   onS1Ask?: (text: string) => void;
   onS1Delegate?: (text: string) => void;
@@ -79,6 +81,7 @@ export function DesktopHome({
   onOpenTask,
   onOpenEvidence,
   assistantName,
+  attentionRevision = 0,
   s1BgJob = null,
   onS1Ask,
   onS1Delegate,
@@ -99,6 +102,11 @@ export function DesktopHome({
   useEffect(() => {
     load();
   }, [load]);
+
+  // UXFIX-N：提醒浮层轮询/动作使序号变化时重读快照，新提醒实时进入“为你关注”
+  useEffect(() => {
+    if (attentionRevision > 0) load();
+  }, [attentionRevision, load]);
 
   const open = (c: DesktopCard) => onOpenTask(c.entityId, "home-card");
   return (
@@ -121,26 +129,29 @@ export function DesktopHome({
           )}
         </>
       )}
-      {failed && (
-        <p className="muted" data-testid="snapshot-unavailable" role="status">
-          首页快照暂不可用。
-          <button type="button" className="btn small" data-testid="snapshot-retry" onClick={load}>
-            重试
-          </button>
-        </p>
-      )}
-      {!failed && cards === null && (
-        <p className="muted" data-testid="snapshot-loading" role="status">
-          首页加载中…
-        </p>
-      )}
-      {cards !== null && (
-        <div className="desktop-zones">
-          <Zone title="我的工作" cards={cards.filter((c) => c.zone === "mine")} onOpen={open} onEvidence={onOpenEvidence} />
-          <Zone title="Agent 工作" cards={cards.filter((c) => c.zone === "agent")} onOpen={open} onEvidence={onOpenEvidence} />
-          <Zone title="为你关注" cards={cards.filter((c) => c.zone === "watch")} onOpen={open} onEvidence={onOpenEvidence} />
-        </div>
-      )}
+      {/* CH-U7（#321）：S1 输入框固定在栏内可视位置，卡片内容区单独滚动，不把输入框滚走 */}
+      <div className="desktop-home-scroll">
+        {failed && (
+          <p className="muted" data-testid="snapshot-unavailable" role="status">
+            首页快照暂不可用。
+            <button type="button" className="btn small" data-testid="snapshot-retry" onClick={load}>
+              重试
+            </button>
+          </p>
+        )}
+        {!failed && cards === null && (
+          <p className="muted" data-testid="snapshot-loading" role="status">
+            首页加载中…
+          </p>
+        )}
+        {cards !== null && (
+          <div className="desktop-zones">
+            <Zone title="我的工作" cards={cards.filter((c) => c.zone === "mine")} onOpen={open} onEvidence={onOpenEvidence} />
+            <Zone title="Agent 工作" cards={cards.filter((c) => c.zone === "agent")} onOpen={open} onEvidence={onOpenEvidence} />
+            <Zone title="为你关注" cards={cards.filter((c) => c.zone === "watch")} onOpen={open} onEvidence={onOpenEvidence} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

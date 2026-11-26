@@ -348,8 +348,12 @@ export default function App() {
   // 无服务端存储（issue：新增存储先出方案）——本机 sessionStorage 留存，按任务去重。
   const [taskNotices, setTaskNotices] = useState<Array<{ taskId: string; title: string; status: string }>>([]);
   const [s1Reply, setS1Reply] = useState<string | null>(null);
+  /** UXFIX-A（INTENT-001）：首页问答走真实会话；同一次驻留内沿用同一会话（DESIGN §2「下一轮沿用会话」） */
+  const s1AskConvRef = useRef<string | null>(null);
   const [composingInput, setComposingInput] = useState(false);
   const [attnItems, setAttnItems] = useState<AttentionItem[]>([]);
+  // UXFIX-N（INTENT-023）：注意力列表每次同步递增，驱动首页“为你关注”实时刷新
+  const [attnRevision, setAttnRevision] = useState(0);
   const [attnMuted, setAttnMuted] = useState(false);
 
   useEffect(() => {
@@ -391,6 +395,7 @@ export default function App() {
             })),
           );
           setAttnMuted(r.mute_ordinary);
+          setAttnRevision((v) => v + 1);
         })
         .catch(() => {
           /* harness 未就绪时忽略 */
@@ -692,10 +697,29 @@ export default function App() {
             onOpenTask={(id) => openWorkspace(id)}
             onOpenEvidence={(id) => openEvidence(id)}
             assistantName={assistantProfile.name}
+            attentionRevision={attnRevision}
             s1BgJob={s1BgJob}
             s1Reply={s1Reply}
             onS1Ask={(text) => {
-              setS1Reply(`问答（模拟，留在桌面）：${text.slice(0, 80)}`);
+              void (async () => {
+                setS1Reply("正在思考…");
+                try {
+                  let cid = s1AskConvRef.current;
+                  if (!cid) {
+                    const c = await api.createConversation();
+                    cid = c.id;
+                    s1AskConvRef.current = cid;
+                  }
+                  const outcome = await api.send(cid, text);
+                  const reply = outcome.reply?.content?.trim();
+                  setS1Reply(reply || "（模型没有返回内容）");
+                  // 问答会话进「最近」，浮层收起后可从历史恢复（DESIGN §2）
+                  loadConversations().catch(() => {});
+                } catch {
+                  // CH-P3：出错就报错，不静默回退到模拟文本
+                  setS1Reply("问答暂不可用：无法连接会话服务，请稍后重试。");
+                }
+              })();
             }}
             onS1Delegate={(text) => {
               setS1Reply(null);
@@ -753,9 +777,11 @@ export default function App() {
             items={attnItems}
             muted={attnMuted}
             composing={composingInput}
+            onOpenTask={(id) => openWorkspace(id)}
             onChange={({ items, muted }) => {
               setAttnItems(items);
               setAttnMuted(muted);
+              setAttnRevision((v) => v + 1);
             }}
           />
         )}

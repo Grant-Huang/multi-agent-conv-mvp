@@ -42,7 +42,13 @@
       },
       {
         "id": "UX-01-I5",
-        "text": "向 AI 提出的问题得到回答",
+        "text": "首页问答得到回答（浮层显示助手回答，不离开桌面）",
+        "charter": "CH-U1",
+        "case": "E2E-UX01-I5"
+      },
+      {
+        "id": "UX-01-I9",
+        "text": "工作区发送得到回答（不是只有受理回执）",
         "charter": "CH-U1",
         "debt": true
       },
@@ -75,7 +81,6 @@
       "full_page_navigations": 0
     },
     "known_deviations": [
-      "INTENT-2026-001",
       "INTENT-2026-002",
       "INTENT-2026-003",
       "INTENT-2026-004",
@@ -136,7 +141,6 @@
       "full_page_navigations": 0
     },
     "known_deviations": [
-      "INTENT-2026-001",
       "INTENT-2026-002",
       "INTENT-2026-003",
       "INTENT-2026-012"
@@ -301,13 +305,13 @@
         "id": "UX-05-I3",
         "text": "新提醒到达时“为你关注”实时出现，不需刷新",
         "charter": "CH-U3",
-        "debt": true
+        "case": "E2E-UX05-I3I4"
       },
       {
         "id": "UX-05-I4",
         "text": "可以选择“稍后”，提醒保留在“为你关注”而不丢失；忽略后各处一致",
         "charter": "CH-U3",
-        "debt": true
+        "case": "E2E-UX05-I3I4"
       },
       {
         "id": "UX-05-I5",
@@ -327,9 +331,7 @@
     },
     "known_deviations": [
       "INTENT-2026-006",
-      "INTENT-2026-021",
-      "INTENT-2026-022",
-      "INTENT-2026-023"
+      "INTENT-2026-022"
     ]
   },
   {
@@ -449,7 +451,7 @@
         "id": "UX-07-I5",
         "text": "执行回执来自引擎或源系统，分层显示已提交 / 已受理 / 已核验并标来源；未执行时不显示“已提交”",
         "charter": "CH-P6",
-        "debt": true
+        "case": "E2E-OPSRECEIPT"
       },
       {
         "id": "UX-07-I6",
@@ -475,7 +477,6 @@
     },
     "known_deviations": [
       "INTENT-2026-018",
-      "INTENT-2026-026",
       "INTENT-2026-027",
       "INTENT-2026-028",
       "INTENT-2026-029"
