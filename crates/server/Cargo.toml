@@ -47,3 +47,5 @@ an-agents.workspace = true
 toml.workspace = true
 # RT-SMAT-05：捕获 session.materials 事件断言不含正文
 tracing-subscriber.workspace = true
+# RT-L2H-03：回填 180 天窗口外的 created_at（REQ-05 检索窗口语义）
+rusqlite.workspace = true

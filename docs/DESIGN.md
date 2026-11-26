@@ -43,7 +43,7 @@ AgentNexus 是**面向制造业组织的 AI 工作桌面**。个人、协作团�
 - **产品主轴只有一条：AI 桌面**（决定 61（AI 桌面），2026-11-20 用户确认，不做双轨）。MOM 与 World Adapter 是桌面里的工业业务能力，不是另一个产品。
 - 2026-11-04 起实现的多 agent 对话调度 MVP（第 1–17 节）是**执行引擎层**，它的部件（Conversation、Router、Policy、Orchestrator、执行组、ACP 适配器、节点、日志诊断）都是引擎里的构件。
 - 多 agent 执行、业务内省、个人记忆、外发脱敏等都是必要的产品特性，在 0.3 节逐项登记。
-- 各研发线的职责以 [集成计划](INTEGRATION_PLAN.md)「五条研发线与近期汇合」表为唯一权威描述，本文只引用线号，不复述职责。
+- 各研发线的职责以 [集成计划](INTEGRATION_PLAN.md)「研发线与近期汇合」表为唯一权威描述，本文只引用线号，不复述职责。
 - 分工一句话：频道（Channel）管沟通，任务（Task）管工作，业务对象（Business Object）管业务事实，agent 跨三者协调。
 
 ### 0.2 分层架构
@@ -127,7 +127,7 @@ flowchart TB
 | DES 仿真工厂与实验入口 | 世界 | 3 | [mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md)、[mom/DES_EXPERIMENT_OPS_SPLIT.md](mom/DES_EXPERIMENT_OPS_SPLIT.md) | 同上 | `crates/des`、`crates/des-mcp`、`server/src/mom_des_connector.rs`、`mom_sim.rs` | DES-n、62 | 已实现；实验入口随 World Adapter M0 交付 |
 | 生产世界接入 | 世界 | 3 | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) | World Adapter M3、M4（[WA_M3_TASKS.md](mom/WA_M3_TASKS.md)、[WA_M4_TASKS.md](mom/WA_M4_TASKS.md)） | `server/src/mom_world_prod.rs`（`/api/world/prod`，服务层桩数据） | 61（World Adapter） | 部分实现：只读接口以桩数据跑通（M3）；未接真实站点；写入未开工 |
 
-“负责线”按 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) 五线表与 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md) 填写；
+“负责线”按 [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) 研发线表与 [决定 2026-11-26-workstream-realignment](decisions/2026-11-26-workstream-realignment.md) 填写；
 
 助手接入管理、RelOS 和 NexusOps 仍待补独立权威设计，准入目前保留附节。
 

@@ -131,6 +131,37 @@ pub enum DesktopLinkOutcome {
     },
 }
 
+/// L2 历史记录检索命中（#346 REQ-05）。检索面 = 本库全部会话消息与已完成任务
+/// 回执（单用户桌面库；多用户隔离随服务端身份，REQ-03/第 4 线）。AI 历史回答
+/// kind =「当时的回答」——只作带来源的资料、不作事实来源（CH-G5）；引用带
+/// `at` 与 `source_id` 出处。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HistoryHit {
+    /// 消息 id 或任务 id（出处）
+    pub source_id: String,
+    pub conversation_id: String,
+    /// 用户消息 / 当时的回答 / 系统事件 / 任务回执
+    pub kind: String,
+    pub role: String,
+    /// 摘录（≤200 字符）
+    pub snippet: String,
+    /// 时间（RFC3339，引用带时间）
+    pub at: String,
+    pub task_id: Option<String>,
+}
+
+fn history_kind(role: &str) -> &'static str {
+    match role {
+        "user" => "用户消息",
+        "assistant" => "当时的回答",
+        _ => "系统事件",
+    }
+}
+
+fn history_snippet(s: &str) -> String {
+    s.chars().take(200).collect()
+}
+
 /// AI Desktop B3：个人配置
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DesktopPreferences {
@@ -597,8 +628,10 @@ CREATE TABLE IF NOT EXISTS desktop_assistant_messages (
     body TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS desktop_assistant_read_ids (
-    id TEXT PRIMARY KEY,
-    updated_at TEXT NOT NULL DEFAULT ''
+    user_id TEXT NOT NULL DEFAULT '',
+    id TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (user_id, id)
 );
 -- AI Desktop T-99：关联修正审计（服务端权威；用户事件，不播种）
 CREATE TABLE IF NOT EXISTS desktop_task_link_audits (
@@ -852,6 +885,28 @@ impl Store {
         )?;
         if has_confirmed == 0 {
             conn.execute_batch("ALTER TABLE desktop_memories ADD COLUMN confirmed_at TEXT")?;
+        }
+        // M4（#361）：助理已读表加 user_id 维度。PK 改造无法 ALTER，探测旧结构后重建：
+        // 旧行没有用户归属，统一并入 local 单用户（与 5.2a 作用域契约一致），回滚兼容——
+        // user_id 带 DEFAULT ''，旧代码写入仍可落库（退化为共享读态）。
+        let has_read_user: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('desktop_assistant_read_ids') WHERE name = 'user_id'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_read_user == 0 {
+            conn.execute_batch(
+                "CREATE TABLE desktop_assistant_read_ids_new (
+                    user_id TEXT NOT NULL DEFAULT '',
+                    id TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY (user_id, id)
+                );
+                INSERT INTO desktop_assistant_read_ids_new (user_id, id, updated_at)
+                    SELECT 'local', id, updated_at FROM desktop_assistant_read_ids;
+                DROP TABLE desktop_assistant_read_ids;
+                ALTER TABLE desktop_assistant_read_ids_new RENAME TO desktop_assistant_read_ids;",
+            )?;
         }
         let read = if path == Path::new(":memory:") {
             None
@@ -2957,8 +3012,11 @@ impl Store {
         })
     }
 
-    /// 列表（含 read 投影）；空表时播种种子（每库一次）。
-    pub fn list_desktop_assistant_messages(&self) -> Result<Vec<DesktopAssistantMessageRow>> {
+    /// 列表（含 read 投影，按 `user_id` 隔离）；空表时播种种子（每库一次）。
+    pub fn list_desktop_assistant_messages(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<DesktopAssistantMessageRow>> {
         {
             let conn = self.write();
             Self::ensure_desktop_assistant_seed_conn(&conn)?;
@@ -2967,50 +3025,61 @@ impl Store {
         let mut st = conn.prepare(
             "SELECT m.id, m.kind, m.title, m.body, (r.id IS NOT NULL)
              FROM desktop_assistant_messages m
-             LEFT JOIN desktop_assistant_read_ids r ON r.id = m.id
+             LEFT JOIN desktop_assistant_read_ids r ON r.id = m.id AND r.user_id = ?1
              ORDER BY m.id",
         )?;
-        let rows = st.query_map([], Self::map_desktop_assistant_message)?;
+        let rows = st.query_map(params![user_id], Self::map_desktop_assistant_message)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// 已读集合（排序后返回）。
-    pub fn list_desktop_assistant_read_ids(&self) -> Result<Vec<String>> {
+    /// 已读集合（排序后返回，按 `user_id` 隔离）。
+    pub fn list_desktop_assistant_read_ids(&self, user_id: &str) -> Result<Vec<String>> {
         let conn = self.read();
-        let mut st = conn.prepare("SELECT id FROM desktop_assistant_read_ids ORDER BY id")?;
-        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        let mut st = conn
+            .prepare("SELECT id FROM desktop_assistant_read_ids WHERE user_id = ?1 ORDER BY id")?;
+        let rows = st.query_map(params![user_id], |r| r.get::<_, String>(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// 标记已读（幂等）：返回 (全部已读 id 排序, 本次新标记数)。未知 id 亦入集合（忠实于 T-73 语义）。
-    pub fn mark_desktop_assistant_reads(&self, ids: &[String]) -> Result<(Vec<String>, u32)> {
+    /// 标记已读（幂等，按 `user_id` 隔离）：返回 (该用户全部已读 id 排序, 本次新标记数)。未知 id 亦入集合（忠实于 T-73 语义）。
+    pub fn mark_desktop_assistant_reads(
+        &self,
+        user_id: &str,
+        ids: &[String],
+    ) -> Result<(Vec<String>, u32)> {
         let conn = self.write();
         let ts = now();
         let mut newly = 0u32;
         {
             let mut st = conn.prepare(
-                "INSERT OR IGNORE INTO desktop_assistant_read_ids (id, updated_at) VALUES (?1, ?2)",
+                "INSERT OR IGNORE INTO desktop_assistant_read_ids (user_id, id, updated_at)
+                 VALUES (?1, ?2, ?3)",
             )?;
             for id in ids {
-                let n = st.execute(params![id, ts])?;
+                let n = st.execute(params![user_id, id, ts])?;
                 if n > 0 {
                     newly += 1;
                 }
             }
         }
         let mut read_ids: Vec<String> = {
-            let mut st = conn.prepare("SELECT id FROM desktop_assistant_read_ids ORDER BY id")?;
-            let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+            let mut st = conn.prepare(
+                "SELECT id FROM desktop_assistant_read_ids WHERE user_id = ?1 ORDER BY id",
+            )?;
+            let rows = st.query_map(params![user_id], |r| r.get::<_, String>(0))?;
             rows.collect::<rusqlite::Result<_>>()?
         };
         read_ids.sort();
         Ok((read_ids, newly))
     }
 
-    /// 重置：清空已读集合（消息内容静态，重置即全部回到未读）。
-    pub fn reset_desktop_assistant_reads(&self) -> Result<()> {
+    /// 重置：清空**该用户**的已读集合（消息内容静态，重置即全部回到未读）。
+    pub fn reset_desktop_assistant_reads(&self, user_id: &str) -> Result<()> {
         let conn = self.write();
-        conn.execute("DELETE FROM desktop_assistant_read_ids", [])?;
+        conn.execute(
+            "DELETE FROM desktop_assistant_read_ids WHERE user_id = ?1",
+            params![user_id],
+        )?;
         Ok(())
     }
 
@@ -3086,6 +3155,105 @@ impl Store {
         let mut v: Vec<Message> = rows.collect::<rusqlite::Result<_>>()?;
         v.reverse();
         Ok(v)
+    }
+
+    // ───────────── L2 历史记录检索（#346 REQ-05；HistoryHit 定义见文件头） ─────────────
+
+    /// L2 历史记录检索：关键词匹配消息正文与已完成任务回执摘要。
+    /// 默认只看最近 `days` 天（REQ-05：检索窗口默认 180 天，更早需明确指定）；
+    /// 删除的消息不在检索面（真删除）。`limit` 夹取 1..=100。
+    pub fn search_history(&self, query: &str, days: u32, limit: usize) -> Result<Vec<HistoryHit>> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Err(anyhow!("检索关键词不能为空"));
+        }
+        let limit = limit.clamp(1, 100);
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(days as i64))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let _timer = ReadTimer::new("search_history");
+        let conn = self.read();
+        let mut hits: Vec<HistoryHit> = Vec::new();
+        {
+            let mut st = conn.prepare(
+                "SELECT id, conversation_id, role, content, task_id, created_at FROM messages
+                 WHERE instr(content, ?1) > 0 AND created_at >= ?2
+                 ORDER BY created_at DESC, rowid DESC LIMIT ?3",
+            )?;
+            let rows = st.query_map(params![q, cutoff, limit as i64], |r| {
+                let role: String = r.get(2)?;
+                Ok(HistoryHit {
+                    source_id: r.get(0)?,
+                    conversation_id: r.get(1)?,
+                    kind: history_kind(&role).to_string(),
+                    role,
+                    snippet: history_snippet(r.get::<_, String>(3)?.as_str()),
+                    at: r.get(5)?,
+                    task_id: r.get(4)?,
+                })
+            })?;
+            for h in rows {
+                hits.push(h?);
+            }
+        }
+        {
+            let mut st = conn.prepare(
+                "SELECT id, conversation_id, result_json, updated_at FROM tasks
+                 WHERE status = 'completed' AND result_json IS NOT NULL
+                   AND instr(result_json, ?1) > 0 AND updated_at >= ?2
+                 ORDER BY updated_at DESC LIMIT ?3",
+            )?;
+            let rows = st.query_map(params![q, cutoff, limit as i64], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                ))
+            })?;
+            for row in rows {
+                let (id, conversation_id, result_json, updated_at) = row?;
+                let summary = serde_json::from_str::<serde_json::Value>(&result_json)
+                    .ok()
+                    .and_then(|v| v.get("summary").and_then(|s| s.as_str()).map(String::from));
+                let Some(summary) = summary else { continue };
+                if !summary.contains(q) {
+                    continue; // result_json 命中可能是 artifacts 等字段；摘要不含关键词不算回执命中
+                }
+                hits.push(HistoryHit {
+                    task_id: Some(id.clone()),
+                    source_id: id,
+                    conversation_id,
+                    kind: "任务回执".to_string(),
+                    role: "task".to_string(),
+                    snippet: history_snippet(&summary),
+                    at: updated_at,
+                });
+            }
+        }
+        hits.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| b.source_id.cmp(&a.source_id)));
+        hits.truncate(limit);
+        Ok(hits)
+    }
+
+    /// L2 删除语义（REQ-05）：个人会话中本人删除的消息真删除（行删除），
+    /// 删除后不再进入检索与引用。仅限本人发送的消息（role = user）；AI 回答、
+    /// 系统事件不是「本人的消息」，不可经此删除。任务、审批相关记录不在本方法
+    /// 范围内（保留原件）。`Ok(false)` = 不存在；`Err` = 存在但不可删。
+    pub fn delete_message(&self, message_id: &str) -> Result<bool> {
+        let conn = self.write();
+        let role: Option<String> = conn
+            .query_row(
+                "SELECT role FROM messages WHERE id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(role) = role else { return Ok(false) };
+        if role != "user" {
+            return Err(anyhow!("仅本人发送的消息可删除（该消息 role={role}）"));
+        }
+        conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])?;
+        Ok(true)
     }
 
     // ───────────── 任务 ─────────────

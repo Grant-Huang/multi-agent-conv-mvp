@@ -881,7 +881,12 @@
       "E2E-UX04",
       "E2E-UX05",
       "E2E-UX05-I3I4",
-      "E2E-UX06"
+      "E2E-UX06",
+      "E2E-UX02-I4",
+      "E2E-ADTESTCTRL",
+"E2E-UX03-I5",
+"E2E-ADSETGROUPS",
+"E2E-UX03-I7"
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",
@@ -931,6 +936,8 @@
       "RT-ADXR-04",
       "RT-ADXR-05",
       "RT-ADXR-06",
+      "RT-ADXR-07",
+      "RT-ADXR-08",
       "RT-ADLAUD-01",
       "RT-ADLAUD-02",
       "RT-ADLAUD-03",
@@ -1161,7 +1168,10 @@
       "RT-EXEC-02",
       "RT-EXEC-03",
       "RT-EXEC-04",
-      "RT-EXEC-05"
+      "RT-EXEC-05",
+      "RT-L2H-01",
+      "RT-L2H-02",
+      "RT-L2H-03"
     ],
     "requirements": [
       {
@@ -1236,7 +1246,8 @@
         "cases": [
           "RT-L2H-01",
           "RT-L2H-02",
-          "RT-L2H-03"
+          "RT-L2H-03",
+          "RT-L2H-04"
         ],
         "since": null
       },

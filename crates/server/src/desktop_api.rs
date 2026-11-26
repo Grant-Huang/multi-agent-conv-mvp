@@ -77,150 +77,160 @@ struct DesktopEventEnvelope {
 }
 
 pub fn routes(test_fixtures: bool) -> Router<AppState> {
-    let router = Router::new()
-        .route(
-            "/api/desktop/v1/conversations/{id}/requests",
-            post(create_request),
-        )
-        .route("/api/desktop/v1/requests/{id}", get(get_request))
-        .route("/api/desktop/v1/events", get(desktop_events))
-        .route(
-            "/api/desktop/v1/tasks/{id}/links",
-            get(list_links).post(create_link),
-        )
-        .route(
-            "/api/desktop/v1/tasks/{id}/links/{link_id}",
-            delete(revoke_link),
-        )
-        // T-99：关联修正审计（服务端权威；用户事件不播种）
-        .route(
-            "/api/desktop/v1/tasks/{id}/link-audits",
-            get(list_link_audits).post(create_link_audit),
-        )
-        .route(
-            "/api/desktop/v1/preferences",
-            get(get_preferences).patch(patch_preferences),
-        )
-        // T-86 草稿上云：工作区草稿服务端权威（乐观版本防丢失更新）
-        .route(
-            "/api/desktop/v1/drafts/{kind}/{scope_id}",
-            get(get_draft).put(save_draft).delete(clear_draft),
-        )
-        // T-78：记忆列表与纠错/撤回（SQLite 权威；fixture/reset 仅测试种子复位）
-        .route(
-            "/api/desktop/v1/memories",
-            get(list_memories).post(create_memory),
-        )
-        .route(
-            "/api/desktop/v1/memories/{id}/confirm",
-            post(confirm_memory),
-        )
-        .route(
-            "/api/desktop/v1/memories/fixture/reset",
-            post(reset_memories_fixture),
-        )
-        .route(
-            "/api/desktop/v1/memories/{id}",
-            get(get_memory).patch(patch_memory).delete(delete_memory),
-        )
-        // T-73：助理消息已读跨端（进程内夹具，无新表）
-        .route(
-            "/api/desktop/v1/assistant/messages",
-            get(list_assistant_messages),
-        )
-        .route(
-            "/api/desktop/v1/assistant/messages/read",
-            get(get_assistant_reads).post(mark_assistant_reads),
-        )
-        .route(
-            "/api/desktop/v1/assistant/messages/fixture/reset",
-            post(reset_assistant_read_fixture),
-        )
-        .route("/api/desktop/v1/tasks/{id}/evidence", get(list_evidence))
-        .route("/api/desktop/v1/evidence/search", get(search_evidence))
-        .route("/api/desktop/v1/evidence/{id}", get(get_evidence))
-        .route(
-            "/api/desktop/v1/evidence/{id}/revoke",
-            post(revoke_evidence),
-        )
-        .route("/api/desktop/v1/tasks/{id}/approvals", get(get_approval))
-        .route(
-            "/api/desktop/v1/tasks/{id}/approvals/reset",
-            post(reset_approval),
-        )
-        .route(
-            "/api/desktop/v1/approvals/{id}/decide",
-            post(decide_approval),
-        )
-        .route("/api/desktop/v1/approvals/{id}/bump", post(bump_approval))
-        .route(
-            "/api/desktop/v1/approvals/{id}/execute",
-            post(execute_approval),
-        )
-        .route(
-            "/api/desktop/v1/approvals/{id}/ack-unknown",
-            post(ack_approval_unknown),
-        )
-        .route(
-            "/api/desktop/v1/approvals/{id}/expire",
-            post(expire_approval),
-        )
-        .route(
-            "/api/desktop/v1/attention",
-            get(list_attention).post(post_attention),
-        )
-        .route("/api/desktop/v1/attention/mute", post(mute_attention))
-        .route("/api/desktop/v1/attention/{id}", delete(dismiss_attention))
-        .route("/api/desktop/v1/tasks/{id}/voice", get(get_voice))
-        .route("/api/desktop/v1/tasks/{id}/voice/reset", post(reset_voice))
-        .route(
-            "/api/desktop/v1/tasks/{id}/voice/permission",
-            post(voice_permission),
-        )
-        .route("/api/desktop/v1/tasks/{id}/voice/start", post(voice_start))
-        .route(
-            "/api/desktop/v1/tasks/{id}/voice/partial",
-            post(voice_partial),
-        )
-        .route(
-            "/api/desktop/v1/tasks/{id}/voice/finalize",
-            post(voice_finalize),
-        )
-        .route("/api/desktop/v1/tasks/{id}/voice/play", post(voice_play))
-        .route("/api/desktop/v1/tasks/{id}/voice/barge", post(voice_barge))
-        .route(
-            "/api/desktop/v1/tasks/{id}/voice/offline",
-            post(voice_offline),
-        )
-        .route(
-            "/api/desktop/v1/tasks/{id}/voice/as-text",
-            post(voice_as_text),
-        )
-        .route("/api/desktop/v1/tasks/{id}/voice/share", post(voice_share))
-        .route("/api/desktop/v1/tasks/{id}/handoff", get(get_handoff))
-        .route(
-            "/api/desktop/v1/tasks/{id}/handoff/reset",
-            post(reset_handoff),
-        )
-        .route(
-            "/api/desktop/v1/tasks/{id}/handoff/draft",
-            post(handoff_draft),
-        )
-        .route(
-            "/api/desktop/v1/tasks/{id}/handoff/resolve",
-            post(handoff_resolve),
-        )
-        .route(
-            "/api/desktop/v1/tasks/{id}/handoff/share-voice",
-            post(handoff_share_voice),
-        )
-        // T-64 harness fixture（resume/fixture/*）改为按 test_fixtures 开关条件挂载，见函数尾部（T-95/FIX-C/H4）
-        // T-82 首页快照：三区卡片读模型（只读；fixture 种子仅测试/演示模式，标注「模拟」）
-        .route("/api/desktop/v1/snapshot", get(get_snapshot))
-        .route(
-            "/api/desktop/v1/snapshot/fixture/reset",
-            post(snapshot_fixture_reset),
-        );
+    let router =
+        Router::new()
+            .route(
+                "/api/desktop/v1/conversations/{id}/requests",
+                post(create_request),
+            )
+            .route("/api/desktop/v1/requests/{id}", get(get_request))
+            .route("/api/desktop/v1/events", get(desktop_events))
+            .route(
+                "/api/desktop/v1/tasks/{id}/links",
+                get(list_links).post(create_link),
+            )
+            .route(
+                "/api/desktop/v1/tasks/{id}/links/{link_id}",
+                delete(revoke_link),
+            )
+            // T-99：关联修正审计（服务端权威；用户事件不播种）
+            .route(
+                "/api/desktop/v1/tasks/{id}/link-audits",
+                get(list_link_audits).post(create_link_audit),
+            )
+            .route(
+                "/api/desktop/v1/preferences",
+                get(get_preferences).patch(patch_preferences),
+            )
+            // T-86 草稿上云：工作区草稿服务端权威（乐观版本防丢失更新）
+            .route(
+                "/api/desktop/v1/drafts/{kind}/{scope_id}",
+                get(get_draft).put(save_draft).delete(clear_draft),
+            )
+            // T-78：记忆列表与纠错/撤回（SQLite 权威；fixture/reset 仅测试种子复位）
+            .route(
+                "/api/desktop/v1/memories",
+                get(list_memories).post(create_memory),
+            )
+            .route(
+                "/api/desktop/v1/memories/{id}/confirm",
+                post(confirm_memory),
+            )
+            .route(
+                "/api/desktop/v1/memories/fixture/reset",
+                post(reset_memories_fixture),
+            )
+            .route(
+                "/api/desktop/v1/memories/{id}",
+                get(get_memory).patch(patch_memory).delete(delete_memory),
+            )
+            // #346 片3 REQ-05：L2 历史记录检索（默认 180 天窗口）与本人消息真删除
+            .route("/api/desktop/v1/history/search", get(search_history_api))
+            .route("/api/desktop/v1/messages/{id}", delete(delete_message_api))
+            // T-73：助理消息已读跨端（进程内夹具，无新表）
+            .route(
+                "/api/desktop/v1/assistant/messages",
+                get(list_assistant_messages),
+            )
+            .route(
+                "/api/desktop/v1/assistant/messages/read",
+                get(get_assistant_reads).post(mark_assistant_reads),
+            )
+            .route(
+                "/api/desktop/v1/assistant/messages/fixture/reset",
+                post(reset_assistant_read_fixture),
+            )
+            .route("/api/desktop/v1/tasks/{id}/evidence", get(list_evidence))
+            .route("/api/desktop/v1/evidence/search", get(search_evidence))
+            .route("/api/desktop/v1/evidence/{id}", get(get_evidence))
+            .route(
+                "/api/desktop/v1/evidence/{id}/revoke",
+                post(revoke_evidence),
+            )
+            .route("/api/desktop/v1/tasks/{id}/approvals", get(get_approval))
+            .route(
+                "/api/desktop/v1/tasks/{id}/approvals/reset",
+                post(reset_approval),
+            )
+            .route(
+                "/api/desktop/v1/approvals/{id}/decide",
+                post(decide_approval),
+            )
+            .route("/api/desktop/v1/approvals/{id}/bump", post(bump_approval))
+            .route(
+                "/api/desktop/v1/approvals/{id}/execute",
+                post(execute_approval),
+            )
+            .route(
+                "/api/desktop/v1/approvals/{id}/ack-unknown",
+                post(ack_approval_unknown),
+            )
+            .route(
+                "/api/desktop/v1/approvals/{id}/expire",
+                post(expire_approval),
+            )
+            .route(
+                "/api/desktop/v1/attention",
+                get(list_attention).post(post_attention),
+            )
+            .route("/api/desktop/v1/attention/mute", post(mute_attention))
+            .route("/api/desktop/v1/attention/{id}", delete(dismiss_attention))
+            .route("/api/desktop/v1/tasks/{id}/voice", get(get_voice))
+            .route("/api/desktop/v1/tasks/{id}/voice/reset", post(reset_voice))
+            .route(
+                "/api/desktop/v1/tasks/{id}/voice/permission",
+                post(voice_permission),
+            )
+            .route("/api/desktop/v1/tasks/{id}/voice/start", post(voice_start))
+            .route(
+                "/api/desktop/v1/tasks/{id}/voice/partial",
+                post(voice_partial),
+            )
+            .route(
+                "/api/desktop/v1/tasks/{id}/voice/finalize",
+                post(voice_finalize),
+            )
+            .route("/api/desktop/v1/tasks/{id}/voice/play", post(voice_play))
+            .route("/api/desktop/v1/tasks/{id}/voice/barge", post(voice_barge))
+            .route(
+                "/api/desktop/v1/tasks/{id}/voice/offline",
+                post(voice_offline),
+            )
+            .route(
+                "/api/desktop/v1/tasks/{id}/voice/as-text",
+                post(voice_as_text),
+            )
+            .route("/api/desktop/v1/tasks/{id}/voice/share", post(voice_share))
+            .route("/api/desktop/v1/tasks/{id}/handoff", get(get_handoff))
+            .route(
+                "/api/desktop/v1/tasks/{id}/handoff/reset",
+                post(reset_handoff),
+            )
+            .route(
+                "/api/desktop/v1/tasks/{id}/handoff/draft",
+                post(handoff_draft),
+            )
+            .route(
+                "/api/desktop/v1/tasks/{id}/handoff/resolve",
+                post(handoff_resolve),
+            )
+            .route(
+                "/api/desktop/v1/tasks/{id}/handoff/share-voice",
+                post(handoff_share_voice),
+            )
+            // T-64 harness fixture（resume/fixture/*）改为按 test_fixtures 开关条件挂载，见函数尾部（T-95/FIX-C/H4）
+            // T-82 首页快照：三区卡片读模型（只读；fixture 种子仅测试/演示模式，标注「模拟」）
+            .route(
+                // UXFIX-B（INTENT-003）：快照携带 test_fixtures，界面测试控件由服务端告知的开关控制
+                "/api/desktop/v1/snapshot",
+                get(move |state: State<AppState>| async move {
+                    get_snapshot(state, test_fixtures).await
+                }),
+            )
+            .route(
+                "/api/desktop/v1/snapshot/fixture/reset",
+                post(snapshot_fixture_reset),
+            );
     // T-95/FIX-C（H4）：Resume 测试夹具接口仅在 test_fixtures=true 时挂载；生产缺省不挂载（404）
     if test_fixtures {
         router
@@ -933,6 +943,83 @@ async fn reset_memories_fixture(State(rt): State<AppState>, headers: HeaderMap) 
     }
 }
 
+// ===== #346 片3 REQ-05：L2 历史记录检索与本人消息删除 =====
+
+#[derive(Debug, Deserialize)]
+struct HistorySearchQuery {
+    q: Option<String>,
+    /// 检索窗口天数；默认 180（REQ-05），更早需明确指定
+    days: Option<u32>,
+    limit: Option<usize>,
+}
+
+/// L2 历史记录检索。结果均为带时间与出处的资料：AI 历史回答 `kind = 当时的回答`，
+/// 只作参考不作事实来源（CH-G5）；已删除消息不在检索面。检索面 = 本库会话消息
+/// 与已完成任务回执（单用户桌面库；多用户隔离随服务端身份，REQ-03）。
+async fn search_history_api(
+    State(rt): State<AppState>,
+    Query(q): Query<HistorySearchQuery>,
+    _headers: HeaderMap,
+) -> Response {
+    let query = q.q.as_deref().unwrap_or("").trim().to_string();
+    if query.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "code": "invalid", "message": "检索关键词不能为空", "retryable": false })),
+        )
+            .into_response();
+    }
+    match rt
+        .store
+        .search_history(&query, q.days.unwrap_or(180), q.limit.unwrap_or(50))
+    {
+        Ok(hits) => {
+            let items: Vec<serde_json::Value> = hits
+                .iter()
+                .map(|h| {
+                    json!({
+                        "msg_id": h.source_id,
+                        "conv_id": h.conversation_id,
+                        "role": h.role,
+                        "kind": h.kind,
+                        "at": h.at,
+                        "snippet": h.snippet,
+                        "task_id": h.task_id,
+                    })
+                })
+                .collect();
+            (StatusCode::OK, Json(json!({ "results": items }))).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+/// 本人删除个人会话消息：真删除（REQ-05），删除后不再进入检索与引用。
+/// 任务、审批相关记录不在删除面（保留原件供审计）。
+async fn delete_message_api(
+    State(rt): State<AppState>,
+    Path(id): Path<String>,
+    _headers: HeaderMap,
+) -> Response {
+    match rt.store.delete_message(&id) {
+        Ok(true) => (StatusCode::OK, Json(json!({ "deleted": true }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "消息不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "code": "forbidden", "message": format!("{e:#}"), "retryable": false })),
+        )
+            .into_response(),
+    }
+}
+
 // ===== T-82 首页快照（AD-G7 / GET /api/desktop/v1/snapshot） =====
 
 #[derive(Debug, Clone, Serialize)]
@@ -1005,7 +1092,7 @@ fn snapshot_internal_err(e: anyhow::Error) -> Response {
         .into_response()
 }
 
-async fn get_snapshot(State(rt): State<AppState>) -> Response {
+async fn get_snapshot(State(rt): State<AppState>, test_fixtures: bool) -> Response {
     let tasks = match rt.store.list_tasks(None) {
         Ok(t) => t,
         Err(e) => return snapshot_internal_err(e),
@@ -1054,6 +1141,7 @@ async fn get_snapshot(State(rt): State<AppState>) -> Response {
         },
         "cursor": cursor,
         "generated_at": cursor,
+        "test_fixtures": test_fixtures,
     });
     (StatusCode::OK, Json(body)).into_response()
 }
@@ -1346,8 +1434,10 @@ async fn create_link_audit(
         Err(e) => drafts_internal_err(e),
     }
 }
-async fn list_assistant_messages(State(rt): State<AppState>) -> Response {
-    match rt.store.list_desktop_assistant_messages() {
+async fn list_assistant_messages(State(rt): State<AppState>, headers: HeaderMap) -> Response {
+    // M4（#361）：已读状态按调用者隔离；夹具头 x-desktop-principal 提供多用户测试口径，无头回退 local
+    let user = principal_or_local(&headers);
+    match rt.store.list_desktop_assistant_messages(&user) {
         Ok(rows) => {
             let items: Vec<_> = rows
                 .iter()
@@ -1380,8 +1470,9 @@ fn assistant_internal_err(e: anyhow::Error) -> Response {
         .into_response()
 }
 
-async fn get_assistant_reads(State(rt): State<AppState>) -> Response {
-    match rt.store.list_desktop_assistant_read_ids() {
+async fn get_assistant_reads(State(rt): State<AppState>, headers: HeaderMap) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.list_desktop_assistant_read_ids(&user) {
         Ok(mut read_ids) => {
             read_ids.sort();
             (StatusCode::OK, Json(json!({ "read_ids": read_ids }))).into_response()
@@ -1392,8 +1483,10 @@ async fn get_assistant_reads(State(rt): State<AppState>) -> Response {
 
 async fn mark_assistant_reads(
     State(rt): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<MarkAssistantReadBody>,
 ) -> Response {
+    let user = principal_or_local(&headers);
     let ids: Vec<String> = body
         .message_ids
         .into_iter()
@@ -1411,7 +1504,7 @@ async fn mark_assistant_reads(
         )
             .into_response();
     }
-    match rt.store.mark_desktop_assistant_reads(&ids) {
+    match rt.store.mark_desktop_assistant_reads(&user, &ids) {
         Ok((read_ids, newly_marked)) => (
             StatusCode::OK,
             Json(json!({
@@ -1424,8 +1517,9 @@ async fn mark_assistant_reads(
     }
 }
 
-async fn reset_assistant_read_fixture(State(rt): State<AppState>) -> Response {
-    match rt.store.reset_desktop_assistant_reads() {
+async fn reset_assistant_read_fixture(State(rt): State<AppState>, headers: HeaderMap) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.reset_desktop_assistant_reads(&user) {
         Ok(()) => (StatusCode::OK, Json(json!({ "ok": true, "reset": true }))).into_response(),
         Err(e) => assistant_internal_err(e),
     }

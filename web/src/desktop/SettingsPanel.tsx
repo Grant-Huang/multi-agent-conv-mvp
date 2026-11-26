@@ -33,6 +33,8 @@ type Props = {
   }) => void;
   onClose: () => void;
   onProfileSaved: (profile: AssistantProfile) => void;
+  /** UXFIX-B（INTENT-003）：服务端告知的测试模式；仅在 true 时渲染“注入冲突（测试）” */
+  testFixtures?: boolean;
 };
 
 export function SettingsPanel({
@@ -43,6 +45,7 @@ export function SettingsPanel({
   onNavigate,
   onClose,
   onProfileSaved,
+  testFixtures = false,
 }: Props) {
   const [profile, setProfile] = useState<AssistantProfile | null>(null);
   const [draft, setDraft] = useState<AssistantProfile | null>(null);
@@ -223,6 +226,8 @@ export function SettingsPanel({
                     type="button"
                     className="settings-cat"
                     data-testid={`settings-cat-${c.id}`}
+                    disabled={"placeholder" in c && c.placeholder === true}
+                    aria-disabled={"placeholder" in c && c.placeholder === true || undefined}
                     onClick={() =>
                       onNavigate({
                         layer: c.id === "assistant" ? "assistant" : "categories",
@@ -232,7 +237,8 @@ export function SettingsPanel({
                     }
                   >
                     {c.title}
-                    {c.id !== "assistant" && c.id !== "connect" && <span className="muted">（占位）</span>}
+                    {/* UXFIX-F（INTENT-010）：未实现分组显示“即将提供”且不可进入，不出现“（占位）” */}
+                    {"placeholder" in c && c.placeholder === true && <span className="muted">即将提供</span>}
                   </button>
                 </li>
               ))}
@@ -279,8 +285,8 @@ export function SettingsPanel({
                   ["name", "名称"],
                   ["avatar", "头像"],
                   ["role", "工作定位"],
-                  ["soul", "沟通原则（Soul）"],
-                  ["taste", "质量偏好（Taste）"],
+                  ["soul", "沟通方式"],
+                  ["taste", "判断标准"],
                   ["memoryPrinciple", "记忆原则"],
                   ["proactivity", "主动性"],
                 ] as const
@@ -304,6 +310,7 @@ export function SettingsPanel({
                 >
                   保存
                 </button>
+                {testFixtures && (
                 <button
                   type="button"
                   className="btn small"
@@ -323,6 +330,7 @@ export function SettingsPanel({
                 >
                   注入冲突（测试）
                 </button>
+                )}
                 <button
                   type="button"
                   className="btn small"

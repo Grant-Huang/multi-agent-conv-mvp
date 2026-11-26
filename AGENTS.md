@@ -9,10 +9,11 @@
    MOM 业务工作台的 UI / UE 设计与开发还须遵守 [主界面设计原则](docs/mom/UI_UX_PRINCIPLES.md)，其场景验收要求作为界面变更评审基线。
 2. 需求没有验收条件、或找不到有效的授权来源（`DEV_STANDARD.md` 第 5 节）时，先提问，不要开始写代码。
 3. 查看 `git status` 和 `git diff`，确认不会覆盖用户未提交的改动。
-4. 查看派给本线的 open Issue：GitHub 标签 `dispatch` 加 `line:N`（N 为本线编号，见 `docs/INTEGRATION_PLAN.md`「五条研发线与近期汇合」表）。先做 `severity:high`。**开始做一个 Issue 时必须先在 Issue 留言认领**（写明本线、计划和预计 PR）；暂时不做的也要留言说明原因和预计时间。完成的 PR 正文写 `Closes #N`，合并后 Issue 自动关闭。
+4. 查看派给本线的 open Issue：GitHub 标签 `dispatch` 加 `line:N`（N 为本线编号，见 `docs/INTEGRATION_PLAN.md`「研发线与近期汇合」表）。先做 `severity:high`。**开始做一个 Issue 时必须先在 Issue 留言认领**（写明本线、计划和预计 PR）；暂时不做的也要留言说明原因和预计时间。完成的 PR 正文写 `Closes #N`，合并后 Issue 自动关闭。
 
 ## 修改范围
 - 不改与当前任务无关的模块。
+- **一件事只在一处描述**：研发线职责、特性负责线、宪章条款、契约、用例、决策等都有唯一权威位置（见 `DEV_STANDARD.md` 第 3.1 节）；其他文档最多写一句要点并链接。改权威内容时，同一个 PR 里把别处的复述改成引用。
 - 新特性或新主线开工前，先在 `docs/DESIGN.md` 第 0.3 节登记，写明为 `docs/PRODUCT.md` 哪一条服务；改动触及共享契约（`docs/contracts/`）或宪章时，先出方案、经用户批准。
 - 不随意改公开接口：HTTP API、`config.toml` 字段、`AgentAdapter` trait。必须改时先说明理由。
 - 修改数据库表结构必须附迁移，参考 `crates/runtime/src/store.rs` 中补列的写法。
@@ -22,12 +23,15 @@
 - `web/src/bindings/` 下的 TypeScript 类型由 `an-core` 的 Rust 类型生成，不要手改：改了 `an-core` 的导出类型或 `web/` 用到的接口类型后，运行 `CARGO_TARGET_DIR=target cargo test -p an-core` 重新生成并一起提交（CI 会检查是否最新）。
 
 ## 跨线分工
-- 研发线的划分以 `docs/INTEGRATION_PLAN.md`「五条研发线与近期汇合」表为准；线的数量和职责会变，派工前重读，不凭记忆。
+- 研发线的划分以 `docs/INTEGRATION_PLAN.md`「研发线与近期汇合」表为准；线的数量和职责会变，派工前重读，不凭记忆。
 - 发现明确属于其他线的工作（缺陷、改进、测试缺口、文档），不要顺手做：开 GitHub Issue 派给对应线，标签 `dispatch` + `line:N`（可加 `severity:high|medium|low`），标题以“[第N线]”开头，正文写来源、问题、证据、验收标准。跨线的写明主责线和配合线。
 - 拿不准归属时标 `line:2`（独立复跑与集成协调，负责问题归属），或先问用户。
 - 本线任务依赖其他线先交付时，同样开 Issue 派过去，并在本线 PR 或 Issue 里引用。
 - 分诊结论自己落地，不停在“建议”：判定已修复的、与其他 Issue 重复的，分诊方直接关闭并写明依据（重复的标 duplicate 并指向保留的 Issue）；写了“拟派第 N 线”的，当场开出派工 Issue 并在原 Issue 贴链接。拿不准是否该关的，留言说明后标 `line:2`。
 - 派工时限：派工后 **8 小时内**留言认领（或说明暂不做的原因和预计时间）；认领后 `severity:high` 3 天内、`severity:medium` 7 天内要有 PR 或进展说明，`low` 不限。超时由自动巡检（每 4 小时）在 Issue 上提醒并汇总给用户，不自动改派。
+- **控制在制品**：每条线同时待合并（非草稿）的 PR 最多 3 个（含 L0）；全仓风险等级 L1～L3 的待合并 PR 超过 12 个时暂停开新开发任务，先评审、修 CI、消冲突。`severity:high` 缺陷、CI 与安全修复例外，PR 正文写明原因。细则见 [`docs/fencing/INTEGRATION_PIPELINE.md`](docs/fencing/INTEGRATION_PIPELINE.md)。
+- **合并与冲突**：风险等级以 CI `change-policy` 给出的为准。L0 在 CI 全绿后由作者所在线自行合并；L1～L3 按审批要求等人批准。自己的 PR 落后主干或冲突时，把 master 合进本分支（不 rebase、不强推、不动别人的分支），重跑提交前自检再等 CI；冲突涉及“先停下来问人”的文件或需要在两种行为间取舍时，停下来在 PR 里说明并问第 2 线或用户。
+- **测试基于基线**：长程测试、验收复跑、体验走查基于最近一次夜间全绿的基线 tag，报告写明所用 tag；开发不因测试冻结。
 
 ## 禁止
 - 不得修改或删除已有测试来让失败的测试通过。
