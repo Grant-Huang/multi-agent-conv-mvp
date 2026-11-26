@@ -8,13 +8,6 @@ import { SMT03_TASK_ID } from '../src/desktop/mockData';
 
 test.beforeEach(async ({ page }) => {
   await page.request.post('/api/desktop/v1/snapshot/fixture/reset');
-  // 前置条件：SMT-03 在服务端没有其他会话留下的草稿。草稿上云（T-86）后，其他用例在
-  // 别的浏览器会话写的草稿会留在服务端；有旧草稿时新输入可能被覆盖（间歇，见
-  // INTENT-2026-008 / 约束 UX-01-I7，欠账跟踪）。这里只检验本旅程自己的约束。
-  const url = `/api/desktop/v1/drafts/task/${SMT03_TASK_ID}`;
-  const cur = await (await page.request.get(url)).json();
-  const v = cur?.draft?.version ?? 0;
-  if (v > 0) await page.request.delete(`${url}?sent_version=${v}`);
 });
 
 function probe(page: Page) {
@@ -93,6 +86,51 @@ test('E2E-UX01: 桌面发现 SMT-03 → 工作区 → 证据 → 专注 → 离�
   await info.attach('ux01-probe.json', { body: JSON.stringify({ journey: 'UX-01', ...metrics, ...homeClutter }, null, 2), contentType: 'application/json' });
 });
 
+// UX-01-I7（CH-U2，INTENT-2026-008）：服务端已有其他会话留下的旧草稿时，本会话的新输入
+// （尚未同步）离开再返回后不被覆盖，且跨会话冲突有提示。旧草稿与冲突经路由拦截确定性注入，
+// 不依赖真实服务端状态（模拟另一会话持续占用，PUT 一律 409）。
+test('E2E-UX01-I7: 服务端旧草稿不覆盖本会话新输入，冲突有提示', async ({ page }) => {
+  const OTHER = '其他会话的旧草稿：对比上周检验记录';
+  const MINE = '本次的新调查内容';
+  const draftJson = JSON.stringify({
+    draft: { text: OTHER, version: 7, scope: 'continue', continue_task_id: null, updated_at: '' },
+  });
+  await page.route(`**/api/desktop/v1/drafts/task/${SMT03_TASK_ID}*`, async (route) => {
+    if (route.request().method() === 'GET') {
+      await new Promise((r) => setTimeout(r, 300));
+      await route.fulfill({ status: 200, contentType: 'application/json', body: draftJson });
+      return;
+    }
+    await route.fulfill({ status: 409, contentType: 'application/json', body: draftJson });
+  });
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  const input = page.getByRole('textbox', { name: '工作区输入' });
+  await input.fill(MINE); // 在远端快照返回前输入：快照不可能包含本次输入
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await page.getByTestId('card-smt-03').click();
+  await expect(input).toHaveValue(MINE, { timeout: 10_000 });
+  await expect(page.getByTestId('draft-conflict')).toBeVisible();
+  await expect(page.getByTestId('draft-conflict')).toContainText('其他设备');
+});
+
+// UX-01-I8（CH-U2，INTENT-2026-011）：工作区已发送的消息与受理记录，离开再返回后仍在原位。
+test('E2E-UX01-I8: 发送记录与受理回执离开再返回后仍在', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  const input = page.getByRole('textbox', { name: '工作区输入' });
+  const sent = '请调取本周首件检验记录';
+  await input.fill(sent);
+  await page.getByTestId('workspace-send').click();
+  await expect(page.getByTestId('workspace-reply')).toContainText('已受理（模拟）', { timeout: 10_000 });
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
+  await page.getByTestId('card-smt-03').click();
+  const log = page.getByTestId('workspace-sent-log');
+  await expect(log).toBeVisible();
+  await expect(log).toContainText(sent);
+  await expect(log).toContainText('已受理（模拟）');
+});
+
 // 体验地图 UX-02（docs/experience-map/journeys/UX-02.md）：做事中途临时提问，不被带离当前工作。
 // 只断言当前成立的约束 UX-02-I1；草稿保留（I2）、得到回答（I3）、助理入口可对话（I4）为欠账。
 test('E2E-UX02: 任务中切到独立话题临时提问再切回，不离开工作区且任务与作用域恢复', async ({ page }) => {
@@ -102,6 +140,9 @@ test('E2E-UX02: 任务中切到独立话题临时提问再切回，不离开工�
   await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
   const input = page.getByRole('textbox', { name: '工作区输入' });
 
+  // UX-02-I2（CH-U2）：先写任务草稿，再切独立话题临时提问
+  const taskDraft = '调查草稿：对比首件检验记录';
+  await input.fill(taskDraft); p.step();
   await page.getByRole('button', { name: '独立话题' }).click(); p.step();
   await expect(page.getByRole('button', { name: '独立话题' })).toHaveAttribute('aria-pressed', 'true');
   await input.fill('8D 报告里的 D4 指什么？'); p.step();
@@ -113,6 +154,8 @@ test('E2E-UX02: 任务中切到独立话题临时提问再切回，不离开工�
   await page.getByRole('button', { name: '继续当前任务' }).click(); p.step();
   await expect(page.getByRole('button', { name: '继续当前任务' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  // UX-02-I2：回到任务后原任务草稿仍在（临时提问不得覆盖任务草稿）
+  await expect(input).toHaveValue(taskDraft);
   expect(p.snapshot().full_page_navigations).toBe(0);
 });
 
@@ -145,6 +188,20 @@ test('E2E-UX03: 首页一句话委派后留在桌面，后台运行时可去做�
   // UX-03-I3（CH-U3）：不用守着，委派的任务出现在“我的工作”并最终显示已完成
   const card = page.getByRole('region', { name: '我的工作' }).getByRole('button').filter({ hasText: goal });
   await expect(card).toContainText('已完成', { timeout: 60_000 });
+
+  // UX-03-I4（CH-P8）：从卡片打开委派的真实任务，工作区显示该任务自己的目标、状态与产物，
+  // 不出现夹具的模拟内容；工作区状态词与卡片一致
+  const cardSubtitle = await card.locator('.desktop-card-sub').innerText();
+  expect(cardSubtitle).toBe('已完成');
+  await card.click(); p.step();
+  const pane = page.getByTestId('workspace-task-pane');
+  await expect(page.getByTestId('workspace-task-status')).toHaveText('已完成');
+  await expect(page.getByTestId('workspace-task-goal')).toContainText(goal);
+  await expect(page.getByTestId('workspace-task-artifacts')).toContainText('verification.md');
+  await expect(pane).not.toContainText('质量批次 SMT-03');
+  await expect(pane).not.toContainText('桌面首页 Mock');
+  await expect(pane).not.toContainText('执行中（模拟）');
+  await page.getByRole('button', { name: '返回桌面', exact: true }).click();
 
   const metrics = p.snapshot();
   expect(metrics.full_page_navigations).toBe(0);
