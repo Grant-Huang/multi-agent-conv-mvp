@@ -426,6 +426,7 @@ test('E2E-UX01-I6: 窄屏下工作区对话输入在首屏可见', async ({ page
   if (paneBox) {
     expect(paneBox.y + paneBox.height, '任务信息栏应在输入框上方（窄屏单栏）').toBeLessThanOrEqual(box!.y + 1);
   }
+});
 
 // UX-03-I7（CH-U1，INTENT-2026-016）：输入为空时不代用户委派默认任务——
 // “委派任务”不可用，不产生任何任务；填写后恢复可用。
