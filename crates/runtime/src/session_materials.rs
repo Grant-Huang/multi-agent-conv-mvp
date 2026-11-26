@@ -37,6 +37,44 @@ pub const JUDGE_GIST_CHARS: usize = 40;
 /// 受控单用户环境的默认作用域（无 `x-desktop-principal` 夹具头时）
 pub const LOCAL_USER: &str = "local";
 
+/// CH-G2c（#402）：风险标记 → 固定补齐提示语。回答渲染后由程序检查补齐（第二道防线；
+/// 风格卡护栏句是第一道提示词约束）。风格卡文本不参与风险源——护栏句本身含标记词。
+const RISK_HINTS: [(&str, &str); 4] = [
+    (
+        "不可逆",
+        "⚠️ 风险提示：本轮内容涉及不可逆操作，执行前请再次确认。",
+    ),
+    ("安全", "⚠️ 风险提示：本轮内容涉及安全事项，请按规程确认。"),
+    (
+        "置信不足",
+        "⚠️ 风险提示：以上内容存在置信不足的部分，请酌情核实。",
+    ),
+    (
+        "待核实",
+        "⚠️ 风险提示：以上内容含待核实项，请以核实结果为准。",
+    ),
+];
+
+/// CH-G2c 程序化检查：资料里出现风险标记、而回答缺该标记词时，返回需补齐的提示语。
+/// 覆盖判定从宽——回答含标记词即视为已覆盖；宁可多补一句提示，不可漏掉风险（补齐是无害增量）。
+pub fn risk_gaps(reply: &str, m: &Materials) -> Vec<&'static str> {
+    let mut source = String::new();
+    for i in m.items.iter().chain(&m.memories).chain(&m.findings) {
+        source.push_str(&i.title);
+        source.push(' ');
+        source.push_str(&i.summary);
+        source.push('\n');
+    }
+    if source.is_empty() {
+        return vec![];
+    }
+    RISK_HINTS
+        .iter()
+        .filter(|(marker, _)| source.contains(marker) && !reply.contains(marker))
+        .map(|(_, hint)| *hint)
+        .collect()
+}
+
 /// 内省发现的相关性阈值：提问与（topic+hypothesis）的 dice 系数下限（5.3）
 pub const FINDING_RELEVANCE_THRESHOLD: f64 = 0.15;
 
