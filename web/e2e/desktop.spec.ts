@@ -411,9 +411,12 @@ test('E2E-ADASK: S1 问答与委派不强制导航', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto('/');
   await expect(page.getByTestId('s1-ask-bar')).toBeVisible();
-  await page.getByTestId('s1-ask-input').fill('SMT-03 概况如何');
+  // UXFIX-A（#304）：问答接真实会话，回答来自模型（不出现“问答（模拟…）”回显）。
+  // 问句以“你好”开头走受控模型的 respond 路径，保证用例确定性。
+  await page.getByTestId('s1-ask-input').fill('你好，SMT-03 概况如何');
   await page.getByTestId('s1-ask-send').click();
-  await expect(page.getByTestId('s1-reply')).toContainText('问答');
+  await expect(page.getByTestId('s1-reply')).toBeVisible();
+  await expect(page.getByTestId('s1-reply')).not.toContainText('问答（模拟');
   await expect(page.getByTestId('desktop-home')).toBeVisible();
   await expect(page.getByTestId('workspace')).toHaveCount(0);
 
@@ -428,9 +431,10 @@ test('E2E-ADASK: S1 问答与委派不强制导航', async ({ page }) => {
   expect(taskId).toMatch(/^task-/);
   await expect(page.getByTestId('desktop-home')).toBeVisible();
 
-  await page.getByTestId('s1-ask-input').fill('后台跑着时继续问');
+  await page.getByTestId('s1-ask-input').fill('你好，后台跑着时继续问');
   await page.getByTestId('s1-ask-send').click();
-  await expect(page.getByTestId('s1-reply')).toContainText('继续问');
+  await expect(page.getByTestId('s1-reply')).toBeVisible();
+  await expect(page.getByTestId('s1-reply')).not.toContainText('问答（模拟');
   await expect(page.getByTestId('s1-bg-chip')).toBeVisible();
 
   await page.getByTestId('s1-bg-open').click();
