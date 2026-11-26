@@ -272,6 +272,8 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-AGCAT-08 | agent-catalog | 未知 id、非 ACP agent（general）；请求体附带 command 字段 | 未知和非 ACP 返回 404；带 command 的请求被拒绝，命令未被执行 |
 | RT-AGCAT-09 | agent-catalog | 检测已注册 agent 成功 | 健康接口中该 agent 的连接状态变为 connected |
 | RT-AGCAT-10 | agent-catalog | 回归（2026-11-18 CI 偶发失败）：脚本向错误输出写 "env: node: No such file or directory" 后立刻以 127 退出，连续检测 50 次；另一个脚本不写任何错误输出就立刻退出 | 50 次全部 kind = missing_dependency（不能因为握手请求写失败报 Broken pipe 而归成 handshake_failed）；不写错误输出的脚本为 handshake_failed，且单次检测 2 秒内结束（补等错误输出有上限） |
+| RT-I325-01 | agent-catalog | Issue #325：适配器创建时命令不存在，之后命令出现在磁盘（可完成 ACP 握手的真二进制） | 再次探测 | 首次探测 kind = not_installed；命令出现后再次探测重新解析并 kind = ok（握手成功）；is_installed 与体检口径一致 |
+| RT-I325-02 | agent-catalog | 探测 kind = not_installed 但体检能找到命令（in_service_path 命中） | 生成诊断结论 | 规则 installed_need_recheck：标题「已安装，但检测时没找到」，给出重新检测/重启的明确下一步（不再显示"没有命中已知规则"） |
 
 ## 前台提速：先写理由 / 规则判风险 / 可疑时再思考（FT.1，实现前定义）
 

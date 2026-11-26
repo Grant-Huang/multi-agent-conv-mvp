@@ -391,6 +391,23 @@ pub fn rules(probe: &ProbeOutcome, c: &Checkup, ctx: &RuleContext) -> Vec<Findin
         }
     }
 
+    // 1.5 Issue #325：检测 not_installed 但体检能找到命令——命令是 AgentNexus 启动后才安装
+    // （或启动环境不同）。新版探测会重新解析自愈；此规则兜底提示下一步。
+    if probe.kind == ProbeKind::NotInstalled && c.in_service_path.is_some() {
+        out.push(Finding {
+            rule: "installed_need_recheck".into(),
+            title: format!("「{name}」已安装，但检测时没找到"),
+            explain: format!(
+                "体检能找到启动命令 `{}`，说明已经安装；可能是 AgentNexus 启动后命令才安装，或启动环境不同。点「重新检测」即可，多数情况无需重启。",
+                ctx.command
+            ),
+            steps: vec![
+                step("点「重新检测」再试一次", None),
+                step("若仍失败，重启 AgentNexus 后再检测", None),
+            ],
+        });
+    }
+
     // 2. 找不到 node：错误输出里有特征，或体检没找到 node
     let node_missing_in_output = NODE_MISSING.iter().any(|p| detail.contains(p));
     if node_missing_in_output || c.node == NodeCheck::NotFound {
