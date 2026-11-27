@@ -229,6 +229,14 @@ jobs:
         run: python3 tools/ci/risk_classify.py --json-out risk.json
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
+      # PR 写给人看的自动检查（#452，决策 2026-11-26-pr-readability）：
+      # 四类提醒（标题格式 / 缺「给审查人」/ 未登记缩写 / 风险等级不一致），**只警告不阻断**；
+      # 升级为阻断由用户另行决定。任何异常以退出码 0 结束，不影响门禁。
+      - name: PR 可读性检查（只警告）
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 tools/ci/pr_readability.py --glossary docs/GLOSSARY.md --risk-from risk.json --json-out readability.json
       - name: 变更规模
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
@@ -256,6 +264,7 @@ jobs:
             risk.json
             injection.json
             doc-lint.json
+            readability.json
           if-no-files-found: ignore
 
   # ---------- 安全 ----------
