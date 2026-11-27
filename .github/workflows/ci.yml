@@ -158,7 +158,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       # astral-sh/setup-uv@v7
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
       - run: uv sync --frozen
       - name: 测试与覆盖率（阈值 80%，见 pyproject.toml）
         run: uv run pytest --cov --cov-report=term
@@ -177,7 +177,7 @@ jobs:
         working-directory: tools/dlp-egress
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
       - run: uv sync --frozen
       - name: 测试与覆盖率（阈值 80%，见 pyproject.toml）
         run: uv run pytest --cov --cov-report=term
@@ -193,7 +193,7 @@ jobs:
     if: needs.triage.outputs.run_python_tools == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
       - name: pytest（策略脚本）
         working-directory: tools/ci
         run: uv run --no-project --python 3.13 --with pytest python -m pytest -q
