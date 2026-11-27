@@ -32,6 +32,19 @@ async fn main() -> Result<()> {
     );
 
     let store = Store::open(&config.server.db_path)?;
+    // #431：库由更新版本的 AgentNexus 写入时，明确告知新表数据在本程序不可读写
+    if let Some(v) = store.newer_schema_version() {
+        tracing::warn!(
+            event = "store.newer_schema",
+            lib_version = v,
+            binary_version = an_runtime::store::SCHEMA_VERSION,
+            "数据库由更新版本的 AgentNexus 写入：个人记忆等新表数据在本程序不可读写"
+        );
+        println!(
+            "⚠️ 数据库由更新版本的 AgentNexus 写入（库 schema v{v} > 本程序 v{}）：个人记忆等新数据在本程序不可读写；请使用写入该库的版本，或恢复升级前的备份。",
+            an_runtime::store::SCHEMA_VERSION
+        );
+    }
     let rt = Arc::new(Runtime::with_mcp_diagnostics(config.clone(), store, diagnostics).await?);
     rt.start_background();
 

@@ -434,6 +434,9 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | Case | Feature | Given / When | Then |
 |---|---|---|---|
 | RT-HOST-08 | http-host | 主服务配置logs目录但该路径是普通文件，启动并请求诊断 | 保留降级WARN，不宣告log.file，不覆盖原文件 |
+| RT-SCHV-01 | runtime-store | 全新库 | `Store::open` | 版本戳写为当前 `SCHEMA_VERSION`；`newer_schema_version()` 为空 |
+| RT-SCHV-02 | runtime-store | 旧库（有表、user_version=0，#431/W1-D6） | `Store::open` | 原地升戳到当前版本、功能不受影响、不提示 newer |
+| RT-SCHV-03 | runtime-store | 更新版本写过的库（user_version > 本二进制） | `Store::open` | 成功打开不损坏数据；`newer_schema_version()` 返回库版本（启动横幅据此告知「新数据不可读写」）；不改小版本戳 |
 | RT-HOST-09 | http-host | 主服务文件日志目录正常，启动并请求诊断（正向基线补录） | 控制台与JSON恰好各有一条log.file及正确目录，没有降级WARN |
 
 ## 子进程就绪身份验证（实现前定义）

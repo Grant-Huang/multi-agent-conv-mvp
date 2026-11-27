@@ -48,6 +48,11 @@ enum WriteCmd {
     Stop,
 }
 
+/// 库 schema 版本戳（PRAGMA user_version；#431）。新增表/破坏性结构变更时递增：
+/// 新代码打开旧库（0）→ 升到当前版本；打开「更新版本写过的库」→ [`Store::newer_schema_version`]
+/// 返回库版本，main 启动横幅据此明确告知新数据不可读写。旧二进制不读写该戳，无影响。
+pub const SCHEMA_VERSION: u32 = 1;
+
 struct Shared {
     write: Mutex<Connection>,
     /// 文件库的只读连接。内存库是 None，读写共用 `write`
@@ -55,6 +60,8 @@ struct Shared {
     cmd: std::sync::mpsc::SyncSender<WriteCmd>,
     /// 已入队但还没提交的事件数
     pending: AtomicUsize,
+    /// #431：库的 user_version 高于本二进制 SCHEMA_VERSION 时的库版本——新表数据在本程序不可读写
+    newer_schema: Option<u32>,
 }
 
 pub struct Store {
@@ -958,6 +965,14 @@ impl Store {
                 ALTER TABLE desktop_assistant_read_ids_new RENAME TO desktop_assistant_read_ids;",
             )?;
         }
+        // #431：库 schema 版本戳。旧库（0）升到当前版本；更高版本 = 库被更新的程序写过
+        let mut newer_schema = None;
+        let stamped: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if stamped == 0 {
+            conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        } else if stamped > SCHEMA_VERSION {
+            newer_schema = Some(stamped);
+        }
         let read = if path == Path::new(":memory:") {
             None
         } else {
@@ -973,6 +988,7 @@ impl Store {
             read,
             cmd: tx,
             pending: AtomicUsize::new(0),
+            newer_schema,
         });
         let background = Arc::clone(&shared);
         let writer = std::thread::Builder::new()
@@ -983,6 +999,12 @@ impl Store {
             shared,
             writer: Mutex::new(Some(writer)),
         })
+    }
+
+    /// #431：库的 schema 版本高于本二进制时返回库版本——main 启动横幅据此告知
+    /// 「个人记忆等新表数据在本程序不可读写」。
+    pub fn newer_schema_version(&self) -> Option<u32> {
+        self.shared.newer_schema
     }
 
     fn write(&self) -> std::sync::MutexGuard<'_, Connection> {
