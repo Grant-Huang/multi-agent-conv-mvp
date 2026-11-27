@@ -1,6 +1,7 @@
 //! Agent 之间共用的小工具：命令查找、`~` 展开、git 改动证据收集。
 
-use std::path::{Path, PathBuf};
+use anyhow::bail;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
@@ -275,15 +276,58 @@ pub async fn collect_git_changes(
     (evidence, artifacts)
 }
 
+/// 把工作区相对路径解析到工作目录内；越界则报错。文件工具与任务产物收集共用
+/// （#500 与 R-20261120-M8 合流，避免双实现）。
+///
+/// 不依赖目标存在（写文件时目标还不存在）。边界判定两道：
+/// ① 字面解析（`..` 逐级弹出、绝对路径拒绝）；
+/// ② 对**已存在的最长前缀**做 canonicalize（解析符号链接）——工作区里的
+///    `link -> 区外` 不得借道读写（如 `link/.ssh/id_rsa`）。尾部不存在的部分
+///    不可能有链接可跟随，字面已在界内即安全。
+pub fn resolve_in_workspace(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
+    let mut out = root.to_path_buf();
+    for comp in Path::new(rel).components() {
+        match comp {
+            Component::Normal(c) => out.push(c),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() || !out.starts_with(root) {
+                    bail!("路径越界：{rel}");
+                }
+            }
+            // 绝对路径、Windows 盘符一律拒绝
+            Component::RootDir | Component::Prefix(_) => bail!("只允许工作目录内的相对路径：{rel}"),
+        }
+    }
+    if !out.starts_with(root) {
+        bail!("路径越界：{rel}");
+    }
+    let root_canon = root.canonicalize()?;
+    let mut probe = root_canon.clone();
+    for comp in out.strip_prefix(root)?.components() {
+        probe.push(comp);
+        match probe.canonicalize() {
+            Ok(real) => {
+                if !real.starts_with(&root_canon) {
+                    bail!("路径越界：{rel}");
+                }
+                // 已存在且在界内：以真实路径继续向下探测（可能刚跨过界内符号链接）
+                probe = real;
+            }
+            Err(_) => break,
+        }
+    }
+    Ok(out)
+}
+
 /// 把任务改过的文本文件收成可下载的产物。二进制和超过 512KB 的文件不内联。
 async fn read_text_file(workdir: &Path, rel: &str) -> Option<Artifact> {
-    if rel
-        .split(['/', '\\'])
-        .any(|p| p.is_empty() || p == "." || p == "..")
-    {
-        return None;
-    }
-    let bytes = tokio::fs::read(workdir.join(rel)).await.ok()?;
+    // #500：同一 workspace 边界校验（符号链接借道读区外，I6/R-20261120-M8）
+    let p = match resolve_in_workspace(workdir, rel) {
+        Ok(p) => p,
+        Err(_) => return None,
+    };
+    let bytes = tokio::fs::read(p).await.ok()?;
     if bytes.contains(&0) || bytes.len() > 512 * 1024 {
         return None;
     }

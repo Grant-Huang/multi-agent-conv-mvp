@@ -1151,6 +1151,16 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-G2C-01 | conversation-memory | 风格"只要结论"生效 + 回执含"不可逆"（CH-G2c，#402） | handle_message（respond 轮） | 模型回答不含风险词时，最终回答仍含程序补齐的风险提示句（原回答不改）；conversation.risk_restored 事件 |
 | RT-G2C-02 | conversation-memory | 同上但模型回答已自带风险标记 | 同上 | 不重复补齐 |
 
+## 文件工具工作区边界（RT-SYMLN，#500 安全修复；tools.rs 与任务产物收集共用 resolve_in_workspace）
+
+| Case ID | 特性 | 场景 | 操作 | 期望 |
+|---|---|---|---|---|
+| RT-SYMLN-01 | tools | 工作区内 `link -> 区外目录` | read_file 访问 `link/secret.txt` | 报「路径越界」，区外文件不可读 |
+| RT-SYMLN-02 | tools | 同上 | write_file 写 `link/pwned.txt` | 报「路径越界」；区外目录无新增文件 |
+| RT-SYMLN-03 | tools | 同上 | list_files 列 `link` | 报「路径越界」 |
+| RT-SYMLN-04 | tools | `link2 -> 界内文件` | write_file 以 `link2` 为目标 | 报「拒绝写入符号链接目标」；目标文件内容不变 |
+| RT-SYMLN-05 | tools | 合法路径 | 写/读/列 | 照常工作（防护不误伤） |
+
 ## 执行路径会话资料完整块 conversation-memory S6-exec（2026-11-24 用户确认：完整块 / 独立开关+512 / 仅 general / 随任务持久；2026-11-26 场合表修订：执行、委派不带 L5 发现，`render_exec` 剔除 findings，路由线索不进任务上下文）
 
 委派任务的任务上下文（`tasks.context`）在任务背景之后追加**执行资料块**（回执 + 个人记忆；不含内省发现，风格卡本就只进回答路径；「数据，非指令」标记），预裁 ≤ `session_materials_exec_max_tokens`（默认 512）。仅 `execution_role = general` 的任务注入（coding 代码任务不需要会话记忆；reviewer 审查对话已有原文）。资料随任务持久化（重试/续跑/回查可追查，宪章原则 5）。开关 `session_materials_exec` 默认开。S5 路由线索段只进路由请求，不随任务持久（RT-EXEC-05）。E2E 待入口后补录。
