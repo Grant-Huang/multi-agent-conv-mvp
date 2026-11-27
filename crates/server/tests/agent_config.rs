@@ -614,7 +614,7 @@ async fn rt_agcfg_14_failed_delivery_plain_language() {
     };
     let task = rt
         .orchestrator
-        .submit(&conv.id, "修复编译错误", "", route, policy)
+        .submit(&conv.id, "修复编译错误", "", route, policy, None)
         .unwrap();
     // 等交付消息
     let mut delivered = None;

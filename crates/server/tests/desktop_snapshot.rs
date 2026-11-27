@@ -147,7 +147,7 @@ async fn rt_adsnap_02_real_task_reflects() {
         updated_at: ts,
     };
     rt.store
-        .insert_task(&real, "rt_adsnap_02")
+        .insert_task(&real, "rt_adsnap_02", None)
         .expect("插入真实任务行");
     let (s, v) = api.get("/api/desktop/v1/snapshot").await;
     assert_eq!(s, 200, "{v}");

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { IconArrowLeft } from "../components/icons";
+import { opsStageText } from "./opsStageText";
 import { api } from "../api";
 import {
   MOM_WORLDS,
@@ -73,7 +74,7 @@ function CaseCard({
     >
       <div className="mom-case-title">{c.title}</div>
       <div className="mom-case-meta">
-        <span>{c.stage}</span>
+        <span>{opsStageText(c.stage)}</span>
         <span>{c.owner}</span>
         <span>{c.impact}</span>
       </div>
@@ -515,7 +516,7 @@ export function MomWorkbench({
               <dl className="mom-case-dl">
                 <div>
                   <dt>阶段</dt>
-                  <dd>{selected.stage}</dd>
+                  <dd>{opsStageText(selected.stage)}</dd>
                 </div>
                 <div>
                   <dt>负责人</dt>

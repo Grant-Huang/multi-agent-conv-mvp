@@ -306,7 +306,9 @@ impl Runtime {
             // 服务重启：已激活的外部 agent 按登记的接入信息重新注册
             for rec in ledger.list() {
                 if rec.stage == admission::Stage::Active {
-                    if let Some(agent) = a2a_agent(&rec, config.orchestrator.task_timeout_secs)? {
+                    if let Some(agent) =
+                        a2a_agent(&rec, config.orchestrator.task_timeout_secs, egress.clone())?
+                    {
                         registry.register(agent);
                     }
                 }
@@ -550,8 +552,12 @@ impl Runtime {
             .get(agent_id)
             .with_context(|| format!("未知 agent：{agent_id}"))?;
         anyhow::ensure!(rec.stage == admission::Stage::Active, "agent 尚未激活");
-        let agent = a2a_agent(&rec, self.config.orchestrator.task_timeout_secs)?
-            .context("该 agent 没有登记接入信息")?;
+        let agent = a2a_agent(
+            &rec,
+            self.config.orchestrator.task_timeout_secs,
+            self.egress.clone(),
+        )?
+        .context("该 agent 没有登记接入信息")?;
         self.registry.register(agent);
         Ok(())
     }
@@ -689,6 +695,7 @@ fn agent_reason(agent: &AcpAgent) -> String {
 fn a2a_agent(
     rec: &admission::AdmissionRecord,
     timeout_secs: u64,
+    egress: Option<Arc<an_agents::egress::EgressGuard>>,
 ) -> Result<Option<Arc<an_agents::a2a::A2aHttpAgent>>> {
     let Some(b) = &rec.binding else {
         return Ok(None);
@@ -703,17 +710,20 @@ fn a2a_agent(
         .as_ref()
         .map(|c| c.name.clone())
         .unwrap_or_else(|| rec.agent_id.clone());
-    Ok(Some(Arc::new(an_agents::a2a::A2aHttpAgent::new(
-        an_agents::a2a::A2aSpec {
-            id: rec.agent_id.clone(),
-            name,
-            role,
-            agent_type: b.agent_type.clone(),
-            endpoint: b.endpoint.clone(),
-            max_concurrent: b.max_concurrent,
-            timeout: Duration::from_secs(timeout_secs.max(1)),
-        },
-    )?)))
+    let mut agent = an_agents::a2a::A2aHttpAgent::new(an_agents::a2a::A2aSpec {
+        id: rec.agent_id.clone(),
+        name,
+        role,
+        agent_type: b.agent_type.clone(),
+        endpoint: b.endpoint.clone(),
+        max_concurrent: b.max_concurrent,
+        timeout: Duration::from_secs(timeout_secs.max(1)),
+    })?;
+    // #360 防线二：外部 agent 出站前过外发检查（与 tools/LLM 同一守卫；off 时为 None）
+    if let Some(g) = egress {
+        agent.set_egress_guard(g);
+    }
+    Ok(Some(Arc::new(agent)))
 }
 
 /// 外发守卫的启动校验：绑定的工具 / 后端必须存在；enforce 下所有外发路径必须登记，否则拒绝启动

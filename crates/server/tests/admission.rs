@@ -192,6 +192,7 @@ async fn rt_adm_14_admission_http_end_to_end() {
                 notes: vec![],
                 candidates: vec![],
             },
+            None,
         )
         .unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(10);

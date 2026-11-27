@@ -148,6 +148,8 @@ pub struct HistoryHit {
     /// 时间（RFC3339，引用带时间）
     pub at: String,
     pub task_id: Option<String>,
+    /// 更正注记（本人加注，原文不改写；命中被纠正消息时非空，且排序优先给纠正后版本）
+    pub correction: Option<String>,
 }
 
 fn history_kind(role: &str) -> &'static str {
@@ -156,6 +158,14 @@ fn history_kind(role: &str) -> &'static str {
         "assistant" => "当时的回答",
         _ => "系统事件",
     }
+}
+
+/// L2 更正注记（#346 片4a，REQ-05）：更正单独记录、原文不改写。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MessageCorrection {
+    pub message_id: String,
+    pub note: String,
+    pub created_at: String,
 }
 
 fn history_snippet(s: &str) -> String {
@@ -374,6 +384,12 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at);
+-- #346 片4a（REQ-05）：L2 更正注记——更正单独记录，原文不改写；消息删除时随删
+CREATE TABLE IF NOT EXISTS message_corrections (
+    message_id TEXT PRIMARY KEY,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
@@ -387,6 +403,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     context TEXT NOT NULL DEFAULT '',
+    exec_material TEXT,
     assignment_json TEXT,
     parent_id TEXT,
     fanout_kind TEXT,
@@ -854,6 +871,15 @@ impl Store {
             if n == 0 {
                 conn.execute_batch(&format!("ALTER TABLE tasks ADD COLUMN {col} TEXT"))?;
             }
+        }
+        // #360：exec 资料块独立列（不再拼进 context 外发；可空；旧行为 NULL = 无资料块）
+        let has_exec_material: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'exec_material'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_exec_material == 0 {
+            conn.execute_batch("ALTER TABLE tasks ADD COLUMN exec_material TEXT")?;
         }
         conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id)")?;
         // 兼容旧库：messages 表补 card_json 列（AG.4 对话里的卡片；旧消息为 NULL）
@@ -3189,6 +3215,7 @@ impl Store {
                     snippet: history_snippet(r.get::<_, String>(3)?.as_str()),
                     at: r.get(5)?,
                     task_id: r.get(4)?,
+                    correction: None,
                 })
             })?;
             for h in rows {
@@ -3227,10 +3254,31 @@ impl Store {
                     role: "task".to_string(),
                     snippet: history_snippet(&summary),
                     at: updated_at,
+                    correction: None,
                 });
             }
         }
-        hits.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| b.source_id.cmp(&a.source_id)));
+        // 更正注记（片 4a）：命中被纠正消息时附注记，排序优先给纠正后版本（REQ-05）
+        for h in hits.iter_mut() {
+            if h.role == "task" {
+                continue;
+            }
+            let corr: Option<String> = conn
+                .query_row(
+                    "SELECT note FROM message_corrections WHERE message_id = ?1",
+                    params![h.source_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            h.correction = corr;
+        }
+        hits.sort_by(|a, b| {
+            b.correction
+                .is_some()
+                .cmp(&a.correction.is_some())
+                .then_with(|| b.at.cmp(&a.at))
+                .then_with(|| b.source_id.cmp(&a.source_id))
+        });
         hits.truncate(limit);
         Ok(hits)
     }
@@ -3253,7 +3301,65 @@ impl Store {
             return Err(anyhow!("仅本人发送的消息可删除（该消息 role={role}）"));
         }
         conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])?;
+        // 更正注记随消息删除（真删除语义）
+        conn.execute(
+            "DELETE FROM message_corrections WHERE message_id = ?1",
+            params![message_id],
+        )?;
         Ok(true)
+    }
+
+    /// L2 更正注记（REQ-05 / 决策 §6：本人给历史消息加「更正」，更正单独记录、
+    /// 原文不改写）。仅限本人发送（role = user）的消息；重复更正为替换。
+    /// `Ok(None)` = 消息不存在；`Err` = 存在但不可更正。
+    pub fn correct_message(
+        &self,
+        message_id: &str,
+        note: &str,
+    ) -> Result<Option<MessageCorrection>> {
+        let note = note.trim();
+        if note.is_empty() {
+            return Err(anyhow!("更正内容不能为空"));
+        }
+        let conn = self.write();
+        let role: Option<String> = conn
+            .query_row(
+                "SELECT role FROM messages WHERE id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(role) = role else { return Ok(None) };
+        if role != "user" {
+            return Err(anyhow!(
+                "仅本人发送的消息可加更正注记（该消息 role={role}）"
+            ));
+        }
+        let created_at = now();
+        conn.execute(
+            "INSERT INTO message_corrections (message_id, note, created_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(message_id) DO UPDATE SET note = excluded.note, created_at = excluded.created_at",
+            params![message_id, note, created_at],
+        )?;
+        Ok(Some(MessageCorrection {
+            message_id: message_id.to_string(),
+            note: note.to_string(),
+            created_at,
+        }))
+    }
+
+    /// 读取某条消息的更正注记（无则 None）。
+    pub fn get_correction(&self, message_id: &str) -> Result<Option<String>> {
+        let conn = self.read();
+        let note: Option<String> = conn
+            .query_row(
+                "SELECT note FROM message_corrections WHERE message_id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(note)
     }
 
     // ───────────── 任务 ─────────────
@@ -3264,10 +3370,11 @@ impl Store {
     /// 返回是否真的插入（false = 已存在 join，调用方不得再排队/交付）。
     pub fn insert_join_if_absent(&self, t: &TaskRecord, context: &str) -> Result<bool> {
         let changed = self.write().execute(
-            "INSERT INTO tasks (id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, context, parent_id, fanout_kind, branch_id, template_id)
-             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16
+            "INSERT INTO tasks (id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, context, exec_material, parent_id, fanout_kind, branch_id, template_id)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17
              WHERE NOT EXISTS (
-                 SELECT 1 FROM tasks WHERE parent_id = ?13 AND fanout_kind = 'join'
+                 -- ?14 = exec_material 插入列后的 parent_id 位（#360）；曾误写 ?13 指到资料块导致守卫失效
+                 SELECT 1 FROM tasks WHERE parent_id = ?14 AND fanout_kind = 'join'
              )",
             params![
                 t.id,
@@ -3282,6 +3389,7 @@ impl Store {
                 t.created_at,
                 t.updated_at,
                 context,
+                None::<String>,
                 t.parent_id,
                 t.fanout_kind,
                 t.branch_id,
@@ -3291,10 +3399,15 @@ impl Store {
         Ok(changed == 1)
     }
 
-    pub fn insert_task(&self, t: &TaskRecord, context: &str) -> Result<()> {
+    pub fn insert_task(
+        &self,
+        t: &TaskRecord,
+        context: &str,
+        exec_material: Option<&str>,
+    ) -> Result<()> {
         self.write().execute(
-            "INSERT INTO tasks (id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, context, parent_id, fanout_kind, branch_id, template_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+            "INSERT INTO tasks (id, conversation_id, goal, role, status, route_json, policy_json, result_json, review_json, created_at, updated_at, context, exec_material, parent_id, fanout_kind, branch_id, template_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 t.id,
                 t.conversation_id,
@@ -3308,6 +3421,7 @@ impl Store {
                 t.created_at,
                 t.updated_at,
                 context,
+                exec_material,
                 t.parent_id,
                 t.fanout_kind,
                 t.branch_id,
@@ -3337,6 +3451,19 @@ impl Store {
                 r.get(0)
             })
             .optional()?)
+    }
+
+    /// 执行资料块（会话资料/个人记忆；#360 起独立持久化，不再拼进 context 外发）。
+    /// submit 时写入；执行时仅内置执行者注入 prompt，外部 A2A 不下发。
+    pub fn get_task_exec_material(&self, id: &str) -> Result<Option<String>> {
+        let _timer = ReadTimer::new("get_task_exec_material");
+        Ok(self
+            .read()
+            .query_row("SELECT exec_material FROM tasks WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .optional()?
+            .flatten())
     }
 
     pub fn set_task_context(&self, id: &str, context: &str) -> Result<()> {
@@ -4916,7 +5043,7 @@ mod tests {
     fn transition_task_respects_from() {
         let store = Store::open(Path::new(":memory:")).unwrap();
         store
-            .insert_task(&sample_task("t1", TaskStatus::Queued), "")
+            .insert_task(&sample_task("t1", TaskStatus::Queued), "", None)
             .unwrap();
         // 当前不是 RUNNING：不改
         assert!(!store
@@ -4945,7 +5072,7 @@ mod tests {
     fn finish_task_writes_result_and_never_leaves_terminal() {
         let store = Store::open(Path::new(":memory:")).unwrap();
         store
-            .insert_task(&sample_task("t1", TaskStatus::Running), "")
+            .insert_task(&sample_task("t1", TaskStatus::Running), "", None)
             .unwrap();
         // 先被取消
         assert!(store
@@ -4972,7 +5099,7 @@ mod tests {
         assert!(t.result.is_none());
 
         store
-            .insert_task(&sample_task("t2", TaskStatus::Running), "")
+            .insert_task(&sample_task("t2", TaskStatus::Running), "", None)
             .unwrap();
         assert!(store
             .finish_task(
@@ -5002,7 +5129,7 @@ mod tests {
         let mut c = sample_task("c", TaskStatus::Running);
         c.created_at = "2026-01-01T00:00:00.000Z".into();
         for t in [&a, &b, &c] {
-            store.insert_task(t, "").unwrap();
+            store.insert_task(t, "", None).unwrap();
         }
         assert_eq!(store.queued_ahead("a").unwrap(), 0);
         assert_eq!(store.queued_ahead("b").unwrap(), 1);

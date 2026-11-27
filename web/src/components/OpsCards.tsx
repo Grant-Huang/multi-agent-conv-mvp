@@ -5,18 +5,8 @@
 // 分层显示 已提交 → 源系统已受理 → 已核验，标来源；未执行时显示“尚未执行”（CH-P8）。
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { constraintText, opsStageText } from "../desktop/opsStageText";
 import type { ChatCard } from "../bindings/ChatCard";
-
-const STAGE_LABEL: Record<string, string> = {
-  WAITING_HUMAN: "待批准",
-  BLOCKED: "受阻",
-  VERIFYING: "核验中",
-  CLOSED: "已关闭",
-  CANCELLED: "已取消",
-  BUDGET_EXHAUSTED: "预算耗尽",
-  INVESTIGATING: "调查中",
-  ASSESS: "评估中",
-};
 
 /** 引擎案例视图（GET /api/mom/desk/cases/{id} → human_view）中回执相关字段的窄化类型 */
 type OpsActionView = {
@@ -35,6 +25,8 @@ type OpsCaseView = {
   outbox?: OpsOutboxView[];
   evidence?: Record<string, OpsEvidenceView>;
   provenance?: string;
+  constraints?: string[];
+  proposal?: unknown;
 };
 
 const PROV_LABEL: Record<string, string> = {
@@ -56,7 +48,8 @@ function fieldFromSummary(summary: string | undefined, key: string): string | nu
 }
 
 export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: () => void }) {
-  const stage = STAGE_LABEL[card.stage] ?? card.stage;
+  // UXFIX-Q（INTENT-029）：阶段用中文；批准后与摘要一致显示“已批准，待执行”
+  const stage = opsStageText(card.stage, card.approver);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [localApprover, setLocalApprover] = useState<string | null>(null);
@@ -88,7 +81,7 @@ export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: ()
     !Number.isNaN(planRevision) &&
     (isMomSim || !cardApprover);
   const approveLabel = !cardApprover
-    ? "批准"
+    ? `批准（方案修订 ${planRevision ?? "—"}）`
     : approvalExpired
       ? "重新批准"
       : "重试执行";
@@ -194,9 +187,30 @@ export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: ()
         <span className="badge">{card.level}</span> {card.title} <span className="badge sim">模拟</span>
       </h3>
       <p>
-        案例 {card.case_id} · {stage}
+        <span data-testid="ops-stage">案例 {card.case_id} · {stage}</span>
       </p>
-      <p className="hint">{card.summary}</p>
+      {/* UXFIX-Q（INTENT-028）：约束用中文，原文折叠；摘要只保留阶段前缀（原文随引擎读取刷新） */}
+      <p className="hint" data-testid="ops-summary">{stage}；约束见下方</p>
+      {panel === "plan" && (
+        <div className="hint" data-testid="ops-constraints">
+          <ul>
+            {(caseView && caseView !== "error" && caseView.constraints
+              ? caseView.constraints
+              : []
+            ).map((c) => (
+              <li key={c}>{constraintText(c)}</li>
+            ))}
+          </ul>
+          <details>
+            <summary className="muted">约束原文（英文）</summary>
+            <ul>
+              {(caseView && caseView !== "error" && caseView.constraints ? caseView.constraints : []).map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
       <p className="hint">
         责任：{card.owner}
         {approver ? ` · 批准人：${approver}` : ""}
@@ -233,9 +247,40 @@ export function OpsCaseCard({ card, onChanged }: { card: OpsCase; onChanged?: ()
         )}
       </div>
       {panel === "plan" && (
-        <p className="hint" data-testid="plan-revision">
-          方案修订 {planRevision ?? "—"} · 范围 {card.scope ?? "—"}
-        </p>
+        <div className="hint" data-testid="ops-plan-points">
+          <p data-testid="plan-revision">
+            方案修订 {planRevision ?? "—"} · 范围 {card.scope ?? "—"} · 引擎模拟
+          </p>
+          {(() => {
+            const p = caseView && caseView !== "error" ? caseView.proposal : undefined;
+            if (!p || typeof p !== "object") return <p className="muted">方案要点读取中或不可用。</p>;
+            const row = (label: string, v: unknown) =>
+              v == null || v === "" ? null : <li>{label}：{String(v)}</li>;
+            const rec = p as Record<string, unknown>;
+            const rejected = Array.isArray(rec.rejected_alternatives)
+              ? (rec.rejected_alternatives as Array<{ name?: string; reason?: string }>)
+              : [];
+            return (
+              <ul>
+                {row("目标产量", rec.quantity)}
+                {row("可用产能", rec.capacity)}
+                {row("转产耗时（分钟）", rec.tool_transfer_minutes)}
+                {row("检验完成", rec.inspection_finish)}
+                {row("交期", rec.deadline)}
+                {row("其他订单影响", rec.other_order_impact)}
+                {Array.isArray(rec.exclude_assets) && rec.exclude_assets.length > 0 && (
+                  <li>排除资产：{(rec.exclude_assets as string[]).join("、")}</li>
+                )}
+                {rejected.map((r, i) => (
+                  <li key={i}>未采纳：{r.name}（{r.reason}）</li>
+                ))}
+                {Array.isArray(rec.limitations) && rec.limitations.length > 0 && (
+                  <li>限制：{(rec.limitations as string[]).join("；")}</li>
+                )}
+              </ul>
+            );
+          })()}
+        </div>
       )}
       {showReceipt && (
         <div className="hint" data-testid="execution-receipt">
