@@ -1,0 +1,15 @@
+{
+  "handoff": {
+    "task_id": "SMT-03",
+    "conversation_id": "conv-smt-03",
+    "run_id": "run-smt-03-1",
+    "read_message_id": "msg-anchor-1",
+    "phone_text": "手机侧：复核结果催一下",
+    "phone_version": 1,
+    "desktop_text": "电脑续：已看到手机转写，开始催 SMT-03 锡膏复核。",
+    "desktop_version": 1,
+    "conflict": true,
+    "chosen": null,
+    "voice_shared": true
+  }
+}
