@@ -4,6 +4,13 @@
 # - 本文件属于 L3 风险等级（config/risk-policy.toml），修改需要人工确认。
 # - 分支保护应把下列 job 名称设为必需检查：rust、web、python-websearch、python-tools、
 #   change-policy、security（python-dlp-egress 建议一并设为必需）。
+#
+# T1 路径分流（#432，设计 docs/fencing/INTEGRATION_PIPELINE.md 第 5 节）：
+# - `triage` 作业按改动路径产出各作业开关；rust/web/python-* 作业 `needs` 它并按开关跳过。
+# - 被跳过的必需检查在 GitHub 分支保护中按「成功」处理（作业级 if 跳过 ≠ 检查缺失）；
+#   若保护规则表现异常，回退方案是各作业内早退成功退出。
+# - 底线不降：`change-policy`、`security` 每个 PR 照跑；master push 全量（triage 对非 PR
+#   事件直接输出全量）；triage 自身任何异常回退全量（tools/ci/ci_path_triage.py fail-safe）。
 
 name: ci
 
@@ -27,11 +34,56 @@ env:
   CARGO_TARGET_DIR: target
 
 jobs:
+  # ---------- T1 路径分流 ----------
+  # 只做 git diff + 判定（无工具链），改动文件按 tools/ci/ci_path_triage.py 的规则映射到作业开关。
+  triage:
+    name: triage
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: 计算作业开关
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p triage
+          if [ "$EVENT" != "pull_request" ]; then
+            python3 tools/ci/ci_path_triage.py --event push --json-out triage/result.json --quiet
+          elif git cat-file -e "origin/${BASE_REF:-master}" 2>/dev/null; then
+            BASE_SHA="$(git merge-base "origin/${BASE_REF:-master}" HEAD)"
+            git diff --name-only "$BASE_SHA" | python3 tools/ci/ci_path_triage.py --event pull_request --json-out triage/result.json
+          else
+            # 基准分支取不到时宁可全量，不可漏跑。
+            python3 tools/ci/ci_path_triage.py --event push --json-out triage/result.json --quiet
+          fi
+      - name: 落输出
+        run: |
+          set -euo pipefail
+          echo "run_rust=$(jq -r .rust triage/result.json)" >> "$GITHUB_OUTPUT"
+          echo "run_web=$(jq -r .web triage/result.json)" >> "$GITHUB_OUTPUT"
+          echo "run_python_websearch=$(jq -r '.["python-websearch"]' triage/result.json)" >> "$GITHUB_OUTPUT"
+          echo "run_python_dlp_egress=$(jq -r '.["python-dlp-egress"]' triage/result.json)" >> "$GITHUB_OUTPUT"
+          echo "run_python_tools=$(jq -r '.["python-tools"]' triage/result.json)" >> "$GITHUB_OUTPUT"
+        id: switches
+    outputs:
+      run_rust: ${{ steps.switches.outputs.run_rust }}
+      run_web: ${{ steps.switches.outputs.run_web }}
+      run_python_websearch: ${{ steps.switches.outputs.run_python_websearch }}
+      run_python_dlp_egress: ${{ steps.switches.outputs.run_python_dlp_egress }}
+      run_python_tools: ${{ steps.switches.outputs.run_python_tools }}
+
   # ---------- Rust ----------
   rust:
     name: rust
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: triage
+    if: needs.triage.outputs.run_rust == 'true'
     steps:
       # actions/checkout@v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -64,6 +116,8 @@ jobs:
     name: web
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: triage
+    if: needs.triage.outputs.run_web == 'true'
     defaults:
       run:
         working-directory: web
@@ -87,6 +141,8 @@ jobs:
     name: python-websearch
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: triage
+    if: needs.triage.outputs.run_python_websearch == 'true'
     defaults:
       run:
         working-directory: tools/websearch
@@ -105,6 +161,8 @@ jobs:
     name: python-dlp-egress
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: triage
+    if: needs.triage.outputs.run_python_dlp_egress == 'true'
     defaults:
       run:
         working-directory: tools/dlp-egress
@@ -122,6 +180,8 @@ jobs:
     name: python-tools
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: triage
+    if: needs.triage.outputs.run_python_tools == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
