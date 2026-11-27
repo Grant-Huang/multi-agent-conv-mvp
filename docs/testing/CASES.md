@@ -1181,6 +1181,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-EXEC-07 | conversation-memory | 回答与 judge 都关、exec 单开（#362 / R-20261126-M1） | 委派 general | 执行背景含资料块标记与来源 id（collect 按四开关取或） |
 | RT-EXEC-08 | conversation-memory | 3 条万字标题 fact 记忆 + 委派 general（#363 / R-20261126-M2） | 查执行资料段 | 资料段 ≤512 token 估算 + 页眉余量；标题截断、来源 id 与标题探针仍在（来源行不整截） |
 | RT-EXEC-09 | conversation-memory | 委派 general 成功；另 exec 关闭对照（#364 / R-20261126-L1） | 捕获日志 | 委派成功补发 `session.materials.exec`：带 `task_id`、`exec_injected=true`、`exec_chars`；exec 关闭时 `exec_injected=false`、`switch_off`、`exec_chars=0`；不含资料正文 |
+| RT-EXEC-10 | conversation-memory | 多段正文 fact 记忆 + 待批任务，撤回后批准（#501 / R-20261127-H1） | 查执行请求与 `tasks.exec_material` | 不含正文任何一段与记忆 id（多段整体摘除；渲染折叠换行使条目=两行） |
 
 ## 分层记忆细化（#346；RT-L2H-01～04、RT-ASEL-02 已实现（片 3 / 片 4a / 片 4b，2026-11-26），RT-ASEL-01 为实现前定义随各入口线场合落地补可执行测试）
 

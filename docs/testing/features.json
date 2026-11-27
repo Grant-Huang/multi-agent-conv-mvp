@@ -1220,7 +1220,8 @@
       "RT-JMAT-06",
       "RT-EXEC-07",
       "RT-EXEC-08",
-      "RT-EXEC-09"
+      "RT-EXEC-09",
+      "RT-EXEC-10"
     ],
     "requirements": [
       {
@@ -1255,7 +1256,8 @@
           "RT-USTY-07",
           "RT-EXEC-06",
           "RT-UMEM-06",
-          "RT-UMEM-07"
+          "RT-UMEM-07",
+          "RT-EXEC-10"
         ],
         "since": null
       },

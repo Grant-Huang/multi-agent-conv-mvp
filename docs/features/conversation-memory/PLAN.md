@@ -43,3 +43,7 @@
 ## 测试基建卡（W2 本地数据集）
 
 - [x] RT-L2H-05 免 LLM 历史消息批量导入（#440，来源第 6 线 #425 W2）：`POST /api/desktop/v1/history/import`（test_fixtures 门控，生产 404；单次 ≤500 条；role/content/created_at 直写）；全程零模型请求；检索按原始时间命中；证据 `testing/evidence/convmem-440-history-import.md`。
+
+## 撤回清扫加固卡（夜间评审 R-20261127）
+
+- [x] RT-EXEC-10 多段正文记忆撤回整体摘除（#501 / R-20261127-H1，P1）：render 六处摘要过 fold_summary 折叠换行（条目=「来源：」+「摘要：」两行不变量）；strip_memory_from_context 条目边界改按行首「来源：<id>（个人记忆」精确匹配（兄弟条目摘要中的「来源：」字样不误扩）；单测多段整体摘除 + 兄弟条目不误扩；证据 `testing/evidence/convmem-501-strip-boundaries.md`。
