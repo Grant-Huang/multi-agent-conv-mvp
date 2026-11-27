@@ -31,12 +31,12 @@
          "Bash(git *)", "Bash(gh *)", "Bash(cargo *)", "Bash(npm *)",
          "Bash(node *)", "Bash(python3 *)", "Bash(ls *)", "Bash(cat *)", "Bash(grep *)"
        ],
-       "deny": ["Bash(git push --force*)", "Bash(git push -f*)", "Bash(git rebase*)"]
+       "deny": ["Bash(git push --force*)", "Bash(git push -f*)", "Bash(git rebase*)", "Bash(gh pr merge*)", "Bash(gh api*)"]
      }
    }
    ```
 
-   `deny` 里的三条对应 `AGENTS.md`“跨线分工”：解冲突只合并 master，不 rebase、不强推。L0 的 PR 允许本线在 CI 绿后自行合并，所以不禁 `gh pr merge`；不合并 L1～L3 由提示词和 `AGENTS.md` 约束。第 6 线如需启动服务，再按需加。
+   `deny` 里的前三条对应 `AGENTS.md`“跨线分工”：解冲突只合并 master，不 rebase、不强推。**2026-11-27 起（决策 `2026-11-27-unattended-merge-and-tool-gates`）：无人值守任务禁 `gh pr merge` 与 `gh api`——包括 L0 在内的所有 PR 合并一律由人工批准**；无人值守线在 PR 留言请用户合并即可（合并队列 #433 只入队、催批、关卡）。第 6 线如需启动服务，再按需加。
 
 4. **试跑一次**，看日志：
 

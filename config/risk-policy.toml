@@ -39,6 +39,9 @@ paths = [
   "docs/PRODUCT.md",
   "config/**",
   "tools/ci/**",
+  # 无人值守领单任务的配置说明与权限面（2026-11-27，决策 2026-11-27-unattended-merge-and-tool-gates）：
+  # 改 deny 列表 = 改所有无人值守线的权限边界，必须由人审批。
+  "scripts/lines/**",
 ]
 
 [[rules]]
