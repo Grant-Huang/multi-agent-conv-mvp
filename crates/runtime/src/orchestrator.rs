@@ -1358,14 +1358,16 @@ impl Orchestrator {
     async fn run_with_review(&self, task: &TaskRecord) -> Result<Outcome> {
         // 执行上下文存在 tasks 表里：服务重启后（例如等待审批的任务被批准时）依然可用
         let mut context = self.store.get_task_context(&task.id)?.unwrap_or_default();
-        // exec 资料块独立持久化（#360）：只有租约落到本机执行者时才注入 spec.context，
-        // 外部 A2A 请求不下发；注入点在 run_on_group 拿到执行者卡片之后
-        let exec_material = self.store.get_task_exec_material(&task.id)?;
         let sink = EventSink::new(self.bus.clone(), &task.conversation_id, &task.id);
         let mut deadline = None;
 
         let mut round = 0;
         loop {
+            // exec 资料块独立持久化（#360）：只有租约落到本机执行者时才注入 spec.context，
+            // 外部 A2A 请求不下发；注入点在 run_on_group 拿到执行者卡片之后。
+            // #512 / R-20261127-M6：每轮从库里重读——撤回清扫（#436）写回 exec_material
+            // 列后，下一轮执行须取到清扫后的值，不再用首轮内存副本。
+            let exec_material = self.store.get_task_exec_material(&task.id)?;
             let spec = TaskSpec {
                 task_id: task.id.clone(),
                 conversation_id: task.conversation_id.clone(),
