@@ -1,6 +1,6 @@
-# 09 备份、升级与回滚
+# 09 备份、升级、回滚与卸载
 
-本页对应第 6 线可部署性检查 D5～D7（见 [LOCAL_E2E.md](../testing/LOCAL_E2E.md) §2）。**当前产品没有一键升级向导**；按下面手工步骤操作。
+本页对应第 6 线可部署性检查 D5～D8（见 [LOCAL_E2E.md](../testing/LOCAL_E2E.md) §2）。**当前产品没有一键升级 / 卸载向导**；按下面手工步骤操作。
 
 ## 数据在哪里
 
@@ -46,3 +46,30 @@ cp data/agentnexus.mom.db backup/agentnexus.mom.db
 3. 若直接用「已由新版写过」的库启动旧版：旧版可能仍能起来并读到旧表里的会话，但**不会提示**哪些新表/新字段（如个人记忆）在旧版不可用。不要假设新功能数据在旧版里可管理。
 
 发现迁移失败或数据丢失时，保留日志与库副本，开 GitHub Issue（标题以 `[待归属]` 开头，标签 `dispatch` + `line:2`）。
+
+## 清理与卸载（D8）
+
+目标：停掉本机上的 AgentNexus 后，按需删掉数据，**不留本实例的后台进程**。
+
+1. **停服务**：对运行中的 `agentnexus` 发终止信号（先 `TERM`，数秒后仍在再用 `KILL`）。确认监听端口（默认 `8787`）已无进程：
+
+```bash
+# 例：由配置文件启动时
+kill -TERM "$(pgrep -f 'agentnexus.*config.toml')"
+# 确认端口空闲（把 8787 换成你的 [server].bind 端口）
+lsof -nP -iTCP:8787 -sTCP:LISTEN || echo "port free"
+```
+
+2. **可选：删数据**（不可恢复；先按上一节备份）。`db_path` 改过时，以你的配置为准；默认还要删旁路的 MOM 库：
+
+```bash
+sqlite3 data/agentnexus.db 'PRAGMA wal_checkpoint(FULL);' 2>/dev/null || true
+rm -f data/agentnexus.db data/agentnexus.db-wal data/agentnexus.db-shm
+rm -f data/agentnexus.mom.db data/*.mom.db
+rm -rf logs/* workspace/*
+# 配置与二进制是否删除由你决定；只清数据时保留 config.toml
+```
+
+3. **验收**：`ps` / `lsof` 看不到该实例的 `agentnexus`；数据目录中无上述库与 WAL。安装用的 Rust / Node / 模型服务**不会**随本步骤卸载。
+
+2026-11-27 实测（专用端口 `28787`）：`TERM` 后端口空闲、无残留进程；只删主库时会留下 `*.mom.db`，须按上面一并删除。证据见 [local-deploy-2026-11-27-d8.md](../testing/evidence/local-deploy-2026-11-27-d8.md)。
