@@ -707,6 +707,9 @@ test('E2E-ADATTN: 输入中普通建议不抢焦点且可静音', async ({ page 
   });
   await expect(page.getByTestId('attn-item-urgent')).toBeVisible({ timeout: 10_000 });
   await expect(input).toBeFocused();
+
+  // #483 测试卫生：恢复静音设置为用例前状态，避免污染同服务后续用例
+  await page.request.post('/api/desktop/v1/attention/mute', { data: { mute_ordinary: false } });
 });
 
 test('E2E-ADHOME: 首页整治后无测试控制与重复面板（T-88/UI16）', async ({ page }) => {
