@@ -1,0 +1,113 @@
+# T2 Integration CI（#434，设计 docs/fencing/INTEGRATION_PIPELINE.md 第 5 节）。
+#
+# 目的：堵「每个 PR 各自绿、合到 master 一起红」的组合回归缺口（2026-11-27 nightly
+# 20 例系统性回归的实证）。合并队列（人工批准后、合并前）由第 2 线集成 agent 触发：
+#   gh workflow run t2-integration.yml -f pr=<编号> -f with_e2e=<true|false>
+#
+# 规则：
+# - 检出 PR head 后机械合入最新 master；冲突直接红（作者需先解决）。
+# - workspace 全量测试（nextest + doc-test）+ web 构建，对「最新主干 + 本 PR」运行。
+# - L2/L3 或带 `full-ci` 标签的 PR 加跑浏览器 E2E（with_e2e=true 由触发者按分级决定）。
+# - 结果自动回贴 PR（成功/失败与运行链接），不直接合并——合并仍由人工执行。
+#
+# 本文件属 L3 风险等级（.github/**），修改需人工确认。
+
+name: t2-integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR 编号"
+        required: true
+      with_e2e:
+        description: "加跑浏览器 E2E（L2/L3 或 full-ci 标签时为 true）"
+        default: "false"
+
+concurrency:
+  group: t2-${{ github.event.inputs.pr }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: target
+
+jobs:
+  t2:
+    name: t2 (master + PR 组合验证)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      # actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: refs/pull/${{ github.event.inputs.pr }}/head
+
+      - name: 机械合入最新 master（冲突即红）
+        env:
+          PR: ${{ github.event.inputs.pr }}
+        run: |
+          set -euo pipefail
+          git config user.name "t2-integration-bot"
+          git config user.email "t2-bot@ci.local"
+          if ! git merge --no-ff --no-edit "origin/master"; then
+            echo "::error::PR #$PR 与最新 master 机械冲突：请作者先在本地合并 master 解决冲突"
+            exit 1
+          fi
+          echo "合入后 HEAD：$(git rev-parse --short HEAD)"
+
+      - name: 安装工具链
+        # dtolnay/rust-toolchain@master（2026-11 pin）
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        with:
+          toolchain: "1.100.0"
+      # Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+      # taiki-e/install-action@v2
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c
+        with:
+          tool: cargo-nextest
+
+      - name: workspace 全量测试（nextest）
+        run: cargo nextest run --locked --workspace
+      - name: doc-test（nextest 不覆盖，单独保留）
+        run: cargo test --locked --doc
+
+      # actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: web 构建
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: 浏览器 E2E（L2/L3 或 full-ci）
+        if: github.event.inputs.with_e2e == 'true'
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+          npm run verify
+
+      - name: 结果回贴 PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.inputs.pr }}
+          E2E: ${{ github.event.inputs.with_e2e }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            body="**T2 组合验证 ✅**（最新 master + PR #$PR；E2E=$E2E）——[run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})。可合并。"
+          else
+            body="**T2 组合验证 ❌**（最新 master + PR #$PR；E2E=$E2E）——[run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})。移出合并队列，修复后重新入队。"
+          fi
+          gh pr comment "$PR" --body "$body"
