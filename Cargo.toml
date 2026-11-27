@@ -51,3 +51,14 @@ mdns-sd = "0.22"
 ts-rs = { version = "12", features = ["serde-json-impl"] }
 # ACP 官方 Rust SDK：process 用于启动 agent 子进程，stdio 用于假 agent（测试/演示）
 agent-client-protocol = "5"
+
+# DES 仿真测试的耗时主要在 an-runtime 的 MOM 引擎侧（每次 update 克隆整个
+# Snapshot 并全量 JSON 序列化写 mom_snapshot，批量仿真 200 runs × 60 分钟逐分钟
+# 推进，见 crates/runtime/src/mom/des/batch.rs run_one），an-des 本体开优化无
+# 收益（实测 42.40s → 43.79s）。对 an-runtime 单包开 opt-level=2：不对整个
+# 工作区开（编译变慢），其他 crate 仍是调试构建，断言/溢出检查不受影响。
+# 仿真内核 run_open_loop 在 an-des，也一并保留 opt-level=2。Issue #459。
+[profile.dev.package.an-des]
+opt-level = 2
+[profile.dev.package.an-runtime]
+opt-level = 2
