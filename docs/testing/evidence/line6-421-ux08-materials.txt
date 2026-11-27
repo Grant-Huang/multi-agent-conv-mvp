@@ -1,0 +1,4 @@
+session.materials (8787 server log / America/Vancouver 2026-11-26 ~20:54–20:56)
+R1 conv-b308d1… memories=mem-1 chars=101
+R2 conv-7ac9a4… memories=mem-1 chars=97
+R3 conv-c835ab… memories= (empty) chars=0
