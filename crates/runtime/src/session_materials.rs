@@ -223,6 +223,14 @@ pub fn memory_expired(expires: &str, today: &str) -> bool {
     is_date && prefix < &today[..10]
 }
 
+/// #501 / R-20261127-H1：摘要折叠换行——条目在资料块内恒为「来源：」+「摘要：」
+/// 两行结构（条目间以空行分隔），多段正文不会制造伪条目边界，清扫才可靠。
+fn fold_summary(s: &str) -> String {
+    s.chars()
+        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+        .collect()
+}
+
 fn status_label(status: &TaskStatus) -> String {
     match status {
         TaskStatus::Completed => "已完成".into(),
@@ -514,7 +522,10 @@ pub fn render(materials: &Materials, max_tokens: u32) -> String {
     let per_item = (body_budget / count as u32).max(24);
     let mut receipts: Vec<String> = Vec::new();
     for m in &materials.items {
-        let (summary, _) = clip_middle(&m.summary, per_item);
+        let (summary, _) = {
+            let (t, n) = clip_middle(&m.summary, per_item);
+            (fold_summary(&t), n)
+        };
         receipts.push(format!(
             "来源：{}（{} · {}）\n摘要：{}",
             m.task_id, m.status, m.time, summary
@@ -522,7 +533,10 @@ pub fn render(materials: &Materials, max_tokens: u32) -> String {
     }
     let mut memories: Vec<String> = Vec::new();
     for m in &materials.memories {
-        let (summary, _) = clip_middle(&m.summary, per_item);
+        let (summary, _) = {
+            let (t, n) = clip_middle(&m.summary, per_item);
+            (fold_summary(&t), n)
+        };
         memories.push(format!(
             "来源：{}（个人记忆「{}」 · 有效期 {}）\n摘要：{}",
             m.task_id,
@@ -533,7 +547,10 @@ pub fn render(materials: &Materials, max_tokens: u32) -> String {
     }
     let mut findings: Vec<String> = Vec::new();
     for m in &materials.findings {
-        let (summary, _) = clip_middle(&m.summary, per_item);
+        let (summary, _) = {
+            let (t, n) = clip_middle(&m.summary, per_item);
+            (fold_summary(&t), n)
+        };
         findings.push(format!(
             "来源：{}（{} · {} · 证据 {}）\n摘要：{}",
             m.task_id,
@@ -568,7 +585,10 @@ pub fn render_exec(materials: &Materials, max_tokens: u32) -> String {
     let per_item = (body_budget / count as u32).max(24);
     let mut receipts: Vec<String> = Vec::new();
     for m in &materials.items {
-        let (summary, _) = clip_middle(&m.summary, per_item);
+        let (summary, _) = {
+            let (t, n) = clip_middle(&m.summary, per_item);
+            (fold_summary(&t), n)
+        };
         receipts.push(format!(
             "来源：{}（{} · {}）\n摘要：{}",
             m.task_id, m.status, m.time, summary
@@ -576,7 +596,10 @@ pub fn render_exec(materials: &Materials, max_tokens: u32) -> String {
     }
     let mut memories: Vec<String> = Vec::new();
     for m in &materials.memories {
-        let (summary, _) = clip_middle(&m.summary, per_item);
+        let (summary, _) = {
+            let (t, n) = clip_middle(&m.summary, per_item);
+            (fold_summary(&t), n)
+        };
         memories.push(format!(
             "来源：{}（个人记忆「{}」 · 有效期 {}）\n摘要：{}",
             m.task_id,
@@ -605,7 +628,10 @@ pub fn render_style(style: &[SessionMaterial], max_tokens: u32) -> String {
     let per_item = (body_budget / style.len() as u32).max(24);
     let mut body = String::new();
     for m in style {
-        let (summary, _) = clip_middle(&m.summary, per_item);
+        let (summary, _) = {
+            let (t, n) = clip_middle(&m.summary, per_item);
+            (fold_summary(&t), n)
+        };
         body.push_str(&format!(
             "来源：{}（「{}」 · 确认于 {}）\n摘要：{}\n\n",
             m.task_id,

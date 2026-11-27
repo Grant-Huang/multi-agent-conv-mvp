@@ -700,3 +700,65 @@ async fn rt_exec_09_delegate_logs_exec_telemetry() {
     );
     assert!(blob2.contains("exec_chars=0"), "关闭时 exec_chars=0");
 }
+
+/// RT-EXEC-10（#501 / R-20261127-H1）：多段正文记忆撤回后批准——执行请求与
+/// exec_material 均不含正文任何一段与记忆 id（条目=两行不变量使清扫可靠）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_exec_10_multi_paragraph_revoked_memory_fully_removed() {
+    let llm = MockLlm::start_high_risk().await;
+    let rt = runtime(&llm.base, "");
+    let conv = rt.store.create_conversation("t").unwrap();
+    let mem = rt
+        .store
+        .create_desktop_memory(
+            "local",
+            "多段口径记忆",
+            "第一段概况。\n\n第二段 SECRET-501。",
+            "2099-01-01",
+            "fact",
+        )
+        .unwrap();
+    for i in 0..12 {
+        rt.store
+            .add_message(&conv.id, "user", &format!("历史填充{i}"), None)
+            .unwrap();
+    }
+    let out = rt
+        .conversation
+        .handle_message(&conv.id, "你好，整理那个任务的结论成报告")
+        .await
+        .unwrap();
+    let task = out.task.expect("委派应产生任务");
+    let mut needs_human = false;
+    for _ in 0..40 {
+        if let Some(t) = rt.store.get_task(&task.id).unwrap() {
+            if t.status == TaskStatus::NeedsHuman {
+                needs_human = true;
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(needs_human, "high 风险任务应进入 NEEDS_HUMAN");
+
+    rt.store
+        .revoke_desktop_memory("local", &mem.id)
+        .unwrap()
+        .expect("撤回应命中");
+    rt.orchestrator.approve(&task.id).unwrap();
+
+    let sys = step_system(&wait_first_step(&llm));
+    assert!(
+        !sys.contains("SECRET-501") && !sys.contains(mem.id.as_str()),
+        "执行请求不得含多段正文的任何一段与记忆 id：{sys}"
+    );
+    let mat = rt
+        .store
+        .get_task_exec_material(&task.id)
+        .unwrap()
+        .unwrap_or_default();
+    assert!(
+        !mat.contains("SECRET-501") && !mat.contains(mem.id.as_str()),
+        "exec_material 不得残留：{mat}"
+    );
+}
