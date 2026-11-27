@@ -1150,6 +1150,7 @@
       "RT-SMAT-05",
       "RT-SMAT-06",
       "RT-SMAT-07",
+      "RT-SMAT-08",
       "RT-UMEM-01",
       "RT-UMEM-02",
       "RT-UMEM-03",
@@ -1283,7 +1284,8 @@
         "status": "已确认",
         "cases": [
           "RT-SMAT-06",
-          "RT-SMAT-07"
+          "RT-SMAT-07",
+          "RT-SMAT-08"
         ],
         "since": null
       }
