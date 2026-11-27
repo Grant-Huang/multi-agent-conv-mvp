@@ -3407,6 +3407,53 @@ impl Store {
         }))
     }
 
+    /// #440 / W2 本地数据集：历史消息批量导入（test_fixtures 门控端点专用）——
+    /// 只写库、不触发任何推理。角色限 user / assistant / system；created_at
+    /// 必填（检索引用带原始时间）。返回按序写入的消息（id 服务端生成）。
+    pub fn import_messages(
+        &self,
+        conversation_id: &str,
+        entries: &[(&str, &str, &str)],
+    ) -> Result<Vec<Message>> {
+        let mut conn = self.write();
+        let tx = conn.transaction()?;
+        let mut out = Vec::new();
+        {
+            let mut st = tx.prepare(
+                "INSERT INTO messages (id, conversation_id, role, content, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+            for (role, content, created_at) in entries {
+                let role = role.trim();
+                if !matches!(role, "user" | "assistant" | "system") {
+                    return Err(anyhow!("role 只能是 user / assistant / system"));
+                }
+                let content = content.trim();
+                anyhow::ensure!(!content.is_empty(), "content 不能为空");
+                let created_at = created_at.trim();
+                anyhow::ensure!(created_at.len() >= 10, "created_at 需为时间字符串");
+                let m = Message {
+                    id: an_core::new_id("msg"),
+                    conversation_id: conversation_id.into(),
+                    role: role.into(),
+                    content: content.into(),
+                    task_id: None,
+                    created_at: created_at.into(),
+                };
+                st.execute(params![
+                    m.id,
+                    m.conversation_id,
+                    m.role,
+                    m.content,
+                    m.created_at
+                ])?;
+                out.push(m);
+            }
+        }
+        tx.commit()?;
+        Ok(out)
+    }
+
     /// 读取某条消息的更正注记（无则 None）。
     pub fn get_correction(&self, message_id: &str) -> Result<Option<String>> {
         let conn = self.read();

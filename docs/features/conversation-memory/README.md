@@ -112,6 +112,8 @@
 
 已落地切片：5.1 回答路径会话资料注入（默认开）；5.2a 个人记忆生命周期与隔离（`POST /api/desktop/v1/memories`、`desktop_memories` 补 `kind` 列、按 `x-desktop-principal` 作用域隔离、过期不入注入）；5.2b 预览→确认→下一会话生效（`confirmed_at` 补列 + confirm 端点，草稿不注入、独立风格卡）；5.3 内省发现按需进入会话（确定性相关性门 + 待核实标注 + 只读）；S4 / S5-route / S6-exec 判断、路由、执行路径最小材料（S6 经片 2 修正为 `render_exec`，不带 L5）；片 2 注入基线与场合表落地；片 3 L2 历史记录检索（`GET /api/desktop/v1/history/search`，默认 180 天窗口、AI 回答标「当时的回答」）与本人消息删除（`DELETE /api/desktop/v1/messages/{id}`，真删除）；片 4a 更正注记（`POST /api/desktop/v1/messages/{id}/correction`，`message_corrections` 表）；片 4b 「带了哪些记忆、为什么」事件字段（`occasion`/`why`）；片 5 写入面扫描（`flags` 读时派生）与撤回影响追溯（`materials_injections` 表 + `GET /memories/{id}/impact`）。检索与记忆主入口在 `crates/runtime/src/store.rs` + `crates/server/src/desktop_api.rs`。
 
+片 4c 测试基建：免 LLM 历史批量导入 `POST /api/desktop/v1/history/import`（test_fixtures 门控；RT-L2H-05）。
+
 **待实现**：RT-ASEL-01 六场合完整判定（随对应入口线：回到老任务 / 审批 / 值班 / 跨设备）；「用了哪些记忆」的界面展示（第 1 线 #347）；频道与共享会话接入（随 REQ-03 / 服务端身份）。
 
 ## 5. 质量

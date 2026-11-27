@@ -3,7 +3,7 @@
 //! 口径（2026-11-26 用户确认冻结）：AI 历史回答标「当时的回答」不作事实来源；
 //! 删除即真删除；检索默认最近 180 天，更早需明确指定；引用带时间与出处。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -22,10 +22,21 @@ async fn serve(app: axum::Router) -> String {
 }
 
 fn config() -> AppConfig {
-    toml::from_str(
+    config_with(true)
+}
+
+/// fixtures=false 模拟生产配置：test 专用导入端点不挂载（#440）
+fn config_prod() -> AppConfig {
+    config_with(false)
+}
+
+fn config_with(fixtures: bool) -> AppConfig {
+    let flag = if fixtures { "true" } else { "false" };
+    toml::from_str(&format!(
         "[llm]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\nmax_retries = 0\n\
-         [agents.general]\nenabled = false\n[agents.coding]\nenabled = false\n",
-    )
+         [agents.general]\nenabled = false\n[agents.coding]\nenabled = false\n\
+         [desktop]\ntest_fixtures = {flag}\n"
+    ))
     .unwrap()
 }
 
@@ -385,4 +396,91 @@ async fn rt_l2h_04_correction_note_attaches_ranks_first_and_stays_original() {
         None,
         "更正注记应随消息删除"
     );
+}
+
+/// RT-L2H-05（#440 / W2 本地数据集）：免 LLM 的历史消息批量导入——test_fixtures
+/// 门控端点按会话批量写入（role / content / created_at），不触发任何模型请求；
+/// 生产配置（fixtures=false）不挂载该端点（404）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_l2h_05_batch_import_without_llm() {
+    let dir = std::env::temp_dir().join(an_core::new_id("an-l2h-imp"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("an.db");
+    let rt = Arc::new(Runtime::new(config(), Store::open(&db).unwrap()).unwrap());
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let conv = rt.store.create_conversation("t").unwrap();
+    let model_calls_before = rt.store.list_messages(&conv.id, None).unwrap().len();
+    let (s, v) = api
+        .post(
+            "/api/desktop/v1/history/import",
+            json!({
+                "conversation_id": conv.id,
+                "messages": [
+                    {"role": "user", "content": "导入-01 早上反馈设备异响。", "created_at": "2026-10-01T09:00:00.000Z"},
+                    {"role": "assistant", "content": "导入-02 已记录并安排巡检。", "created_at": "2026-10-01T09:05:00.000Z"},
+                    {"role": "user", "content": "导入-03 下午复查 CPK 恢复。", "created_at": "2026-10-01T14:00:00.000Z"}
+                ]
+            }),
+        )
+        .await;
+    assert_eq!(s, 200, "批量导入应成功：{v}");
+    assert_eq!(v["imported"], json!(3), "{v}");
+    assert_eq!(v["conversation_id"], json!(conv.id), "{v}");
+
+    // 不触发 LLM：导入前后消息数只差批量条数，且模型请求计数为零
+    let listed = rt.store.list_messages(&conv.id, None).unwrap();
+    assert_eq!(listed.len(), model_calls_before + 3, "应恰好写入 3 条");
+    // 检索可按 created_at 命中（引用带原始时间）
+    let (s2, v2) = api.get("/api/desktop/v1/history/search?q=导入-01").await;
+    assert_eq!(s2, 200, "{v2}");
+    let hits = results_of(&v2);
+    assert_eq!(hits.len(), 1, "{v2}");
+    assert_eq!(hits[0]["at"], json!("2026-10-01T09:00:00.000Z"), "{v2}");
+}
+
+/// （RT-L2H-05 同用例对照段）生产配置（fixtures=false）不挂载导入端点；角色非法 400。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_l2h_05_import_gated_and_validated() {
+    let dir = std::env::temp_dir().join(an_core::new_id("an-l2h-prod"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("an.db");
+    let rt = Arc::new(Runtime::new(config_prod(), Store::open(&db).unwrap()).unwrap());
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let conv = rt.store.create_conversation("t").unwrap();
+    let (s, v) = api
+        .post(
+            "/api/desktop/v1/history/import",
+            json!({
+                "conversation_id": conv.id,
+                "messages": [{"role": "user", "content": "x", "created_at": "2026-10-01T09:00:00.000Z"}]
+            }),
+        )
+        .await;
+    assert_eq!(s, 404, "生产配置不得挂载导入端点：{v}");
+
+    // fixtures 开启下：角色非法 400
+    let rt2 =
+        Arc::new(Runtime::new(config(), Store::open(Path::new(":memory:")).unwrap()).unwrap());
+    let api2 = Api {
+        base: serve(an_server::api(rt2.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let conv2 = rt2.store.create_conversation("t2").unwrap();
+    let (s2, v2) = api2
+        .post(
+            "/api/desktop/v1/history/import",
+            json!({
+                "conversation_id": conv2.id,
+                "messages": [{"role": "tool", "content": "x", "created_at": "2026-10-01T09:00:00.000Z"}]
+            }),
+        )
+        .await;
+    assert_eq!(s2, 400, "非法角色应拒绝：{v2}");
+    assert_eq!(v2["code"], "invalid", "{v2}");
 }
