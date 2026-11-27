@@ -111,3 +111,9 @@ UX-08 旅程（journeys.json）：charter=CH-G1/CH-G2/CH-G5/CH-U2，features=ai-
 
 ---
 *执行：主线 #2 worker（GLM/claude-code）；派工与回贴动作均通过 GitHub Issue/Comment 留痕。*
+
+### §4 回填（2026-11-27 终态）
+
+- nightly 11-26：**SUCCESS**（run 45885958121，19:45Z 触发 @ `664e330`，verify 绿）——修复后首个绿夜，G15 三晚连绿窗口 1/3。
+- master push 终态：`ef6e756`/`2f0efec`/`11fd6f1`/`e33eb9e` 四连绿（`f6deb00` 后续链另见 AR-13）。
+- 本节回填同时用作 T1 分流（PR #464）的「纯文档 PR」演示：triage 判定 docs/** → 代码作业全跳过。
