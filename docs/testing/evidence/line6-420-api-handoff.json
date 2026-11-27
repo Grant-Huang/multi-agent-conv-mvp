@@ -1,0 +1,200 @@
+{
+  "utterance": "SMT-03 那批锡膏的复核结果出来没有，没有的话帮我催一下",
+  "task_id": "SMT-03",
+  "steps": [
+    {
+      "step": "voice/reset",
+      "http": 200,
+      "body": {
+        "session": {
+          "id": "voice-SMT-03",
+          "task_id": "SMT-03",
+          "permission": "prompt",
+          "phase": "idle",
+          "playing": false,
+          "partial": "",
+          "final_text": "",
+          "linked_task_id": null,
+          "share_transcript": false
+        }
+      }
+    },
+    {
+      "step": "handoff/reset",
+      "http": 200,
+      "body": {
+        "handoff": {
+          "task_id": "SMT-03",
+          "conversation_id": "conv-smt-03",
+          "run_id": "run-smt-03-1",
+          "read_message_id": "msg-anchor-1",
+          "phone_text": "",
+          "phone_version": 0,
+          "desktop_text": "",
+          "desktop_version": 0,
+          "conflict": false,
+          "chosen": null,
+          "voice_shared": false
+        }
+      }
+    },
+    {
+      "step": "permission",
+      "http": 200,
+      "session": {
+        "id": "voice-SMT-03",
+        "task_id": "SMT-03",
+        "permission": "granted",
+        "phase": "idle",
+        "playing": false,
+        "partial": "",
+        "final_text": "",
+        "linked_task_id": null,
+        "share_transcript": false
+      }
+    },
+    {
+      "step": "start",
+      "http": 200,
+      "session": {
+        "id": "voice-SMT-03",
+        "task_id": "SMT-03",
+        "permission": "granted",
+        "phase": "listening",
+        "playing": false,
+        "partial": "",
+        "final_text": "",
+        "linked_task_id": null,
+        "share_transcript": false
+      }
+    },
+    {
+      "step": "partial",
+      "http": 200,
+      "session": {
+        "id": "voice-SMT-03",
+        "task_id": "SMT-03",
+        "permission": "granted",
+        "phase": "listening",
+        "playing": false,
+        "partial": "SMT-03 那批锡膏的复核结果出来没有，没有的话帮我催一下",
+        "final_text": "",
+        "linked_task_id": null,
+        "share_transcript": false
+      }
+    },
+    {
+      "step": "finalize",
+      "http": 200,
+      "req": {
+        "text": "SMT-03 那批锡膏的复核结果出来没有，没有的话帮我催一下",
+        "link_task": true
+      },
+      "session": {
+        "id": "voice-SMT-03",
+        "task_id": "SMT-03",
+        "permission": "granted",
+        "phase": "listening",
+        "playing": false,
+        "partial": "",
+        "final_text": "SMT-03 那批锡膏的复核结果出来没有，没有的话帮我催一下",
+        "linked_task_id": "SMT-03",
+        "share_transcript": false
+      }
+    },
+    {
+      "step": "share-voice",
+      "http": 200,
+      "req": {
+        "share": true
+      },
+      "body": {
+        "handoff": {
+          "task_id": "SMT-03",
+          "conversation_id": "conv-smt-03",
+          "run_id": "run-smt-03-1",
+          "read_message_id": "msg-anchor-1",
+          "phone_text": "",
+          "phone_version": 0,
+          "desktop_text": "",
+          "desktop_version": 0,
+          "conflict": false,
+          "chosen": null,
+          "voice_shared": true
+        }
+      }
+    },
+    {
+      "step": "voice/share",
+      "http": 200,
+      "body": {
+        "session": {
+          "id": "voice-SMT-03",
+          "task_id": "SMT-03",
+          "permission": "granted",
+          "phase": "listening",
+          "playing": false,
+          "partial": "",
+          "final_text": "SMT-03 那批锡膏的复核结果出来没有，没有的话帮我催一下",
+          "linked_task_id": "SMT-03",
+          "share_transcript": true
+        }
+      }
+    }
+  ],
+  "handoff_before": {
+    "handoff": {
+      "task_id": "SMT-03",
+      "conversation_id": "conv-smt-03",
+      "run_id": "run-smt-03-1",
+      "read_message_id": "msg-anchor-1",
+      "phone_text": "",
+      "phone_version": 0,
+      "desktop_text": "",
+      "desktop_version": 0,
+      "conflict": false,
+      "chosen": null,
+      "voice_shared": false
+    }
+  },
+  "voice_before_share": {
+    "id": "voice-SMT-03",
+    "task_id": "SMT-03",
+    "permission": "granted",
+    "phase": "listening",
+    "playing": false,
+    "partial": "",
+    "final_text": "SMT-03 那批锡膏的复核结果出来没有，没有的话帮我催一下",
+    "linked_task_id": "SMT-03",
+    "share_transcript": false
+  },
+  "handoff_after": {
+    "handoff": {
+      "task_id": "SMT-03",
+      "conversation_id": "conv-smt-03",
+      "run_id": "run-smt-03-1",
+      "read_message_id": "msg-anchor-1",
+      "phone_text": "",
+      "phone_version": 0,
+      "desktop_text": "",
+      "desktop_version": 0,
+      "conflict": false,
+      "chosen": null,
+      "voice_shared": true
+    }
+  },
+  "voice_after_share": {
+    "id": "voice-SMT-03",
+    "task_id": "SMT-03",
+    "permission": "granted",
+    "phase": "listening",
+    "playing": false,
+    "partial": "",
+    "final_text": "SMT-03 那批锡膏的复核结果出来没有，没有的话帮我催一下",
+    "linked_task_id": "SMT-03",
+    "share_transcript": true
+  },
+  "draft": {
+    "raw": "Failed to deserialize the JSON body into the target type: missing field `device` at line 1 column 149"
+  }
+}
