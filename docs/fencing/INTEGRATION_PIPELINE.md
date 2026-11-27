@@ -121,10 +121,11 @@
 | UTC | 温哥华 | 任务 | 依赖 | 形式 |
 |---|---|---|---|---|
 | 每 4 小时 :38（00:38、04:38、08:38 …） | — | 派工巡检与在制品统计 | 无 | claude.ai 定时任务 |
-| 08:23 | 01:23 | **夜间 E2E 准点触发**（`workflow_dispatch` 触发 `nightly-e2e.yml`，20 小时内已有运行则跳过） | 当天合并已完成 | claude.ai 定时任务 |
+| 08:23 | 01:23 | **夜间 E2E 准点触发**（`workflow_dispatch` 触发 `nightly-e2e.yml`，6 小时内已有运行则跳过） | 当天合并已完成 | claude.ai 定时任务 |
 | 约 08:23～08:40 | — | T3 夜间全量运行；全绿后打基线 tag（#433） | 上一行 | GitHub Actions |
 | 09:41（周日） | 02:41 | 产品守护者周审（基于当晚基线） | 夜间全量 | claude.ai 定时任务 |
 | 11:15 | 04:15 | 夜间评审 agent（读取当晚夜间全量结论） | 夜间全量 | claude.ai 定时任务 |
+| 每 2 小时，各线错开（:07、:17 … :57，用户本机时间） | — | 各线定时领单（`scripts/lines/line-tick.sh`，见[决定 2026-11-27-line-tick-scheduler](../decisions/2026-11-27-line-tick-scheduler.md)） | 无 | 用户本机 cron |
 | 兜底 | — | GitHub cron（`nightly-e2e.yml` 内），派发不可靠，晚到时由守卫跳过（#446） | — | GitHub schedule |
 
 原因：GitHub schedule 事件对本仓库晚到 7～12 小时（7 次运行的 `created_at` 均为 17:43～22:10 UTC，且等于 `run_started_at`，不是排队），见 #275、#446。新增定时任务时按本表排期：避开整点与半点；依赖夜间结果的任务排在 08:45 UTC 之后。
