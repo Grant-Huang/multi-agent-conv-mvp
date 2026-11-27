@@ -140,6 +140,16 @@ def test_real_policy_charter_needs_owner():
     assert rc.classify_path(report, rules, default).level == "L0"
 
 
+def test_real_policy_unattended_line_scripts_need_owner():
+    # 无人值守领单任务的配置说明（scripts/lines/README.md）决定所有无人值守线的权限边界：
+    # 改 deny 列表=改权限，必须由负责人审批（L3），
+    # 不能因 scripts/** 或 **/*.md 的低等级规则被降级（2026-11-27，决策 unattended-merge-and-tool-gates）。
+    policy = rc.load_policy(REAL_POLICY)
+    rules, default = policy["rules"], policy["default_level"]
+    assert rc.classify_path("scripts/lines/README.md", rules, default).level == "L3"
+    assert rc.classify_path("scripts/lines/other.md", rules, default).level == "L3"
+
+
 def test_end_to_end_on_real_repo(repo):
     # 在真实 git 仓库中运行 CLI：新增一个 store.rs 并写入建表语句。
     (repo / "store.rs").write_text("CREATE TABLE t (id INT);\n", encoding="utf-8")
