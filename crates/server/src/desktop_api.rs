@@ -116,6 +116,11 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
                 "/api/desktop/v1/memories/{id}/confirm",
                 post(confirm_memory),
             )
+            // UXFIX-T（#428）：撤销恢复——已撤回的记忆重新变为活动
+            .route(
+                "/api/desktop/v1/memories/{id}/restore",
+                post(restore_memory),
+            )
             .route(
                 "/api/desktop/v1/memories/{id}",
                 get(get_memory).patch(patch_memory).delete(delete_memory),
@@ -807,6 +812,7 @@ fn memory_json(m: &DesktopMemory) -> serde_json::Value {
         "expires": m.expires,
         "kind": m.kind,
         "confirmed": m.confirmed_at.is_some(),
+        "revoked": m.revoked,
         "flags": memory_flags(&m.title, &m.body),
     })
 }
@@ -878,14 +884,29 @@ fn memory_store_err(e: anyhow::Error) -> Response {
         .into_response()
 }
 
-async fn list_memories(State(rt): State<AppState>, headers: HeaderMap) -> Response {
+async fn list_memories(
+    State(rt): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
     let user = principal_or_local(&headers);
-    match rt.store.list_desktop_memories(&user) {
-        Ok(items) => {
-            let items: Vec<_> = items.iter().map(memory_json).collect();
-            (StatusCode::OK, Json(json!({ "items": items }))).into_response()
+    // UXFIX-T（#428）：include_revoked=1 时含已撤回条目（设置"已撤回"分组用）
+    if q.get("include_revoked").map(|v| v == "1").unwrap_or(false) {
+        match rt.store.list_desktop_memories_with_revoked(&user) {
+            Ok(items) => {
+                let items: Vec<_> = items.iter().map(memory_json).collect();
+                (StatusCode::OK, Json(json!({ "items": items }))).into_response()
+            }
+            Err(e) => memory_store_err(e),
         }
-        Err(e) => memory_store_err(e),
+    } else {
+        match rt.store.list_desktop_memories(&user) {
+            Ok(items) => {
+                let items: Vec<_> = items.iter().map(memory_json).collect();
+                (StatusCode::OK, Json(json!({ "items": items }))).into_response()
+            }
+            Err(e) => memory_store_err(e),
+        }
     }
 }
 
@@ -982,6 +1003,31 @@ async fn delete_memory(
         Err(e) => memory_store_err(e),
     }
 }
+
+/// UXFIX-T（#428）：撤销恢复——已撤回的记忆重新变为活动（revoked=0）。幂等。
+async fn restore_memory(
+    State(rt): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.restore_desktop_memory(&user, &id) {
+        Ok(Some(m)) => {
+            (StatusCode::OK, Json(memory_json(&m))).into_response()
+        }
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "code": "not_found",
+                "message": "记忆条目不存在",
+                "retryable": false
+            })),
+        )
+            .into_response(),
+        Err(e) => memory_store_err(e),
+    }
+}
+
 
 async fn reset_memories_fixture(State(rt): State<AppState>, headers: HeaderMap) -> Response {
     let user = principal_or_local(&headers);

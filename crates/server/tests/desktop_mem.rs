@@ -393,3 +393,41 @@ async fn rt_admem_11_source_consistent_with_confirmation() {
         "种子来源应为系统生成的「用户保存 · 日期」: {src}"
     );
 }
+
+/// UXFIX-T（#428）：撤销恢复——撤回后 restore 恢复活动列表出现；include_revoked 含已撤回条目
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_admem_12_restore_and_include_revoked() {
+    let (api, _gate) = boot().await;
+
+    // 撤回 mem-1
+    let (s, _) = api.delete("/api/desktop/v1/memories/mem-1").await;
+    assert_eq!(s, 200);
+
+    // 默认列表不再出现
+    let (_, v) = api.get("/api/desktop/v1/memories").await;
+    let ids: Vec<&str> = v["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .filter_map(|i| i["id"].as_str())
+        .collect();
+    assert!(!ids.contains(&"mem-1"), "撤回后默认列表不应出现 mem-1: {v}");
+
+    // include_revoked=1 含已撤回条目（带 revoked 标记）
+    let (_, v2) = api.get("/api/desktop/v1/memories?include_revoked=1").await;
+    let items = v2["items"].as_array().expect("items with revoked");
+    let revoked = items.iter().find(|i| i["id"] == "mem-1").unwrap();
+    assert_eq!(revoked["revoked"].as_bool(), Some(true), "{v2}");
+
+    // restore 后活动列表重新出现
+    let (s2, _) = api.post("/api/desktop/v1/memories/mem-1/restore", json!({})).await;
+    assert_eq!(s2, 200);
+    let (_, v3) = api.get("/api/desktop/v1/memories").await;
+    let ids3: Vec<&str> = v3["items"]
+        .as_array()
+        .expect("items after restore")
+        .iter()
+        .filter_map(|i| i["id"].as_str())
+        .collect();
+    assert!(ids3.contains(&"mem-1"), "恢复后列表应出现 mem-1: {v3}");
+}

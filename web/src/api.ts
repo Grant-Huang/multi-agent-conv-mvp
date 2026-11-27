@@ -875,6 +875,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  desktopMemoryRestore: (id: string) =>
+    request<DesktopMemoryDto>(
+      `/api/desktop/v1/memories/${encodeURIComponent(id)}/restore`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
   desktopMemoryDelete: (id: string) =>
     request<{ ok: boolean; id: string; revoked: boolean }>(
       `/api/desktop/v1/memories/${encodeURIComponent(id)}`,
@@ -1075,6 +1080,7 @@ export type DesktopMemoryDto = {
   /** UXFIX-T（#353）：服务端已序列化的类型与确认状态 */
   kind: string;
   confirmed: boolean;
+  revoked?: boolean;
 };
 
 export type DesktopAssistantMessageDto = {
