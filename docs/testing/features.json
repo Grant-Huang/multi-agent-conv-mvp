@@ -1157,6 +1157,8 @@
       "RT-UMEM-03",
       "RT-UMEM-04",
       "RT-UMEM-05",
+      "RT-UMEM-07",
+      "RT-UMEM-06",
       "RT-USTY-01",
       "RT-USTY-02",
       "RT-USTY-03",
@@ -1226,8 +1228,10 @@
           "RT-USTY-03",
           "RT-USTY-04",
           "RT-USTY-05",
-          "RT-USTY-07",
-          "RT-EXEC-06"
+      "RT-USTY-07",
+      "RT-EXEC-06",
+      "RT-UMEM-06",
+      "RT-UMEM-07"
         ],
         "since": null
       },
@@ -1298,7 +1302,9 @@
         "cases": [
           "RT-SMAT-06",
           "RT-SMAT-07",
-          "RT-SMAT-08"
+          "RT-SMAT-08",
+          "RT-UMEM-06",
+          "RT-UMEM-07"
         ],
         "since": null
       }

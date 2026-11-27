@@ -26,6 +26,7 @@
 - [x] 片 3 L2 历史记录检索（2026-11-26，方案经用户批准）：`GET /api/desktop/v1/history/search`（principal 说明见端点文档；默认 180 天窗口、AI 历史回答标「当时的回答」、消息+已完成任务回执两路检索、引用带 `msg_id`/`conv_id`/`at`）+ `DELETE /api/desktop/v1/messages/{id}`（仅本人 user 消息真删除，AI 回答 403，重复 404）；RT-L2H-01～03；store.rs 新增 `search_history`/`delete_message`（只读查询 + 单条删除，无迁移）；证据 `testing/evidence/convmem-layers-slice3.md`
   - [x] 片 4a 更正注记（RT-L2H-04）：`POST /api/desktop/v1/messages/{id}/correction`（仅本人 user 消息，AI 回答 403、空注记 400）；`message_corrections` 新表（更正单独记录、原文不改写、重复更正替换、随消息删除）；检索命中附 `correction` 并优先排序（REQ-05「优先给纠正后版本」）；证据 `testing/evidence/convmem-layers-slice4a.md`
   - [x] 片 4b 「带了哪些记忆、为什么」事件记录（RT-ASEL-02）：`session.materials` 事件补 `occasion`（新会话 / 会话续问，程序按状态判断）与 `why`（`receipts:in_window` / `memories:effective_fact` / `style:effective_style` / `findings:related_gate` 原因码）；DESIGN §10 事件字段同步；展示入口归第 1 线 #347；证据 `testing/evidence/convmem-layers-slice4b.md`
+- [x] 片 5 注入防线落地（2026-11-26）：写入面扫描 `flags`（`injection_risk` / `sensitive_info`，读时派生不阻断不改库，RT-UMEM-06）；撤回影响追溯（`materials_injections` 注入留痕表 + `GET /memories/{id}/impact`，含已撤回记忆可追溯，RT-UMEM-07）；外部候选流的架构事实如实登记（唯一写入面为本人 POST，自动抽取引入时须先落候选闸门）；证据 `testing/evidence/convmem-layers-slice5.md`。**本片 `Closes #346`**
 - [ ] 片 4 按场合选材（六场合确定性判断）与「带了哪些记忆、为什么」记录
 - [ ] 片 5 注入防线落地（写入闸门外部候选、撤回影响追溯、长度预算）与注入测试集
 

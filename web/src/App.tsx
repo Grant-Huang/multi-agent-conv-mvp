@@ -18,6 +18,11 @@ import { DesktopHome } from "./desktop/DesktopHome";
 import { DesExperiment } from "./desktop/DesExperiment";
 import { MomWorkbench } from "./desktop/MomWorkbench";
 import { WorkspaceView } from "./desktop/WorkspaceView";
+import { IconAssistant, IconCaretDown, IconCaretUp, IconMenu } from "./components/icons";
+
+/** UXFIX-R：旧版默认头像字符（U+25C7），以码点表示，避免出现在源码中 */
+const LEGACY_AVATAR_MARK = String.fromCodePoint(0x25c7);
+
 import { userTaskLine } from "./desktop/taskLineText";
 import { AssistantChatPanel } from "./desktop/AssistantChatPanel";
 import { EvidencePanel, type EvidenceLayer } from "./desktop/EvidencePanel";
@@ -614,7 +619,7 @@ export default function App() {
           data-testid="assistant-chip"
           onClick={() => setAssistantPanelOpen(true)}
         >
-          {assistantProfile.avatar} {assistantProfile.name}
+          {assistantProfile.avatar && assistantProfile.avatar !== LEGACY_AVATAR_MARK ? assistantProfile.avatar : <IconAssistant size={14} />} {assistantProfile.name}
         </button>
         <button className="btn primary" onClick={newConversation}>＋ 新会话</button>
         <button
@@ -711,7 +716,7 @@ export default function App() {
         {/* 窄屏下左栏变成抽屉，这里提供入口；宽屏下隐藏 */}
         <header className="mobile-bar">
           <button type="button" className="btn small" aria-expanded={navOpen} onClick={() => setNavOpen((v) => !v)}>
-            ☰ 会话
+            <IconMenu size={14} /> 会话
           </button>
           <span className="mobile-title">{currentTitle}</span>
         </header>
@@ -1092,7 +1097,7 @@ export function HealthBox({ health }: { health: Health | null }) {
         </>
       )}
       <button type="button" className="health-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        {open ? "收起详情 ▴" : "连接详情 ▾"}
+        {open ? <>收起详情 <IconCaretUp size={12} /></> : <>连接详情 <IconCaretDown size={12} /></>}
       </button>
     </div>
   );

@@ -1,5 +1,6 @@
 // DES 仿真实验（决定 62 / WA M0-2）：配置 → 试跑 → 正式运行 → 结果；对接 /api/world/mock。
 import { useEffect, useState } from "react";
+import { IconArrowLeft } from "../components/icons";
 import { api, type WorldMockRun } from "../api";
 
 type Tab = "config" | "trial" | "official" | "results";
@@ -225,7 +226,7 @@ export function DesExperiment({ onOpenOpsChannel, onBack }: Props) {
       <header className="des-experiment-header">
         <div className="des-experiment-title-row">
           <button type="button" className="btn small" onClick={onBack}>
-            ← 返回桌面
+            <IconArrowLeft size={14} /> 返回桌面
           </button>
           <h1>DES 仿真实验</h1>
           <a

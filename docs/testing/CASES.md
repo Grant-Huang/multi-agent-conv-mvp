@@ -645,6 +645,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|---|
 | E2E-ADNAV | ai-desktop | 干净浏览器；Mock 首页种子含 SMT-03 | 打开 `/`；从首页卡打开任务；返回桌面；再从侧栏「最近」打开同一任务；查看运营入口 | 见「我的 AI 桌面」与三区；工作区 Task ID 为 `TASK-2026-018`；返回后仍在桌面首页；再次打开仍为同一 ID；`[mom]` 未开时无「运营桌面」页签且可见「运营模块未启用」说明 |
 | E2E-ADLAYOUT | ai-desktop | 已从首页打开 SMT-03 工作区 | S2→S3→S2；刷新页面 | 仍在同一 Task；布局偏好恢复为离开前的 S2 或 S3；执行区展开状态可观察 |
+| E2E-ADICONS | ai-desktop | 首页快照夹具 | UXFIX-R（#344）：打开桌面与 SMT-03 工作区，扫描界面文本与源码（icons.test.tsx 静态扫描） | 界面与源码不出现字符图标 ☰ ⚠ ✓ ✗ ▴ ▾ ← ◇ 与 emoji；纯图标按钮有无障碍名称；图标为内联 SVG（currentColor） |
 | E2E-ADLAYOUT-CHU7 | ai-desktop | 首页快照夹具；本地模拟模型 | CH-U7（#321，INTENT-2026-020）：360/768/1024/1440 四宽度下测页面滚动；首页与工作区把内容区滚到底再滚到顶（展开执行构造溢出）；1024 宽会话页发消息后滚消息区 | 页面 scrollHeight ≤ 视口（无页面级滚动）；首页 S1 输入框与工作区输入框滚动前后位置不变且在视口内；会话页输入框位置不随消息区滚动变化 |
 | E2E-UX01 | ai-desktop | 首页快照夹具含 SMT-03（标“模拟”） | 体验地图 UX-01：卡片进入工作区 → 写草稿 → 打开再关闭证据 → S3 再回 S2 → 打开设置后 Esc → 返回桌面再从卡片进入 | 每一步对话输入可用；草稿与任务恢复；关闭证据回到原工作区；全程无整页跳转；探针记录步数与整页跳转（基线补录，见 docs/experience-map/journeys/UX-01.md）；前置清理已随 UXFIX-D 移除 |
 | E2E-UX01-I7 | ai-desktop | 路由拦截注入服务端旧草稿（另一会话，PUT 一律 409 应答） | UXFIX-D（INTENT-2026-008）：打开 SMT-03 工作区 → 远端快照返回前输入新内容 → 返回桌面再从卡片进入 | 本会话新输入保留、不被旧草稿覆盖；出现含“其他设备”的冲突提示；可一键改用其他设备草稿（单元级并发序列另见 draftStore.test.ts） |
@@ -1090,6 +1091,8 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-UMEM-03 | conversation-memory | 甲（`x-desktop-principal: user-a`）保存条目 | 乙（`user-b`）列表 / 详情 / PATCH / DELETE；甲自查 | 乙列表不含、详情 **404**、纠正 **404**、撤回 **404**；甲本人 **200** |
 | RT-UMEM-04 | conversation-memory | local 存过期（2020-01-01）与未过期（2099-01-01）记忆各一条 | 续问（respond 路径） | 资料块含未过期条（来源行 + 「个人记忆」段标注）；不含过期条 id 与正文 |
 | RT-UMEM-05 | conversation-memory | 甲保存记忆；同会话 | 甲、乙先后续问（chat 接口带头） | 甲的提示词含甲的记忆；乙的提示词不含（按说话人作用域） |
+| RT-UMEM-06 | conversation-memory | 保存夹带可疑指令样式 / 敏感信息样式 / 正常内容的记忆各一（#346 片5，REQ-07 §7.3） | 查保存响应、列表、详情 | 扫描只标注不阻断（201）；夹带指令样式标 `injection_risk`、敏感信息样式标 `sensitive_info`；正常条目 flags 为空；列表与详情同样带 flags（读时派生，不改库） |
+| RT-UMEM-07 | conversation-memory | 记忆注入发生后撤回（#346 片5，REQ-07 §7.6 / CH-G3） | 查 `GET /memories/{id}/impact` | 注入轮次留痕（conv_id / section / at）；已撤回记忆仍可追溯；未注入过的影响为空；未知记忆 404 |
 
 ## 风格/画像预览与下一会话生效 conversation-memory 5.2b（REQ-conversation-memory-02 生效闸门；2026-11-23 用户确认：推导式判定 / 独立风格卡 / fact 不走闸门 / ≤200 token + 护栏）
 
