@@ -271,3 +271,6 @@
 {"id": "R-20261124-L7", "at": "2026-11-27", "by": "reviewer", "event": "note", "text": "2026-11-27 核对：#466 已把 snapshot/fixture/reset 移入门内（desktop_api.rs:235-238），缺锁定测试（见 R-20261127-L8），维持 open"}
 {"id": "R-20261124-M7", "at": "2026-11-27", "by": "reviewer", "event": "note", "text": "2026-11-27 核对：#377 已删 mem-2、来源改为“用户保存”，但 ensure_desktop_memory_seed 仍在首次列表时写入真实库且 mem-1 为全局主键（store.rs:2680-2692），部分修复，维持 open"}
 {"id": "R-20261126-M8", "at": "2026-11-27", "by": "reviewer", "event": "note", "text": "2026-11-27 核对：决策 2026-11-26-m8-execute-collapse-assertion-restore 已定“恢复断言”，但 web/e2e 仍无“收起执行→离开→重开→保持收起”断言，CASES.md:819 仍要求，维持 open"}
+{"id": "R-20261127-H2", "at": "2026-11-27", "by": "fixer", "event": "note", "text": "已提交方案 docs/fix-plans/r-20261127-h2.md，等待人确认；按最新交接清单优先级及 PREFLIGHT §1 先出方案，本轮未改业务或测试。"}
+{"id": "R-20261127-H3", "at": "2026-11-27", "by": "fixer", "event": "note", "text": "已提交方案 docs/fix-plans/r-20261127-h3.md，等待人确认；按最新交接清单优先级及 PREFLIGHT §1 先出方案，本轮未改业务或测试。"}
+{"id": "R-20261127-H4", "at": "2026-11-27", "by": "fixer", "event": "note", "text": "已提交方案 docs/fix-plans/r-20261127-h4.md，等待人确认；按最新交接清单优先级及 PREFLIGHT §1 先出方案，本轮未改业务或测试。"}
