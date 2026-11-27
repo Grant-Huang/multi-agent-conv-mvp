@@ -1,0 +1,1 @@
+{"id":"claude","kind":"not_installed","summary":"本机找不到这个 agent 的启动命令","next_step":"需先安装并登录 Claude Code，再运行 npm i -g @agentclientprotocol/claude-agent-acp","detail":null}

@@ -1,0 +1,30 @@
+{
+  "id": "claude",
+  "name": "Claude Code",
+  "purpose": "Anthropic 的编码助手 Claude Code，擅长读懂和修改代码",
+  "role": "coding",
+  "command": "claude-agent-acp",
+  "args": [],
+  "install": [
+    {
+      "platform": "all",
+      "text": "安装 Claude Code 并登录一次（终端运行 claude，按提示登录）",
+      "command": null
+    },
+    {
+      "platform": "all",
+      "text": "安装 ACP 适配器",
+      "command": "npm i -g @agentclientprotocol/claude-agent-acp"
+    }
+  ],
+  "login": "在终端运行 claude 按提示登录；或设置环境变量 ANTHROPIC_API_KEY",
+  "requirements": [
+    "Node.js"
+  ],
+  "docs_url": "https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp",
+  "status": "registered",
+  "source": "auto",
+  "disabled": false,
+  "link_status": "connected",
+  "link_reason": "已连通"
+}

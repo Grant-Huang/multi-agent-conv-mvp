@@ -1,0 +1,237 @@
+{
+  "task": {
+    "id": "task-bfa712be07ce42648888a5515ac1ab9f",
+    "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+    "goal": "在代码仓库中修改 README.md 文件，在文件末尾追加一行注释 \"#419-probe\"。修改完成后用 git diff 查看确认，并将 diff 结果告知用户。",
+    "role": "coding",
+    "status": "COMPLETED",
+    "route": {
+      "task_class": "L4",
+      "execution_role": "coding",
+      "required_tools": [],
+      "risk_level": "medium",
+      "reason": "需要在代码仓库中读取并修改 README.md 文件，追加注释后执行 git diff 确认，属于明确的代码仓库修改任务。",
+      "template_id": "",
+      "deliverable": "",
+      "slots_ok": "no"
+    },
+    "policy": {
+      "auto_execute": true,
+      "needs_review": true,
+      "notes": [
+        "coding 不使用内置工具，已忽略 required_tools"
+      ],
+      "candidates": [
+        "Claude Code（acp，本机）"
+      ]
+    },
+    "result": {
+      "status": "succeeded",
+      "summary": "我先看一下 README.md 的当前内容，再追加注释。文件共 230 行，末尾是 API 表格。现在在文件末尾追加 `#419-probe`。追加完成，用 `git diff` 确认：已完成：在 `README.md` 末尾追加了一行注释 `#419-probe`（前面留了一个空行），`git diff` 已确认改动，未提交。\n\n**diff 结果：**\n\n```diff\ndiff --git a/README.md b/README.md\nindex 036f4d9..4e96930 100644\n--- a/README.md\n+++ b/README.md\n@@ -228,3 +228,5 @@ MCP 已增加配置式接入：General 使用轻量 Harness 调用 stdio / Strea\n | POST | /api/nodes/pair | 配对节点 `{\"address\": \"192.168.1.23\", \"code\": \"757563\"}` |\n | DELETE | /api/nodes/{id} | 解除配对 |\n | GET | /api/diagnostics | 诊断：最近的问题、错误码统计、执行组与节点状态 |\n+\n+#419-probe\n```\n\n**改动内容：** 只在文件末尾（第 230 行 API 表格之后）新增了空行 + `#419-probe`，共 +2 行，没有动其他内容。\n\n**待核实项：** 改动目前只在工作区，没有提交；如需提交或撤销（`git checkout -- README.md`）告诉我即可。",
+      "artifacts": [
+        {
+          "kind": "diff",
+          "name": "git diff",
+          "content": "diff --git a/README.md b/README.md\nindex 036f4d9..4e96930 100644\n--- a/README.md\n+++ b/README.md\n@@ -228,3 +228,5 @@ MCP 已增加配置式接入：General 使用轻量 Harness 调用 stdio / Strea\n | POST | /api/nodes/pair | 配对节点 `{\"address\": \"192.168.1.23\", \"code\": \"757563\"}` |\n | DELETE | /api/nodes/{id} | 解除配对 |\n | GET | /api/diagnostics | 诊断：最近的问题、错误码统计、执行组与节点状态 |\n+\n+#419-probe\n"
+        },
+        {
+          "kind": "file",
+          "name": "README.md",
+          "content": "# AgentNexus MVP\n\nConversation Agent + Router + 3 个执行 Agent 的最小可运行骨架。后端 Rust（axum + tokio + SQLite），前端 TypeScript（React + Vite），模型走 OpenAI 兼容接口（默认对接本地 llama.cpp）。\n\n```\n用户 ──▶ Conversation（Turn Controller：respond / clarify / delegate / follow_up）\n              │ delegate\n              ▼\n           Router（LLM 分类）──▶ Policy（确定性规则：角色可用？风险审批？是否审查？）\n              │\n              ▼\n         Orchestrator ──▶ General  （内置：LLM + 工具循环，读写文件、计算）\n              │       ──▶ Coding   （外部：Codex CLI 子进程，收集 git diff）\n              │       ──▶ Reviewer （内置：只读审查，pass / fail / needs_human）\n              ▼\n   审查不通过 → 带问题清单返工 → Composer 生成交付消息 → SSE 推送到前端\n```\n\n完整设计（架构、数据模型、状态机、时序、接口、配置、已知限制、演进路线）见 [docs/DESIGN.md](docs/DESIGN.md)。\n\n功能操作、测试先行流程与真实浏览器验证见 [测试指南](docs/testing/README.md)；在 `web/` 执行 `npm run verify`。\n\n设计原则（来自前期讨论）：\n- **Conversation 和 Router 分开**：Conversation 决定\"要不要委派\"，Router 决定\"派给谁\"。\n- **Agents as Tools**：用户只面对 Conversation，Worker 只返回结构化结果。\n- **模型负责理解，程序负责决策**：Router 的风险判断只是建议，审批和审查由 Policy 规则决定。\n- **Worker 完成 ≠ 验收通过**：需要审查的任务（代码、文档）必须经过 Reviewer。\n- **任务状态由 AgentNexus 掌握**：全部落 SQLite，事件可回放。\n\n## 快速开始\n\n前置：Rust 1.80+、Node 20+、已启动的 llama.cpp / OpenAI 兼容模型服务（样例默认 `http://127.0.0.1:8098/v1`；本机 35B 常见为 `8200`）、可选的本机 agent（Claude Code / Codex 等，见 [手册·接入助手](docs/manual/03-connect-agents.md)）。\n\n```bash\ncp config.example.toml config.toml   # 按需修改模型地址、本机 agent、工作目录\n# 常用可选节（样例里有注释，默认多为关闭）：\n#   [desktop] test_fixtures     — 仅本地/测试挂载桌面夹具接口，生产勿开\n#   [mom] chat_bridge / world_mock — 开启同源「MOM 运营沙盘」与 World Mock\n#   [introspection] enabled=true — 业务内省定时分析（真实环境测试常打开）\n```\n\n```bash\ncd web && npm install && npm run build && cd ..\n```\n\n```bash\ncargo run --release --bin agentnexus -- config.toml\n# 或：./target/release/agentnexus config.toml\n```\n\n打开 http://127.0.0.1:8787 。\n\n- 左下角：LLM 与各 Agent 连接状态。\n- 左侧「我的桌面」：AI 桌面首页（委派、工作卡、关注）；工作区可开语音、设置与**个人记忆**。\n- 配置打开 `[mom] chat_bridge` 后：左侧「MOM 运营沙盘」进入同源 `/mom/`。\n- 配置打开 `[introspection]` 后：右侧「内省」可查看业务发现。\n\n更细的操作见 [docs/manual](docs/manual/README.md)；本地真实环境测试设计见 [docs/testing/LOCAL_E2E.md](docs/testing/LOCAL_E2E.md)。\n\n前端开发模式（热更新）：后端照常运行，另开终端 `cd web && npm run dev`，访问 http://127.0.0.1:5173 。\n\n## 测试小模型的路由效果\n\n```bash\ncargo run --release --bin an-eval -- config.toml evals/routing.jsonl --review-mode reviewer --label 模型简称\n```\n\n只跑\"前台判断 + Router 分类\"（不执行任务），输出整体通过率、动作 / 角色 / 类别 / 工具 / 风险 / 跟进准确率、动作混淆矩阵、误判分类（多派、漏派、多问……）、按标签的通过率和延迟。逐条结果（含模型原始输出）和汇总 JSON 写入 `evals/results/`，换模型后重跑即可对比。\n\n- `evals/routing.jsonl`：评测集 v2，90 条，由 `evals/make_dataset.py` 生成（补样本请改脚本）\n- `evals/routing-v1.jsonl`：第一次评测的 26 条，用于和旧基线对比\n- `evals/EVAL_PROMPT.md`：**完整的评测步骤和报告模板，可以直接交给本地 Claude 执行**\n\n选项：`--review-mode reviewer|direct|auto`、`--tag 标签`（只跑某类）、`--limit N`、`--label 名称`。\n\n界面右侧的「路由日志」也能看到每轮的决策和模型原始输出。\n\n## 小模型调优建议\n\n| 现象 | 处理 |\n|---|---|\n| 格式经常出错、重试多 | 确认 `structured_mode = \"json_schema\"` 生效（llama.cpp 日志里能看到 grammar）；不支持时试 `json_object`；仍不行再用 `prompt_only` |\n| llama.cpp 返回 400 | 多半是不支持该 `response_format` 写法，换另一种 `structured_mode` |\n| 响应很慢 | 判断和回答已经分两步、回答流式显示；还可以在 `[models]` 里给 `conversation`（判断）和 `router` 配更小更快的模型，`reply`（回答）用质量更好的模型。推理类模型（带 `<think>`）会先思考很久，可在 llama.cpp 侧关闭思考 |\n| 简单问题也被委派 | 调整 `crates/runtime/src/conversation.rs` 中的 system prompt，或换更大的模型做 conversation |\n| 工具循环不收敛 | 调小 `agents.general.max_steps`，或给 General 配更大的模型 |\n\n## 接入新 agent（ACP）\n\nAgentNexus 通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）接入外部 agent：一个通用适配器，所有支持 ACP 的 agent 都能用。\n\n**第 0 步：什么都不用做。** 本机装了下面这些 agent，启动时会被自动发现，左下角会显示出来：\n\n| agent | 角色 | 启动方式 | 说明 |\n|---|---|---|---|\n| [OpenCode](https://opencode.ai/docs/acp) | coding | `opencode acp` | 原生支持 |\n| [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/acp) | general | `hermes acp` | 原生支持，需安装 ACP 扩展 |\n| pi | coding | `pi-acp` | 需另装第三方适配器 pi-acp，成熟度较低 |\n| [Claude Code](https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp) | coding | `claude-agent-acp` | 先登录 Claude Code，再 `npm i -g @agentclientprotocol/claude-agent-acp` |\n| [Codex](https://www.npmjs.com/package/@agentclientprotocol/codex-acp) | coding | `codex-acp` | 先 `codex login`，再 `npm i -g @agentclientprotocol/codex-acp`；id 为 `codex-acp` |\n| [Cursor CLI](https://cursor.com/docs/cli/acp) | coding | `cursor-agent acp` | 原生支持；先 `agent login` |\n| [ZCode](https://www.npmjs.com/package/zcode-acp-server) | coding | `zcode-acp-server` | 社区桥接，需要 Node ≥ 22，先用 ZCode App 登录 |\n\n**第 1 步：指定由谁来做，加一行。** 不指定时，每类工作用第一个可用的 agent（内置和 Codex 排在前面）：\n\n```toml\n[agents.assign]\ncoding = \"opencode\"\n```\n\n**第 2 步：接入其他 ACP agent，写三行。**\n\n```toml\n[[acp.agents]]\nid = \"my-agent\"\ncommand = \"my-agent\"\nargs = [\"acp\"]\nrole = \"coding\"\n```\n\nagent 执行出错时会如实报错（带错误码），不会自动换别的 agent 重做。\n\n**先体验一下？** 自带一个模拟 ACP agent，不需要安装任何东西：\n\n```toml\n[[acp.agents]]\nid = \"mock\"\ncommand = \"./target/release/an-mock-acp\"\nrole = \"coding\"\n\n[agents.assign]\ncoding = \"mock\"\n```\n\n然后在界面里说\"帮我改代码\"，任务面板里能看到工具调用、权限请求、git diff 等完整过程。\n\n注意：\n- 这些 agent 用的是**它们自己的模型配置**。想让它们也用本地 llama.cpp，需要在各自的配置里设置。\n- agent 请求权限时默认自动允许（任务已通过 Policy 和人工审批），每次请求都记录在证据里；可以用 `permission = \"read_only\"` 收紧。\n\n## 用其他电脑上的 agent（节点）\n\nagent 装在另一台电脑上（macOS / Linux / Windows 都可以）时：\n\n1. 在那台电脑上运行节点程序（从本项目编译：`cargo build --release --bin an-node`，然后把 `target/release/an-node` 拷过去）：\n   ```bash\n   an-node\n   ```\n   它会自动发现那台电脑上的 agent，并显示地址和 **6 位配对码**。\n2. 在 AgentNexus 界面右侧打开「节点」页：同一局域网的节点会自动出现，输入配对码点「配对」。\n   网络不允许自动发现时，用「按地址添加」填 IP 和配对码。\n3. 完成。那台电脑上的 agent 以 `agent名@节点名` 的形式出现，例如 `hermes@office-pc`。\n\n几台电脑上有同一种 agent 时，可以组成执行组分担工作：\n\n```toml\n[agents.assign]\ngeneral = [\"hermes@office-pc\", \"hermes@mac-mini\"]   # 第一个是主力，其余待命\n```\n\n规则：只能放**同一类型**的 agent；主力忙满时交给空闲的备份，都忙就排队；离线的跳过；**执行出错直接报错，不换人重做**。\n\n节点的配置（全部可选）：`an-node node.toml`，或用参数 `--port`、`--name`、`--workdir`、`--bind`、`--no-advertise`。详见 [设计文档第 8 节](docs/DESIGN.md#8-节点用其他电脑上的-agent)。\n\n⚠️ 节点与 AgentNexus 之间目前是明文 HTTP，只在可信的局域网使用；跨网络请用 Tailscale 等私有网络。\n\n## 日志与排查\n\n- 界面右侧「诊断」页：模型连通性、执行组状态、最近的问题和错误码。点「复制诊断信息」可直接贴给 AI 或开发者。\n- JSON 日志：`logs/agentnexus.jsonl.<日期>`（节点在 `~/.agentnexus-node/logs/`）。每条记录有固定的 `event`（事件名）和 `code`（错误码），并关联 `task_id` 等。AgentNexus 和节点用同一个 `task_id`，跨电脑也能串起来查：\n\n```bash\njq -c 'select(.task_id == \"task-xxxx\") | [.timestamp, .event, .status, .code]' logs/agentnexus.jsonl.*\n```\n\n- 配置里写错字段名时，启动日志会提示（`W_CONFIG_UNKNOWN_KEY`）。\n- 完整的事件清单和错误码说明见 [设计文档第 10 节](docs/DESIGN.md#10-日志与排查)。\n\n## Codex CLI\n\n`config.toml` 里的 `[agents.coding]` 决定怎么调用 codex，占位符 `{prompt}` `{workdir}` `{last_message_file}` 会被替换。不同版本的参数可能不同，**请先运行 `codex exec --help` 核对**。`workdir` 建议指向一个独立的 git 仓库：执行后会收集 `git diff` 作为审查证据。找不到命令时 Coding Agent 会被标记为不可用，Router 不会选它。\n\n## 目录结构\n\n```\ncrates/\n  core/      数据结构、状态机、错误码、节点协议、AgentAdapter trait（导出 TS 类型到 web/src/bindings）\n  observe/   日志与诊断（AgentNexus 和节点共用）\n  llm/       OpenAI 兼容客户端：结构化输出、<think> 清理、JSON 提取、校验重试\n  agents/    general（工具循环）/ coding（codex 子进程）/ reviewer（只读审查）/ acp（通用 ACP 适配器）/ remote（节点上的 agent）/ tools\n  runtime/   conversation / router / policy / orchestrator / registry（执行组）/ nodes（节点管理）/ composer / store / bus\n  node/      节点程序 an-node\n  server/    HTTP API + SSE + 静态前端；bin/eval.rs 路由评测；bin/mock_acp_agent.rs 模拟 ACP agent；tests/e2e.rs 端到端测试\nweb/         React + Vite 前端\nevals/       路由评测集\n```\n\n## 开发\n\n```bash\ncargo test            # 单元测试 + 端到端测试（用假的 LLM 服务，不需要真模型）\n```\n\n```bash\ncargo test -p an-core # 修改 core 的类型后运行，重新生成 web/src/bindings 下的 TS 类型\n```\n\n## MVP 刻意没做的\n\n任务 DAG / 并行子任务、跨互联网的节点、节点 TLS、长期记忆（RelOS）、ACP 的文件/终端代理能力、断点续跑（服务重启时中断的任务标记为 FAILED）、多用户与鉴权、Slack 入口。\n\nMCP 已增加配置式接入：General 使用轻量 Harness 调用 stdio / Streamable HTTP 工具，启动时发现真实 Schema，并执行本地允许清单和参数校验。接入说明见 [docs/mcp/README.md](docs/mcp/README.md)，完整设计和阶段限制见 [docs/mcp/DESIGN.md](docs/mcp/DESIGN.md)。当前支持文本资源产物；PPTX 等二进制文件的存储、下载和真实提供方集成仍在后续计划。\n\n## API\n\n| 方法 | 路径 | 说明 |\n|---|---|---|\n| GET | /api/health | LLM 连通性、模型列表、Agent 状态 |\n| GET | /api/capabilities | 已连接工具的能力卡片、provider 和输入输出 Schema |\n| GET / POST | /api/conversations | 会话列表 / 新建会话 |\n| GET / POST | /api/conversations/{id}/messages | 消息列表 / 发送消息 `{\"text\": \"...\"}` |\n| GET | /api/tasks?conversation_id= | 任务列表 |\n| GET | /api/tasks/{id} | 任务详情 + 事件 |\n| POST | /api/tasks/{id}/cancel、/approve | 取消 / 人工批准 |\n| GET | /api/route-logs?limit= | 路由日志 |\n| GET | /api/events?conversation_id= | SSE 事件流 |\n| GET | /api/nodes | 局域网发现的节点 + 已配对节点 |\n| POST | /api/nodes/pair | 配对节点 `{\"address\": \"192.168.1.23\", \"code\": \"757563\"}` |\n| DELETE | /api/nodes/{id} | 解除配对 |\n| GET | /api/diagnostics | 诊断：最近的问题、错误码统计、执行组与节点状态 |\n\n#419-probe\n"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "executed_by",
+          "content": "Claude Code（acp，本机）"
+        },
+        {
+          "kind": "acp_stop_reason",
+          "content": "正常结束"
+        },
+        {
+          "kind": "tool_calls",
+          "content": "- Read README.md（read，completed）\n- Edit README.md（edit，completed）\n- git -C /private/tmp/line6-ux09-run/workspace/code diff README.md（execute，completed）"
+        },
+        {
+          "kind": "git_diff_stat",
+          "content": " README.md | 2 ++\n 1 file changed, 2 insertions(+)\n"
+        }
+      ],
+      "errors": []
+    },
+    "review": {
+      "verdict": "pass",
+      "issues": [],
+      "comment": "任务完成：README.md 末尾已追加空行和注释 #419-probe，git diff 确认改动为 +2 行（空行+注释），未提交，diff 结果已告知用户。结果满足目标。"
+    },
+    "assignment": {
+      "agent_id": "claude",
+      "agent_name": "Claude Code",
+      "kind": "acp",
+      "location": "本机",
+      "member_index": 0,
+      "group_size": 1,
+      "waited_ms": 0,
+      "round": 0
+    },
+    "parent_id": null,
+    "fanout_kind": null,
+    "branch_id": null,
+    "template_id": null,
+    "created_at": "2026-11-27T03:51:29.023Z",
+    "updated_at": "2026-11-27T03:52:47.755Z"
+  },
+  "events": [
+    {
+      "id": "evt-cfde261404294308b2acc6302d945edd",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "status_changed",
+      "status": "CREATED",
+      "message": "任务已创建，执行角色：coding",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:51:29.023Z"
+    },
+    {
+      "id": "evt-6442f2ab5f07444dae1914c269fac7e9",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "status_changed",
+      "status": "QUEUED",
+      "message": "排队中，等待空闲 agent",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:51:29.024Z"
+    },
+    {
+      "id": "evt-69536a1c5d7a41a990fe93bb4d53cf06",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "status_changed",
+      "status": "RUNNING",
+      "message": "开始执行",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:51:29.025Z"
+    },
+    {
+      "id": "evt-81bcf43fc3b54248abddfe38ca1f397b",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "progress",
+      "status": null,
+      "message": "由 Claude Code（acp，本机） 执行",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:51:29.025Z"
+    },
+    {
+      "id": "evt-afa3c89f89e14285a7f8671d6ff3f256",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "progress",
+      "status": null,
+      "message": "启动 ACP agent：Claude Code（工作目录 /private/tmp/line6-ux09-run/workspace/code）",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:51:29.049Z"
+    },
+    {
+      "id": "evt-4cdf8a45a89f432d887fb4008543ca58",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "progress",
+      "status": null,
+      "message": "工具调用：Read File（read）",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:51:36.123Z"
+    },
+    {
+      "id": "evt-421239a7909e41e08e667f427ac90916",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "progress",
+      "status": null,
+      "message": "Read README.md：完成",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:51:36.383Z"
+    },
+    {
+      "id": "evt-9cf443554aea439abf15cbbb025cd309",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "progress",
+      "status": null,
+      "message": "工具调用：Edit（edit）",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:52:02.809Z"
+    },
+    {
+      "id": "evt-669e7c44e4194d989b655c5e995b3f25",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "progress",
+      "status": null,
+      "message": "Edit README.md：完成",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:52:03.935Z"
+    },
+    {
+      "id": "evt-6228cbb77b9c477eb36312b3adeffb73",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "progress",
+      "status": null,
+      "message": "工具调用：Terminal（execute）",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:52:10.410Z"
+    },
+    {
+      "id": "evt-e29d4c7a84e944f6aa175be423d8d8d3",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "progress",
+      "status": null,
+      "message": "git -C /private/tmp/line6-ux09-run/workspace/code diff README.md：完成",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:52:15.134Z"
+    },
+    {
+      "id": "evt-c9947dfcd5094a1da9a248dd0c1349db",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "progress",
+      "status": null,
+      "message": "仍在执行中（Claude Code（acp，本机），已 50 秒）",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:52:19.028Z"
+    },
+    {
+      "id": "evt-300c965b7d454d8a85c91759e1745948",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "status_changed",
+      "status": "VERIFYING",
+      "message": "Reviewer 审查中",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:52:23.247Z"
+    },
+    {
+      "id": "evt-d6cbedda42fb4638a39cf1a8fe0b3c3c",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "progress",
+      "status": null,
+      "message": "审查结论：Pass。任务完成：README.md 末尾已追加空行和注释 #419-probe，git diff 确认改动为 +2 行（空行+注释），未提交，diff 结果已告知用户。结果满足目标。",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:52:47.755Z"
+    },
+    {
+      "id": "evt-f63f65eda2684ea98f733e006c581bc1",
+      "conversation_id": "conv-5509b29078904543a953179dd1d99001",
+      "task_id": "task-bfa712be07ce42648888a5515ac1ab9f",
+      "kind": "status_changed",
+      "status": "COMPLETED",
+      "message": "任务结束：COMPLETED",
+      "stream_id": null,
+      "created_at": "2026-11-27T03:52:47.755Z"
+    }
+  ]
+}
