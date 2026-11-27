@@ -1,6 +1,4 @@
 import { test, expect, type Page } from '@playwright/test';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { SMT03_TASK_ID } from '../src/desktop/mockData';
 
 // 体验地图 UX-01（docs/experience-map/journeys/UX-01.md）的确定性约束。
@@ -464,36 +462,6 @@ test('E2E-ADSETGROUPS: 设置中心无占位字样，未实现分组显示即将
   await expect(page.getByTestId('settings-cat-connect')).toBeEnabled();
 });
 
-// UXFIX-R（#344）：渲染界面不出现字符图标（☰ ⚠ ✓ ✗ ▴ ▾ ← ◇）与 emoji；
-// 图标统一为 SVG 线性（icons.tsx，DESIGN §11）。
-test('E2E-ADICONS: 界面与源码无字符图标与 emoji', async ({ page }) => {
-  // 源码静态扫描（web/src 下 ts/tsx/css，排除本文件）
-  const root = fileURLToPath(new URL('../src/', import.meta.url));
-  const forbidden = ['☰', '⚠', '▴', '▾', '←', '◇'];
-  const offenders: string[] = [];
-  const walk = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      const p = dir + name;
-      if (statSync(p).isDirectory()) { walk(p + '/'); continue; }
-      if (!/\.(tsx?|css)$/.test(name) || p.endsWith('experience.spec.ts')) continue;
-      const text = readFileSync(p, 'utf8');
-      for (const ch of forbidden) if (text.includes(ch)) offenders.push(`${p}: ${ch}`);
-    }
-  };
-  walk(root);
-  expect(offenders, offenders.join('\n')).toEqual([]);
-
-  // 渲染层扫描：桌面与工作区不出现字符图标与 emoji；纯图标按钮有可访问名称
-  const chars = ['☰', '⚠', '✓', '✗', '▴', '▾', '←', '◇', '🔲', '🔵'];
-  await page.goto('/');
-  await page.getByTestId('card-smt-03').click();
-  await expect(page.getByTestId('workspace-input')).toBeVisible();
-  const body = await page.locator('body').innerText();
-  for (const ch of chars) {
-    expect(body, `界面出现字符图标 ${ch}`).not.toContain(ch);
-  }
-  await expect(page.getByRole('button', { name: '会话' })).toBeVisible();
-
 // UX-04-I4（CH-U4、CH-U5，INTENT-2026-018）：普通模式下对话页不出现“内省”“节点”页签，
 // 进度列表不出现原始工具参数（`参数 {`）；开发者模式下保留原文与页签（诊断类 E2E 不放松）。
 test('E2E-UX04-I4: 普通模式无内省/节点页签与原始参数，开发者模式保留', async ({ page }) => {
@@ -524,4 +492,18 @@ test('E2E-UX04-I4: 普通模式无内省/节点页签与原始参数，开发者
   await expect(page.locator('.ticker-history').first()).toContainText('调用工具 write_file');
   // 收尾：关掉开发者模式，避免影响同服务上的其他用例
   await page.getByRole('button', { name: /开发者模式/ }).click();
+});
+
+// UXFIX-R（#344）：渲染界面不出现字符图标（☰ ⚠ ✓ ✗ ▴ ▾ ← ◇）与 emoji；
+// 图标统一为 SVG 线性（icons.tsx，DESIGN §11）。源码扫描由 icons.test.tsx 覆盖。
+test('E2E-ADICONS: 界面无字符图标与 emoji', async ({ page }) => {
+  const chars = ['☰', '⚠', '✓', '✗', '▴', '▾', '←', '◇', '🔲', '🔵'];
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await expect(page.getByTestId('workspace-input')).toBeVisible();
+  const body = await page.locator('body').innerText();
+  for (const ch of chars) {
+    expect(body, '界面出现字符图标 ' + ch).not.toContain(ch);
+  }
+  await expect(page.getByRole('button', { name: '会话' })).toBeVisible();
 });
