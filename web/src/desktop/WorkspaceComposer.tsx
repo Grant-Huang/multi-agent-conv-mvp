@@ -103,11 +103,24 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
     };
   }, []);
 
+  // UXFIX（#367）：loadAudits 加任务守卫与请求序号，切任务后旧响应不覆盖新任务数据
+  const auditTaskRef = useRef(taskId);
+  auditTaskRef.current = taskId;
+  const auditSeqRef = useRef(0);
+
   const loadAudits = useCallback(
     (tid: string) => {
+      const seq = ++auditSeqRef.current;
       listTaskLinkAudits(tid)
-        .then(setAudits)
-        .catch((e) => setAuditErr(String(e)));
+        .then((result) => {
+          if (auditTaskRef.current !== tid || seq !== auditSeqRef.current) return;
+          setAudits(result);
+          setAuditErr(null);
+        })
+        .catch((e) => {
+          if (auditTaskRef.current !== tid || seq !== auditSeqRef.current) return;
+          setAuditErr(String(e));
+        });
     },
     [],
   );
@@ -115,6 +128,7 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
   useEffect(() => {
     setLate(loadLate(taskId));
     setSent(loadSent(taskId));
+    setAuditErr(null);
     loadAudits(taskId);
   }, [taskId, loadAudits]);
 
@@ -206,7 +220,7 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
   const recordAudit = (action: TaskLinkAudit["action"]) => {
     appendTaskLinkAudit(taskId, { source: "workspace", action })
       .then(() => loadAudits(taskId))
-      .catch((e) => setAuditErr(String(e)));
+      .catch(() => {});
   };
 
   const convert = () => {
