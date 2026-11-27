@@ -122,6 +122,46 @@ async fn rt_l2h_01_past_answers_marked_and_sourced() {
     rt.store
         .add_message(&conv.id, "system", "系统事件：CPK 报告已生成。", None)
         .unwrap();
+    // #513：COMPLETED 任务的 summary 含关键词 → 检索应命中 kind=任务回执
+    let t = an_core::TaskRecord {
+        id: "task-l2h-01".into(),
+        conversation_id: conv.id.clone(),
+        goal: "CPK 分析".into(),
+        role: an_core::Role::General,
+        status: an_core::TaskStatus::Completed,
+        route: an_core::RouteDecision {
+            task_class: an_core::TaskClass::L1,
+            execution_role: an_core::Role::General,
+            required_tools: vec![],
+            risk_level: an_core::Risk::Low,
+            reason: String::new(),
+            template_id: String::new(),
+            deliverable: String::new(),
+            slots_ok: String::new(),
+        },
+        policy: an_core::PolicyVerdict {
+            auto_execute: true,
+            needs_review: false,
+            notes: vec![],
+            candidates: vec![],
+        },
+        result: Some(an_core::TaskResult {
+            status: an_core::WorkerStatus::Succeeded,
+            summary: "CPK 检索回执探针RECEIPT501。".into(),
+            artifacts: vec![],
+            evidence: vec![],
+            errors: vec![],
+        }),
+        review: None,
+        assignment: None,
+        parent_id: None,
+        fanout_kind: None,
+        branch_id: None,
+        template_id: None,
+        created_at: an_core::now(),
+        updated_at: an_core::now(),
+    };
+    rt.store.insert_task(&t, "", None).unwrap();
 
     let (s, v) = api
         .get("/api/desktop/v1/history/search?q=CPK&limit=50")
@@ -129,6 +169,13 @@ async fn rt_l2h_01_past_answers_marked_and_sourced() {
     assert_eq!(s, 200, "{v}");
     let hits = results_of(&v);
     assert!(hits.len() >= 3, "三条记录都应命中：{v}");
+    let receipt = hits.iter().find(|h| h["kind"] == json!("任务回执"));
+    assert!(receipt.is_some(), "COMPLETED 任务回执应命中（#513）：{v}");
+    assert_eq!(
+        receipt.unwrap()["msg_id"],
+        json!("task-l2h-01"),
+        "回执来源 id：{v}"
+    );
 
     let user_hit = hits
         .iter()
