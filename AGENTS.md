@@ -58,7 +58,7 @@
    `python3 tools/ci/change_size_check.py --base origin/master` 与  
    `python3 tools/ci/injection_scan.py --base origin/master`。  
    **block** 必须先消除或按规则补说明段（大改动 / 测试删除 / 测试变更 / 注入扫描）。
-4. **PR 正文**：含变更说明、**非目标**、Case/Feature ID、风险与回滚、验证证据；模板见 `.github/pull_request_template.md`。
+4. **PR 标题与正文写给人看**：标题用 `[第N线][风险等级] 一句白话结果（Closes #N）`，不用分支名或内部编号当标题；正文先写三行以内的“给审查人”（做了什么、为什么、需要你做什么），再写“需要你决定”“怎么看效果”，然后是技术细节（变更说明、**非目标**、Case/Feature ID、风险与回滚、验证证据）。缩写与编号第一次出现时附说明或链接，未登记到 `docs/GLOSSARY.md` 的不得出现在标题和“给审查人”里；派工 Issue 同样适用。模板见 `.github/pull_request_template.md`。
 5. **自检未通过不得 push / 不得声称完成。**
 
 ## 完成的定义
