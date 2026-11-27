@@ -66,6 +66,22 @@ def test_shared_paths_force_full_run():
         assert all(_run([path]).values()), path
 
 
+def test_include_str_docs_trigger_rust():
+    # R-20261127-M3：docs/mom 与 web/mom 的「文档形态」文件被 include_str! 编进 rust 二进制，
+    # 改它们必须跑 rust，否则测试面失守（MockRegister 条目数断言在 tests/mom.rs）。
+    # web/mom/ 同时命中 web/ 前缀 → 两作业都跑（fail-safe 方向，可接受）。
+    result = _run(["docs/mom/MOCK_REGISTER.md", "web/mom/index.html"])
+    assert result["rust"] is True
+    assert _run(["docs/mom/MOCK_REGISTER.md"])["web"] is False
+
+
+def test_experience_map_and_product_trigger_web_for_test_map():
+    # R-20261127-M3：journeys.json 与 PRODUCT.md 被 test:map 读取，改动必须过 web 作业。
+    result = _run(["docs/experience-map/journeys.json", "docs/PRODUCT.md"])
+    assert result["web"] is True
+    assert result["rust"] is False
+
+
 def test_dot_prefixed_dir_hits_shared_not_unknown():
     # .github/ 必须以「共享路径」命中，而不是靠「未登记→全量」兜底：
     # 两条路结果相同，但理由不同——退化说明前缀匹配有缺陷（回归护栏）。

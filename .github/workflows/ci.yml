@@ -56,20 +56,31 @@ jobs:
             python3 tools/ci/ci_path_triage.py --event push --json-out triage/result.json --quiet
           elif git cat-file -e "origin/${BASE_REF:-master}" 2>/dev/null; then
             BASE_SHA="$(git merge-base "origin/${BASE_REF:-master}" HEAD)"
-            git diff --name-only "$BASE_SHA" | python3 tools/ci/ci_path_triage.py --event pull_request --json-out triage/result.json
+            # --no-renames（R-20261127-M4）：改名两边都按字面路径参与判定，
+            # 否则「crate 文件改名为 docs 形态」会只见新路径、全部代码作业被跳过。
+            git diff --no-renames --name-only "$BASE_SHA" | python3 tools/ci/ci_path_triage.py --event pull_request --json-out triage/result.json
           else
             # 基准分支取不到时宁可全量，不可漏跑。
             python3 tools/ci/ci_path_triage.py --event push --json-out triage/result.json --quiet
           fi
-      - name: 落输出
+      - name: 落输出（fail-safe：结果文件缺失/损坏时回退全量，R-20261127-L1）
+        id: switches
         run: |
           set -euo pipefail
+          if [ ! -s triage/result.json ] || ! jq -e '.rust != null and .web != null' triage/result.json >/dev/null 2>&1; then
+            echo "triage 结果缺失或损坏 → 回退全量（宁可多跑不可漏跑）"
+            echo "run_rust=true" >> "$GITHUB_OUTPUT"
+            echo "run_web=true" >> "$GITHUB_OUTPUT"
+            echo "run_python_websearch=true" >> "$GITHUB_OUTPUT"
+            echo "run_python_dlp_egress=true" >> "$GITHUB_OUTPUT"
+            echo "run_python_tools=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "run_rust=$(jq -r .rust triage/result.json)" >> "$GITHUB_OUTPUT"
           echo "run_web=$(jq -r .web triage/result.json)" >> "$GITHUB_OUTPUT"
           echo "run_python_websearch=$(jq -r '.["python-websearch"]' triage/result.json)" >> "$GITHUB_OUTPUT"
           echo "run_python_dlp_egress=$(jq -r '.["python-dlp-egress"]' triage/result.json)" >> "$GITHUB_OUTPUT"
           echo "run_python_tools=$(jq -r '.["python-tools"]' triage/result.json)" >> "$GITHUB_OUTPUT"
-        id: switches
     outputs:
       run_rust: ${{ steps.switches.outputs.run_rust }}
       run_web: ${{ steps.switches.outputs.run_web }}

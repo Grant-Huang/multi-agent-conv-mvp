@@ -18,7 +18,8 @@
 > 状态（2026-11-19 围栏落地）：
 > - CI 六类 job + `python-dlp-egress` 已在真实 PR 上跑过。
 > - Action 已固定到 commit SHA；`npm run test:map` 已进 `web` job。
-> - 重命名绕过已修（`--no-renames`）。
+> - T1 路径分流（#464）：`triage` 按路径跳过无关作业，skipped 必需检查按成功处理；共享/未登记路径一律全量；master push 全量。
+> - **include_str 触发表（加 embed 文件必须同步 `tools/ci/ci_path_triage.py` 的 JOB_PREFIXES）**：`docs/mom/**`、`web/mom/**` → rust；`docs/testing/**`、`docs/experience-map/**`、`docs/PRODUCT.md` → web（test:map 门）。重命名绕过已修（`--no-renames`，R-20261127-M4）；结果文件缺失回退全量（R-20261127-L1）。
 > - **分支保护须仓库所有者运行** `./scripts/enable_branch_protection.sh`（Agent 无 admin）。
 > - **L0 自动合并默认不开**；阶段 2 bot 身份就绪前批准数保持 0。
 
@@ -26,7 +27,8 @@
 
 | job（必需检查名） | 检查内容 | 失败条件 | 对应 AGENTS.md 完成定义 |
 |---|---|---|---|
-| `rust` | `cargo fmt --check`、`cargo clippy --locked -D warnings`、`cargo test --locked --workspace`、ts-rs 绑定是否最新 | 任一命令非零退出，或绑定有未提交差异 | `cargo test`、`cargo clippy` 无警告 |
+| `triage` | 按 PR 改动路径计算各作业开关（`tools/ci/ci_path_triage.py`，fail-safe：结果缺失/损坏回退全量）；diff 加 `--no-renames` 防改名绕过 | 作业本身失败（消费端有全量回退，不阻断） | —（分流，非必需检查） |
+| `rust` | `cargo fmt --check`、`cargo clippy --locked -D warnings`、`cargo nextest run --locked --workspace`（并行）+ `cargo test --locked --doc`（doc-test 单独）、ts-rs 绑定是否最新 | 任一命令非零退出，或绑定有未提交差异 | `cargo test`、`cargo clippy` 无警告 |
 | `web` | `npm run typecheck`、`npm test`、`npm run test:map`、`npm run build` | 任一步骤失败 | `npm run build` |
 | `python-websearch` | `tools/websearch` 的 pytest（覆盖率 ≥ 80%）与 flake8 | 测试失败、覆盖率不足、lint 报错 | — |
 | `python-tools` | `tools/ci` 策略脚本的测试与 flake8 | 同上 | — |
