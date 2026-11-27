@@ -1196,6 +1196,7 @@
       "RT-L2H-02",
       "RT-L2H-03",
       "RT-L2H-04",
+      "RT-L2H-05",
       "RT-ASEL-02",
       "RT-RMAT-06",
       "RT-JMAT-06",
@@ -1286,7 +1287,8 @@
           "RT-L2H-01",
           "RT-L2H-02",
           "RT-L2H-03",
-          "RT-L2H-04"
+          "RT-L2H-04",
+          "RT-L2H-05"
         ],
         "since": null
       },

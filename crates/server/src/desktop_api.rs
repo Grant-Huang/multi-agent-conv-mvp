@@ -256,6 +256,8 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
                 "/api/desktop/v1/resume/fixture/continue-b",
                 post(resume_fixture_continue_b),
             )
+            // #440 / W2 本地数据集：免 LLM 历史消息批量导入（仅测试夹具；生产 404）
+            .route("/api/desktop/v1/history/import", post(import_history_api))
     } else {
         router
     }
@@ -1101,6 +1103,88 @@ async fn memory_impact_api(
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportMessageBody {
+    role: String,
+    content: String,
+    created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportHistoryBody {
+    conversation_id: Option<String>,
+    messages: Vec<ImportMessageBody>,
+}
+
+/// #440 / W2 本地数据集：免 LLM 历史消息批量导入（test_fixtures 门控）。
+/// 只写库不触发推理；供可部署性 / 长程测试按会话批量造历史。
+async fn import_history_api(
+    State(rt): State<AppState>,
+    Json(body): Json<ImportHistoryBody>,
+) -> Response {
+    if body.messages.is_empty() || body.messages.len() > 500 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "code": "invalid", "message": "messages 数量须在 1..=500", "retryable": false })),
+        )
+            .into_response();
+    }
+    for m in &body.messages {
+        if !matches!(m.role.as_str(), "user" | "assistant" | "system") {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "code": "invalid", "message": "role 只能是 user / assistant / system", "retryable": false })),
+            )
+                .into_response();
+        }
+        if m.content.trim().is_empty() || m.created_at.trim().len() < 10 {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "code": "invalid", "message": "content / created_at 不能为空", "retryable": false })),
+            )
+                .into_response();
+        }
+    }
+    let conv_id = match body.conversation_id.as_deref() {
+        Some(id) if !id.trim().is_empty() => {
+            if rt.store.get_conversation(id).unwrap_or(None).is_none() {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(
+                        json!({ "code": "not_found", "message": "会话不存在", "retryable": false }),
+                    ),
+                )
+                    .into_response();
+            }
+            id.trim().to_string()
+        }
+        _ => rt.store.create_conversation("导入").unwrap().id,
+    };
+    let entries: Vec<(&str, &str, &str)> = body
+        .messages
+        .iter()
+        .map(|m| (m.role.as_str(), m.content.as_str(), m.created_at.as_str()))
+        .collect();
+    match rt.store.import_messages(&conv_id, &entries) {
+        Ok(msgs) => {
+            let items: Vec<serde_json::Value> = msgs
+                .iter()
+                .map(|m| json!({ "msg_id": m.id, "role": m.role, "at": m.created_at }))
+                .collect();
+            (
+                StatusCode::OK,
+                Json(json!({ "conversation_id": conv_id, "imported": msgs.len(), "messages": items })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "code": "invalid", "message": format!("{e:#}"), "retryable": false })),
         )
             .into_response(),
     }

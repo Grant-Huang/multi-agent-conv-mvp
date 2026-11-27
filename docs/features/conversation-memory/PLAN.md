@@ -39,3 +39,7 @@
 ## 观测性卡（P3 小改）
 
 - [x] RT-EXEC-09 委派执行资料埋点（#364 / R-20261126-L1）：委派成功处补发 `session.materials.exec`（`task_id` / `exec_injected` / `reason`：injected、switch_off、empty、role_skipped / `exec_chars`）；DESIGN §10.3 事件字段登记；只记量与原因不记正文；证据 `testing/evidence/convmem-364-exec-telemetry.md`。
+
+## 测试基建卡（W2 本地数据集）
+
+- [x] RT-L2H-05 免 LLM 历史消息批量导入（#440，来源第 6 线 #425 W2）：`POST /api/desktop/v1/history/import`（test_fixtures 门控，生产 404；单次 ≤500 条；role/content/created_at 直写）；全程零模型请求；检索按原始时间命中；证据 `testing/evidence/convmem-440-history-import.md`。
