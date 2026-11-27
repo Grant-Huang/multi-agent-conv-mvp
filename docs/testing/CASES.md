@@ -743,6 +743,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | RT-ADXR-06 | ai-desktop | 库 A 标记 asst-msg-1 已读；库 B（全新库） | `GET` 库 B 列表与未读数 | 库 B 保持种子态：asst-msg-1 未读、未读数不变（进程级状态不得跨库泄漏） |
 | RT-ADXR-07 | ai-desktop | alice（`x-desktop-principal` 头）标记 asst-msg-2 已读 | alice 与 bob 各自 `GET /assistant/messages`、`GET .../read`；另无头 `GET` | alice 见 `read=true`；bob 见 `read=false` 且 `read_ids` 不含该条（M4 跨用户状态泄漏修复）；无头回退 `local` 与 alice/bob 互不可见 |
 | RT-ADXR-08 | ai-desktop | 旧库（`desktop_assistant_read_ids` 无 `user_id` 列，含 1 条已读） | `Store::open` 两次 | 自动迁移为 `(user_id, id)` 主键；旧行并入 `local`、`alice` 不可见；local 列表该条 `read=true`；重复打开幂等 |
+| RT-ADXR-09 | ai-desktop | 旧结构表 + 残留 `_new` 表（模拟迁移中断）（#514 / R-20261127-M2） | `Store::open` | 打开成功不报 "already exists"；旧行保留归 user_id=local；迁移完成 |
 
 ### AI Desktop T-99 关联审计上云（运行时 / HTTP）
 

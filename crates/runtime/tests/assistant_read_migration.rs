@@ -54,3 +54,34 @@ fn rt_adxr_08_old_read_table_migrates_to_user_scoped() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// RT-ADXR-09（#514 / R-20261127-M2）：旧结构表 + 残留 `_new` 表（模拟上次迁移
+/// 中断）——Store::open 应清残留并完成迁移，不因 "table _new already exists"
+/// 拒绝打开；旧行保留归 local。
+#[test]
+fn rt_adxr_09_stale_new_table_does_not_block_migration() {
+    let dir = std::env::temp_dir().join(an_core::new_id("adxr-stale"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("stale.db");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE desktop_assistant_read_ids (
+                id TEXT PRIMARY KEY,
+                updated_at TEXT NOT NULL DEFAULT ''
+            );
+            INSERT INTO desktop_assistant_read_ids VALUES ('asst-msg-9', '2026-01-01T00:00:00Z');
+            CREATE TABLE desktop_assistant_read_ids_new (
+                user_id TEXT NOT NULL DEFAULT '',
+                id TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (user_id, id)
+            );",
+        )
+        .unwrap();
+    }
+    let store = Store::open(&path).expect("残留 _new 表不得阻断打开（#514）");
+    let local = store.list_desktop_assistant_read_ids("local").unwrap();
+    assert_eq!(local, ["asst-msg-9"], "旧行应保留并归 local");
+    let _ = std::fs::remove_dir_all(&dir);
+}

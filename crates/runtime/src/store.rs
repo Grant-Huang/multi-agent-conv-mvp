@@ -952,8 +952,12 @@ impl Store {
             |r| r.get(0),
         )?;
         if has_read_user == 0 {
+            // #514 / R-20261127-M2：迁移包进事务 + 先清残留 _new 表——
+            // 中断后重启动不再因 "table _new already exists" 拒绝打开
             conn.execute_batch(
-                "CREATE TABLE desktop_assistant_read_ids_new (
+                "DROP TABLE IF EXISTS desktop_assistant_read_ids_new;
+                 BEGIN;
+                 CREATE TABLE desktop_assistant_read_ids_new (
                     user_id TEXT NOT NULL DEFAULT '',
                     id TEXT NOT NULL,
                     updated_at TEXT NOT NULL DEFAULT '',
@@ -962,7 +966,8 @@ impl Store {
                 INSERT INTO desktop_assistant_read_ids_new (user_id, id, updated_at)
                     SELECT 'local', id, updated_at FROM desktop_assistant_read_ids;
                 DROP TABLE desktop_assistant_read_ids;
-                ALTER TABLE desktop_assistant_read_ids_new RENAME TO desktop_assistant_read_ids;",
+                ALTER TABLE desktop_assistant_read_ids_new RENAME TO desktop_assistant_read_ids;
+                COMMIT;",
             )?;
         }
         // #431：库 schema 版本戳。旧库（0）升到当前版本；更高版本 = 库被更新的程序写过
