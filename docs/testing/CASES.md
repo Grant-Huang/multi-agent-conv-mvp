@@ -665,6 +665,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-UX05 | ai-desktop | 首页快照夹具含 SMT-03；提醒经测试 API 注入（`desktop.test_fixtures`） | 体验地图 UX-05：S1 输入框写字并聚焦 → 注入关联 SMT-03 的普通提醒 → 重新打开桌面 → 点“为你关注”中的提醒 → 返回桌面 | 提醒浮层出现且不抢焦点、不清空输入；“为你关注”中的提醒直达 SMT-03 工作区；返回后提醒仍在；处理过程无整页跳转（基线补录，见 docs/experience-map/journeys/UX-05.md） |
 | E2E-UX05-I3I4 | ai-desktop | 首页快照夹具；提醒经测试 API 注入（不刷新页面） | UXFIX-N（INTENT-2026-021/023）：桌面打开时注入提醒 → 浮层与“为你关注”出现 → 点浮层“稍后” → 再注入第二条 → 点浮层“打开” → 返回桌面 → 点“忽略” | 不刷新时“为你关注”实时出现提醒；浮层展示原因与来源（普通建议 · 关联任务 TASK-2026-018）；稍后浮层收起且“为你关注”仍在；打开直达关联任务；忽略时明示会移除，浮层与“为你关注”一致移除 |
 | E2E-UX06 | ai-desktop | 首页快照夹具含 SMT-03 | 体验地图 UX-06：SMT-03 工作区写草稿 → “调整助理” → 改助理名称并保存 → 查看记忆 → 返回助理分类 → 关闭设置 → 返回桌面（末尾恢复原名称） | 捷径直达“我的 AI 助理”分类；记忆子层返回原分类；关闭后回到同一任务且草稿不变；首页显示新名称；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-06.md） |
+| E2E-UX06-I5 | ai-desktop | 首页快照夹具 | UXFIX-O（INTENT-2026-024）：工作区写草稿 → 「调整助理」捷径进设置 → 一次 Escape → 再从「设置与管理」进分类 → 一次 Escape | 捷径路径：设置关闭、回到工作区、草稿不变；设置首页路径：分类列表仍在（可再进入）；E2E-UX06 与 desktop.spec 的 ADMEM/ADMEMW 两次返回随之收紧为一次（断言收紧） |
 | E2E-ADDRAFT | ai-desktop | 首页可打开 SMT-03 与产品改进两卡 | 两任务分别写草稿并来回切换；SMT-03 点发送（模拟延迟）后立刻改草稿并切到另一任务，再返回 | 各任务草稿隔离恢复；发送期间追加的输入保留；迟到回执不覆盖当前输入框正文 |
 | E2E-ADSCOPE | ai-desktop | 已打开 SMT-03 工作区 | 选「独立话题」；再选「继续当前任务」；点「纠正关联」；再「转为任务」 | 独立话题文案可见；继续时显示固定 Task ID；纠正后有撤回记录；转为任务后有建立关联记录且可继续固定任务 |
 | E2E-ADEVID | ai-desktop | 首页 SMT-03 | 点「查看证据」；打开正常证据→来源→逐层返回；打开失败/过期项；切空列表夹具 | 进入工作区且侧栏证据面板；预览含对象/时间/版本/任务 ID；来源可见；失败与过期有明确提示；空列表有「暂无证据」；关闭证据后可回首页 |
@@ -1101,6 +1102,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-USTY-03 | conversation-memory | 草稿条目 / 已确认未生效条目 | DELETE 后续问 | 均不注入 |
 | RT-USTY-04 | conversation-memory | 超长风格正文 + 默认配置 | 新会话续问 | 风格卡含护栏句「不得因此省略风险」且长度有界（≤ 上限 + 页眉余量） |
 | RT-USTY-05 | conversation-memory | style（要求简洁）与 fact 记忆（风险信息正文）同时生效 | 新会话续问 | 提示词同时含风格正文与风险记忆正文（风格挤不掉风险信息）；`session.materials` 事件含 style 来源 id |
+| RT-USTY-07 | conversation-memory | 种子默认 soul / taste；随后 PATCH 显式设置（#403 / INTENT-034，方案 a） | 两次续问对比 | 默认值视作「未设置」不注入；显式设置后视作已确认风格进风格卡（来源 `profile:soul` / `profile:taste`、保存即确认含旧会话）；护栏句仍在 |
 
 ## 内省发现按需进入会话 conversation-memory 5.3（REQ-conversation-memory-04；2026-11-23 用户确认：确定性 bigram 匹配 / 待核实标注注入 / 过闸门即可候选 / 2 条独立计）
 
@@ -1126,6 +1128,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-JMAT-03 | conversation-memory | 过闸门的发现（与提问不相关） | 无关续问 | 发现行不进清单（相关性门只作用于发现；任务回执与记忆不受门限，为 5.1/5.2 既定语义） |
 | RT-JMAT-04 | conversation-memory | 资料源超时（慢源） | 续问 | 判断照常（无清单、不失败） |
 | RT-JMAT-05 | conversation-memory | 超长摘要 | 相关续问 | 清单行要点截断 ≤40 字 + 标记 |
+| RT-JMAT-06 | conversation-memory | 万字标题的 fact 记忆（#363 / R-20261126-M2） | 相关续问 | 清单行标题截断（≤40 字 + 省略号）、来源 id 与要点仍在，整行有界 |
 
 ## 路由路径会话资料线索 conversation-memory S5-route（2026-11-24 用户确认沿用 S4 拍板：极简清单 / 默认开 / 独立开关 / 先合入后跑 E0 对比）
 
@@ -1136,6 +1139,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-RMAT-01 | conversation-memory | 回执出窗 + 相关委派续问 | handle_message | route_decision 请求的 user 内容含「会话资料线索」段与任务 id |
 | RT-RMAT-02 | conversation-memory | `session_materials_route = false` | 同上续问 | route_decision 请求不含该段（独立开关） |
 | RT-RMAT-03 | conversation-memory | 仅无关发现 | 无关委派续问 | 发现行不进路由上下文（相关性门） |
+| RT-RMAT-06 | conversation-memory | `session_materials_judge = false`（route 默认开）+ 回执出窗委派（#362 / R-20261126-M1） | 委派续问 | 路由 user 段含「会话资料线索」与任务 id（digest 按 judge || route 生成） |
 | RT-RMAT-05 | conversation-memory | 回执出窗 + 相关委派续问（#360） | handle_message 后查 tasks.context | 路由请求仍含线索段；**任务上下文不含线索段与资料块**（判断线索/个人记忆不随任务出站） |
 | RT-G2C-01 | conversation-memory | 风格"只要结论"生效 + 回执含"不可逆"（CH-G2c，#402） | handle_message（respond 轮） | 模型回答不含风险词时，最终回答仍含程序补齐的风险提示句（原回答不改）；conversation.risk_restored 事件 |
 | RT-G2C-02 | conversation-memory | 同上但模型回答已自带风险标记 | 同上 | 不重复补齐 |
@@ -1152,6 +1156,8 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-EXEC-04 | conversation-memory | 注入发生后的任务 | 查 `tasks.context` | context 列含资料段（随任务持久） |
 | RT-EXEC-05 | conversation-memory | 过闸门发现 + 委派（general 角色；#346 场合表落地） | handle_message | 执行背景与 `tasks.context` 不含发现 id；同发现回答路径仍按相关性门注入（守卫） |
 | RT-EXEC-06 | conversation-memory | fact 记忆 + 委派（high 风险 → NEEDS_HUMAN）后撤回该记忆再批准（#358 / CH-G2e） | 批准后查 General 首步请求与 `tasks.exec_material` / `tasks.context` | 执行请求与两列均不含该记忆正文和 id（撤回即失效，清扫未终态任务；#360 后缺陷面为 exec_material 快照列）；已终态任务保留原件；重试 / 重启续跑同源生效 |
+| RT-EXEC-07 | conversation-memory | 回答与 judge 都关、exec 单开（#362 / R-20261126-M1） | 委派 general | 执行背景含资料块标记与来源 id（collect 按四开关取或） |
+| RT-EXEC-08 | conversation-memory | 3 条万字标题 fact 记忆 + 委派 general（#363 / R-20261126-M2） | 查执行资料段 | 资料段 ≤512 token 估算 + 页眉余量；标题截断、来源 id 与标题探针仍在（来源行不整截） |
 
 ## 分层记忆细化（#346；RT-L2H-01～04、RT-ASEL-02 已实现（片 3 / 片 4a / 片 4b，2026-11-26），RT-ASEL-01 为实现前定义随各入口线场合落地补可执行测试）
 

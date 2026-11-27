@@ -575,8 +575,13 @@ impl ConversationRuntime {
         }
 
         // 3.5 会话资料（S4）：每轮收集一次，判断清单与回答资料块两路共享；
-        // 管理提示轮（上方早退）不收集
-        let collect = self.session_materials || self.session_materials_judge;
+        // 管理提示轮（上方早退）不收集。
+        // #362 / R-20261126-M1：collect 按四个开关取或——exec / route 单开时
+        // 也必须收集（否则执行背景缺资料块、路由拿不到线索）。
+        let collect = self.session_materials
+            || self.session_materials_judge
+            || self.session_materials_route
+            || self.session_materials_exec;
         let session_materials = if collect {
             Some(
                 self.collect_session_materials(conversation_id, user, text)
@@ -607,7 +612,9 @@ impl ConversationRuntime {
                     &m.style,
                     self.session_materials_style_max_tokens,
                 );
-                let digest = if self.session_materials_judge {
+                // #362 / R-20261126-M1：digest 按 judge || route 生成（路由线索
+                // 不依赖判断开关）；judge 开关只控制是否进判断请求。
+                let digest = if self.session_materials_judge || self.session_materials_route {
                     crate::session_materials::render_judge_digest(m)
                 } else {
                     String::new()
@@ -659,10 +666,13 @@ impl ConversationRuntime {
             .unwrap_or((None, None, None));
 
         // 4. Turn Controller
-        let decision = match self
-            .decide_turn(&history, &active, judge_digest.as_deref())
-            .await
-        {
+        // #362 / R-20261126-M1：digest 可为路由生成；仅 judge 开启时进判断请求
+        let judge_input = if self.session_materials_judge {
+            judge_digest.as_deref()
+        } else {
+            None
+        };
+        let decision = match self.decide_turn(&history, &active, judge_input).await {
             Ok(d) => {
                 log.raw_outputs.extend(d.raw_outputs);
                 log.attempts += d.attempts;
