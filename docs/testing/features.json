@@ -1187,7 +1187,11 @@
       "RT-L2H-02",
       "RT-L2H-03",
       "RT-L2H-04",
-      "RT-ASEL-02"
+      "RT-ASEL-02",
+      "RT-RMAT-06",
+      "RT-JMAT-06",
+      "RT-EXEC-07",
+      "RT-EXEC-08"
     ],
     "requirements": [
       {
@@ -1252,7 +1256,11 @@
           "RT-EXEC-01",
           "RT-EXEC-02",
           "RT-EXEC-03",
-          "RT-EXEC-04"
+          "RT-EXEC-04",
+          "RT-RMAT-06",
+          "RT-JMAT-06",
+          "RT-EXEC-07",
+          "RT-EXEC-08"
         ],
         "since": null
       },

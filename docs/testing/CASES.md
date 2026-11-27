@@ -1125,6 +1125,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-JMAT-03 | conversation-memory | 过闸门的发现（与提问不相关） | 无关续问 | 发现行不进清单（相关性门只作用于发现；任务回执与记忆不受门限，为 5.1/5.2 既定语义） |
 | RT-JMAT-04 | conversation-memory | 资料源超时（慢源） | 续问 | 判断照常（无清单、不失败） |
 | RT-JMAT-05 | conversation-memory | 超长摘要 | 相关续问 | 清单行要点截断 ≤40 字 + 标记 |
+| RT-JMAT-06 | conversation-memory | 万字标题的 fact 记忆（#363 / R-20261126-M2） | 相关续问 | 清单行标题截断（≤40 字 + 省略号）、来源 id 与要点仍在，整行有界 |
 
 ## 路由路径会话资料线索 conversation-memory S5-route（2026-11-24 用户确认沿用 S4 拍板：极简清单 / 默认开 / 独立开关 / 先合入后跑 E0 对比）
 
@@ -1135,6 +1136,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-RMAT-01 | conversation-memory | 回执出窗 + 相关委派续问 | handle_message | route_decision 请求的 user 内容含「会话资料线索」段与任务 id |
 | RT-RMAT-02 | conversation-memory | `session_materials_route = false` | 同上续问 | route_decision 请求不含该段（独立开关） |
 | RT-RMAT-03 | conversation-memory | 仅无关发现 | 无关委派续问 | 发现行不进路由上下文（相关性门） |
+| RT-RMAT-06 | conversation-memory | `session_materials_judge = false`（route 默认开）+ 回执出窗委派（#362 / R-20261126-M1） | 委派续问 | 路由 user 段含「会话资料线索」与任务 id（digest 按 judge || route 生成） |
 | RT-RMAT-05 | conversation-memory | 回执出窗 + 相关委派续问（#360） | handle_message 后查 tasks.context | 路由请求仍含线索段；**任务上下文不含线索段与资料块**（判断线索/个人记忆不随任务出站） |
 | RT-G2C-01 | conversation-memory | 风格"只要结论"生效 + 回执含"不可逆"（CH-G2c，#402） | handle_message（respond 轮） | 模型回答不含风险词时，最终回答仍含程序补齐的风险提示句（原回答不改）；conversation.risk_restored 事件 |
 | RT-G2C-02 | conversation-memory | 同上但模型回答已自带风险标记 | 同上 | 不重复补齐 |
@@ -1151,6 +1153,8 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-EXEC-04 | conversation-memory | 注入发生后的任务 | 查 `tasks.context` | context 列含资料段（随任务持久） |
 | RT-EXEC-05 | conversation-memory | 过闸门发现 + 委派（general 角色；#346 场合表落地） | handle_message | 执行背景与 `tasks.context` 不含发现 id；同发现回答路径仍按相关性门注入（守卫） |
 | RT-EXEC-06 | conversation-memory | fact 记忆 + 委派（high 风险 → NEEDS_HUMAN）后撤回该记忆再批准（#358 / CH-G2e） | 批准后查 General 首步请求与 `tasks.exec_material` / `tasks.context` | 执行请求与两列均不含该记忆正文和 id（撤回即失效，清扫未终态任务；#360 后缺陷面为 exec_material 快照列）；已终态任务保留原件；重试 / 重启续跑同源生效 |
+| RT-EXEC-07 | conversation-memory | 回答与 judge 都关、exec 单开（#362 / R-20261126-M1） | 委派 general | 执行背景含资料块标记与来源 id（collect 按四开关取或） |
+| RT-EXEC-08 | conversation-memory | 3 条万字标题 fact 记忆 + 委派 general（#363 / R-20261126-M2） | 查执行资料段 | 资料段 ≤512 token 估算 + 页眉余量；标题截断、来源 id 与标题探针仍在（来源行不整截） |
 
 ## 分层记忆细化（#346；RT-L2H-01～04、RT-ASEL-02 已实现（片 3 / 片 4a / 片 4b，2026-11-26），RT-ASEL-01 为实现前定义随各入口线场合落地补可执行测试）
 
