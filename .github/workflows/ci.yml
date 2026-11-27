@@ -103,8 +103,17 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --locked --all-targets -- -D warnings
 
-      - name: cargo test
-        run: cargo test --locked --workspace
+      # cargo test 按顺序逐个运行测试二进制（#437 实测 7m33s，其中编译 2m23s）。
+      # 改用 nextest 把各二进制的串行时间重叠起来（并行、失败输出可读）；
+      # doc-test 不在 nextest 覆盖范围内，单独保留。
+      # taiki-e/install-action@v2
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f
+        with:
+          tool: cargo-nextest
+      - name: cargo nextest（并行跑全部单元/集成测试）
+        run: cargo nextest run --locked --workspace
+      - name: cargo test --doc（doc-test 单独跑）
+        run: cargo test --locked --doc
 
       - name: bindings 是否最新
         run: |
