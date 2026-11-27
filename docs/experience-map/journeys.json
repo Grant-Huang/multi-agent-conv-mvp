@@ -254,7 +254,7 @@
         "id": "UX-04-I4",
         "text": "对话页不常驻内部页签（内省、节点）与原始工具参数",
         "charter": "CH-U5",
-        "debt": true
+        "case": "E2E-UX04-I4"
       }
     ],
     "budget": {
@@ -268,7 +268,6 @@
     },
     "known_deviations": [
       "INTENT-2026-017",
-      "INTENT-2026-018",
       "INTENT-2026-019"
     ]
   },
