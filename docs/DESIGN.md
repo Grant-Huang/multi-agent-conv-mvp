@@ -1051,6 +1051,8 @@ curl -s http://127.0.0.1:8787/api/diagnostics | jq
 | `desktop_attention_items`、`desktop_attention_prefs` | 主动提醒队列与静音偏好 | AI 桌面（C2） |
 | `desktop_voice_sessions`、`desktop_handoff` | 语音会话；跨端续接草稿 | AI 桌面（D） |
 | `desktop_memories` | 个人记忆（保存、纠正、撤回；按说话人作用域） | AI 桌面（T-78）、分层记忆（5.2a） |
+| `desktop_assistant_messages`、`desktop_assistant_read_ids` | 助理消息与已读状态（T-73；进程内夹具首版） | AI 桌面（T-73） |
+| `desktop_task_link_audits` | 任务关联修正审计（T-99） | AI 桌面（T-99） |
 | `desktop_drafts` | 工作区草稿（服务端权威，乐观版本） | AI 桌面（T-86） |
 
 MOM 用独立的库，不与主库混用：主程序在本机监听时用主库同目录的 `*.mom.db`（MOM 引擎：`mom_snapshot`、`mom_events`、`mom_cursors`，建表在 `crates/runtime/src/mom/engine.rs`）；开启 `[mom] chat_bridge` 时另用 `*.ops.db`（运营频道发布器：`ops_meta`、`ops_cases`、`ops_posts`、`ops_skips`，建表在 `crates/runtime/src/mom/ops_desk.rs`）。独立的 `an-mom` 默认用 `data/mom.db`。

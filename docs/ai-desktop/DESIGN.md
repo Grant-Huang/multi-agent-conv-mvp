@@ -104,7 +104,7 @@ S2 任务栏展示标题、状态、ID、业务对象、来源、负责 Agent �
 | `POST /memories` | **5.2a**：用户主动保存（title/body 必填；expires 缺省「长期」；kind 缺省 fact）。**T-72** 纠正/撤回全链保留 |
 | `POST /memories/{id}/confirm` | **5.2b**：确认预览（preference/style 草稿 → 记 `confirmed_at`；幂等；旧会话不回填）。fact 保存即生效，不走闸门 |
 | `PATCH /memories/{id}`、`DELETE /memories/{id}` | 纠正正文/标题/有效期；撤回（默认列表隐藏，幂等）。**T-78** 写 Store；`fixture/reset` 仅测试种子复位 |
-| `GET /assistant/messages`、`GET|POST /assistant/messages/read` | 列表含 `read`/`unread_count`；POST 接收消息 ID 列表，幂等记录当前用户已读（首版进程内夹具；跨端同服务可见） |
+| `GET /assistant/messages`、`GET|POST /assistant/messages/read` | 列表含 `read`/`unread_count`；POST 接收消息 ID 列表，幂等记录当前用户已读（T-73 跨端已读同步；SQLite 权威） |
 | `GET /events?after=…` | 按游标回放并续接授权增量。游标失效返回明确的重取快照信号 |
 
 新增错误返回 `code,message,retryable,request_id`。校验失败为 400，认证缺失为 401，当前用户权限不足为 403；需要避免泄露对象是否存在时统一返回 404。状态、版本或幂等冲突为 409。相同操作的唯一键是服务端解析的租户、用户与客户端操作 ID；消息、操作记录与待派发项在同一次持久化提交中建立。客户端重试和 Worker 重领均复用这组关联。
