@@ -1195,5 +1195,6 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-L2H-03 | conversation-memory | 180 天窗口内外的同类记录（片 3） | 默认检索 / `days` 显式指定 | 默认只返回最近 180 天；`days` 显式加大才返回更早记录，引用带原始时间；空关键词 400 |
 | RT-L2H-04 | conversation-memory | 被纠正的历史消息（`POST /api/desktop/v1/messages/{id}/correction`，片 4a） | 加更正注记后检索 | 更正单独记录、原文不改写；命中附 `correction` 并优先排序（优先给纠正后版本）；AI 回答 403、空注记 400、重复更正为替换；更正随消息删除 |
 | RT-L2H-05 | conversation-memory | test_fixtures 门控导入端点 + 会话 3 条历史（#440 / W2 本地数据集） | `POST /api/desktop/v1/history/import` 批量写入（role/content/created_at） | 200 且按序入库；检索按原始时间命中；全程零模型请求；生产配置（fixtures=false）该端点 404；非法角色 400 |
+| RT-L2H-06 | conversation-memory | 单条正文 >32KB / >500 条批量（#516 L6） | `POST /history/import` | 超限一律 400 不 panic；导入创建会话时内部错误 500 兜底 |
 | RT-ASEL-01 | conversation-memory | 六场合各自入口与状态（实现前定义：回到老任务/审批/值班/跨设备随对应入口线落地） | 各场合触发选材 | 按「必带 / 可带 / 不带」表选材：随口问答不带他任务现场与 L5；执行委派不带风格偏好与 L5（已由 RT-EXEC-05 落地）；审批写入的画像与风格不影响内容（CH-G2b）；场合由程序按入口与状态判断 |
 | RT-ASEL-02 | conversation-memory | 任一发生注入的轮次（片 4b：`session.materials` 事件补 `occasion`/`why`） | 查事件 | `occasion` 按状态确定性记录（新会话 / 会话续问）；`why` 逐段原因码（`receipts:in_window`、`memories:effective_fact`、`style:effective_style`、`findings:related_gate`）可还原「带了哪些记忆、为什么」；不含资料正文；来源 id 可追溯。展示入口归第 1 线 #347 |

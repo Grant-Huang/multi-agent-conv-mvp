@@ -1163,8 +1163,25 @@ async fn import_history_api(
             }
             id.trim().to_string()
         }
-        _ => rt.store.create_conversation("导入").unwrap().id,
+        _ => match rt.store.create_conversation("导入") {
+            Ok(c) => c.id,
+            Err(e) => return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
+            )
+                .into_response(),
+        },
     };
+    // #516 L6：单条正文上限 32KB——防止超大导入挤占内存
+    for m in &body.messages {
+        if m.content.len() > 32 * 1024 {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "code": "invalid", "message": "单条正文不得超过 32KB", "retryable": false })),
+            )
+                .into_response();
+        }
+    }
     let entries: Vec<(&str, &str, &str)> = body
         .messages
         .iter()

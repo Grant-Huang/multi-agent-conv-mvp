@@ -531,3 +531,39 @@ async fn rt_l2h_05_import_gated_and_validated() {
     assert_eq!(s2, 400, "非法角色应拒绝：{v2}");
     assert_eq!(v2["code"], "invalid", "{v2}");
 }
+
+/// RT-L2H-06（#516 L6）：单条正文超 32KB → 400；导入 500 条上限验证。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_l2h_06_import_content_cap_and_batch_limit() {
+    let rt = Arc::new(Runtime::new(config(), Store::open(Path::new(":memory:")).unwrap()).unwrap());
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let conv = rt.store.create_conversation("t").unwrap();
+    // 单条正文 > 32KB → 400
+    let oversized = "x".repeat(32 * 1024 + 1);
+    let (s, v) = api
+        .post(
+            "/api/desktop/v1/history/import",
+            json!({
+                "conversation_id": conv.id,
+                "messages": [{"role": "user", "content": oversized, "created_at": "2026-10-01T09:00:00.000Z"}]
+            }),
+        )
+        .await;
+    assert_eq!(s, 400, "单条正文超 32KB 应拒绝：{v}");
+    assert_eq!(v["code"], "invalid", "{v}");
+    // 501 条 → 400
+    let mut msgs = Vec::new();
+    for i in 0..501 {
+        msgs.push(json!({"role": "user", "content": format!("msg-{i}"), "created_at": "2026-10-01T09:00:00.000Z"}));
+    }
+    let (s2, v2) = api
+        .post(
+            "/api/desktop/v1/history/import",
+            json!({"conversation_id": conv.id, "messages": msgs}),
+        )
+        .await;
+    assert_eq!(s2, 400, "超 500 条应拒绝：{v2}");
+}
