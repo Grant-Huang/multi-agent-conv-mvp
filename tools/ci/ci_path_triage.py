@@ -31,8 +31,18 @@ SHARED_PREFIXES = (
 
 # 作业 → 触发前缀。
 JOB_PREFIXES: dict[str, tuple[str, ...]] = {
-    "rust": ("crates/", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "web/src/bindings/"),
-    "web": ("web/", "docs/testing/"),
+    # docs/mom 与 web/mom 是 include_str! 编进 rust 二进制的「文档形态代码」；
+    # experience-map 与 PRODUCT.md 被 test:map 读取（R-20261127-M3）。
+    "rust": (
+        "crates/",
+        "Cargo.toml",
+        "Cargo.lock",
+        "rust-toolchain.toml",
+        "web/src/bindings/",
+        "docs/mom/",
+        "web/mom/",
+    ),
+    "web": ("web/", "docs/testing/", "docs/experience-map/", "docs/PRODUCT.md"),
     "python-websearch": ("tools/websearch/",),
     "python-dlp-egress": ("tools/dlp-egress/",),
     "python-tools": ("tools/ci/",),
