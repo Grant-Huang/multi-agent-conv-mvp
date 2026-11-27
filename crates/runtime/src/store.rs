@@ -2923,6 +2923,52 @@ impl Store {
         Ok(Some(m))
     }
 
+    /// UXFIX-T（#428）：撤销恢复——已撤回的记忆重新变为活动（revoked=0）。幂等。
+    pub fn restore_desktop_memory(&self, user_id: &str, id: &str) -> Result<Option<DesktopMemory>> {
+        self.ensure_desktop_memory_seed(user_id)?;
+        let conn = self.write();
+        let Some(mut m) = conn
+            .query_row(
+                "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind, confirmed_at
+                 FROM desktop_memories WHERE user_id = ?1 AND id = ?2",
+                params![user_id, id],
+                Self::map_desktop_memory,
+            )
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        if m.revoked {
+            m.revoked = false;
+            m.updated_at = now();
+            conn.execute(
+                "UPDATE desktop_memories SET revoked = 0, updated_at = ?3
+                 WHERE user_id = ?1 AND id = ?2",
+                params![user_id, id, m.updated_at],
+            )?;
+        }
+        Ok(Some(m))
+    }
+
+    /// 含已撤回行（UXFIX-T #428：设置"已撤回"分组用）。
+    pub fn list_desktop_memories_with_revoked(&self, user_id: &str) -> Result<Vec<DesktopMemory>> {
+        self.ensure_desktop_memory_seed(user_id)?;
+        let _timer = ReadTimer::new("list_desktop_memories_with_revoked");
+        let conn = self.read();
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, title, source, body, expires, revoked, updated_at, kind, confirmed_at
+             FROM desktop_memories
+             WHERE user_id = ?1
+             ORDER BY revoked ASC, id",
+        )?;
+        let rows = stmt.query_map(params![user_id], Self::map_desktop_memory)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
     /// 测试专用：清空该用户记忆并重播种子。
     pub fn reset_desktop_memories(&self, user_id: &str) -> Result<()> {
         let conn = self.write();
