@@ -125,7 +125,7 @@ REQ-05～07 用例登记（2026-11-26 片 2，#346）：注入测试集——RT-
 
 ## 7. 决策
 
-[第 5 研发线与近期优先级](../../decisions/2026-11-22-five-workstreams.md)；[5.1 验收冻结与默认开](../../decisions/2026-11-23-convmem-s1-acceptance-and-default-on.md)（2026-11-23 用户确认）；[5.2a 生命周期与隔离](../../decisions/2026-11-23-convmem-s2a-lifecycle-and-isolation.md)、[5.2b 风格生效闸门](../../decisions/2026-11-23-convmem-s2b-style-gate.md)（2026-11-23 用户确认）；[5.3 发现进入会话](../../decisions/2026-11-23-convmem-s3-findings-in-session.md)（2026-11-23 用户确认）；[宪章 v1.6（CH-G1 修订、CH-G5 新增）](../../decisions/2026-11-26-charter-v1-6-memory.md)、[分层记忆与历史检索设计规则](../../decisions/2026-11-26-memory-layers-and-history.md)（2026-11-26 用户确认）；历史决定见 [DECISIONS.md 第九节](../../DECISIONS.md#九记忆画像与内省mem)。
+[第 5 研发线与近期优先级](../../decisions/2026-11-22-five-workstreams.md)；[5.1 验收冻结与默认开](../../decisions/2026-11-23-convmem-s1-acceptance-and-default-on.md)（2026-11-23 用户确认）；[5.2a 生命周期与隔离](../../decisions/2026-11-23-convmem-s2a-lifecycle-and-isolation.md)、[5.2b 风格生效闸门](../../decisions/2026-11-23-convmem-s2b-style-gate.md)（2026-11-23 用户确认）；[5.3 发现进入会话](../../decisions/2026-11-23-convmem-s3-findings-in-session.md)（2026-11-23 用户确认）；[宪章 v1.6（CH-G1 修订、CH-G5 新增）](../../decisions/2026-11-26-charter-v1-6-memory.md)、[分层记忆与历史检索设计规则](../../decisions/2026-11-26-memory-layers-and-history.md)（2026-11-26 用户确认）；[撤回即失效（清扫未终态任务 context，修订 S6 第 4 条）](../../decisions/2026-11-26-convmem-revoke-context-invalidation.md)（2026-11-26 用户确认）；历史决定见 [DECISIONS.md 第九节](../../DECISIONS.md#九记忆画像与内省mem)。
 
 ## 8. 待决定
 
