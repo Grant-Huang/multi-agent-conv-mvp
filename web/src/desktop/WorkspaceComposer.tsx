@@ -220,7 +220,7 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
   const recordAudit = (action: TaskLinkAudit["action"]) => {
     appendTaskLinkAudit(taskId, { source: "workspace", action })
       .then(() => loadAudits(taskId))
-      .catch(() => {});
+      .catch((e) => setAuditErr(String(e)));
   };
 
   const convert = () => {
@@ -324,7 +324,7 @@ export function WorkspaceComposer({ taskId, delayMs = 800 }: Props) {
       ))}
       {auditErr && (
         <p className="bad-text" data-testid="scope-audit-error" role="alert">
-          审计加载失败：{auditErr}
+          审计操作失败：{auditErr}
         </p>
       )}
       <ul className="scope-audit" data-testid="scope-audit" aria-label="关联修正记录">
