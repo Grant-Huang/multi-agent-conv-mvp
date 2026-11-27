@@ -104,3 +104,5 @@ export function writeDesktopView(view: DesktopMainView, taskId: string | null = 
     /* 偏好 */
   }
 }
+
+// 夹具数据文件：桌面端开发/演示用的静态 mock（T1 分流演示：本文件属 web/**，触发 web 作业、跳过 rust）。
