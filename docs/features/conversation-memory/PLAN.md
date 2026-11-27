@@ -47,3 +47,7 @@
 ## 撤回清扫加固卡（夜间评审 R-20261127）
 
 - [x] RT-EXEC-10 多段正文记忆撤回整体摘除（#501 / R-20261127-H1，P1）：render 六处摘要过 fold_summary 折叠换行（条目=「来源：」+「摘要：」两行不变量）；strip_memory_from_context 条目边界改按行首「来源：<id>（个人记忆」精确匹配（兄弟条目摘要中的「来源：」字样不误扩）；单测多段整体摘除 + 兄弟条目不误扩；证据 `testing/evidence/convmem-501-strip-boundaries.md`。
+
+## 低优先级修复卡（夜间评审 R-20261127）
+
+- [x] RT-L2H-06 导入限流 + 清扫不阻断 + 示例对齐（#516 / R-20261127-L4+L6+L7，P3）：导入单条正文 ≤32KB（400）、创建会话 unwrap→500 兜底、清扫失败记 error 不阻断撤回、config.example 示例对齐实际读取路径；证据 `testing/evidence/convmem-516-l4l6l7.md`。

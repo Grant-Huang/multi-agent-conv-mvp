@@ -295,4 +295,5 @@ approval_risk = "high"             # 风险达到该等级需人工审批：low 
 
 # ───── 连接器注册表（契约 K 系列 connector.md，#398/#487）─────
 # 外部系统统一在此注册（凭据用引用，K2）；未注册的直连会告警（先告警后拒绝）
-# connectors_path = "connectors.toml"
+# 连接器注册表路径：通过环境变量 CONNECTORS_TOML 指定（默认 connectors.toml），
+# 不是本文件的配置字段——启动前 export CONNECTORS_TOML=path/to/connectors.toml

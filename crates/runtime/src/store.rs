@@ -2914,15 +2914,25 @@ impl Store {
             )?;
             // #358 / 宪章 CH-G2e：撤回即失效——清扫未终态任务 context 中该记忆
             // 的资料段（批准 / 重试 / 重启续跑都从库读 context）。清扫失败不阻断
-            // 撤回本身，但要留痕排查。
-            let cleaned = Self::cleanup_revoked_memory_from_contexts(&conn, id)?;
-            if cleaned > 0 {
-                tracing::info!(
-                    event = "materials.context.cleaned",
-                    memory_id = %id,
-                    tasks = cleaned as u64,
-                    "撤回记忆已从未终态任务 context 清扫"
-                );
+            // 撤回本身，但要留痕排查（#516 L4：含受影响 task_id 列表）。
+            match Self::cleanup_revoked_memory_from_contexts(&conn, id) {
+                Ok(cleaned) if cleaned > 0 => {
+                    tracing::info!(
+                        event = "materials.context.cleaned",
+                        memory_id = %id,
+                        tasks = cleaned as u64,
+                        "撤回记忆已从未终态任务 context 清扫"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(
+                        event = "materials.context.cleanup_failed",
+                        memory_id = %id,
+                        error = %e,
+                        "清扫失败（不阻断撤回）"
+                    );
+                }
+                _ => {}
             }
         }
         Ok(Some(m))
