@@ -1101,6 +1101,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-USTY-03 | conversation-memory | 草稿条目 / 已确认未生效条目 | DELETE 后续问 | 均不注入 |
 | RT-USTY-04 | conversation-memory | 超长风格正文 + 默认配置 | 新会话续问 | 风格卡含护栏句「不得因此省略风险」且长度有界（≤ 上限 + 页眉余量） |
 | RT-USTY-05 | conversation-memory | style（要求简洁）与 fact 记忆（风险信息正文）同时生效 | 新会话续问 | 提示词同时含风格正文与风险记忆正文（风格挤不掉风险信息）；`session.materials` 事件含 style 来源 id |
+| RT-USTY-07 | conversation-memory | 种子默认 soul / taste；随后 PATCH 显式设置（#403 / INTENT-034，方案 a） | 两次续问对比 | 默认值视作「未设置」不注入；显式设置后视作已确认风格进风格卡（来源 `profile:soul` / `profile:taste`、保存即确认含旧会话）；护栏句仍在 |
 
 ## 内省发现按需进入会话 conversation-memory 5.3（REQ-conversation-memory-04；2026-11-23 用户确认：确定性 bigram 匹配 / 待核实标注注入 / 过闸门即可候选 / 2 条独立计）
 
