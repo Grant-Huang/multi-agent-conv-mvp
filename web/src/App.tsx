@@ -1,5 +1,5 @@
 // AgentNexus：组织级 AI 桌面壳（V1.7 A1）；会话/运营为壳内模块。
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, subscribeEvents, type Health } from "./api";
 import type { TaskEvent } from "./bindings/TaskEvent";
 import { createDeltaBuffer, createEventPump, REFRESH_INTERVAL_MS } from "./refresh";
@@ -18,6 +18,7 @@ import { DesktopHome } from "./desktop/DesktopHome";
 import { DesExperiment } from "./desktop/DesExperiment";
 import { MomWorkbench } from "./desktop/MomWorkbench";
 import { WorkspaceView } from "./desktop/WorkspaceView";
+import { userTaskLine } from "./desktop/taskLineText";
 import { AssistantChatPanel } from "./desktop/AssistantChatPanel";
 import { EvidencePanel, type EvidenceLayer } from "./desktop/EvidencePanel";
 import { HistoryPanel } from "./desktop/HistoryPanel";
@@ -138,6 +139,12 @@ export default function App() {
   // 每个任务的进度历史（时间顺序）：进度条显示最后一条，展开时看全部
   const [notes, setNotes] = useState<Record<string, string[]>>({});
   const noted = useRef(new Set<string>());
+  // UXFIX-L（INTENT-018）：普通模式下进度行用用户语言（隐藏原始工具参数）；开发者模式保留原文
+  const displayNotes = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const [id, lines] of Object.entries(notes)) out[id] = lines.map((l) => userTaskLine(l, devMode));
+    return out;
+  }, [notes, devMode]);
 
   // 健康检查：启动时 + 每 10 秒（节点配对、上线、离线后左下角能及时更新）
   useEffect(() => {
@@ -870,7 +877,7 @@ export default function App() {
             messages={messages}
             onRefresh={() => current && refreshConversation(current).catch(() => {})}
             tasks={tasks}
-            notes={notes}
+            notes={displayNotes}
             onSend={send}
             onTaskAction={taskAction}
             streaming={streaming}
@@ -951,11 +958,13 @@ export default function App() {
               <TabButton id="tasks" label="任务" active={activeTab} onSelect={setSideTab}>
                 {tasks.length > 0 && <span className="count">{tasks.length}</span>}
               </TabButton>
-              <TabButton id="intro" label="内省" active={activeTab} onSelect={setSideTab}>
+              {/* UXFIX-L（INTENT-018）：内省 / 节点退到开发者模式；
+                  普通模式只保留任务、助理消息与助手（连接能力，验收范围外）（CH-U4、CH-U5） */}
+              {devMode && <TabButton id="intro" label="内省" active={activeTab} onSelect={setSideTab}>
                 {introUnread !== null && introUnread > 0 && <span className="count" data-testid="intro-tab-unread">{introUnread}</span>}
-              </TabButton>
+              </TabButton>}
               <TabButton id="agents" label="助手" active={activeTab} onSelect={setSideTab} />
-              <TabButton id="nodes" label="节点" active={activeTab} onSelect={setSideTab} />
+              {devMode && <TabButton id="nodes" label="节点" active={activeTab} onSelect={setSideTab} />}
               {devMode && <TabButton id="diag" label="诊断" active={activeTab} onSelect={setSideTab} />}
               {devMode && <TabButton id="logs" label="路由日志" active={activeTab} onSelect={setSideTab} />}
             </div>

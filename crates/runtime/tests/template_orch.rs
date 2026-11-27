@@ -192,6 +192,7 @@ async fn rt_tpl_11_split_creates_parent_and_branches() {
             "序列号 SN-1",
             quote_route("yes", "quote"),
             auto(),
+            None,
         )
         .unwrap();
     assert_eq!(parent.fanout_kind.as_deref(), Some("root"));
@@ -232,7 +233,14 @@ async fn rt_tpl_12_all_ok_join_completes_parent() {
     let conv = e.store.create_conversation("tpl12").unwrap().id;
     let parent = e
         .orch
-        .submit(&conv, "报价", "ctx", quote_route("yes", "quote"), auto())
+        .submit(
+            &conv,
+            "报价",
+            "ctx",
+            quote_route("yes", "quote"),
+            auto(),
+            None,
+        )
         .unwrap();
     let done = wait_parent_done(&e.store, &parent.id).await;
     assert_eq!(done.status, TaskStatus::Completed);
@@ -286,6 +294,7 @@ async fn rt_tpl_13_bad_envelope_marked_missing() {
             "ctx",
             quote_route("yes", "quote"),
             auto(),
+            None,
         )
         .unwrap();
     let done = wait_parent_done(&e.store, &parent.id).await;
@@ -310,7 +319,14 @@ async fn rt_tpl_14_slots_no_stays_single() {
     let conv = e.store.create_conversation("tpl14").unwrap().id;
     let task = e
         .orch
-        .submit(&conv, "整单", "ctx", quote_route("no", "quote"), auto())
+        .submit(
+            &conv,
+            "整单",
+            "ctx",
+            quote_route("no", "quote"),
+            auto(),
+            None,
+        )
         .unwrap();
     assert!(task.fanout_kind.is_none());
     assert!(task.parent_id.is_none());
@@ -331,6 +347,7 @@ async fn rt_tpl_14_slots_no_stays_single() {
             "ctx",
             quote_route("yes", "no_such_template"),
             auto(),
+            None,
         )
         .unwrap();
     assert!(unknown.fanout_kind.is_none());
@@ -348,6 +365,7 @@ async fn rt_tpl_15_cancel_parent_cancels_active_children() {
             "ctx",
             quote_route("yes", "quote"),
             auto(),
+            None,
         )
         .unwrap();
     // 等到至少有一个 branch 在跑
@@ -404,7 +422,7 @@ async fn rt_tpl_16_needs_human_blocks_join_until_accept() {
         created_at: ts.clone(),
         updated_at: ts.clone(),
     };
-    e.store.insert_task(&parent, "ctx").unwrap();
+    e.store.insert_task(&parent, "ctx", None).unwrap();
 
     let mk_branch = |bid: &str, summary: &str| {
         let ts = now();
@@ -451,7 +469,7 @@ async fn rt_tpl_16_needs_human_blocks_join_until_accept() {
         (&p, TaskStatus::Completed),
         (&h, TaskStatus::NeedsHuman),
     ] {
-        e.store.insert_task(t, "").unwrap();
+        e.store.insert_task(t, "", None).unwrap();
         assert!(
             e.store
                 .finish_task(&t.id, &[TaskStatus::Created], to, t.result.as_ref())
@@ -511,7 +529,14 @@ async fn rt_tpl_17_join_created_once_under_concurrent_completion() {
             .id;
         let parent = e
             .orch
-            .submit(&conv, "报价", "ctx", quote_route("yes", "quote"), auto())
+            .submit(
+                &conv,
+                "报价",
+                "ctx",
+                quote_route("yes", "quote"),
+                auto(),
+                None,
+            )
             .unwrap();
         wait_parent_done(&e.store, &parent.id).await;
         let joins = e

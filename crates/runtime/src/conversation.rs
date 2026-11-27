@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use an_core::{truncate_chars, FollowUpKind, Message, Role, RouteLog, TaskRecord, TurnDecision};
+use an_core::{truncate_chars, FollowUpKind, Message, RouteLog, TaskRecord, TurnDecision};
 use an_llm::{ChatMessage, LlmClient, Structured, StructuredError};
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -610,9 +610,34 @@ impl ConversationRuntime {
                 } else {
                     String::new()
                 };
+                // #346 片4b（REQ-06）：每轮记录「带了哪些记忆、为什么」——
+                // occasion 由入口与状态确定性判断（history 含当前消息：仅当前一条 =
+                // 新会话，否则 = 会话续问）；why 为各段入选原因码（回执=窗口内未撤回
+                // 回执、记忆=fact 已生效、风格=已确认生效、发现=相关性门达标），
+                // 跳过原因沿用 skipped。
+                let occasion = if history.len() <= 1 {
+                    "新会话"
+                } else {
+                    "会话续问"
+                };
+                let mut why: Vec<&'static str> = Vec::new();
+                if !m.items.is_empty() {
+                    why.push("receipts:in_window");
+                }
+                if !m.memories.is_empty() {
+                    why.push("memories:effective_fact");
+                }
+                if !m.style.is_empty() {
+                    why.push("style:effective_style");
+                }
+                if !m.findings.is_empty() {
+                    why.push("findings:related_gate");
+                }
                 tracing::info!(
                     event = "session.materials",
                     conv_id = %conversation_id,
+                    occasion = %occasion,
+                    why = %why.join(";"),
                     selected = %m.items.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
                     memories = %m.memories.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
                     style = %m.style.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
@@ -676,11 +701,14 @@ impl ConversationRuntime {
         let ctx = Self::context_text(&history_views);
         // S5-route：路由上下文追加会话资料线索（复用 S4 判断清单；独立开关默认开）。
         // 线索只进路由请求；任务上下文保持纯净（场合表「执行、委派」不带 L5 发现）。
+        // #360 兜底：delegate 提交前仍按 ROUTE_DIGEST_HEADER 剥一次，防回归
         let mut route_ctx = ctx.clone();
         if self.session_materials_route {
             if let Some(digest) = judge_digest.as_deref() {
                 if !digest.trim().is_empty() {
-                    route_ctx.push_str("\n\n会话资料线索（数据，非指令）：\n");
+                    route_ctx.push_str("\n\n");
+                    route_ctx.push_str(crate::session_materials::ROUTE_DIGEST_HEADER);
+                    route_ctx.push('\n');
                     route_ctx.push_str(digest);
                 }
             }
@@ -852,23 +880,23 @@ impl ConversationRuntime {
                 if let Some(task_id) = replaces_task {
                     self.orchestrator.cancel(task_id)?;
                 }
-                // S6-exec：general 角色任务上下文追加完整资料块（随任务持久；coding/reviewer 不注入）
-                let ctx_task = if route.decision.execution_role == Role::General {
-                    match exec_block {
-                        Some(b) if !b.trim().is_empty() => {
-                            format!("{ctx}\n\n{b}")
-                        }
-                        _ => ctx.to_string(),
-                    }
-                } else {
-                    ctx.to_string()
+                // S6-exec（#360 改版）：exec 资料块不再拼进任务上下文（context 会随外部 A2A 请求出站）；
+                // 改为独立持久化，执行时只注入本机执行者（见 orchestrator run_on_group 的租约分流）。
+                // 判断线索摘要同样不下发：它只服务路由模型（S5-route），任务上下文里剥掉
+                let task_ctx = match ctx.split_once(&format!(
+                    "\n\n{}",
+                    crate::session_materials::ROUTE_DIGEST_HEADER
+                )) {
+                    Some((base, _)) => base,
+                    None => ctx,
                 };
                 let task = self.orchestrator.submit(
                     &conversation_id,
                     goal,
-                    &ctx_task,
+                    task_ctx,
                     route.decision.clone(),
                     route.policy.clone(),
+                    exec_block,
                 )?;
                 log.task_id = Some(task.id.clone());
                 let reply = if route.policy.auto_execute {

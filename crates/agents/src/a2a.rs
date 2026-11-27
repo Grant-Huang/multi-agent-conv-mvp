@@ -11,6 +11,7 @@
 //! - 外部 agent 的输出视为**不可信**：结果附一条"未经核实"的证据，摘要和错误长度有上限。
 //! - 是否允许它领任务、结果是否被接受，由准入账本决定（见 `an_runtime::admission`），不在这里判断。
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use an_core::{
@@ -46,6 +47,9 @@ pub struct A2aHttpAgent {
     card: AgentCard,
     url: String,
     http: reqwest::Client,
+    /// 出站外发检查守卫（#360 防线二）：任务上下文发给外部 agent 前评估；
+    /// `[egress]` off（默认）时为 None，行为与以前完全一致
+    egress: Option<Arc<crate::egress::EgressGuard>>,
 }
 
 #[derive(Deserialize)]
@@ -86,7 +90,90 @@ impl A2aHttpAgent {
             },
             url: format!("{endpoint}/run"),
             http,
+            egress: None,
         })
+    }
+
+    /// 设置出站外发检查守卫（Runtime 装配时传入；与 tools/LLM 同一守卫实例）
+    pub fn set_egress_guard(&mut self, guard: Arc<crate::egress::EgressGuard>) {
+        self.egress = Some(guard);
+    }
+
+    /// 出站前处理任务文本（#360 防线二）。守卫在场时 goal 与 context 分别评估：
+    /// 全部通过 → 发脱敏文本；任一未通过/不可用 → enforce 拒发（任务失败），audit 放行原文并记录。
+    /// 守卫不在场（off）→ 原文照发。分开评估是为了两个字段各自拿到自己的脱敏文本，
+    /// 不把 goal 混进 context（外部协议两个字段语义不同）。
+    async fn outbound_texts(&self, task: &TaskSpec) -> Result<(String, String)> {
+        let Some(guard) = &self.egress else {
+            return Ok((task.goal.clone(), task.context.clone()));
+        };
+        let dest = self.card.location.as_str();
+        let goal_ev = guard
+            .evaluate_text(&task.task_id, "a2a", dest, "delegation", &task.goal)
+            .await;
+        let ctx_ev = guard
+            .evaluate_text(&task.task_id, "a2a", dest, "delegation", &task.context)
+            .await;
+        let audit = guard.mode() == crate::egress::EgressMode::Audit;
+        let mut goal = task.goal.clone();
+        let mut context = task.context.clone();
+        let mut verdicts: Vec<String> = vec![];
+        let mut failures: Vec<String> = vec![];
+        for (name, ev) in [("goal", goal_ev), ("context", ctx_ev)] {
+            match ev {
+                Ok(ev) if ev.ready_to_send => {
+                    if let Some(sanitized) = ev.sanitized_text {
+                        match name {
+                            "goal" => goal = sanitized,
+                            _ => context = sanitized,
+                        }
+                    }
+                }
+                Ok(ev) => verdicts.push(format!("{name}={}", ev.decision)),
+                Err(e) => failures.push(format!(
+                    "{name}: {}",
+                    an_core::truncate_chars(&format!("{e}"), 120)
+                )),
+            }
+        }
+        if verdicts.is_empty() && failures.is_empty() {
+            tracing::info!(
+                event = "agent.a2a_egress_pass",
+                task_id = %task.task_id,
+                agent_id = %self.card.id,
+                "外部委派内容已过外发检查"
+            );
+            return Ok((goal, context));
+        }
+        if audit {
+            tracing::warn!(
+                event = "agent.a2a_egress_audit_allow",
+                task_id = %task.task_id,
+                agent_id = %self.card.id,
+                verdicts = ?verdicts,
+                failures = ?failures,
+                "audit 模式：外发检查未通过/不可用，放行原文（仅记录）"
+            );
+            return Ok((task.goal.clone(), task.context.clone()));
+        }
+        let code = if failures.is_empty() {
+            let review = verdicts.iter().any(|v| v.contains("REVIEW"));
+            if review {
+                an_core::codes::EGRESS_REVIEW
+            } else {
+                an_core::codes::EGRESS_BLOCKED
+            }
+        } else {
+            an_core::codes::EGRESS_UNAVAILABLE
+        };
+        Err(AgentError::new(
+            code,
+            format!(
+                "外发检查未通过（{verdicts:?}{failures:?}），已停止向外部 agent {} 委派",
+                self.card.id
+            ),
+        )
+        .into())
     }
 }
 
@@ -98,12 +185,14 @@ impl AgentAdapter for A2aHttpAgent {
 
     async fn run(&self, task: TaskSpec, events: EventSink) -> Result<TaskResult> {
         events.progress(format!("发送到外部 agent {}", self.card.name));
+        // 出站外发检查（#360 防线二）：通过只发脱敏文本；未通过 enforce 拒发、audit 放行原文
+        let (goal, context) = self.outbound_texts(&task).await?;
         let risk = serde_json::to_value(task.route.risk_level)?;
         let body = json!({
             "task_id": task.task_id,
             "conversation_id": task.conversation_id,
-            "goal": task.goal,
-            "context": task.context,
+            "goal": goal,
+            "context": context,
             "risk": risk,
         });
         let resp = match self.http.post(&self.url).json(&body).send().await {

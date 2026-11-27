@@ -103,6 +103,14 @@ pub struct RevokeReport {
     pub aborted: Vec<String>,
 }
 
+/// 私有提交参数包（#360 增加 exec_material 后避免内部提交函数参数过长）
+struct SubmitParts<'a> {
+    conversation_id: &'a str,
+    goal: &'a str,
+    context: &'a str,
+    exec_material: Option<&'a str>,
+}
+
 pub struct Orchestrator {
     store: Arc<Store>,
     bus: Arc<Bus>,
@@ -301,15 +309,22 @@ impl Orchestrator {
         context: &str,
         route: RouteDecision,
         policy: PolicyVerdict,
+        exec_material: Option<&str>,
     ) -> Result<TaskRecord> {
         let slots = RouteSlots {
             template_id: route.template_id.clone(),
             deliverable: route.deliverable.clone(),
             slots_ok: route.slots_ok.clone(),
         };
+        let parts = SubmitParts {
+            conversation_id,
+            goal,
+            context,
+            exec_material,
+        };
         match decide_split(&slots, &self.templates) {
             SplitDecision::Split { template_id } => {
-                self.submit_split(conversation_id, goal, context, route, policy, &template_id)
+                self.submit_split(&parts, route, policy, &template_id)
             }
             SplitDecision::Single { reason } => {
                 if !route.template_id.is_empty() {
@@ -320,24 +335,22 @@ impl Orchestrator {
                         "模板未拆分，整单执行"
                     );
                 }
-                self.submit_single(conversation_id, goal, context, route, policy)
+                self.submit_single(&parts, route, policy)
             }
         }
     }
 
     fn submit_single(
         self: &Arc<Self>,
-        conversation_id: &str,
-        goal: &str,
-        context: &str,
+        parts: &SubmitParts<'_>,
         route: RouteDecision,
         policy: PolicyVerdict,
     ) -> Result<TaskRecord> {
         let ts = now();
         let task = TaskRecord {
             id: an_core::new_id("task"),
-            conversation_id: conversation_id.into(),
-            goal: goal.into(),
+            conversation_id: parts.conversation_id.into(),
+            goal: parts.goal.into(),
             role: route.execution_role,
             status: TaskStatus::Created,
             route,
@@ -352,7 +365,8 @@ impl Orchestrator {
             created_at: ts.clone(),
             updated_at: ts,
         };
-        self.store.insert_task(&task, context)?;
+        self.store
+            .insert_task(&task, parts.context, parts.exec_material)?;
         self.bus.status(
             &task.conversation_id,
             &task.id,
@@ -389,9 +403,7 @@ impl Orchestrator {
 
     fn submit_split(
         self: &Arc<Self>,
-        conversation_id: &str,
-        goal: &str,
-        context: &str,
+        parts: &SubmitParts<'_>,
         route: RouteDecision,
         policy: PolicyVerdict,
         template_id: &str,
@@ -404,8 +416,8 @@ impl Orchestrator {
         let ts = now();
         let parent = TaskRecord {
             id: an_core::new_id("task"),
-            conversation_id: conversation_id.into(),
-            goal: goal.into(),
+            conversation_id: parts.conversation_id.into(),
+            goal: parts.goal.into(),
             role: route.execution_role,
             status: TaskStatus::Created,
             route,
@@ -420,7 +432,8 @@ impl Orchestrator {
             created_at: ts.clone(),
             updated_at: ts,
         };
-        self.store.insert_task(&parent, context)?;
+        self.store
+            .insert_task(&parent, parts.context, parts.exec_material)?;
         self.bus.status(
             &parent.conversation_id,
             &parent.id,
@@ -446,7 +459,7 @@ impl Orchestrator {
                 TaskStatus::Running,
                 format!("模板 {template_id} 并行执行中"),
             );
-            self.start_fanout(&parent, &tmpl, context)?;
+            self.start_fanout(&parent, &tmpl, parts.context)?;
         } else {
             self.transition(
                 &parent,
@@ -509,7 +522,8 @@ impl Orchestrator {
                 created_at: ts.clone(),
                 updated_at: ts,
             };
-            self.store.insert_task(&child, &branch_ctx)?;
+            // 拆分分支不携带 exec 资料块：模板分支面向 coding/reviewer，资料块只服务 General（#360）
+            self.store.insert_task(&child, &branch_ctx, None)?;
             self.bus.status(
                 &child.conversation_id,
                 &child.id,
@@ -1204,6 +1218,7 @@ impl Orchestrator {
         sink: &EventSink,
         round: u32,
         deadline: &mut Option<Instant>,
+        exec_material: Option<&str>,
     ) -> Step {
         let lease = match self
             .registry
@@ -1217,6 +1232,21 @@ impl Orchestrator {
             }
         };
         let card = lease.agent.card().clone();
+        // #360：exec 资料块只注入本机执行者（保持既有拼接格式，内置 General 行为不变）；
+        // 外部 A2A 的请求体（goal/context）不下发资料块——个人记忆不再越过外发边界
+        let mut spec = spec;
+        if card.kind != an_agents::a2a::KIND {
+            if let Some(m) = exec_material.filter(|m| !m.trim().is_empty()) {
+                spec.context = format!("{}\n\n{}", spec.context, m);
+            }
+        } else if exec_material.is_some() {
+            tracing::info!(
+                event = "task.exec_material_withheld",
+                task_id = %task.id,
+                agent_kind = %card.kind,
+                "外部 agent 不下发执行资料块"
+            );
+        }
         // 先记下执行者，再改成 RUNNING：前端收到 RUNNING 事件刷新任务时就能看到是谁在做。
         // 写库失败只记日志，不影响执行（和写交付消息失败的处理一致）。
         let assignment = Assignment {
@@ -1328,6 +1358,9 @@ impl Orchestrator {
     async fn run_with_review(&self, task: &TaskRecord) -> Result<Outcome> {
         // 执行上下文存在 tasks 表里：服务重启后（例如等待审批的任务被批准时）依然可用
         let mut context = self.store.get_task_context(&task.id)?.unwrap_or_default();
+        // exec 资料块独立持久化（#360）：只有租约落到本机执行者时才注入 spec.context，
+        // 外部 A2A 请求不下发；注入点在 run_on_group 拿到执行者卡片之后
+        let exec_material = self.store.get_task_exec_material(&task.id)?;
         let sink = EventSink::new(self.bus.clone(), &task.conversation_id, &task.id);
         let mut deadline = None;
 
@@ -1341,7 +1374,14 @@ impl Orchestrator {
                 route: task.route.clone(),
             };
             let result = match self
-                .run_on_group(task, spec, &sink, round, &mut deadline)
+                .run_on_group(
+                    task,
+                    spec,
+                    &sink,
+                    round,
+                    &mut deadline,
+                    exec_material.as_deref(),
+                )
                 .await
             {
                 Step::Done(r) => r,
@@ -1612,7 +1652,7 @@ mod tests {
         for i in 0..200u64 {
             let task = e
                 .orch
-                .submit(&conv, "g", "", route(), policy(true))
+                .submit(&conv, "g", "", route(), policy(true), None)
                 .unwrap();
             let orch = e.orch.clone();
             let id = task.id.clone();
@@ -1696,7 +1736,7 @@ mod tests {
         let conv = e.store.create_conversation("t").unwrap().id;
         let task = e
             .orch
-            .submit(&conv, "g", "", route(), policy(true))
+            .submit(&conv, "g", "", route(), policy(true), None)
             .unwrap();
         wait_for(&e.store, &task.id, &[TaskStatus::Completed], 5).await;
         assert!(!e.orch.cancel(&task.id).unwrap());
@@ -1710,7 +1750,7 @@ mod tests {
         let conv = e.store.create_conversation("t").unwrap().id;
         let task = e
             .orch
-            .submit(&conv, "g", "", route(), policy(true))
+            .submit(&conv, "g", "", route(), policy(true), None)
             .unwrap();
         wait_for(&e.store, &task.id, &[TaskStatus::Running], 5).await;
         assert!(e.orch.cancel(&task.id).unwrap());
@@ -1727,7 +1767,7 @@ mod tests {
             let conv = e.store.create_conversation("t").unwrap().id;
             let task = e
                 .orch
-                .submit(&conv, "g", "", route(), policy(false))
+                .submit(&conv, "g", "", route(), policy(false), None)
                 .unwrap();
             assert_eq!(task.status, TaskStatus::NeedsHuman);
             let barrier = Arc::new(tokio::sync::Barrier::new(10));
@@ -1758,12 +1798,12 @@ mod tests {
         let conv = e.store.create_conversation("t").unwrap().id;
         let t1 = e
             .orch
-            .submit(&conv, "g1", "", route(), policy(true))
+            .submit(&conv, "g1", "", route(), policy(true), None)
             .unwrap();
         wait_for(&e.store, &t1.id, &[TaskStatus::Running], 5).await;
         let t2 = e
             .orch
-            .submit(&conv, "g2", "", route(), policy(true))
+            .submit(&conv, "g2", "", route(), policy(true), None)
             .unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert_eq!(status_of(&e.store, &t1.id), TaskStatus::Running);
@@ -1783,12 +1823,12 @@ mod tests {
         let conv = e.store.create_conversation("t").unwrap().id;
         let t1 = e
             .orch
-            .submit(&conv, "g1", "", route(), policy(true))
+            .submit(&conv, "g1", "", route(), policy(true), None)
             .unwrap();
         wait_for(&e.store, &t1.id, &[TaskStatus::Running], 5).await;
         let t2 = e
             .orch
-            .submit(&conv, "g2", "", route(), policy(true))
+            .submit(&conv, "g2", "", route(), policy(true), None)
             .unwrap();
         assert_eq!(
             wait_for(
@@ -1820,7 +1860,7 @@ mod tests {
         let conv = e.store.create_conversation("t").unwrap().id;
         let t = e
             .orch
-            .submit(&conv, "g", "", route(), policy(true))
+            .submit(&conv, "g", "", route(), policy(true), None)
             .unwrap();
         assert_eq!(
             wait_for(
@@ -1850,7 +1890,7 @@ mod tests {
         let mut rx = e.bus.subscribe();
         let task = e
             .orch
-            .submit(&conv, "g", "", route(), policy(true))
+            .submit(&conv, "g", "", route(), policy(true), None)
             .unwrap();
         wait_for(&e.store, &task.id, &[TaskStatus::Running], 5).await;
         let deadline = std::time::Instant::now() + Duration::from_secs(90);
