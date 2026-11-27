@@ -930,6 +930,16 @@ async fn patch_memory(
     Json(body): Json<PatchMemoryBody>,
 ) -> Response {
     let user = principal_or_local(&headers);
+    // #499：expires 预校验——非法值 400 且库不变（与 create 口径一致）
+    if let Some(v) = body.expires.as_deref() {
+        if an_runtime::store::Store::validate_expires(v).is_err() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "code": "invalid", "message": "expires 只能是「长期」或 YYYY-MM-DD", "retryable": false })),
+            )
+                .into_response();
+        }
+    }
     match rt.store.patch_desktop_memory(
         &user,
         &id,
