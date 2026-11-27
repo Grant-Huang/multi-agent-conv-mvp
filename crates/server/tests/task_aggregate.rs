@@ -11,7 +11,7 @@ use an_core::{
 use an_runtime::config::AppConfig;
 use an_runtime::store::Store;
 use an_runtime::Runtime;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 async fn serve(rt: Arc<Runtime>) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -92,21 +92,6 @@ fn seed(rt: &Runtime, id: &str, goal: &str, summary: Option<&str>) {
     rt.store.insert_task(&t, "", None).unwrap();
 }
 
-async fn get(rt: &Arc<Runtime>, ids: &str) -> (u16, Value) {
-    let app = an_server::api(rt.clone());
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let r = reqwest::Client::new()
-        .get(format!(
-            "http://{addr}/api/desktop/v1/tasks/aggregate?ids={ids}"
-        ))
-        .send()
-        .await
-        .unwrap();
-    (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
-}
-
 /// RT-SAGG-01：多任务聚合含逐条来源链接与产物名
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rt_sagg_01_aggregates_multiple_tasks_with_sources() {
@@ -125,13 +110,10 @@ async fn rt_sagg_01_aggregates_multiple_tasks_with_sources() {
     let v: Value = r.json().await.unwrap();
     let items = v["items"].as_array().unwrap();
     assert_eq!(items.len(), 2);
-    for (i, (id, goal, summary)) in [
+    for (id, goal, summary) in [
         ("task-agg-1", "整理产线结论", "产线结论摘要"),
         ("task-agg-2", "统计 CPK", "CPK 统计完成"),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ] {
         let it = items.iter().find(|x| x["task_id"] == id).unwrap();
         assert_eq!(it["conversation_id"], "conv-agg", "来源链接（会话）");
         assert_eq!(it["goal"], goal);
