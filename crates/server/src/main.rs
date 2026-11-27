@@ -167,6 +167,8 @@ async fn main() -> Result<()> {
             app = app.merge(an_server::mom_world_prod::router(
                 an_server::mom_world_prod::WorldProdState::with_test_controls(),
             ));
+            // 连接器描述符与健康探测（契约 K4/K6，docs/contracts/connector.md；#488）
+            app = app.merge(an_server::mom_world_descriptors::router());
         }
         app = app
             .route(

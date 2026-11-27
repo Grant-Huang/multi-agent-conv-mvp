@@ -1068,7 +1068,9 @@
       "scripts/wa-m2-suite.sh",
       "scripts/wa-m3-suite.sh",
       "docs/decisions/2026-11-21-wa-m2-1-green-service-layer.md",
-      "docs/decisions/2026-11-22-wa-m3-1-prod-read-service-layer.md"
+      "docs/decisions/2026-11-22-wa-m3-1-prod-read-service-layer.md",
+      "crates/server/src/mom_world_descriptors.rs",
+      "web/e2e/world-descriptors.spec.ts"
     ],
     "coverage": "browser",
     "cases": [
@@ -1090,7 +1092,8 @@
       "E2E-WAPROD",
       "E2E-WAPISO",
       "E2E-WAPREAD",
-      "E2E-WAPDELAY"
+      "E2E-WAPDELAY",
+      "E2E-WADESC"
     ],
     "runtime_cases": [
       "RT-WA-01",

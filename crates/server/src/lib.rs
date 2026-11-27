@@ -30,6 +30,7 @@ pub mod mom_ops;
 pub mod mom_relos;
 pub mod mom_sim;
 pub mod mom_world_des;
+pub mod mom_world_descriptors;
 pub mod mom_world_mock;
 pub mod mom_world_prod;
 
