@@ -117,10 +117,6 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
                 post(confirm_memory),
             )
             .route(
-                "/api/desktop/v1/memories/fixture/reset",
-                post(reset_memories_fixture),
-            )
-            .route(
                 "/api/desktop/v1/memories/{id}",
                 get(get_memory).patch(patch_memory).delete(delete_memory),
             )
@@ -145,10 +141,6 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
             .route(
                 "/api/desktop/v1/assistant/messages/read",
                 get(get_assistant_reads).post(mark_assistant_reads),
-            )
-            .route(
-                "/api/desktop/v1/assistant/messages/fixture/reset",
-                post(reset_assistant_read_fixture),
             )
             .route("/api/desktop/v1/tasks/{id}/evidence", get(list_evidence))
             .route("/api/desktop/v1/evidence/search", get(search_evidence))
@@ -236,14 +228,22 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
                 get(move |state: State<AppState>| async move {
                     get_snapshot(state, test_fixtures).await
                 }),
+            ); // T-95/FIX-C（H4）：Resume 测试夹具接口仅在 test_fixtures=true 时挂载；生产缺省不挂载（404）
+    if test_fixtures {
+        router
+            // UXFIX（#365）：fixture/reset 口移入 test_fixtures 门内（H4 收口一致性）
+            .route(
+                "/api/desktop/v1/memories/fixture/reset",
+                post(reset_memories_fixture),
+            )
+            .route(
+                "/api/desktop/v1/assistant/messages/fixture/reset",
+                post(reset_assistant_read_fixture),
             )
             .route(
                 "/api/desktop/v1/snapshot/fixture/reset",
                 post(snapshot_fixture_reset),
-            );
-    // T-95/FIX-C（H4）：Resume 测试夹具接口仅在 test_fixtures=true 时挂载；生产缺省不挂载（404）
-    if test_fixtures {
-        router
+            )
             .route(
                 "/api/desktop/v1/resume/fixture/seed",
                 post(resume_fixture_seed),
