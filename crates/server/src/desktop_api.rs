@@ -228,8 +228,7 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
                 get(move |state: State<AppState>| async move {
                     get_snapshot(state, test_fixtures).await
                 }),
-            )
-;    // T-95/FIX-C（H4）：Resume 测试夹具接口仅在 test_fixtures=true 时挂载；生产缺省不挂载（404）
+            ); // T-95/FIX-C（H4）：Resume 测试夹具接口仅在 test_fixtures=true 时挂载；生产缺省不挂载（404）
     if test_fixtures {
         router
             // UXFIX（#365）：fixture/reset 口移入 test_fixtures 门内（H4 收口一致性）
