@@ -9,7 +9,8 @@ static_dir = "web/dist"            # 前端构建产物（npm run build 之后�
 # ───── 本地模型（llama.cpp 的 OpenAI 兼容接口）─────
 [llm]
 base_url = "http://127.0.0.1:8098/v1"
-api_key = ""                       # llama.cpp 默认不需要
+api_key = ""                       # llama.cpp 默认不需要。云端后端建议改用 api_key_env（契约 K2：不要把明文密钥写进配置文件）
+# api_key_env = "LLM_API_KEY"      # 凭据引用：指向存放密钥的环境变量；设置后优先于 api_key
 model = "local"                    # llama.cpp 单模型时模型名基本被忽略
 temperature = 0.2
 max_tokens = 4096                  # 各角色第一次生成的输出上限。General 写长文时再提高到至少 8192

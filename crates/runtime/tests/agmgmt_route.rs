@@ -13,6 +13,7 @@ fn router() -> Router {
     let llm = an_llm::LlmClient::new(LlmConfig {
         base_url: "http://127.0.0.1:9/v1".into(),
         api_key: String::new(),
+        api_key_env: None,
         model: "m".into(),
         temperature: 0.2,
         max_tokens: None,

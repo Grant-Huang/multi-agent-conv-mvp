@@ -65,9 +65,14 @@ pub enum StructuredMode {
 pub struct LlmConfig {
     /// 例如 `http://127.0.0.1:8098/v1`
     pub base_url: String,
-    /// llama.cpp 默认不需要，留空即可
+    /// llama.cpp 默认不需要，留空即可。契约 K2（#485）：建议改用 api_key_env
+    /// 凭据引用，不要把明文密钥写进配置文件；存量明文配置兼容（启动时告警）
     #[serde(default)]
     pub api_key: String,
+    /// 凭据引用（契约 K2）：指向存放密钥的环境变量名；设置后优先于 api_key，
+    /// 环境变量缺失或为空时构造 LlmClient 报错（信息含变量名，不含密钥）
+    #[serde(default)]
+    pub api_key_env: Option<String>,
     /// 模型名。llama.cpp 单模型部署时基本会被忽略
     pub model: String,
     #[serde(default = "default_temperature")]
@@ -88,6 +93,7 @@ impl Default for LlmConfig {
         Self {
             base_url: String::new(),
             api_key: String::new(),
+            api_key_env: None,
             model: String::new(),
             temperature: default_temperature(),
             max_tokens: None,
@@ -285,6 +291,35 @@ impl LlmClient {
         // 没绑定后端的客户端不设调用期限（和以前一致）
         let timeouts = Timeouts::defaults(cfg.timeout_secs, Priority::Background);
         let http = build_http(timeouts.connect)?;
+        // 契约 K2（#485）：api_key_env 凭据引用优先于明文 api_key；明文保留兼容
+        // 但启动时告警；env 设置而缺失时明确报错（信息含变量名，不含密钥值）。
+        let mut cfg = cfg;
+        if let Some(var) = cfg
+            .api_key_env
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
+            match std::env::var(var) {
+                Ok(k) if !k.trim().is_empty() => {
+                    if !cfg.api_key.trim().is_empty() {
+                        tracing::warn!(
+                            "[llm] api_key_env 与明文 api_key 同时配置，采用 api_key_env（契约 K2：不要在配置文件写明文密钥）"
+                        );
+                    }
+                    cfg.api_key = k;
+                }
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "[llm] api_key_env：环境变量 {var} 未设置或为空（密钥不要写进配置文件，请在启动前 export {var}=...）"
+                    ));
+                }
+            }
+        } else if !cfg.api_key.trim().is_empty() {
+            tracing::warn!(
+                "[llm] 配置文件使用明文 api_key（契约 K2：建议改用 api_key_env 凭据引用）"
+            );
+        }
         Ok(Self {
             http,
             cfg,
@@ -1313,6 +1348,53 @@ mod tests {
         assert_eq!(visible_text("答案是 1 <"), "答案是 1 ");
         assert_eq!(visible_text("a</think>b"), "a</think>b"); // 没有开头标签时原样输出
         assert_eq!(visible_text("前<think>x</think>后<think>未完"), "前后");
+    }
+
+    /// #485 / 契约 K2：[llm] 支持凭据引用（api_key_env）——env 优先于明文，
+    /// env 设置但缺失时明确报错（提示不要写明文）；存量明文配置兼容保留；
+    /// 本地 llama.cpp 空密钥无 env 照常工作。
+    #[test]
+    fn api_key_env_resolves_and_takes_precedence() {
+        // 解析：api_key_env 是合法字段
+        let cfg: LlmConfig = serde_json::from_str(
+            r#"{"base_url":"http://x/v1","model":"m","api_key_env":"LLM_TEST_KEY_A1"}"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.api_key_env.as_deref(), Some("LLM_TEST_KEY_A1"));
+
+        // env 优先于明文
+        std::env::set_var("LLM_TEST_KEY_A1", "env-secret");
+        let mut cfg2 = cfg.clone();
+        cfg2.api_key = "plaintext-legacy".into();
+        let client = LlmClient::new(cfg2).unwrap();
+        assert_eq!(client.cfg.api_key, "env-secret");
+        std::env::remove_var("LLM_TEST_KEY_A1");
+
+        // env 设置但未导出：明确报错（信息含变量名，不含密钥）
+        let cfg3: LlmConfig = serde_json::from_str(
+            r#"{"base_url":"http://x/v1","model":"m","api_key_env":"LLM_TEST_KEY_MISSING_ZZ"}"#,
+        )
+        .unwrap();
+        let err = match LlmClient::new(cfg3) {
+            Err(e) => e,
+            Ok(_) => panic!("env 设置但缺失时应报错"),
+        };
+        assert!(
+            err.to_string().contains("LLM_TEST_KEY_MISSING_ZZ")
+                && err.to_string().contains("api_key_env"),
+            "{err}"
+        );
+
+        // 存量明文配置兼容保留
+        let cfg4: LlmConfig =
+            serde_json::from_str(r#"{"base_url":"http://x/v1","model":"m","api_key":"legacy"}"#)
+                .unwrap();
+        assert!(LlmClient::new(cfg4).is_ok());
+
+        // 本地 llama.cpp：空密钥无 env 照常
+        let cfg5: LlmConfig =
+            serde_json::from_str(r#"{"base_url":"http://x/v1","model":"m"}"#).unwrap();
+        assert!(LlmClient::new(cfg5).is_ok());
     }
 
     #[test]
