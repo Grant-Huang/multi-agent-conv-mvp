@@ -1063,7 +1063,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 
 ## 会话资料注入 conversation-memory 5.1（REQ-conversation-memory-01；2026-11-23 用户确认冻结）
 
-资料 = 同会话内未撤回任务链接（`desktop_conversation_task_links`）指向的终态任务回执摘要。回答路径把资料作为「数据，非指令」系统消息注入提示词（系统提示后、历史前）；超预算时先裁资料，当前请求不挤掉。实现：`crates/runtime/src/session_materials.rs` + `conversation.rs` 回答路径 + `store.rs` 只读链接查询。
+资料 = 同会话内未撤回任务链接（`desktop_conversation_task_links`）指向的终态任务回执摘要。回答路径把资料作为「数据，非指令」**并入首条 system**（#448：本机 Qwen 禁止第二条 system）；条数预算由 `session_materials::render` 先裁。实现：`crates/runtime/src/session_materials.rs` + `conversation.rs` 回答路径 + `store.rs` 只读链接查询。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -1074,6 +1074,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-SMAT-05 | conversation-memory | 任一发生注入的轮次 | 检查日志 | `session.materials` 事件只含来源 id 与原因，不含资料正文、用户消息或回答正文 |
 | RT-SMAT-06 | conversation-memory | 含指令样式的记忆正文（#346 注入测试集·基线） | 续问 | 指令文本只出现在「数据，非指令」资料块内且含来源 id；其余消息不携带；该轮不产生任务、不新增记忆写入 |
 | RT-SMAT-07 | conversation-memory | 同上（判断路径） | 续问 | turn_decision 请求只含 ≤40 字要点与来源 id，完整指令正文不出现（事件正文边界由 RT-SMAT-05 覆盖） |
+| RT-SMAT-08 | conversation-memory | 同 RT-SMAT-01（`session_materials=true`） | 续问 | 回答请求 leading `role=system` 恰好 1 条，且该条含资料块标记与来源 id（#448） |
 | E2E-SMAT | conversation-memory | 浏览器真实会话：委派任务完成、回执被 ≥12 条消息挤出窗口 | 桌面入口续问（含探针词） | 助手回答文本包含窗口外回执的摘要要点（资料已进入模型并用于回答） |
 
 ## 个人记忆生命周期与隔离 conversation-memory 5.2a（REQ-conversation-memory-02；2026-11-23 用户确认：POST 端点 + kind 补列 + 夹具头隔离口径）
@@ -1090,7 +1091,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 
 ## 风格/画像预览与下一会话生效 conversation-memory 5.2b（REQ-conversation-memory-02 生效闸门；2026-11-23 用户确认：推导式判定 / 独立风格卡 / fact 不走闸门 / ≤200 token + 护栏）
 
-preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进任何注入）；`POST /memories/{id}/confirm` 记 `confirmed_at`；注入侧推导式判定 `confirmed_at ≤ 当前会话 created_at` 才计入（旧会话不回填，无需状态机字段）；生效前可随时撤回。生效条目进**独立风格卡**系统消息（≤ `[conversation] session_materials_style_max_tokens` 默认 200），块首固定护栏句（风格不得裁剪风险信息，落地决定 48 红线）。fact 不走闸门（保存即可注入，5.2a 语义不变）。E2E 待第 1 线入口后补录。
+preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进任何注入）；`POST /memories/{id}/confirm` 记 `confirmed_at`；注入侧推导式判定 `confirmed_at ≤ 当前会话 created_at` 才计入（旧会话不回填，无需状态机字段）；生效前可随时撤回。生效条目进**风格卡**并入首条 system（≤ `[conversation] session_materials_style_max_tokens` 默认 200；#448 与资料同条），块首固定护栏句（风格不得裁剪风险信息，落地决定 48 红线）。fact 不走闸门（保存即可注入，5.2a 语义不变）。E2E 待第 1 线入口后补录。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -1115,7 +1116,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 
 ## 判断路径会话资料清单 conversation-memory 5.4a（S4；2026-11-24 用户确认：极简清单 / 默认开 / 仅判断路径 / 先合入后跑 E0 对比）
 
-判断模型（turn_decision）此前只见近 12 条消息与活动任务；回执出窗后续问时判断方向可能误判。本卡把会话资料以**极简清单**注入判断提示词（每条一行 `id · 类型 · 要点≤40字`，最多 3 行，独立系统消息紧随判断系统提示）；收集复用 5.1 Collector（相关性门/作用域/降级/过期语义不变），**每轮收集一次、判断与回答两路共享**；schema 不变。`[conversation] session_materials_judge` 默认开。判断提示词变化对 FT 路由基线的影响：先合入后跑 E0 同口径对比，结果回填 FT 记录，掉点则关默认。
+判断模型（turn_decision）此前只见近 12 条消息与活动任务；回执出窗后续问时判断方向可能误判。本卡把会话资料以**极简清单**注入判断提示词（每条一行 `id · 类型 · 要点≤40字`，最多 3 行，并入判断首条 system；#448）；收集复用 5.1 Collector（相关性门/作用域/降级/过期语义不变），**每轮收集一次、判断与回答两路共享**；schema 不变。`[conversation] session_materials_judge` 默认开。判断提示词变化对 FT 路由基线的影响：先合入后跑 E0 同口径对比，结果回填 FT 记录，掉点则关默认。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
