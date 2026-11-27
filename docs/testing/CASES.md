@@ -1050,6 +1050,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 |---|---|---|---|---|
 | E2E-WAPROD | world-adapter | 工作台可选生产世界；生产读 stub/适配可用 | 选择生产世界 → 看板/观测 | 可见正式只读；`provenance=production`；写入口关闭或明确指向隔离 Mock/DES 世界 |
 | E2E-WAPISO | world-adapter | 两站点/两身份；至少一无权限 | 无权限或跨站点读列表与详情 | 服务端拒绝；列表/详情不泄露其他站点事项 |
+| E2E-WADESC | world-adapter | 默认 harness（`world_mock=true`）（契约 K4/K6，#488） | `GET /api/world/descriptors`；`GET /api/world/{mock,des,prod}/health`；`GET /api/world/no-such/health` | 三个后端描述符齐全且含 K6 最小字段（id/kind/transport/endpoint/capabilities/health/owner）；credentials 为 null（当前无外部凭据）；各 health 明确返回 status=ok 与 mode（in_process/stub）与 detail；未知后端 404 不无声失败 |
 | E2E-WAPREAD | world-adapter | 已绑定生产世界并观测；水位可见 | 断线或注入过期游标后「重新读取」 | 同事件 ID 只应用一次；过期与水位单独显示；可恢复续读 |
 | E2E-WAPDELAY | world-adapter | 多来源生产 stub；可注入延迟 | 观测多源对象与水位 | `as_of`/截至时间可辨；过期空态区别于正常空态 |
 

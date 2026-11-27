@@ -1097,7 +1097,7 @@ MOM 用独立的库，不与主库混用：主程序在本机监听时用主库�
 | `/api/introspection/*` | 业务内省 | [memory/INTROSPECTION_PLAN.md](memory/INTROSPECTION_PLAN.md) |
 | `/api/desktop/*` | AI 桌面 | [ai-desktop/DESIGN.md](ai-desktop/DESIGN.md) |
 | `/api/mom/*` | MOM、DES 仿真、运营桌面与运营频道 | [mom/IMPLEMENTATION.md](mom/IMPLEMENTATION.md)、[mom/DES_CLOSED_LOOP.md](mom/DES_CLOSED_LOOP.md)、[mom/OPS_DESK.md](mom/OPS_DESK.md) |
-| `/api/world/*` | World Adapter | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md) |
+| `/api/world/*` | World Adapter | [mom/WORLD_ADAPTER.md](mom/WORLD_ADAPTER.md)、[contracts/connector.md](contracts/connector.md)（描述符与健康探测，#488） |
 
 ### 11.3 界面
 
