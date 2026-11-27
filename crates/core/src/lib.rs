@@ -1060,3 +1060,5 @@ mod tests {
         );
     }
 }
+
+// T1 分流演示（#432）：本文件属 crates/**，触发 rust 作业全量（fmt/clippy/test）。
