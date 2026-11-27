@@ -35,3 +35,7 @@
 ## 设置风格生效卡（#403 / INTENT-034，2026-11-26 用户拍板方案 a）
 
 - [x] 设置里的沟通原则（Soul）/ 质量偏好（Taste）视作已确认风格进风格卡：保存即确认、全会话生效（不沿用记忆的「确认晚于会话创建不回填」——设置是持续配置）；默认值视作未设置不注入（清空字段即停用）；来源 id `profile:soul` / `profile:taste`（CH-G1 可说明）；护栏句与 ≤200 token 预算沿用 5.2b；个人质量偏好 ≠ 组织 taste（CH-G2 组织层，不经个人设置）；RT-USTY-07；决策 `decisions/2026-11-26-convmem-settings-style-effective.md`；证据 `testing/evidence/convmem-403-settings-style.md`。界面文案与「改了就生效」展示归第 1 线（#306/#347 配合）。
+
+## 观测性卡（P3 小改）
+
+- [x] RT-EXEC-09 委派执行资料埋点（#364 / R-20261126-L1）：委派成功处补发 `session.materials.exec`（`task_id` / `exec_injected` / `reason`：injected、switch_off、empty、role_skipped / `exec_chars`）；DESIGN §10.3 事件字段登记；只记量与原因不记正文；证据 `testing/evidence/convmem-364-exec-telemetry.md`。

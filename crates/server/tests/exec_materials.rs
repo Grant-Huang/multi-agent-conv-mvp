@@ -612,3 +612,91 @@ async fn rt_exec_08_long_titles_bounded_by_budget() {
         );
     }
 }
+
+// ───── RT-EXEC-09（#364 / R-20261126-L1）：委派成功执行资料埋点 ─────
+
+struct Capture(Arc<Mutex<Vec<String>>>);
+
+impl std::io::Write for Capture {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap()
+            .push(String::from_utf8_lossy(buf).to_string());
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// RT-EXEC-09（#364 / R-20261126-L1）：委派成功处补发 `session.materials.exec`
+/// 埋点——带 `task_id`、`exec_injected`、`reason`、`exec_chars`（注入规模与
+/// 原因可观测；只记量与原因，不记资料正文）。exec 关闭时 exec_injected=false
+/// 且带原因。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_exec_09_delegate_logs_exec_telemetry() {
+    let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_ansi(false)
+        .with_writer({
+            let lines = lines.clone();
+            move || Capture(lines.clone())
+        })
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+
+    let llm = MockLlm::start().await;
+    let rt = runtime(&llm.base, "");
+    let conv = rt.store.create_conversation("t").unwrap();
+    seed_linked_task(&rt, &conv.id, "task-exec-09", "执行埋点探针EXEC09摘要。");
+    for i in 0..12 {
+        rt.store
+            .add_message(&conv.id, "user", &format!("历史填充{i}"), None)
+            .unwrap();
+    }
+    let out = rt
+        .conversation
+        .handle_message(&conv.id, "你好，整理那个任务的结论成报告")
+        .await
+        .unwrap();
+    let task = out.task.expect("委派应产生任务");
+    let _ = wait_first_step(&llm);
+
+    let captured = lines.lock().unwrap().clone();
+    // fmt 层可能分片写入：全量拼接后再做子串断言（与 SMAT-05 同款健壮口径）
+    let blob = captured.join("");
+    assert!(
+        blob.contains("session.materials.exec") && blob.contains(&task.id),
+        "委派成功应补发 exec 埋点（含 task_id）"
+    );
+    assert!(
+        blob.contains("exec_injected=true"),
+        "exec seg missing: {blob}"
+    );
+    assert!(!blob.contains("EXEC09摘要"), "埋点不得含资料正文：{blob}");
+
+    // exec 关闭：exec_injected=false 且带原因（switch_off）
+    let llm2 = MockLlm::start().await;
+    let rt2 = runtime(&llm2.base, "session_materials_exec = false");
+    let conv2 = rt2.store.create_conversation("t2").unwrap();
+    seed_linked_task(&rt2, &conv2.id, "task-exec-09b", "关闭开关摘要EXEC09B。");
+    rt2.conversation
+        .handle_message(&conv2.id, "你好，整理那个任务的结论成报告")
+        .await
+        .unwrap();
+    let out2 = rt2
+        .conversation
+        .handle_message(&conv2.id, "你好，再整理一次那个任务的结论")
+        .await
+        .unwrap();
+    let _task2 = out2.task.expect("委派应产生任务");
+    let captured2 = lines.lock().unwrap().clone();
+    let blob2 = captured2.join("");
+    assert!(
+        blob2.contains("exec_injected=false") && blob2.contains("switch_off"),
+        "关闭开关应带原因（exec_injected=false / switch_off）"
+    );
+    assert!(blob2.contains("exec_chars=0"), "关闭时 exec_chars=0");
+}

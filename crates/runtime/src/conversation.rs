@@ -937,6 +937,31 @@ impl ConversationRuntime {
                     exec_block,
                 )?;
                 log.task_id = Some(task.id.clone());
+                // #364 / R-20261126-L1：委派成功的执行资料埋点——注入量与原因可观测
+                //（AGENTS.md 日志约定：关联 task_id；字段登记于 DESIGN 第 10.3 节
+                // `session.materials` 行）。只记量与原因，不记资料正文。
+                let (exec_injected, exec_reason) = match exec_block {
+                    Some(b)
+                        if !b.trim().is_empty()
+                            && route.decision.execution_role == an_core::Role::General =>
+                    {
+                        (true, "injected")
+                    }
+                    Some(b) if !b.trim().is_empty() => (false, "role_skipped"),
+                    Some(_) => (false, "empty"),
+                    None => (false, "switch_off"),
+                };
+                tracing::info!(
+                    event = "session.materials.exec",
+                    task_id = %task.id,
+                    conv_id = %conversation_id,
+                    exec_injected = exec_injected,
+                    reason = exec_reason,
+                    exec_chars = exec_block
+                        .map(|b| b.trim().chars().count() as u64)
+                        .unwrap_or(0),
+                    "委派执行资料注入"
+                );
                 let reply = if route.policy.auto_execute {
                     // 完整显示用户意图（只压缩连续空白），不再截断：用户要求能看到自己的完整要求
                     let intent = goal.split_whitespace().collect::<Vec<_>>().join(" ");
