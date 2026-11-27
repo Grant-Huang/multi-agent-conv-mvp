@@ -487,7 +487,10 @@ export default function App() {
     }
   }, []);
 
-  const openSettings = (layer: SettingsLayer = "categories", categoryId: SettingsCategoryId | null = null) => {
+  // UXFIX-O（INTENT-024）：记录是否经场景捷径进入设置（捷径一次返回即回原工作）
+  const settingsViaShortcutRef = useRef(false);
+  const openSettings = (layer: SettingsLayer = "categories", categoryId: SettingsCategoryId | null = null, viaShortcut = false) => {
+    settingsViaShortcutRef.current = viaShortcut;
     setDesktopSide({ kind: "settings", layer, categoryId, memoryId: null, search: "" });
   };
 
@@ -841,7 +844,7 @@ export default function App() {
               setMainView("home");
             }}
             onOpenEvidence={() => openEvidence(workspaceTaskId)}
-            onOpenSettings={() => openSettings("assistant", "assistant")}
+            onOpenSettings={() => openSettings("assistant", "assistant", true)}
             onOpenTask={(id) => openWorkspace(id)}
             testFixtures={testFixtures}
           />
@@ -919,6 +922,7 @@ export default function App() {
             categoryId={desktopSide.categoryId}
             memoryId={desktopSide.memoryId}
             search={desktopSide.search}
+            closeToSource={settingsViaShortcutRef.current}
             testFixtures={testFixtures}
             onNavigate={(next) =>
               setDesktopSide({
