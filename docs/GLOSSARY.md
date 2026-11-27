@@ -61,4 +61,6 @@
 | 夹具（fixture） | 测试用的预置数据 | [testing/README.md](testing/README.md) |
 | 影子审查 | CI 在 PR 上自动贴的风险等级与清单，只提醒不阻断 | [fencing/SHADOW_REVIEW.md](fencing/SHADOW_REVIEW.md) |
 | 在制品 | 已开出、尚未合并的 PR | [fencing/INTEGRATION_PIPELINE.md](fencing/INTEGRATION_PIPELINE.md) 第 3 节 |
-| 派工 Issue | 标签 `dispatch` + `line:N` 的任务卡 | [AGENTS.md](../AGENTS.md)“跨线分工” |
+| 派工 Issue | 标签 `dispatch` + `line:N` 的任务卡；只挂主责线一个 `line:N` | [AGENTS.md](../AGENTS.md)“跨线分工” |
+| 公告单 | 标题“[各线通知]”、标签 `announcement` 的长期 Issue，不关闭、按月换新 | [决定 2026-11-25-dispatch-to-workstreams](decisions/2026-11-25-dispatch-to-workstreams.md) 第 10 条 |
+| 总 Issue / 子 Issue | 一项跨线工作拆成按线的子 Issue，挂在一个总 Issue 下 | 同上 |
