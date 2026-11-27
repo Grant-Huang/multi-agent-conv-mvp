@@ -1,12 +1,19 @@
 # 夜间浏览器 E2E（阶段 3）。失败开 issue，暂不作为 PR 必需检查。
-# 见 docs/fencing/EVAL_LOOP.md。
+# 见 docs/fencing/EVAL_LOOP.md、docs/fencing/NIGHTLY_DISPATCH_PLAN.md。
+#
+# 触发（#446，2026-11-27 起）：
+# - 主触发：外部准点触发（每天 08:23 UTC 经 workflow_dispatch）；
+# - 兜底：本文件 cron 改为非整点 `17 9 * * *`（09:17 UTC，与准点触发错开）；
+# - 守卫：第一步检查过去 20 小时内是否已有成功/进行中的 nightly-e2e（任一触发方式），
+#   命中则本次成功退出，不跑也不开失败 Issue——cron 兜底晚到时不重复执行。
+# （背景：GitHub schedule 事件本身派发常延迟数小时，非 runner 排队；故准点靠外部触发。）
 
 name: nightly-e2e
 
 on:
   schedule:
-    # 温哥华约 03:30 → UTC 10:30（冬令时近似）
-    - cron: "30 10 * * *"
+    # 兜底档：UTC 09:17（非整点半点，避免与整点任务高峰竞争；准点主触发 08:23Z 在外）。
+    - cron: "17 9 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -16,6 +23,7 @@ concurrency:
 permissions:
   contents: read
   issues: write
+  actions: read
 
 env:
   CARGO_TARGET_DIR: target
@@ -28,27 +36,51 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # 重复运行守卫：20h 内已有成功/进行中（含排队）的 nightly-e2e 则跳过本次。
+      # 任一触发方式（外部准点、cron 兜底、手动）都受守卫约束；排除自身本次运行。
+      - name: 重复运行守卫
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          since="$(date -u -d '20 hours ago' '+%Y-%m-%dT%H:%M:%SZ')"
+          others="$(gh run list --workflow=nightly-e2e.yml --created ">$since" \
+            --json databaseId,status,conclusion \
+            --jq "[.[] | select(.databaseId != ${GITHUB_RUN_ID})]")"
+          trip="$(printf '%s' "$others" | jq '[.[] | select(.status == "in_progress" or .status == "queued" or .conclusion == "success")] | length')"
+          if [ "${trip:-0}" -gt 0 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "守卫命中：过去 20 小时已有 ${trip} 个成功/进行中的 nightly-e2e，本次直接成功退出（不开失败 Issue）。"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "守卫未命中：20 小时内无成功/进行中运行，继续执行。"
+          fi
       - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        if: steps.guard.outputs.skip != 'true'
         with:
           toolchain: "1.100.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        if: steps.guard.outputs.skip != 'true'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        if: steps.guard.outputs.skip != 'true'
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: 安装浏览器与依赖
+        if: steps.guard.outputs.skip != 'true'
         working-directory: web
         run: |
           npm ci
           npx playwright install chromium --with-deps
       - name: npm run verify
+        if: steps.guard.outputs.skip != 'true'
         id: verify
         working-directory: web
         run: npm run verify
       - name: 失败时开 issue
-        if: failure()
+        if: failure() && steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
