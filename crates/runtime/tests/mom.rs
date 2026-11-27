@@ -981,3 +981,122 @@ fn rt_mom_10_terminal_cases_reject_manual_world_changes_without_events() {
     assert_eq!(e.case(&id).unwrap().world["resources_available"], false);
     assert!(e.sequence() > sequence);
 }
+
+// #459 方向 C（决定 2026-11-27-mom-update-persistence-design）：持久化分片。
+// 把一个真实 v2 库「降级」成 v1 形态（整行快照 + user_version=1），再交给引擎迁移。
+fn downgrade_to_v1(path: &std::path::Path) {
+    let db = rusqlite::Connection::open(path).unwrap();
+    let global: String = db
+        .query_row("SELECT body FROM mom_global WHERE id=1", [], |r| r.get(0))
+        .unwrap();
+    let mut cases_obj = serde_json::Map::new();
+    {
+        let mut st = db
+            .prepare("SELECT case_id,body FROM mom_case_state")
+            .unwrap();
+        let rows = st
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .unwrap();
+        for row in rows {
+            let (id, body) = row.unwrap();
+            cases_obj.insert(
+                id,
+                serde_json::from_str::<serde_json::Value>(&body).unwrap(),
+            );
+        }
+    }
+    let mut snap = serde_json::from_str::<serde_json::Value>(&global).unwrap();
+    snap["cases"] = serde_json::Value::Object(cases_obj);
+    let seq: String = db
+        .query_row("SELECT value FROM mom_meta WHERE key='sequence'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    db.execute_batch("DROP TABLE mom_global; DROP TABLE mom_case_state; DROP TABLE mom_meta;")
+        .unwrap();
+    db.execute_batch("CREATE TABLE IF NOT EXISTS mom_snapshot(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL, seq INTEGER NOT NULL);").unwrap();
+    db.execute("INSERT INTO mom_snapshot(id,body,seq) VALUES(1,?1,?2) ON CONFLICT(id) DO UPDATE SET body=excluded.body,seq=excluded.seq", rusqlite::params![snap.to_string(), seq.parse::<u64>().unwrap()]).unwrap();
+    db.execute_batch("PRAGMA user_version=1;").unwrap();
+}
+
+#[test]
+fn v1_snapshot_database_is_migrated_and_reloadable() {
+    let dir = std::env::temp_dir().join(format!("mom-mig-{}", an_core::new_id("t")));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("mom.db");
+    // 先用 v2 引擎做一个真实状态（案例到 WAITING_HUMAN、已批准）
+    let mut e = Engine::open(&path).unwrap();
+    let id = ready(&mut e);
+    approve(&mut e, &id, "production");
+    let seq_before = e.sequence();
+    drop(e);
+    // 降级为 v1：整行快照 + user_version=1
+    downgrade_to_v1(&path);
+    // v1 打开：迁移成功，案例、时钟与 CAS 序列完整
+    let mut e = Engine::open(&path).unwrap();
+    assert_eq!(e.sequence(), seq_before, "CAS 序列从迁移中恢复");
+    assert_eq!(e.case(&id).unwrap().stage, "WAITING_HUMAN");
+    // 迁移后继续演进并重启：v2 读路径一致
+    e.execute(&id, "production").unwrap();
+    let stage_after = e.case(&id).unwrap().stage.clone();
+    assert_eq!(stage_after, "VERIFYING");
+    drop(e);
+    let e = Engine::open(&path).unwrap();
+    assert_eq!(e.case(&id).unwrap().stage, stage_after);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn clock_only_updates_do_not_rewrite_case_rows() {
+    let dir = std::env::temp_dir().join(format!("mom-shard-{}", an_core::new_id("t")));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("mom.db");
+    let mut e = Engine::open(&path).unwrap();
+    let id = ready(&mut e);
+    approve(&mut e, &id, "production");
+    e.execute(&id, "production").unwrap();
+    let case_seq_before: u64 = {
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.query_row(
+            "SELECT seq FROM mom_case_state WHERE case_id=?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    // 纯时钟推进（无事件）：案例分片行不应被重写（seq 不变）
+    e.advance(e.now() + 1).unwrap();
+    let case_seq_after_clock: u64 = {
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.query_row(
+            "SELECT seq FROM mom_case_state WHERE case_id=?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        case_seq_after_clock, case_seq_before,
+        "无事件的纯时钟推进不应重写案例行"
+    );
+    // 有事件的 update：案例行被重写（seq 前进）。第二次 execute 走幂等分支
+    //（无事件），改用推进时钟触发动作核验（ActionVerified 事件）。
+    e.advance(e.now() + 2).unwrap();
+    let case_seq_after_action: u64 = {
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.query_row(
+            "SELECT seq FROM mom_case_state WHERE case_id=?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert!(
+        case_seq_after_action > case_seq_before,
+        "有事件的 update 应重写案例行"
+    );
+    drop(e);
+    let e = Engine::open(&path).unwrap();
+    assert_eq!(e.case(&id).unwrap().stage, "VERIFYING");
+    let _ = std::fs::remove_dir_all(dir);
+}

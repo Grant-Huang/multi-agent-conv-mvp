@@ -1,6 +1,6 @@
 use super::{model::*, tools};
 use anyhow::{bail, ensure, Context, Result};
-use rusqlite::{params, Connection, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -13,6 +13,59 @@ pub struct Engine {
     pub(super) state: Snapshot,
     sequence: u64,
 }
+
+/// 快照的非案例全局态（持久化编解码用，`mom_global` 单行）：simulations / playback /
+/// DES 仿真态 / seen 去重表 / 时钟与令牌。案例本体走 `mom_case_state` 每案例一行。
+/// 字段名与 `Snapshot` 保持一致（serde 兼容）；Snapshot 增字段时必须同步此处。
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+struct GlobalState {
+    #[serde(default)]
+    simulations: BTreeMap<String, super::Simulation>,
+    #[serde(default)]
+    playback: super::Playback,
+    #[serde(default)]
+    des_simulations: BTreeMap<String, super::des::DesSimulation>,
+    #[serde(default)]
+    des_truth: BTreeMap<String, super::des::GroundTruth>,
+    #[serde(default)]
+    des_reviews: BTreeMap<String, super::des::review::DesReview>,
+    now: u64,
+    #[serde(default)]
+    seen: BTreeMap<String, String>,
+    #[serde(default)]
+    next_token: u64,
+}
+
+impl GlobalState {
+    fn from_snapshot(s: &Snapshot) -> Self {
+        Self {
+            simulations: s.simulations.clone(),
+            playback: s.playback.clone(),
+            des_simulations: s.des_simulations.clone(),
+            des_truth: s.des_truth.clone(),
+            des_reviews: s.des_reviews.clone(),
+            now: s.now,
+            seen: s.seen.clone(),
+            next_token: s.next_token,
+        }
+    }
+    fn from_str(s: &str) -> Result<Self> {
+        Ok(serde_json::from_str(s)?)
+    }
+    fn into_snapshot(self, cases: BTreeMap<String, Case>) -> Snapshot {
+        Snapshot {
+            simulations: self.simulations,
+            playback: self.playback,
+            des_simulations: self.des_simulations,
+            des_truth: self.des_truth,
+            des_reviews: self.des_reviews,
+            now: self.now,
+            cases,
+            seen: self.seen,
+            next_token: self.next_token,
+        }
+    }
+}
 impl Engine {
     pub fn memory() -> Result<Self> {
         Self::from_db(Connection::open_in_memory()?)
@@ -21,21 +74,75 @@ impl Engine {
         Self::from_db(Connection::open(path)?)
     }
     fn from_db(db: Connection) -> Result<Self> {
+        let mut db = db;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         let version: i64 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        ensure!(version <= 1, "unsupported MOM schema version");
+        ensure!(version <= 2, "unsupported MOM schema version");
         db.execute_batch("BEGIN IMMEDIATE;
-          CREATE TABLE IF NOT EXISTS mom_snapshot(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL, seq INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS mom_events(seq INTEGER PRIMARY KEY, case_id TEXT NOT NULL, body TEXT NOT NULL, published INTEGER NOT NULL DEFAULT 0);
           CREATE TABLE IF NOT EXISTS mom_cursors(consumer TEXT NOT NULL, case_id TEXT NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY(consumer,case_id));
-          PRAGMA user_version=1; COMMIT;")?;
-        let row = db.query_row("SELECT body,seq FROM mom_snapshot WHERE id=1", [], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, u64>(1)?))
-        });
-        let (state, sequence) = match row {
-            Ok((s, n)) => (serde_json::from_str(&s)?, n),
-            Err(rusqlite::Error::QueryReturnedNoRows) => (Snapshot::default(), 0),
-            Err(e) => return Err(e.into()),
+          CREATE TABLE IF NOT EXISTS mom_case_state(case_id TEXT PRIMARY KEY, seq INTEGER NOT NULL, body TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS mom_global(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS mom_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+          COMMIT;")?;
+        // v1→v2 迁移：整体快照拆为「全局小 blob + 每案例一行」。mom_snapshot 原行
+        // 保留不删（回滚到旧代码仍可读迁移时刻的状态；此后状态演进只写 v2 表，
+        // 旧代码读到的是迁移时刻快照——仿真沙盘数据可由场景重放重建，单向迁移）。
+        if version == 1 {
+            // 仅 v1 库需要迁移；v0 全新库直接落 v2 schema
+            let legacy: Option<(String, u64)> = db
+                .query_row("SELECT body,seq FROM mom_snapshot WHERE id=1", [], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, u64>(1)?))
+                })
+                .optional()?;
+            if let Some((body, seq)) = legacy {
+                let snapshot: Snapshot = serde_json::from_str(&body)?;
+                let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                tx.execute(
+                    "INSERT INTO mom_global(id,body) VALUES(1,?1)",
+                    params![serde_json::to_string(&GlobalState::from_snapshot(
+                        &snapshot
+                    ))?],
+                )?;
+                for (id, case) in &snapshot.cases {
+                    tx.execute(
+                        "INSERT INTO mom_case_state(case_id,seq,body) VALUES(?1,?2,?3)",
+                        params![id, seq, serde_json::to_string(case)?],
+                    )?;
+                }
+                tx.execute(
+                    "INSERT INTO mom_meta(key,value) VALUES('sequence',?1)",
+                    params![seq],
+                )?;
+                tx.commit()?;
+            }
+            db.execute_batch("PRAGMA user_version=2;")?;
+        }
+        let global_body: Option<String> = db
+            .query_row("SELECT body FROM mom_global WHERE id=1", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .optional()?;
+        let mut cases = BTreeMap::new();
+        {
+            let mut st = db.prepare("SELECT case_id,body FROM mom_case_state")?;
+            let rows =
+                st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            for row in rows {
+                let (id, body) = row?;
+                cases.insert(id, serde_json::from_str(&body)?);
+            }
+        }
+        let sequence: u64 = db
+            .query_row("SELECT value FROM mom_meta WHERE key='sequence'", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .optional()?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let state = match global_body {
+            Some(s) => GlobalState::from_str(&s)?.into_snapshot(cases),
+            None => Snapshot::default(),
         };
         let mut e = Self {
             db,
@@ -75,7 +182,18 @@ impl Engine {
         let result = f(&mut next, &mut emissions)?;
         // Every persistent state change must advance the compare-and-swap token,
         // including clock-only transactions and recovery metadata.
-        if emissions.is_empty() && serde_json::to_vec(&next)? != serde_json::to_vec(&self.state)? {
+        // 时钟推进（now 变了）必然意味着快照有变化——短路两次全量序列化（now 是
+        // 快照字段，now 不等则序列化必不等，语义严格等价；now 相等时保留全量比较，
+        // 兜住「闭包直接改状态而未 emit」的罕见路径）。
+        let mut rewrite_all_cases = false;
+        if emissions.is_empty()
+            && (next.now != self.state.now
+                || serde_json::to_vec(&next)? != serde_json::to_vec(&self.state)?)
+        {
+            if next.now == self.state.now {
+                // now 相同但内容不同：有未发事件的案例变更，保守重写全部案例行。
+                rewrite_all_cases = true;
+            }
             emissions.push((
                 "__runtime".into(),
                 "RuntimeStateChanged".into(),
@@ -88,16 +206,27 @@ impl Engine {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let saved = tx
-            .query_row("SELECT seq FROM mom_snapshot WHERE id=1", [], |r| {
-                r.get::<_, u64>(0)
+        let saved: u64 = tx
+            .query_row("SELECT value FROM mom_meta WHERE key='sequence'", [], |r| {
+                r.get::<_, String>(0)
             })
+            .optional()?
+            .and_then(|v| v.parse().ok())
             .unwrap_or(0);
         ensure!(
             saved == self.sequence,
             "stale runtime; reopen database before retrying"
         );
         let mut sequence = self.sequence;
+        let mut dirty: BTreeSet<String> = BTreeSet::new();
+        for (id, _, _, _, _) in &emissions {
+            if id != "__runtime" && next.cases.contains_key(id) {
+                dirty.insert(id.clone());
+            }
+        }
+        if rewrite_all_cases {
+            dirty.extend(next.cases.keys().cloned());
+        }
         for (id, kind, payload, at, revision) in emissions {
             sequence += 1;
             let event = BoardEvent {
@@ -113,7 +242,27 @@ impl Engine {
                 params![sequence, id, serde_json::to_string(&event)?],
             )?;
         }
-        tx.execute("INSERT INTO mom_snapshot(id,body,seq) VALUES(1,?1,?2) ON CONFLICT(id) DO UPDATE SET body=excluded.body,seq=excluded.seq",params![serde_json::to_string(&next)?,sequence])?;
+        // 案例分片：只重写事件覆盖到的案例（引擎不变量「持久状态变化必有事件」）；
+        // 兜底分支（未发事件的案例变更）重写全部案例行。全局小 blob（时钟/去重表/
+        // DES 仿真态等）每次 update 都写，几十字节。
+        for id in &dirty {
+            let case = next.cases.get(id).context("dirty case missing")?;
+            tx.execute(
+                "INSERT INTO mom_case_state(case_id,seq,body) VALUES(?1,?2,?3)
+                 ON CONFLICT(case_id) DO UPDATE SET seq=excluded.seq,body=excluded.body",
+                params![id, sequence, serde_json::to_string(case)?],
+            )?;
+        }
+        tx.execute(
+            "INSERT INTO mom_global(id,body) VALUES(1,?1)
+             ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+            params![serde_json::to_string(&GlobalState::from_snapshot(&next))?],
+        )?;
+        tx.execute(
+            "INSERT INTO mom_meta(key,value) VALUES('sequence',?1)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![sequence],
+        )?;
         tx.commit()?;
         self.state = next;
         self.sequence = sequence;
