@@ -1668,7 +1668,11 @@ async fn aggregate_tasks(State(rt): State<AppState>, Query(q): Query<AggregateQu
             Err(e) => return aggregate_internal_err(e),
         }
     }
-    (StatusCode::OK, Json(json!({"items": items, "missing": missing}))).into_response()
+    (
+        StatusCode::OK,
+        Json(json!({"items": items, "missing": missing})),
+    )
+        .into_response()
 }
 
 fn aggregate_internal_err(e: anyhow::Error) -> Response {

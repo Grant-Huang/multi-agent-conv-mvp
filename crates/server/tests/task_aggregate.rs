@@ -98,7 +98,9 @@ async fn get(rt: &Arc<Runtime>, ids: &str) -> (u16, Value) {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let r = reqwest::Client::new()
-        .get(format!("http://{addr}/api/desktop/v1/tasks/aggregate?ids={ids}"))
+        .get(format!(
+            "http://{addr}/api/desktop/v1/tasks/aggregate?ids={ids}"
+        ))
         .send()
         .await
         .unwrap();
@@ -134,7 +136,11 @@ async fn rt_sagg_01_aggregates_multiple_tasks_with_sources() {
         assert_eq!(it["conversation_id"], "conv-agg", "来源链接（会话）");
         assert_eq!(it["goal"], goal);
         assert_eq!(it["summary"], summary, "聚合含结果摘要");
-        assert_eq!(it["artifacts"][0]["name"], format!("{id}-report.md"), "产物名逐条可链接");
+        assert_eq!(
+            it["artifacts"][0]["name"],
+            format!("{id}-report.md"),
+            "产物名逐条可链接"
+        );
         assert_eq!(it["evidence_count"], 1);
         assert!(it["updated_at"].is_string());
     }
@@ -179,9 +185,7 @@ async fn rt_sagg_03_empty_and_oversized_ids_rejected() {
         .collect::<Vec<_>>()
         .join(",");
     let r = client
-        .get(format!(
-            "{base}/api/desktop/v1/tasks/aggregate?ids={ids}"
-        ))
+        .get(format!("{base}/api/desktop/v1/tasks/aggregate?ids={ids}"))
         .send()
         .await
         .unwrap();
