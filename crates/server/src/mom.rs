@@ -61,6 +61,18 @@ impl AppState {
         self.relos = Some(Arc::new(crate::mom_relos::RelosClient::new(base_url)?));
         Ok(self)
     }
+    /// #487：启用 RelOS 上下文并带 K2 凭据（经连接器注册表 credentials.env 解析；
+    /// RelOS 未启用鉴权时传 None）。
+    pub fn with_relos_with_bearer(
+        mut self,
+        base_url: &str,
+        credential: Option<&str>,
+    ) -> anyhow::Result<Self> {
+        self.relos = Some(Arc::new(crate::mom_relos::RelosClient::with_bearer(
+            base_url, credential,
+        )?));
+        Ok(self)
+    }
 }
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<Value>)>;
 fn err(e: impl std::fmt::Display) -> (StatusCode, Json<Value>) {

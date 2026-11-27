@@ -20,6 +20,7 @@ pub mod builtin_templates;
 pub mod bus;
 pub mod composer;
 pub mod config;
+pub mod connectors;
 pub mod conv_lock;
 pub mod conversation;
 pub mod dream;

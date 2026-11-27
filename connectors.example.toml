@@ -1,0 +1,12 @@
+# 连接器注册表（契约 docs/contracts/connector.md K6 描述符示例；#487）
+# 路径由主配置 [connectors] path 或默认 connectors.toml 指定。
+
+[[connector]]
+id = "relos"
+kind = "business"                      # business | llm | agent | tool
+transport = "http"
+endpoint = "http://127.0.0.1:8000"     # RelOS 上下文编译服务
+credentials = { env = "RELOS_TOKEN" }  # K2 凭据引用：环境变量名（服务未启用鉴权时可删此行）
+capabilities = ["context.compile"]
+health = { probe = "GET /v1/health", interval_secs = 300 }
+owner = "line5"

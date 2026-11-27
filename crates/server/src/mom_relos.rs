@@ -21,6 +21,9 @@ const MAX_ITEMS: usize = 20;
 pub struct RelosClient {
     base_url: String,
     http: reqwest::Client,
+    /// K2 凭据（#487 经连接器注册表 credentials.env 解析）：设置则请求带
+    /// `Authorization: Bearer <credential>`；RelOS 未启用鉴权时留空。
+    credential: Option<String>,
 }
 
 /// 一次 S1 诊断请求的锚点。
@@ -32,13 +35,23 @@ pub struct RelosQuery<'a> {
 
 impl RelosClient {
     pub fn new(base_url: &str) -> anyhow::Result<Self> {
+        Self::with_bearer(base_url, None)
+    }
+
+    /// #487：带 K2 凭据构造（经连接器注册表 credentials.env 解析；RelOS 未启用
+    /// 鉴权时传 None）。未启用鉴权的服务以无凭据调用不受影响。
+    pub fn with_bearer(base_url: &str, credential: Option<&str>) -> anyhow::Result<Self> {
         let base_url = base_url.trim_end_matches('/').to_string();
         anyhow::ensure!(
             base_url.starts_with("http://") || base_url.starts_with("https://"),
             "relos url must start with http:// or https://"
         );
         let http = reqwest::Client::builder().timeout(RELOS_TIMEOUT).build()?;
-        Ok(Self { base_url, http })
+        Ok(Self {
+            base_url,
+            http,
+            credential: credential.map(str::to_string),
+        })
     }
 
     /// 取回上下文并整理为可写入 `world.relos` 的观测；任何失败都转换为带原因的 status，不返回错误。
@@ -55,7 +68,11 @@ impl RelosClient {
             "max_relations": 40,
         });
         let url = format!("{}/v1/context/compile", self.base_url);
-        let resp = match self.http.post(&url).json(&body).send().await {
+        let mut req = self.http.post(&url).json(&body);
+        if let Some(c) = &self.credential {
+            req = req.bearer_auth(c);
+        }
+        let resp = match req.send().await {
             Ok(r) => r,
             Err(e) if e.is_timeout() => return failure("timeout", &e.to_string()),
             Err(e) => return failure("unavailable", &e.to_string()),
@@ -223,5 +240,65 @@ mod tests {
     fn rejects_non_http_url() {
         assert!(RelosClient::new("ftp://x").is_err());
         assert!(RelosClient::new("http://127.0.0.1:8000/").is_ok());
+    }
+}
+
+#[cfg(test)]
+mod bearer_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    /// #487 / 契约 K2：带凭据的 RelosClient 请求带 `Authorization: Bearer`；
+    /// 无凭据时不带该头（RelOS 未启用鉴权的服务不受影响）。
+    #[tokio::test]
+    async fn bearer_header_follows_credential() {
+        use axum::{routing::post, Json, Router};
+        let seen: Arc<std::sync::Mutex<Vec<Option<String>>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = seen.clone();
+        let app = Router::new().route(
+            "/v1/context/compile",
+            post(
+                move |headers: axum::http::HeaderMap, Json(_): Json<Value>| {
+                    let log = log.clone();
+                    async move {
+                        log.lock().unwrap().push(
+                            headers
+                                .get("authorization")
+                                .and_then(|v| v.to_str().ok())
+                                .map(String::from),
+                        );
+                        Json(json!({ "selected_ids": [], "selected_relations": [] }))
+                    }
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let base = format!("http://{addr}");
+
+        let with_cred = RelosClient::with_bearer(&base, Some("test-bearer-487")).unwrap();
+        let q = RelosQuery {
+            asset: "A",
+            line: "L",
+            batch: "B",
+        };
+        let _ = with_cred.fetch(&q).await;
+        let without = RelosClient::new(&base).unwrap();
+        let _ = without.fetch(&q).await;
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2, "两次请求都应到达 stub");
+        assert_eq!(
+            seen[0].as_deref(),
+            Some("Bearer test-bearer-487"),
+            "带凭据请求应带 Bearer 头"
+        );
+        assert_eq!(
+            seen[1].as_deref(),
+            None,
+            "无凭据请求不得带 Authorization 头"
+        );
     }
 }
