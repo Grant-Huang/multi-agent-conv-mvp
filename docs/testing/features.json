@@ -141,6 +141,13 @@
   {
     "id": "tools-evals",
     "document": "docs/feature-map/features/research-and-tools.md",
+    "runtime_cases": [
+      "RT-SYMLN-01",
+      "RT-SYMLN-02",
+      "RT-SYMLN-03",
+      "RT-SYMLN-04",
+      "RT-SYMLN-05"
+    ],
     "sources": [
       "tools/dlp-egress/tests/test_review_m5.py",
       "tools/dlp-egress/tests/test_review_m3.py",
@@ -152,7 +159,7 @@
     ],
     "coverage": "backend",
     "cases": [],
-    "note": "R-20261118-M3：PY-DLP-M3为Python evaluate端到端测试；证据见docs/testing/evidence/r-20261118-m3.md，不计入Rust或浏览器用例。 PY-DLP-M2为Python evaluate端到端；证据见docs/testing/evidence/r-20261118-m2.md。"
+    "note": "R-20261118-M3：PY-DLP-M3为Python evaluate端到端测试；证据见docs/testing/evidence/r-20261118-m3.md，不计入Rust或浏览器用例。 PY-DLP-M2为Python evaluate端到端；证据见docs/testing/evidence/r-20261118-m2.md。 RT-SYMLN-01～05为文件工具工作区边界（#500 符号链接借道修复，Rust 用例）。"
   },
   {
     "id": "egress",

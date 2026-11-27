@@ -6,7 +6,7 @@
 //! MCP 适配器见 `mcp` 模块，与内置工具共用此注册表和 General 调用入口。
 
 use std::collections::BTreeMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -284,26 +284,10 @@ fn arg_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
 }
 
 /// 把用户给的相对路径解析到工作目录内；越界则报错。
-/// 不依赖文件是否存在（写文件时目标还不存在）。
+/// 共享实现见 [`crate::util::resolve_in_workspace`]（#500 与 R-20261120-M8 合流，
+/// 符号链接借道在同一处防护；写文件另有目标链接拒绝）。
 fn resolve_in_root(root: &Path, rel: &str) -> Result<PathBuf> {
-    let mut out = root.to_path_buf();
-    for comp in Path::new(rel).components() {
-        match comp {
-            Component::Normal(c) => out.push(c),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !out.pop() || !out.starts_with(root) {
-                    bail!("路径越界：{rel}");
-                }
-            }
-            // 绝对路径、Windows 盘符一律拒绝
-            Component::RootDir | Component::Prefix(_) => bail!("只允许工作目录内的相对路径：{rel}"),
-        }
-    }
-    if !out.starts_with(root) {
-        bail!("路径越界：{rel}");
-    }
-    Ok(out)
+    crate::util::resolve_in_workspace(root, rel)
 }
 
 // ───────────── current_time ─────────────
@@ -566,6 +550,13 @@ impl Tool for WriteFile {
             bail!("mode 只能是 overwrite 或 append");
         }
         let p = resolve_in_root(&self.root, rel)?;
+        // #500：拒绝把符号链接本身作为写入目标（即使链接指向界内，也不允许借链接替换文件）
+        if p.symlink_metadata()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            bail!("拒绝写入符号链接目标：{rel}");
+        }
         if let Some(parent) = p.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
@@ -891,16 +882,18 @@ mod tests {
 
     #[test]
     fn path_guard() {
-        let root = Path::new("/tmp/ws");
-        assert_eq!(
-            resolve_in_root(root, "a/b.md").unwrap(),
-            Path::new("/tmp/ws/a/b.md")
-        );
+        // #500：边界含 canonicalize（解析符号链接），要求真实存在的工作目录
+        // （生产路径上 with_builtin 总是先创建目录）
+        let dir = std::env::temp_dir().join(an_core::new_id("path-guard"));
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        let root = dir.as_path();
+        assert_eq!(resolve_in_root(root, "a/b.md").unwrap(), dir.join("a/b.md"));
         assert_eq!(
             resolve_in_root(root, "a/../b.md").unwrap(),
-            Path::new("/tmp/ws/b.md")
+            dir.join("b.md")
         );
         assert!(resolve_in_root(root, "../etc/passwd").is_err());
         assert!(resolve_in_root(root, "/etc/passwd").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
