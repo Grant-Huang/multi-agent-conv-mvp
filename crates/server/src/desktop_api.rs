@@ -89,6 +89,8 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
                 "/api/desktop/v1/tasks/{id}/links",
                 get(list_links).post(create_link),
             )
+            // #397 P1（S-Agent 整合规则 4）：跨任务聚合只读投影——逐条来源链接，不做产物改写
+            .route("/api/desktop/v1/tasks/aggregate", get(aggregate_tasks))
             .route(
                 "/api/desktop/v1/tasks/{id}/links/{link_id}",
                 delete(revoke_link),
@@ -1611,6 +1613,92 @@ struct MarkAssistantReadBody {
 }
 
 // ===== T-99 关联修正审计 =====
+
+/// #397 P1（S-Agent 整合规则 4）：跨任务聚合只读投影。
+/// 逐条带来源（conversation_id + task_id + updated_at），不做产物改写；
+/// 未带执行者身份前与既有任务查询同口径（A7 落地时统一过滤，见 identity 方案 S2）。
+#[derive(Deserialize)]
+struct AggregateQuery {
+    ids: Option<String>,
+}
+
+async fn aggregate_tasks(State(rt): State<AppState>, Query(q): Query<AggregateQuery>) -> Response {
+    let Some(raw) = q.ids.as_deref() else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"code": "invalid_request", "message": "ids 不能为空", "retryable": false})),
+        )
+            .into_response();
+    };
+    let mut ids: Vec<String> = raw
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    // 去重保序
+    let mut seen = std::collections::HashSet::new();
+    ids.retain(|id| seen.insert(id.clone()));
+    if ids.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"code": "invalid_request", "message": "ids 不能为空", "retryable": false})),
+        )
+            .into_response();
+    }
+    if ids.len() > 50 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"code": "invalid_request", "message": "ids 上限 50", "retryable": false})),
+        )
+            .into_response();
+    }
+    let mut items = Vec::with_capacity(ids.len());
+    let mut missing = Vec::new();
+    for id in &ids {
+        match rt.store.get_task(id) {
+            Ok(Some(t)) => {
+                let (summary, artifacts, evidence_count) = match &t.result {
+                    Some(r) => (
+                        Some(r.summary.clone()),
+                        r.artifacts
+                            .iter()
+                            .map(|a| json!({"name": a.name, "kind": a.kind}))
+                            .collect::<Vec<_>>(),
+                        r.evidence.len(),
+                    ),
+                    None => (None, vec![], 0),
+                };
+                items.push(json!({
+                    "task_id": t.id,
+                    // 来源链接：前端可直达任务详情（会话 + 任务 + 更新时间）
+                    "conversation_id": t.conversation_id,
+                    "updated_at": t.updated_at,
+                    "goal": t.goal,
+                    "status": t.status.as_str(),
+                    "role": t.role.as_str(),
+                    "summary": summary,
+                    "artifacts": artifacts,
+                    "evidence_count": evidence_count,
+                }));
+            }
+            Ok(None) => missing.push(id.clone()),
+            Err(e) => return aggregate_internal_err(e),
+        }
+    }
+    (
+        StatusCode::OK,
+        Json(json!({"items": items, "missing": missing})),
+    )
+        .into_response()
+}
+
+fn aggregate_internal_err(e: anyhow::Error) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({"code": "internal", "message": format!("{e:#}"), "retryable": true})),
+    )
+        .into_response()
+}
 
 fn link_audit_json(r: &DesktopTaskLinkAuditRow) -> serde_json::Value {
     json!({
