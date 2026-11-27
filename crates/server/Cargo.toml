@@ -37,7 +37,7 @@ agent-client-protocol = { workspace = true, features = ["stdio"] }
 reqwest.workspace = true
 # 阶段⑤a-2：模拟工厂连接器（经 stdio 调用 an-des-mcp；工具目录与类别来自 an-des）
 an-des.workspace = true
-rmcp = { version = "=3.10.0", default-features = false, features = ["client", "transport-async-rw"] }
+rmcp = { version = "=3.11.0", default-features = false, features = ["client", "transport-async-rw"] }
 
 [dev-dependencies]
 mom-external-adapter = { git = "https://github.com/Grant-Huang/MOM-MCP.git", rev = "5aa312939df2110ff3dda401b9021a0c1ad5a67f" }
