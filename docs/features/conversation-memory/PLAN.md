@@ -51,3 +51,7 @@
 ## 低优先级修复卡（夜间评审 R-20261127）
 
 - [x] RT-L2H-06 导入限流 + 清扫不阻断 + 示例对齐（#516 / R-20261127-L4+L6+L7，P3）：导入单条正文 ≤32KB（400）、创建会话 unwrap→500 兜底、清扫失败记 error 不阻断撤回、config.example 示例对齐实际读取路径；证据 `testing/evidence/convmem-516-l4l6l7.md`。
+
+## 缺陷修复卡（夜间评审 R-20261127）
+
+- [x] RT-UMEM-08/09 有效期校验与存量兼容（#499 / R-20261127-H3，P1）：写入端只允许「长期」或 YYYY-MM-DD（非法 400 库不变）；memory_expired 改 get(..10) 非 ASCII 不 panic；存量自由文本读取兼容为未过期；证据 `testing/evidence/convmem-499-expires-validation.md`。

@@ -699,6 +699,133 @@ async fn rt_usty_05_style_does_not_evict_risk_memory() {
     );
 }
 
+/// RT-UMEM-08（#499 / R-20261127-H3）：有效期只允许「长期」或 YYYY-MM-DD——
+/// 非法值（如「2026/12/01」「长期有效」）创建 / 修正一律 400 且库里不变。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_umem_08_expires_validation_rejects_invalid_formats() {
+    let rt = Arc::new(
+        Runtime::new(
+            config("http://127.0.0.1:9"),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    // 创建：斜杠日期 400
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "斜杠探针", "body": "x", "expires": "2026/12/01", "kind": "fact"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 400, "斜杠日期应拒绝：{v}");
+    assert_eq!(v["code"], "invalid", "{v}");
+    // 创建：自由文本 400
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "自由文本探针", "body": "x", "expires": "长期有效", "kind": "fact"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 400, "非「长期」/日期的自由文本应拒绝：{v}");
+    // 创建：合法值 201
+    let (s, v) = api
+        .post_as(
+            "/api/desktop/v1/memories",
+            json!({"title": "合法探针", "body": "x", "expires": "2027-06-01", "kind": "fact"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 201, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    // 修正：非法值 400 且库里不变
+    let (s, v) = api
+        .patch_as(
+            &format!("/api/desktop/v1/memories/{id}"),
+            json!({"expires": "2026/12/01"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 400, "修正非法值应拒绝：{v}");
+    let (s, detail) = api
+        .get_as(&format!("/api/desktop/v1/memories/{id}"), None)
+        .await;
+    assert_eq!(s, 200, "{detail}");
+    assert_eq!(
+        detail["expires"],
+        json!("2027-06-01"),
+        "库里值不变：{detail}"
+    );
+    // 合法修正 200
+    let (s, _) = api
+        .patch_as(
+            &format!("/api/desktop/v1/memories/{id}"),
+            json!({"expires": "长期"}),
+            None,
+        )
+        .await;
+    assert_eq!(s, 200);
+}
+
+/// RT-UMEM-09（#499 / R-20261127-H3）：存量非 ASCII 有效期（如「长期有效」）
+/// 不再让回答路径 panic 500——对话正常返回（get(..10) 修复 + 存量数据兼容）。
+/// 存量数据用文件库 + rusqlite 直接回填模拟（绕过新校验，同 rt_l2h_03 模式）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_umem_09_legacy_non_ascii_expires_no_panic() {
+    let llm = MockLlm::start().await;
+    let dir = std::env::temp_dir().join(an_core::new_id("an-umem-legacy"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("an.db");
+    let rt = Arc::new(Runtime::new(config(&llm.base), Store::open(&db).unwrap()).unwrap());
+    let conv = rt.store.create_conversation("t").unwrap();
+    rt.store
+        .create_desktop_memory(
+            "local",
+            "存量记忆",
+            "长期有效存量正文LEGACY。",
+            "2099-01-01",
+            "fact",
+        )
+        .unwrap();
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute(
+            "UPDATE desktop_memories SET expires = '长期有效' WHERE title = '存量记忆'",
+            [],
+        )
+        .unwrap();
+    }
+    let reply = rt
+        .conversation
+        .handle_message(&conv.id, "你好，现在的口径是什么？")
+        .await
+        .unwrap();
+    assert!(
+        !reply.reply.content.is_empty(),
+        "回答不得因存量有效期 panic/丢失：{}",
+        reply.reply.content
+    );
+    let last = llm.plain_calls().last().unwrap().clone();
+    let c = {
+        use an_runtime::session_materials::MATERIALS_MARKER;
+        last["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find_map(|m| {
+                let c = m["content"].as_str()?;
+                c.contains(MATERIALS_MARKER).then(|| c.to_string())
+            })
+            .unwrap_or_default()
+    };
+    assert!(c.contains("LEGACY"), "存量记忆仍应注入（未过期语义）：{c}");
+}
+
 /// RT-USTY-07（#403 / INTENT-034，方案 a 用户拍板）：设置里的沟通原则（Soul）/
 /// 质量偏好（Taste）视作已确认风格进风格卡——保存即确认、全会话（含旧会话）
 /// 即生效；默认值视作「未设置」不注入；同一套护栏句与预算。

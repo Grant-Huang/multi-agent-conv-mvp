@@ -2700,6 +2700,25 @@ impl Store {
 
     /// conversation-memory 5.2a：用户主动保存（可查/可纠正/可撤回生命周期起点）。
     /// 校验：title/body 非空；kind ∈ {fact, preference, style}；id 服务端生成；来源记「用户保存 · 日期」。
+    /// #499 / R-20261127-H3：有效期只允许「长期」或 YYYY-MM-DD（否则回答路径
+    /// 曾经 panic、且自由文本语义含糊）。空串 / 空白视为「长期」。
+    pub fn validate_expires(expires: &str) -> Result<String> {
+        let v = expires.trim();
+        if v.is_empty() || v == "长期" {
+            return Ok("长期".to_string());
+        }
+        let b = v.as_bytes();
+        let ok = v.len() == 10
+            && b.iter().all(|c| c.is_ascii_digit() || *c == b'-')
+            && b[4] == b'-'
+            && b[7] == b'-';
+        if ok {
+            Ok(v.to_string())
+        } else {
+            Err(anyhow!("expires 只能是「长期」或 YYYY-MM-DD，收到：{v}"))
+        }
+    }
+
     pub fn create_desktop_memory(
         &self,
         user_id: &str,
@@ -2725,11 +2744,7 @@ impl Store {
             title: title.into(),
             source: format!("用户保存 · {}", &now()[..10]),
             body: body.into(),
-            expires: if expires.trim().is_empty() {
-                "长期".into()
-            } else {
-                expires.trim().into()
-            },
+            expires: Self::validate_expires(expires)?,
             kind: kind.into(),
             // 5.2b：fact 不走预览闸门，创建即可注入；preference/style 为草稿
             confirmed_at: (kind == "fact").then(now as fn() -> String),
@@ -2868,7 +2883,7 @@ impl Store {
             m.body = v.into();
         }
         if let Some(v) = expires {
-            m.expires = v.into();
+            m.expires = Self::validate_expires(v)?;
         }
         m.updated_at = now();
         conn.execute(

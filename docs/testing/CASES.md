@@ -1098,6 +1098,8 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-UMEM-05 | conversation-memory | 甲保存记忆；同会话 | 甲、乙先后续问（chat 接口带头） | 甲的提示词含甲的记忆；乙的提示词不含（按说话人作用域） |
 | RT-UMEM-06 | conversation-memory | 保存夹带可疑指令样式 / 敏感信息样式 / 正常内容的记忆各一（#346 片5，REQ-07 §7.3） | 查保存响应、列表、详情 | 扫描只标注不阻断（201）；夹带指令样式标 `injection_risk`、敏感信息样式标 `sensitive_info`；正常条目 flags 为空；列表与详情同样带 flags（读时派生，不改库） |
 | RT-UMEM-07 | conversation-memory | 记忆注入发生后撤回（#346 片5，REQ-07 §7.6 / CH-G3） | 查 `GET /memories/{id}/impact` | 注入轮次留痕（conv_id / section / at）；已撤回记忆仍可追溯；未注入过的影响为空；未知记忆 404 |
+| RT-UMEM-08 | conversation-memory | 创建 / 修正 expires=斜杠日期、自由文本、合法值（#499 / R-20261127-H3） | POST / PATCH / GET | 非法值一律 400 且库里不变；「长期」与 YYYY-MM-DD 合法（200/201） |
+| RT-UMEM-09 | conversation-memory | 存量非 ASCII 有效期（「长期有效」，文件库 rusqlite 回填模拟遗留数据）（#499 / R-20261127-H3） | 发起对话 | 回答正常不 500 不 panic；存量记忆仍按未过期注入 |
 
 ## 风格/画像预览与下一会话生效 conversation-memory 5.2b（REQ-conversation-memory-02 生效闸门；2026-11-23 用户确认：推导式判定 / 独立风格卡 / fact 不走闸门 / ≤200 token + 护栏）
 
