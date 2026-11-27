@@ -1160,6 +1160,11 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-SYMLN-03 | tools | 同上 | list_files 列 `link` | 报「路径越界」 |
 | RT-SYMLN-04 | tools | `link2 -> 界内文件` | write_file 以 `link2` 为目标 | 报「拒绝写入符号链接目标」；目标文件内容不变 |
 | RT-SYMLN-05 | tools | 合法路径 | 写/读/列 | 照常工作（防护不误伤） |
+## MCP 工具描述注入防护（RT-MCPINJ，#519 安全修复；进提示词的参数提示只保留结构摘要）
+
+| Case ID | 特性 | 场景 | 操作 | 期望 |
+|---|---|---|---|---|
+| RT-MCPINJ-01 | tools | MCP 服务器 inputSchema 的 description/examples/工具描述含注入串（#519，R-20261127-M9） | connect 后取 prompt_listing | 提示词只含结构摘要（属性名:类型、必填），注入串 INJECT-XYZ/INJECT-DESC/INJECT-EXAMPLES 均不出现 |
 
 ## 执行路径会话资料完整块 conversation-memory S6-exec（2026-11-24 用户确认：完整块 / 独立开关+512 / 仅 general / 随任务持久；2026-11-26 场合表修订：执行、委派不带 L5 发现，`render_exec` 剔除 findings，路由线索不进任务上下文）
 
