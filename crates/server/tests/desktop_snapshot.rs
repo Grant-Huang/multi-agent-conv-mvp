@@ -18,7 +18,7 @@ async fn serve(app: axum::Router) -> String {
 fn config() -> AppConfig {
     toml::from_str(
         "[llm]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\nmax_retries = 0\n\
-         [agents.general]\nenabled = false\n[agents.coding]\nenabled = false\n",
+         [agents.general]\nenabled = false\n[agents.coding]\nenabled = false\n[desktop]\ntest_fixtures = true\n",
     )
     .unwrap()
 }
