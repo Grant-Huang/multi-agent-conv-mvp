@@ -159,6 +159,20 @@ export async function withdrawMemory(id: string): Promise<void> {
   await api.desktopMemoryDelete(id);
 }
 
+/** UXFIX-T（#428）：撤销恢复（revoked=0） */
+export async function restoreMemory(id: string): Promise<MemoryEntry> {
+  const m = await api.desktopMemoryRestore(id);
+  return {
+    id: m.id,
+    title: m.title,
+    source: m.source,
+    body: m.body,
+    expires: m.expires,
+    kind: m.kind,
+    confirmed: m.confirmed,
+  };
+}
+
 export async function resetMemoriesFixture(): Promise<void> {
   await api.desktopMemoriesReset();
 }

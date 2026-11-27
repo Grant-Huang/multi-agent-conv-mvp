@@ -63,6 +63,30 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
     };
   }, [taskId, isFixture]);
 
+  // UXFIX（#520 M11）：运行中任务定时重读，状态不再停留「Agent 执行中」
+  useEffect(() => {
+    if (isFixture) return;
+    let cancelled = false;
+    const t = setInterval(() => {
+      api
+        .task(taskId)
+        .then((r) => {
+          if (!cancelled) {
+            setRealTask((prev) => {
+              if (prev === "loading" || prev === "error") return prev;
+              if (prev.task.status !== r.task.status) return { task: r.task };
+              return prev;
+            });
+          }
+        })
+        .catch(() => {});
+    }, 5_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [taskId, isFixture]);
+
   const toggleExec = () => {
     setExecOpen((v) => {
       const next = !v;
@@ -243,7 +267,8 @@ export function WorkspaceView({ taskId, onBack, onOpenEvidence, onOpenSettings, 
           )}
           <p className="workspace-hint">草稿与作用域按 Task 隔离（A2）。</p>
           </div>
-          <WorkspaceComposer taskId={taskId} />
+          {/* UXFIX（#520 M10）：key=taskId 切任务强制重挂载，杜绝旧任务状态串入 */}
+          <WorkspaceComposer key={taskId} taskId={taskId} />
         </section>
       </div>
     </div>

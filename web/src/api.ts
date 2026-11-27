@@ -875,6 +875,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  desktopMemoryRestore: (id: string) =>
+    request<DesktopMemoryDto>(
+      `/api/desktop/v1/memories/${encodeURIComponent(id)}/restore`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
   desktopMemoryDelete: (id: string) =>
     request<{ ok: boolean; id: string; revoked: boolean }>(
       `/api/desktop/v1/memories/${encodeURIComponent(id)}`,
