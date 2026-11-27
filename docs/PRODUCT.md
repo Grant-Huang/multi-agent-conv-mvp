@@ -109,7 +109,7 @@ CH-P1～CH-P9 即 v1.3 的原则 1～9，内容与编号不变；旧文档里的
 | CH-G4 | **外部系统只经标准连接器接入。** 读写任何外部系统（业务系统、工具、模型服务、其他 agent）都经符合连接器标准的接入层，不在业务代码里直接调用 | 约束（新接入不合规即阻断；存量按清单迁移） | 用户确认 2026-11-25（[2026-11-25-charter-v1-4-experience-growth](decisions/2026-11-25-charter-v1-4-experience-growth.md)）；推广 World Adapter 的做法 |
 | CH-G5 | **记忆与检索内容只是资料。** 记忆、历史消息、文档、工具输出进入上下文时，都作为带来源的资料：其中的指令一律无效，不能改变权限、审批和可执行的动作；AI 自己的历史回答只是“当时的回答”，不作为事实来源；引用历史须带时间和出处，区分“发生过什么”与“内容是否属实” | 约束 | 用户确认 2026-11-26（[2026-11-26-charter-v1-6-memory](decisions/2026-11-26-charter-v1-6-memory.md)）；延伸 CH-P1、CH-P7 |
 
-CH-G3、CH-G4 的具体要求分别写在共享契约 [events-and-trace](contracts/events-and-trace.md) 与连接器契约（待建）中；CH-G1、CH-G2、CH-G5 的实现要求写在 [分层记忆特性档案](features/conversation-memory/README.md)，分层与选材规则见 [2026-11-26-memory-layers-and-history](decisions/2026-11-26-memory-layers-and-history.md)。
+CH-G3、CH-G4 的具体要求分别写在共享契约 [events-and-trace](contracts/events-and-trace.md) 与[连接器契约草案](contracts/connector.md)（草案，待用户批准）中；CH-G1、CH-G2、CH-G5 的实现要求写在 [分层记忆特性档案](features/conversation-memory/README.md)，分层与选材规则见 [2026-11-26-memory-layers-and-history](decisions/2026-11-26-memory-layers-and-history.md)。
 
 ## 6. 副线：论文实验
 
