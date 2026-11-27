@@ -222,6 +222,37 @@ pub(crate) async fn open(cfg: &McpServerConfig) -> Result<Session> {
 }
 
 /// Discover a fixed startup snapshot. No server-provided tool is authorized implicitly.
+/// #519（R-20261127-M9）：从 inputSchema 提取结构摘要——属性名:类型、required 标记，
+/// 长度上限 400 字符。description/examples/enum 值一律不透传（服务器不可信，防注入）。
+fn schema_args_hint(schema: &Value) -> String {
+    const MAX_CHARS: usize = 400;
+    let mut parts: Vec<String> = vec![];
+    if let Some(props) = schema["properties"].as_object() {
+        let required: Vec<&str> = schema["required"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+        for (name, spec) in props {
+            let ty = spec["type"].as_str().unwrap_or("any");
+            let req = if required.contains(&name.as_str()) {
+                ",必填"
+            } else {
+                ""
+            };
+            parts.push(format!("{name}:{ty}{req}"));
+        }
+    }
+    let mut body = parts.join(", ");
+    if body.is_empty() {
+        return "{}".into();
+    }
+    if body.chars().count() > MAX_CHARS {
+        body = body.chars().take(MAX_CHARS).collect::<String>();
+        body.push('…');
+    }
+    format!("{{ {body} }}")
+}
+
 pub async fn connect(configs: &[McpServerConfig]) -> Result<ToolRegistry> {
     let mut ids = BTreeSet::new();
     if configs.len() > 8 || configs.iter().map(|c| c.tools.len()).sum::<usize>() > MAX_TOOLS {
@@ -302,7 +333,9 @@ pub async fn connect(configs: &[McpServerConfig]) -> Result<ToolRegistry> {
                     input_types: binding.input_types.clone(),
                     output_types: binding.output_types.clone(),
                 };
-                let hint = card.input_schema.to_string();
+                // #519：服务器返回的 schema 不可信（docs/mcp/DESIGN.md「描述不可信」）——
+                // 进提示词的参数提示只保留结构摘要（属性名:类型、required），description/examples 不透传
+                let hint = schema_args_hint(&card.input_schema);
                 tools.register(Arc::new(McpTool {
                     card,
                     hint,
