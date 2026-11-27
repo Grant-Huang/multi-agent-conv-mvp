@@ -107,7 +107,7 @@ jobs:
       # 改用 nextest 把各二进制的串行时间重叠起来（并行、失败输出可读）；
       # doc-test 不在 nextest 覆盖范围内，单独保留。
       # taiki-e/install-action@v2
-      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c
         with:
           tool: cargo-nextest
       - name: cargo nextest（并行跑全部单元/集成测试）
@@ -257,7 +257,7 @@ jobs:
         with:
           fetch-depth: 0
       # taiki-e/install-action@v2
-      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c
         with:
           tool: cargo-audit
       - name: cargo audit
