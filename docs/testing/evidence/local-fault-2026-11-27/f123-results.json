@@ -1,0 +1,223 @@
+{
+  "commit": "b113aeb",
+  "base": "http://127.0.0.1:18787",
+  "model": "Qwen3.8-35B-A3B-Q4_K_M via :8200",
+  "runs": [
+    {
+      "case": "F1",
+      "i": 1,
+      "ts": "2026-11-27T10:20:13-0700",
+      "conversation_id": "conv-33e087ecd7a943f2aa8e512f3335c7d6",
+      "task_before": {
+        "id": "task-ad6ccd27d4884dcaa792e6eea396e472",
+        "status": "RUNNING",
+        "agent": "general"
+      },
+      "killed_pid": 79971,
+      "still_alive_after_kill": false,
+      "restart_pid": 12009,
+      "messages_http": 200,
+      "message_count": 3,
+      "task_http": 200,
+      "task_status_after": "FAILED",
+      "task_result_summary": null,
+      "task_errors": null,
+      "health_after": 200,
+      "pass": true,
+      "msg_thread_done": true
+    },
+    {
+      "case": "F1",
+      "i": 2,
+      "ts": "2026-11-27T10:20:54-0700",
+      "conversation_id": "conv-8bb492b3e4c44c50bb912a0e7b3c7070",
+      "task_before": {
+        "id": "task-1ff5c96c7bc04fe0b888838bb680540f",
+        "status": "RUNNING",
+        "agent": "general"
+      },
+      "killed_pid": 12009,
+      "still_alive_after_kill": true,
+      "restart_pid": 12434,
+      "messages_http": 200,
+      "message_count": 3,
+      "task_http": 200,
+      "task_status_after": "FAILED",
+      "task_result_summary": null,
+      "task_errors": null,
+      "health_after": 200,
+      "pass": false,
+      "msg_thread_done": true
+    },
+    {
+      "case": "F1",
+      "i": 3,
+      "ts": "2026-11-27T10:21:35-0700",
+      "conversation_id": "conv-39f03f51e8cc4fe9bb40739cf1ce1783",
+      "task_before": {
+        "id": "task-d94720ce59844eceb71547d1f9bcb689",
+        "status": "RUNNING",
+        "agent": "general"
+      },
+      "killed_pid": 12434,
+      "still_alive_after_kill": true,
+      "restart_pid": 12988,
+      "messages_http": 200,
+      "message_count": 3,
+      "task_http": 200,
+      "task_status_after": "FAILED",
+      "task_result_summary": null,
+      "task_errors": null,
+      "health_after": 200,
+      "pass": false,
+      "msg_thread_done": true
+    },
+    {
+      "case": "F2",
+      "i": 1,
+      "ts": "2026-11-27T10:22:06-0700",
+      "conversation_id": "conv-b06a358f3dc34fc18c8341e2ec57fa4a",
+      "http": 200,
+      "reply": "抱歉，我没能理解这条消息（模型输出格式错误：[E_LLM_UNREACHABLE] 无法连接 LLM 服务 http://127.0.0.1:9/v1：error sending request for url (http://127.0.0.1:9/v1/chat/completions)）。可以换个说法再试一次。",
+      "has_retry_hint": true,
+      "after_restore_http": 200,
+      "after_restore_reply": "恢复",
+      "user_msgs": 2,
+      "asst_msgs": 2,
+      "pass": true
+    },
+    {
+      "case": "F2",
+      "i": 2,
+      "ts": "2026-11-27T10:22:14-0700",
+      "conversation_id": "conv-7a7d899ccad54e2f901fa61a29d9a2bf",
+      "http": 200,
+      "reply": "抱歉，我没能理解这条消息（模型输出格式错误：[E_LLM_UNREACHABLE] 无法连接 LLM 服务 http://127.0.0.1:9/v1：error sending request for url (http://127.0.0.1:9/v1/chat/completions)）。可以换个说法再试一次。",
+      "has_retry_hint": true,
+      "after_restore_http": 200,
+      "after_restore_reply": "恢复",
+      "user_msgs": 2,
+      "asst_msgs": 2,
+      "pass": true
+    },
+    {
+      "case": "F2",
+      "i": 3,
+      "ts": "2026-11-27T10:22:23-0700",
+      "conversation_id": "conv-31ced268965c486fa98b7990e82bdf87",
+      "http": 200,
+      "reply": "抱歉，我没能理解这条消息（模型输出格式错误：[E_LLM_UNREACHABLE] 无法连接 LLM 服务 http://127.0.0.1:9/v1：error sending request for url (http://127.0.0.1:9/v1/chat/completions)）。可以换个说法再试一次。",
+      "has_retry_hint": true,
+      "after_restore_http": 200,
+      "after_restore_reply": "恢复",
+      "user_msgs": 2,
+      "asst_msgs": 2,
+      "pass": true
+    },
+    {
+      "case": "F3",
+      "i": 1,
+      "ts": "2026-11-27T10:22:29-0700",
+      "baseline_pids": [
+        4013,
+        4015
+      ],
+      "conversation_id": "conv-fe9bdeb2144d4322ae292daa068100a9",
+      "task_before": {
+        "id": "task-4acaf76caf7f4e94a4eb5ece0821bc9e",
+        "status": "RUNNING",
+        "agent": "codex",
+        "kind": "cli",
+        "role": "coding"
+      },
+      "agent_pids": [
+        13799
+      ],
+      "ps_at_kill": [
+        "4013 /bin/bash /Users/admin/work/projects/opencode-slack-bridge/start.sh",
+        "4015 opencode serve --port 42000",
+        "13799 /Users/admin/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex exec --skip-git-repo-check --sandbox workspace-write --cd /private/tmp/line6-d1-clean/repo/workspace/code --output-last-message /var/folders/cq/zp9wtr4j4w9dltvpgfmttr7r0000gn/T/an-codex-task-4acaf76caf7f4e94a4eb5ece0821bc9e.txt 在仓库根目录创建一个新文件 fault_f3_1.py，文件内容如下：\\012\\012print('f3-1')\\012\\012直接写文件，完成后总结。\\012\\012## 背景信息\\012用户：请把这个任务交给 Codex / 编码 agent（不要用 builtin general）：在仓库根目录创建一个新文件 fault_f3_1.py，内容 print('f3-1')，直接写文件，做完再总结。这是编码任务，必须用 coding agent。"
+      ],
+      "killed_agents": [
+        13799
+      ],
+      "task_status_after": "FAILED",
+      "task_result_summary": "",
+      "task_errors": [
+        "[E_AGENT_RUNTIME] 进程退出：signal: 9 (SIGKILL)"
+      ],
+      "leftovers_of_killed": [],
+      "pass": true
+    },
+    {
+      "case": "F3",
+      "i": 2,
+      "ts": "2026-11-27T10:23:05-0700",
+      "baseline_pids": [
+        4013,
+        4015
+      ],
+      "conversation_id": "conv-1edf3609878b40a09c3150032040f6cf",
+      "task_before": {
+        "id": "task-7dd77bf2d1d8470fa072199776aedca9",
+        "status": "RUNNING",
+        "agent": "codex",
+        "kind": "cli",
+        "role": "coding"
+      },
+      "agent_pids": [
+        17521
+      ],
+      "ps_at_kill": [
+        "4013 /bin/bash /Users/admin/work/projects/opencode-slack-bridge/start.sh",
+        "4015 opencode serve --port 42000",
+        "17521 /Users/admin/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex exec --skip-git-repo-check --sandbox workspace-write --cd /private/tmp/line6-d1-clean/repo/workspace/code --output-last-message /var/folders/cq/zp9wtr4j4w9dltvpgfmttr7r0000gn/T/an-codex-task-7dd77bf2d1d8470fa072199776aedca9.txt 在代码仓库根目录创建一个新文件 fault_f3_2.py，文件内容只有一行：print('f3-2')。直接写入文件即可，完成后简要总结。\\012\\012## 背景信息\\012用户：请把这个任务交给 Codex / 编码 agent（不要用 builtin general）：在仓库根目录创建一个新文件 fault_f3_2.py，内容 print('f3-2')，直接写文件，做完再总结。这是编码任务，必须用 coding agent。"
+      ],
+      "killed_agents": [
+        17521
+      ],
+      "task_status_after": "FAILED",
+      "task_result_summary": "",
+      "task_errors": [
+        "[E_AGENT_RUNTIME] 进程退出：signal: 9 (SIGKILL)"
+      ],
+      "leftovers_of_killed": [],
+      "pass": true
+    },
+    {
+      "case": "F3",
+      "i": 3,
+      "ts": "2026-11-27T10:24:26-0700",
+      "baseline_pids": [
+        4013,
+        4015
+      ],
+      "conversation_id": "conv-bbf8b551046749fea9add75fa1a7622e",
+      "task_before": {
+        "id": "task-7a462488ef654c43b1ba790fa98b7ad0",
+        "status": "RUNNING",
+        "agent": "codex",
+        "kind": "cli",
+        "role": "coding"
+      },
+      "agent_pids": [
+        18413
+      ],
+      "ps_at_kill": [
+        "4013 /bin/bash /Users/admin/work/projects/opencode-slack-bridge/start.sh",
+        "4015 opencode serve --port 42000",
+        "18413 /Users/admin/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex exec --skip-git-repo-check --sandbox workspace-write --cd /private/tmp/line6-d1-clean/repo/workspace/code --output-last-message /var/folders/cq/zp9wtr4j4w9dltvpgfmttr7r0000gn/T/an-codex-task-7a462488ef654c43b1ba790fa98b7ad0.txt 在代码仓库根目录创建新文件 fault_f3_3.py，文件内容为 print('f3-3')，直接写入文件，完成后总结。\\012\\012## 背景信息\\012用户：请把这个任务交给 Codex / 编码 agent（不要用 builtin general）：在仓库根目录创建一个新文件 fault_f3_3.py，内容 print('f3-3')，直接写文件，做完再总结。这是编码任务，必须用 coding agent。"
+      ],
+      "killed_agents": [
+        18413
+      ],
+      "task_status_after": "FAILED",
+      "task_result_summary": "",
+      "task_errors": [
+        "[E_AGENT_RUNTIME] 进程退出：signal: 9 (SIGKILL)"
+      ],
+      "leftovers_of_killed": [],
+      "pass": true
+    }
+  ]
+}

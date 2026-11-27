@@ -1,0 +1,71 @@
+[
+  {
+    "case": "F1",
+    "i": 1,
+    "ts": "2026-11-27T10:26:35-0700",
+    "conversation_id": "conv-87cb708a283440a9b5225ecb99879277",
+    "task_before": {
+      "id": "task-aebf5468ac8643379f5c26a050a8bb6b",
+      "status": "RUNNING",
+      "agent": "general"
+    },
+    "killed_pid": 20107,
+    "still_alive_after_kill": false,
+    "restart_pid": 22205,
+    "messages_http": 200,
+    "message_count": 3,
+    "task_http": 200,
+    "task_status_after": "FAILED",
+    "task_result_summary": null,
+    "task_errors": null,
+    "health_after": 200,
+    "pass": true,
+    "msg_thread_done": true
+  },
+  {
+    "case": "F1",
+    "i": 2,
+    "ts": "2026-11-27T10:27:03-0700",
+    "conversation_id": "conv-f61bb1f45f8a439a908e9bad738db66f",
+    "task_before": {
+      "id": "task-d4c9bad50e02467099b08d6351e1cb6f",
+      "status": "RUNNING",
+      "agent": "general"
+    },
+    "killed_pid": 22205,
+    "still_alive_after_kill": false,
+    "restart_pid": 25817,
+    "messages_http": 200,
+    "message_count": 3,
+    "task_http": 200,
+    "task_status_after": "FAILED",
+    "task_result_summary": null,
+    "task_errors": null,
+    "health_after": 200,
+    "pass": true,
+    "msg_thread_done": true
+  },
+  {
+    "case": "F1",
+    "i": 3,
+    "ts": "2026-11-27T10:27:33-0700",
+    "conversation_id": "conv-1d16ce3e713b436ba380e1f4563574d0",
+    "task_before": {
+      "id": "task-ee25960451e645798e32017689e5cd5c",
+      "status": "RUNNING",
+      "agent": "general"
+    },
+    "killed_pid": 25817,
+    "still_alive_after_kill": false,
+    "restart_pid": 26671,
+    "messages_http": 200,
+    "message_count": 3,
+    "task_http": 200,
+    "task_status_after": "FAILED",
+    "task_result_summary": null,
+    "task_errors": null,
+    "health_after": 200,
+    "pass": true,
+    "msg_thread_done": true
+  }
+]
