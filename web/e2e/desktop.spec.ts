@@ -283,10 +283,21 @@ test('E2E-ADMEMW: 记忆纠错与撤回', async ({ page, request }) => {
   await expect(page.getByTestId('memory-item-mem-1')).toBeVisible();
   // #354 夹具口径：种子只剩 mem-1，撤回流程改用 mem-1 验证
   await page.getByTestId('memory-item-mem-1').click();
-  // UXFIX-T（#353）：撤回需确认
+  // UXFIX-T（#353/#428）：撤回需确认；确认后显示撤销面板（不再自动回列表）
   await page.getByTestId('memory-withdraw').click();
   await expect(page.getByTestId('memory-withdraw-confirm')).toBeVisible();
   await page.getByTestId('memory-withdraw-confirm-yes').click();
+  await expect(page.getByTestId('memory-withdrawn-undo')).toBeVisible();
+  // 撤销撤回：恢复活动列表
+  await page.getByTestId('memory-undo-withdraw').click();
+  await expect(page.getByTestId('memory-list')).toBeVisible();
+  await expect(page.getByTestId('memory-item-mem-1')).toBeVisible();
+  // 再次撤回 + 返回列表
+  await page.getByTestId('memory-withdraw').click();
+  await expect(page.getByTestId('memory-withdraw-confirm')).toBeVisible();
+  await page.getByTestId('memory-withdraw-confirm-yes').click();
+  await expect(page.getByTestId('memory-withdrawn-undo')).toBeVisible();
+  await page.getByTestId('memory-back-after-withdraw').click();
   await expect(page.getByTestId('memory-list')).toBeVisible();
   await expect(page.getByTestId('memory-item-mem-1')).toHaveCount(0);
 
