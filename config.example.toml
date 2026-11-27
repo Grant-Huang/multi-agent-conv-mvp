@@ -292,3 +292,7 @@ approval_risk = "high"             # 风险达到该等级需人工审批：low 
 # daily_cap = 1                    # 每日最多推送几条
 # operator_role = ""               # 预留，暂不生效
 # model_explain = false            # 模型解释层（S7）；开则用后台槽位，取不到则跳过
+
+# ───── 连接器注册表（契约 K 系列 connector.md，#398/#487）─────
+# 外部系统统一在此注册（凭据用引用，K2）；未注册的直连会告警（先告警后拒绝）
+# connectors_path = "connectors.toml"

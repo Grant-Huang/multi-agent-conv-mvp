@@ -3,7 +3,7 @@ use an_runtime::mom::{Engine, LlmMaster};
 use an_server::mom::{self, AppState};
 use anyhow::{bail, Context, Result};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 #[tokio::main]
@@ -46,9 +46,36 @@ async fn main() -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let mut state = AppState::scripted(Arc::new(Mutex::new(Engine::open(db)?)));
-    if let Some(url) = relos_url.filter(|u| !u.is_empty()) {
+    // #487：连接器注册表优先（connectors.toml，路径可用 CONNECTORS_TOML 覆盖）——
+    // id="relos" 的描述符生效（endpoint + K2 凭据引用）。未注册按拍板②走
+    // 「告警 + 旧配置回退」（先告警后拒绝，迁移期满翻转）。
+    let connectors_path =
+        std::env::var("CONNECTORS_TOML").unwrap_or_else(|_| "connectors.toml".into());
+    let registry = an_runtime::connectors::load(Path::new(&connectors_path))?;
+    if let Some(desc) = registry.lookup("relos") {
+        let credential = an_runtime::connectors::resolve_credential(desc);
+        if desc.credentials.is_some() && credential.is_none() {
+            tracing::warn!(
+                event = "connector.credential_missing",
+                connector = "relos",
+                "K2 凭据引用的 env 未设置：将以无凭据调用"
+            );
+        }
+        state = state.with_relos_with_bearer(&desc.endpoint, credential.as_deref())?;
+        println!(
+            "RelOS via connector registry: {} (owner: {})",
+            desc.endpoint,
+            desc.owner.as_deref().unwrap_or("-")
+        );
+    } else if let Some(url) = relos_url.filter(|u| !u.is_empty()) {
+        tracing::warn!(
+            event = "connector.unregistered",
+            connector = "relos",
+            path = %connectors_path,
+            "relos 未注册进连接器注册表：迁移期回退旧配置（先告警后拒绝）"
+        );
         state = state.with_relos(&url)?;
-        println!("RelOS context enabled: {url} (simulated knowledge; failures degrade to human decision)");
+        println!("RelOS context enabled (legacy): {url} (simulated knowledge; failures degrade to human decision)");
     }
     if let Some(path) = llm {
         let config = an_runtime::config::AppConfig::load(std::path::Path::new(&path))?;
