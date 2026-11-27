@@ -3283,18 +3283,28 @@ impl Store {
         {
             let mut st = conn.prepare(
                 "SELECT id, conversation_id, result_json, updated_at FROM tasks
-                 WHERE status = 'completed' AND result_json IS NOT NULL
+                 WHERE status = ?4 AND result_json IS NOT NULL
                    AND instr(result_json, ?1) > 0 AND updated_at >= ?2
                  ORDER BY updated_at DESC LIMIT ?3",
             )?;
-            let rows = st.query_map(params![q, cutoff, limit as i64], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get::<_, String>(3)?,
-                ))
-            })?;
+            // #513：状态值绑定 TaskStatus::Completed.as_str()——库里存的是
+            // 大写 "COMPLETED"，字面量小写会让任务回执检索永远为空
+            let rows = st.query_map(
+                params![
+                    q,
+                    cutoff,
+                    limit as i64,
+                    an_core::TaskStatus::Completed.as_str()
+                ],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                },
+            )?;
             for row in rows {
                 let (id, conversation_id, result_json, updated_at) = row?;
                 let summary = serde_json::from_str::<serde_json::Value>(&result_json)
