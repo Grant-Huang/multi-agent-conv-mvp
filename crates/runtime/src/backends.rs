@@ -140,6 +140,9 @@ impl Backends {
         }
 
         // 1. 后端：没写就用 [llm] 合成 default
+        // #498 / I7：[llm] 的凭据只属于合成 default——显式声明 [backends.*] 时，
+        // 具名后端各用各的凭据，不得继承 [llm] 的 api_key / api_key_env。
+        let has_named_backends = !cfg.backends.is_empty();
         let mut specs: BTreeMap<String, BackendConfig> = cfg.backends.clone();
         if specs.is_empty() {
             specs.insert(
@@ -159,6 +162,10 @@ impl Backends {
         let mut base_clients = BTreeMap::new();
         for (name, spec) in &specs {
             let mut llm = cfg.llm.clone();
+            if has_named_backends {
+                llm.api_key.clear();
+                llm.api_key_env = None;
+            }
             llm.base_url = spec.base_url.clone();
             if let Some(m) = &spec.model {
                 llm.model = m.clone();
@@ -687,5 +694,57 @@ mod tests {
             an_llm::StructuredMode::PromptOnly
         );
         assert_eq!(c.config().temperature, 0.3); // 其余沿用 [llm]
+    }
+
+    /// #498 / R-20261127-H2：[llm] 凭据只属于合成 default——显式声明的 [backends.*]
+    /// 各用各的凭据，不得继承 [llm] 的 api_key / api_key_env（否则 A 的密钥发给 B，
+    /// B 自己的密钥被静默丢弃，违反 I7 / backends.rs:8 承诺）。
+    #[test]
+    fn llm_credentials_do_not_leak_into_named_backends() {
+        // #498 用真实进程 env（LlmClient::new 直读 std::env）；唯一变量名避免污染他测
+        std::env::set_var("LLM_KEY", "A-secret");
+        std::env::set_var("CLOUD_KEY", "C-secret");
+        // 场景 1：general 路由到 cloud——cloud 客户端应持 C-secret（不得被 [llm] 覆盖）
+        let cloud_routing = "[llm]\nbase_url = \"https://llm/v1\"\napi_key_env = \"LLM_KEY\"\nmodel = \"m\"\n\
+            [backends.cloud]\nkind = \"openai\"\nbase_url = \"https://cloud/v1\"\nmodel = \"cloud-model\"\napi_key_env = \"CLOUD_KEY\"\n\
+            [routing]\nconversation = \"cloud\"\nrouter = \"cloud\"\ngeneral = \"cloud\"\nreviewer = \"cloud\"\n";
+        let (app_cfg, unknown) = AppConfig::parse(cloud_routing).unwrap();
+        assert!(unknown.is_empty(), "{unknown:?}");
+        let b = Backends::build(&app_cfg).unwrap();
+        assert_eq!(
+            b.client(LlmRole::General).config().api_key,
+            "C-secret",
+            "cloud 客户端用自己的密钥（不得被 [llm] 的 env 覆盖）"
+        );
+
+        // 场景 2：general 路由到 local——本地后端不得继承 [llm] 凭据
+        let local_routing = "[llm]\nbase_url = \"https://llm/v1\"\napi_key_env = \"LLM_KEY\"\nmodel = \"m\"\n\
+            [backends.local]\nkind = \"llama_cpp\"\nbase_url = \"http://127.0.0.1:8200/v1\"\nmodel = \"big\"\nslots = 5\n\
+            [routing]\nconversation = \"local\"\nrouter = \"local\"\ngeneral = \"local\"\nreviewer = \"local\"\n";
+        let (app_cfg2, unknown) = AppConfig::parse(local_routing).unwrap();
+        assert!(unknown.is_empty(), "{unknown:?}");
+        let b2 = Backends::build(&app_cfg2).unwrap();
+        let binding = b2.client(LlmRole::General);
+        let local_cfg = binding.config();
+        assert!(
+            local_cfg.api_key.is_empty() && local_cfg.api_key_env.is_none(),
+            "本地后端不得继承 [llm] 凭据：api_key={} env={:?}",
+            local_cfg.api_key,
+            local_cfg.api_key_env
+        );
+
+        // 对照：无 [backends] 时合成 default 继承 [llm] 凭据（既定行为保持）
+        let single =
+            "[llm]\nbase_url = \"https://llm/v1\"\napi_key_env = \"LLM_KEY\"\nmodel = \"m\"\n";
+        let (app_cfg3, _) = AppConfig::parse(single).unwrap();
+        let b3 = Backends::build(&app_cfg3).unwrap();
+        assert_eq!(
+            b3.client(LlmRole::General).config().api_key,
+            "A-secret",
+            "无 [backends] 时 default 照常继承"
+        );
+
+        std::env::remove_var("LLM_KEY");
+        std::env::remove_var("CLOUD_KEY");
     }
 }
