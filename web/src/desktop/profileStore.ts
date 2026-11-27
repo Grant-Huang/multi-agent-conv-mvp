@@ -22,7 +22,7 @@ export type MemoryEntry = {
 
 export const DEFAULT_PROFILE: AssistantProfile = {
   name: "我的助理",
-  avatar: "◇",
+  avatar: "",
   role: "日常工作伙伴",
   soul: "简洁、可核对、不替你做未授权决定",
   taste: "优先事实与可执行下一步",

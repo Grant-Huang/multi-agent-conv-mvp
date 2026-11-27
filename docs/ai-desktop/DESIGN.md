@@ -147,6 +147,10 @@ Run 扩展状态为 `queued → running → completed/failed/cancelled`，运行
 
 语音识别为工作时展示任务标题、关联对象和共享范围。低风险明确任务可按授权受理，歧义通过短复述和确认卡纠正。外发、共享、审批和写入沿用动作级确认。录音、转写、私有记忆和共享知识各自授权及保留。两端共享身份、Conversation、Task、Run、产物和未读。恢复上次工作时定位同一消息锚点，布局按设备保存。同步草稿使用版本并保留冲突副本，让用户选择。账户切换与撤权时清理相应缓存。
 
+## 11. 图标清单与使用规则（UXFIX-R，#344）
+
+统一图标为**内联 SVG 线性图标**（`web/src/components/icons.tsx`）：单色、`currentColor` 描边、随深浅色主题变化；不使用 emoji 与图标字体。清单：菜单（Menu）、警告（Warning）、成功（Check）、失败 / 关闭（Cross）、展开 / 收起（CaretDown / CaretUp）、返回（ArrowLeft）、设置（Settings）、证据（Evidence）、分屏 / 专注（LayoutSplit / Focus）、助理（Assistant）、标志（Logo）。使用规则：含义通用的动作用图标或"图标 + 文字"；业务动作（批准、在频道中处理等）保留文字；只有图标的控件必须有 `aria-label` 与悬停提示；新增图标先入清单再用。
+
 ## 9. 验收
 
 | 编号 | 操作 | 通过条件 |

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { IconArrowLeft } from "../components/icons";
 import { opsStageText } from "./opsStageText";
 import { api } from "../api";
 import {
@@ -348,7 +349,7 @@ export function MomWorkbench({
     >
       <header className="mom-wb-header">
         <button type="button" className="ghost" onClick={onBack}>
-          ← 返回桌面
+          <IconArrowLeft size={14} /> 返回桌面
         </button>
         <h1>MOM 工作台</h1>
         <span className="mom-provenance" aria-label="数据来源">

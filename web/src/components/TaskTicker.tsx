@@ -1,6 +1,7 @@
 // 走马灯：挂在任务的简短回复下面。收起时只显示最新一行；展开时从旧到新列出全部进度。
 // 运行中在行尾显示动画 SVG；结束后行尾是展开箭头。背景与正文一致，字体比正文小、颜色更浅。
 import { useState } from "react";
+import { IconCaretDown, IconCaretUp } from "./icons";
 
 export function TaskTicker(props: { lines: string[]; running: boolean; failed?: boolean }) {
   const { lines, running, failed } = props;
@@ -27,7 +28,7 @@ export function TaskTicker(props: { lines: string[]; running: boolean; failed?: 
               strokeDasharray="28 10" strokeLinecap="round" />
           </svg>
         ) : (
-          <span className="ticker-caret" aria-hidden="true">{expanded ? "▴" : "▾"}</span>
+          <span className="ticker-caret" aria-hidden="true">{expanded ? <IconCaretUp size={12} /> : <IconCaretDown size={12} />}</span>
         )}
       </button>
       {expanded && (

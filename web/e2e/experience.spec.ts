@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { SMT03_TASK_ID } from '../src/desktop/mockData';
 
 // 体验地图 UX-01（docs/experience-map/journeys/UX-01.md）的确定性约束。
@@ -517,4 +519,32 @@ test('E2E-UX06-I5: 捷径一次返回回原工作；设置首页进入分类一�
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('settings-panel')).toBeVisible();
   await expect(page.getByTestId('settings-cat-assistant')).toBeVisible();
+});
+
+// UXFIX-R（#344）：渲染界面不出现字符图标（☰ ⚠ ✓ ✗ ▴ ▾ ← ◇）与 emoji；
+// 图标统一为 SVG 线性（icons.tsx，DESIGN §11）。源码扫描由 icons.test.tsx 覆盖。
+test('E2E-ADICONS: 界面与源码无字符图标与 emoji', async ({ page }) => {
+  const forbidden = ['☰', '⚠', '✓', '✗', '▴', '▾', '←', '◇', '🔲', '🔵'];
+  const root = fileURLToPath(new URL('../src/', import.meta.url));
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const p = dir + name;
+      if (statSync(p).isDirectory()) { walk(p + '/'); continue; }
+      if (!/\.(tsx?|css)$/.test(name)) continue;
+      const text = readFileSync(p, 'utf8');
+      for (const ch of forbidden) if (text.includes(ch)) offenders.push(p + ': ' + ch);
+    }
+  };
+  walk(root);
+  expect(offenders.join('\n')).toBe('');
+
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  await expect(page.getByTestId('workspace-input')).toBeVisible();
+  const body = await page.locator('body').innerText();
+  for (const ch of forbidden) {
+    expect(body, '界面出现字符图标 ' + ch).not.toContain(ch);
+  }
+  await expect(page.getByRole('button', { name: '会话' })).toBeVisible();
 });
