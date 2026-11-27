@@ -34,6 +34,11 @@
       "E2E-FILE",
       "E2E-TICKER",
       "E2E-FAILCARD"
+    ],
+    "runtime_cases": [
+      "RT-SAGG-01",
+      "RT-SAGG-02",
+      "RT-SAGG-03"
     ]
   },
   {
@@ -55,6 +60,11 @@
       "E2E-REV",
       "E2E-HOMEREV",
       "E2E-HOMEREJ"
+    ],
+    "runtime_cases": [
+      "RT-SAGG-01",
+      "RT-SAGG-02",
+      "RT-SAGG-03"
     ],
     "runtime_cases": [
       "RT-ASSIGN-05",

@@ -1152,6 +1152,14 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-G2C-01 | conversation-memory | 风格"只要结论"生效 + 回执含"不可逆"（CH-G2c，#402） | handle_message（respond 轮） | 模型回答不含风险词时，最终回答仍含程序补齐的风险提示句（原回答不改）；conversation.risk_restored 事件 |
 | RT-G2C-02 | conversation-memory | 同上但模型回答已自带风险标记 | 同上 | 不重复补齐 |
 
+## 跨任务聚合只读投影（RT-SAGG，#397 P1：S-Agent 整合规则 4）
+
+| Case ID | 特性 | 场景 | 操作 | 期望 |
+|---|---|---|---|---|
+| RT-SAGG-01 | tasks | 库里两个已完成任务（各带 summary 与产物） | `GET /api/desktop/v1/tasks/aggregate?ids=a,b` | 200；逐条含来源（conversation_id/task_id/updated_at）、summary、产物名、证据数 |
+| RT-SAGG-02 | tasks | ids 混入不存在的任务 | 同上 | 200；missing 数组列出缺失 id，其余条目照常 |
+| RT-SAGG-03 | tasks | 空 ids / 51 个 id | 同上 | 400 invalid_request（只读投影的输入守卫） |
+
 ## 文件工具工作区边界（RT-SYMLN，#500 安全修复；tools.rs 与任务产物收集共用 resolve_in_workspace）
 
 | Case ID | 特性 | 场景 | 操作 | 期望 |
