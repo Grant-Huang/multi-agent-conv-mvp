@@ -13,6 +13,7 @@ import {
   fetchProfile,
   saveProfile,
   withdrawMemory,
+  restoreMemory,
   type AssistantProfile,
   type MemoryEntry,
   memoryKindText,
@@ -460,11 +461,14 @@ function MemoryDetail({
   // UXFIX-T（#353）：有效期编辑与撤回确认
   const [draftExpires, setDraftExpires] = useState(entry.expires);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  // UXFIX-T（#428）：撤回后短时撤销
+  const [withdrawn, setWithdrawn] = useState(false);
 
   useEffect(() => {
     setDraftBody(entry.body);
     setDraftExpires(entry.expires);
     setConfirmWithdraw(false);
+    setWithdrawn(false);
     setErr(null);
   }, [entry.id, entry.body, entry.expires]);
 
@@ -577,7 +581,10 @@ function MemoryDetail({
                 setBusy(true);
                 setErr(null);
                 void withdrawMemory(entry.id)
-                  .then(() => onWithdrawn())
+                  .then(() => {
+                    setConfirmWithdraw(false);
+                    setWithdrawn(true);
+                  })
                   .catch((e: Error) => setErr(e.message))
                   .finally(() => setBusy(false));
               }}
@@ -591,6 +598,40 @@ function MemoryDetail({
               onClick={() => setConfirmWithdraw(false)}
             >
               取消
+            </button>
+          </div>
+        </div>
+      )}
+      {withdrawn && (
+        <div data-testid="memory-withdrawn-undo" role="status">
+          <p className="settings-saved">已撤回（下一次回答不再参考）。可撤销恢复。</p>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="btn small"
+              data-testid="memory-undo-withdraw"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setErr(null);
+                void restoreMemory(entry.id)
+                  .then((m) => {
+                    onSaved(m);
+                    setWithdrawn(false);
+                  })
+                  .catch((e: Error) => setErr(e.message))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              撤销撤回
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="memory-back-after-withdraw"
+              onClick={onWithdrawn}
+            >
+              返回列表
             </button>
           </div>
         </div>
