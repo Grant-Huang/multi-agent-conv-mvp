@@ -132,6 +132,11 @@ pub fn routes(test_fixtures: bool) -> Router<AppState> {
                 "/api/desktop/v1/messages/{id}/correction",
                 post(correct_message_api),
             )
+            // #346 片5 REQ-07：撤回影响追溯（含已撤回记忆——追溯正是为撤回服务）
+            .route(
+                "/api/desktop/v1/memories/{id}/impact",
+                get(memory_impact_api),
+            )
             // T-73：助理消息已读跨端（进程内夹具，无新表）
             .route(
                 "/api/desktop/v1/assistant/messages",
@@ -800,7 +805,43 @@ fn memory_json(m: &DesktopMemory) -> serde_json::Value {
         "expires": m.expires,
         "kind": m.kind,
         "confirmed": m.confirmed_at.is_some(),
+        "flags": memory_flags(&m.title, &m.body),
     })
+}
+
+/// #346 片5（REQ-07 §7.3）：写入面扫描——读时派生（不改库、无迁移）。
+/// 命中可疑指令样式（决策 §7.3「写入时扫描可疑指令」）或敏感信息样式时，
+/// 在保存响应 / 列表 / 详情中给出 `flags`，供界面标注与审查。
+fn memory_flags(title: &str, body: &str) -> Vec<&'static str> {
+    let hay = format!("{title}\n{body}").to_lowercase();
+    const INJECTION_PAIRS: &[(&str, &str)] = &[
+        ("忽略", "指令"),
+        ("忽略", "规则"),
+        ("忽略", "提示"),
+        ("无视", "指令"),
+        ("忘记", "指令"),
+        ("不要遵守", "指令"),
+        ("你现在是", "管理员"),
+    ];
+    let mut flags = Vec::new();
+    if INJECTION_PAIRS
+        .iter()
+        .any(|(a, b)| hay.contains(a) && hay.contains(b))
+    {
+        flags.push("injection_risk");
+    }
+    const SENSITIVE: &[&str] = &[
+        "-----begin",
+        "akia",
+        "api_key",
+        "password",
+        "token=",
+        "密码",
+    ];
+    if SENSITIVE.iter().any(|s| hay.contains(s)) {
+        flags.push("sensitive_info");
+    }
+    flags
 }
 
 /// conversation-memory 5.2b：确认（预览闸门）。幂等；未知 id 404。
@@ -1021,6 +1062,45 @@ async fn delete_message_api(
         Err(e) => (
             StatusCode::FORBIDDEN,
             Json(json!({ "code": "forbidden", "message": format!("{e:#}"), "retryable": false })),
+        )
+            .into_response(),
+    }
+}
+
+/// 撤回影响追溯（#346 片5，REQ-07 §7.6 / CH-G3）：查询某记忆影响过哪些会话的
+/// 回答（注入轮次留痕；含已撤回记忆）。未知记忆 404。
+async fn memory_impact_api(
+    State(rt): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let user = principal_or_local(&headers);
+    match rt.store.desktop_memory_impact(&user, &id) {
+        Ok((true, hits)) => {
+            let items: Vec<serde_json::Value> = hits
+                .iter()
+                .map(|h| {
+                    json!({
+                        "conv_id": h.conversation_id,
+                        "section": h.section,
+                        "at": h.at,
+                    })
+                })
+                .collect();
+            (
+                StatusCode::OK,
+                Json(json!({ "memory_id": id, "impacts": items })),
+            )
+                .into_response()
+        }
+        Ok((false, _)) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "code": "not_found", "message": "记忆不存在", "retryable": false })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "code": "internal", "message": format!("{e:#}"), "retryable": true })),
         )
             .into_response(),
     }

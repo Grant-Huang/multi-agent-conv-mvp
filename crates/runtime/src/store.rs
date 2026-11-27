@@ -168,6 +168,15 @@ pub struct MessageCorrection {
     pub created_at: String,
 }
 
+/// 撤回影响追溯命中（#346 片5，REQ-07）：某记忆影响过的会话轮次（不含正文）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MemoryImpactHit {
+    pub conversation_id: String,
+    /// 注入段别：memory（个人记忆）/ style（风格卡）
+    pub section: String,
+    pub at: String,
+}
+
 fn history_snippet(s: &str) -> String {
     s.chars().take(200).collect()
 }
@@ -395,6 +404,16 @@ CREATE TABLE IF NOT EXISTS message_corrections (
     note TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+-- #346 片5（REQ-07 §7.6）：撤回影响追溯——记忆/风格卡每轮注入留痕（只记来源
+-- id、会话与段别，不记正文），撤回后可查「影响过哪些会话的回答」
+CREATE TABLE IF NOT EXISTS materials_injections (
+    id TEXT PRIMARY KEY,
+    memory_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    section TEXT NOT NULL,
+    at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_materials_inj_memory ON materials_injections(memory_id);
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
@@ -3377,6 +3396,71 @@ impl Store {
             )
             .optional()?;
         Ok(note)
+    }
+
+    // ───────────── 撤回影响追溯（#346 片5，REQ-07 §7.6 / CH-G3） ─────────────
+
+    /// 记录一轮会话资料注入（每轮注入发生时调用；只记来源 id、会话、段别与时间，
+    /// 不记正文）。记录失败由调用方降级处理，不影响当前轮回答。
+    pub fn record_materials_injections(
+        &self,
+        conversation_id: &str,
+        injections: &[(String, &'static str)],
+    ) -> Result<()> {
+        if injections.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.write();
+        let tx = conn.transaction()?;
+        {
+            let mut st = tx.prepare(
+                "INSERT INTO materials_injections (id, memory_id, conversation_id, section, at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+            let at = now();
+            for (memory_id, section) in injections {
+                st.execute(params![
+                    an_core::new_id("inj"),
+                    memory_id,
+                    conversation_id,
+                    section,
+                    at
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// 查询某条记忆影响过哪些会话的回答（含已撤回的记忆——追溯正是为撤回服务）。
+    /// `exists` 为该记忆是否存在（含已撤回）；按时间倒序，最多 100 条。
+    pub fn desktop_memory_impact(
+        &self,
+        user_id: &str,
+        memory_id: &str,
+    ) -> Result<(bool, Vec<MemoryImpactHit>)> {
+        let conn = self.read();
+        let exists: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM desktop_memories WHERE id = ?1 AND user_id = ?2",
+            params![memory_id, user_id],
+            |r| r.get(0),
+        )?;
+        if exists == 0 {
+            return Ok((false, Vec::new()));
+        }
+        let mut st = conn.prepare(
+            "SELECT conversation_id, section, at FROM materials_injections
+             WHERE memory_id = ?1 ORDER BY at DESC, rowid DESC LIMIT 100",
+        )?;
+        let rows = st.query_map(params![memory_id], |r| {
+            Ok(MemoryImpactHit {
+                conversation_id: r.get(0)?,
+                section: r.get(1)?,
+                at: r.get(2)?,
+            })
+        })?;
+        let hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok((true, hits))
     }
 
     // ───────────── 任务 ─────────────

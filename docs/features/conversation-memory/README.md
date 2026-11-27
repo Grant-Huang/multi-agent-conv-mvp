@@ -25,7 +25,7 @@
 | REQ-conversation-memory-04 | 内省发现按需进入会话 | DES 的可追溯发现只在相关提问中使用；待核实的发现明确标注；发现无法自动晋升为个人记忆或组织规则。验收标准 2026-11-23 用户确认冻结（相关性门 / 待核实标注 / 不自动晋升）：见 CASES「内省发现按需进入会话」RT-UFND-01～06，及判断 / 路由 / 执行路径 RT-JMAT-01～05、RT-RMAT-01～03、RT-EXEC-01～04。克制运行规则（门槛、日上限、标推断、输入中不弹等）见设计 3.4，与 [INTROSPECTION_PLAN](../../memory/INTROSPECTION_PLAN.md) 第 7 节发送闸门一致 | 已确认 | RT-UFND-01～06、RT-JMAT-01～05、RT-RMAT-01～03、RT-EXEC-01～04 | — |
 | REQ-conversation-memory-05 | 历史记录可检索（L2） | 先只检索本人参与的会话与任务；检索默认最近 180 天，更早需明确指定；用户消息、系统事件、审批、回执按「记录事实」返回；AI 历史回答一律标「当时的回答」，不作为事实来源（CH-G5）；被纠正或撤回的带标记，优先给纠正后版本；引用必须带时间与出处；个人会话中本人删除的消息真删除；任务、审批相关记录保留原件供审计，但不再进入检索与引用。验收标准 2026-11-26 用户确认冻结：见 CASES「分层记忆细化」RT-L2H-01～04（片 3 已实现检索与删除；片 4a 已实现更正注记 `POST /api/desktop/v1/messages/{id}/correction`，更正单独记录、原文不改写、检索优先纠正后版本） | 已确认 | RT-L2H-01～04 | — |
 | REQ-conversation-memory-06 | 按场合选材且所用记忆可说明 | 场合由程序按入口与状态确定性判断（随口问答、回到老任务、执行委派、审批写入、运营值班、跨设备续接），不交给模型猜（CH-P1）；按场合的必带 / 可带 / 不带表选材；同等相关时近期优先，L3 有效期过后不带；事件驱动调入，不常驻；每轮记录并可展示「带了哪些记忆、为什么」（CH-G1、G3）。验收标准 2026-11-26 用户确认冻结：见 CASES「分层记忆细化」——RT-ASEL-02 已实现（`session.materials` 事件补 `occasion`/`why` 原因码，片 4b）；RT-EXEC-05 已实现（执行场合剔除 L5，片 2）；RT-ASEL-01 六场合完整判定随对应入口线落地（实现前定义） | 已确认 | RT-ASEL-02、RT-EXEC-05（已实现）；RT-ASEL-01（实现前定义） | — |
-| REQ-conversation-memory-07 | 记忆与检索的注入防线 | 记忆与检索结果以带来源、类型的资料块交付，资料内指令一律无效，不能改变权限、审批和可执行动作（CH-G5）；权限与动作只由程序判断；写入闸门只放行本人确认的内容，外部文档、工具输出、他人消息只能成为待确认候选；个人记忆按人隔离，频道消息不写入任何人的个人记忆；AI 历史回答不回流为事实；被污染记忆可撤回并追溯影响过的回答（CH-G3）；资料块有长度与总预算上限；注入测试集覆盖历史消息、文档、频道夹带指令。验收标准 2026-11-26 用户确认冻结：资料封装与清单边界已由 RT-SMAT-06、RT-SMAT-07 基线落地；写入闸门外部候选、撤回影响追溯、注入测试集扩展随片 5 实现 | 已确认 | RT-SMAT-06、RT-SMAT-07（基线）；片 5 补 | — |
+| REQ-conversation-memory-07 | 记忆与检索的注入防线 | 记忆与检索结果以带来源、类型的资料块交付，资料内指令一律无效，不能改变权限、审批和可执行动作（CH-G5）；权限与动作只由程序判断；写入闸门只放行本人确认的内容，外部文档、工具输出、他人消息只能成为待确认候选；个人记忆按人隔离，频道消息不写入任何人的个人记忆；AI 历史回答不回流为事实；被污染记忆可撤回并追溯影响过的回答（CH-G3）；资料块有长度与总预算上限；注入测试集覆盖历史消息、文档、频道夹带指令。验收标准 2026-11-26 用户确认冻结：资料封装与清单边界已由 RT-SMAT-06、RT-SMAT-07 基线落地；写入面扫描（`flags` 读时派生标注，RT-UMEM-06）与撤回影响追溯（`GET /memories/{id}/impact`，RT-UMEM-07）已由片 5 实现；外部文档/工具输出/他人消息的「待确认候选」流在当前架构无自动抽取路径（唯一写入面为本人 POST，本就是本人确认动作），若后续引入自动抽取须先落候选闸门再接入 | 已确认 | RT-SMAT-06、RT-SMAT-07、RT-UMEM-06、RT-UMEM-07 | — |
 
 ## 3. 设计
 
@@ -110,9 +110,9 @@
 
 近期消息读取与任务背景拼装位于 `crates/runtime/src/conversation.rs`，预算位于 `crates/llm/src/budget.rs`，业务内省位于 `crates/runtime/src/introspect/`。桌面已有 [T-71 记忆列表与详情](../../testing/evidence/ai-desktop-t71-memory-list.md)及 [T-72 纠错与撤回](../../testing/evidence/ai-desktop-t72-memory-write.md)，均使用进程内服务夹具。
 
-已落地切片：5.1 回答路径会话资料注入（默认开）；5.2a 个人记忆生命周期与隔离（`POST /api/desktop/v1/memories`、`desktop_memories` 补 `kind` 列、按 `x-desktop-principal` 作用域隔离、过期不入注入）；5.2b 预览→确认→下一会话生效（`confirmed_at` 补列 + confirm 端点，草稿不注入、独立风格卡）；5.3 内省发现按需进入会话（确定性相关性门 + 待核实标注 + 只读）；S4 / S5-route / S6-exec 判断、路由、执行路径最小材料（S6 经片 2 修正为 `render_exec`，不带 L5）；片 2 注入基线与场合表落地；片 3 L2 历史记录检索（`GET /api/desktop/v1/history/search`，默认 180 天窗口、AI 回答标「当时的回答」）与本人消息删除（`DELETE /api/desktop/v1/messages/{id}`，真删除）。检索主入口在 `crates/runtime/src/store.rs`（`search_history` / `delete_message`）+ `crates/server/src/desktop_api.rs`。
+已落地切片：5.1 回答路径会话资料注入（默认开）；5.2a 个人记忆生命周期与隔离（`POST /api/desktop/v1/memories`、`desktop_memories` 补 `kind` 列、按 `x-desktop-principal` 作用域隔离、过期不入注入）；5.2b 预览→确认→下一会话生效（`confirmed_at` 补列 + confirm 端点，草稿不注入、独立风格卡）；5.3 内省发现按需进入会话（确定性相关性门 + 待核实标注 + 只读）；S4 / S5-route / S6-exec 判断、路由、执行路径最小材料（S6 经片 2 修正为 `render_exec`，不带 L5）；片 2 注入基线与场合表落地；片 3 L2 历史记录检索（`GET /api/desktop/v1/history/search`，默认 180 天窗口、AI 回答标「当时的回答」）与本人消息删除（`DELETE /api/desktop/v1/messages/{id}`，真删除）；片 4a 更正注记（`POST /api/desktop/v1/messages/{id}/correction`，`message_corrections` 表）；片 4b 「带了哪些记忆、为什么」事件字段（`occasion`/`why`）；片 5 写入面扫描（`flags` 读时派生）与撤回影响追溯（`materials_injections` 表 + `GET /memories/{id}/impact`）。检索与记忆主入口在 `crates/runtime/src/store.rs` + `crates/server/src/desktop_api.rs`。
 
-**待实现（#346 切片）**：片 4 场合确定性判断与「带了哪些记忆、为什么」展示扩展、纠正注记（RT-L2H-04）；片 5 写入闸门（外部候选、写入扫描）、撤回影响追溯、注入测试集扩展。
+**待实现**：RT-ASEL-01 六场合完整判定（随对应入口线：回到老任务 / 审批 / 值班 / 跨设备）；「用了哪些记忆」的界面展示（第 1 线 #347）；频道与共享会话接入（随 REQ-03 / 服务端身份）。
 
 ## 5. 质量
 

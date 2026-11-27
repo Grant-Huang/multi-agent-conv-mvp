@@ -1090,6 +1090,8 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-UMEM-03 | conversation-memory | 甲（`x-desktop-principal: user-a`）保存条目 | 乙（`user-b`）列表 / 详情 / PATCH / DELETE；甲自查 | 乙列表不含、详情 **404**、纠正 **404**、撤回 **404**；甲本人 **200** |
 | RT-UMEM-04 | conversation-memory | local 存过期（2020-01-01）与未过期（2099-01-01）记忆各一条 | 续问（respond 路径） | 资料块含未过期条（来源行 + 「个人记忆」段标注）；不含过期条 id 与正文 |
 | RT-UMEM-05 | conversation-memory | 甲保存记忆；同会话 | 甲、乙先后续问（chat 接口带头） | 甲的提示词含甲的记忆；乙的提示词不含（按说话人作用域） |
+| RT-UMEM-06 | conversation-memory | 保存夹带可疑指令样式 / 敏感信息样式 / 正常内容的记忆各一（#346 片5，REQ-07 §7.3） | 查保存响应、列表、详情 | 扫描只标注不阻断（201）；夹带指令样式标 `injection_risk`、敏感信息样式标 `sensitive_info`；正常条目 flags 为空；列表与详情同样带 flags（读时派生，不改库） |
+| RT-UMEM-07 | conversation-memory | 记忆注入发生后撤回（#346 片5，REQ-07 §7.6 / CH-G3） | 查 `GET /memories/{id}/impact` | 注入轮次留痕（conv_id / section / at）；已撤回记忆仍可追溯；未注入过的影响为空；未知记忆 404 |
 
 ## 风格/画像预览与下一会话生效 conversation-memory 5.2b（REQ-conversation-memory-02 生效闸门；2026-11-23 用户确认：推导式判定 / 独立风格卡 / fact 不走闸门 / ≤200 token + 护栏）
 

@@ -664,6 +664,32 @@ impl ConversationRuntime {
                 )
             })
             .unwrap_or((None, None, None));
+        // #346 片5（REQ-07 §7.6）：注入留痕供撤回影响追溯（只记来源 id、会话与段别）。
+        // 记录失败不影响当前轮回答。
+        let injections: Vec<(String, &'static str)> = session_materials
+            .as_ref()
+            .map(|m| {
+                let mut v: Vec<(String, &'static str)> = m
+                    .memories
+                    .iter()
+                    .map(|i| (i.task_id.clone(), "memory"))
+                    .collect();
+                v.extend(m.style.iter().map(|i| (i.task_id.clone(), "style")));
+                v
+            })
+            .unwrap_or_default();
+        if !injections.is_empty() {
+            if let Err(e) = self
+                .store
+                .record_materials_injections(conversation_id, &injections)
+            {
+                tracing::warn!(
+                    event = "materials.impact.record_failed",
+                    error = %e,
+                    "撤回影响留痕失败（本轮不受影响）"
+                );
+            }
+        }
 
         // 4. Turn Controller
         // #362 / R-20261126-M1：digest 可为路由生成；仅 judge 开启时进判断请求
