@@ -1,0 +1,8 @@
+date=2026-11-26 20:53 MST
+commit=cfd9bd9
+os=macOS 26.6.2 arm64
+claude=2.1.329 (Claude Code)
+claude-agent-acp=0.112.0
+npm_claude_acp=
+node=v22.22.0
+PATH_npm=/Users/admin/.npm-global/bin
