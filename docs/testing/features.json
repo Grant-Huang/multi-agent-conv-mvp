@@ -1375,5 +1375,47 @@
       "RT-INT-15",
       "RT-INT-02"
     ]
+  },
+  {
+    "id": "relos-knowledge",
+    "document": "docs/features/relos-knowledge/README.md",
+    "dossier": "docs/features/relos-knowledge/README.md",
+    "status": "设计中",
+    "sources": [
+      "crates/server/src/mom_relos.rs"
+    ],
+    "coverage": "backend",
+    "cases": [],
+    "requirements": [
+      {
+        "id": "REQ-relos-knowledge-01",
+        "title": "上下文编译查询",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-relos-knowledge-02",
+        "title": "知识发布与版本",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      },
+      {
+        "id": "REQ-relos-knowledge-03",
+        "title": "证据可追溯",
+        "status": "提出",
+        "cases": [],
+        "since": null
+      }
+    ],
+    "contracts": [
+      "docs/contracts/connector.md",
+      "docs/contracts/identity-and-approval.md"
+    ],
+    "decisions": [
+      "docs/decisions/2026-11-26-workstream-realignment.md",
+      "docs/decisions/2026-11-26-memory-layers-and-history.md"
+    ]
   }
 ]
