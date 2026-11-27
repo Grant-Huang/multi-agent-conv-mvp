@@ -493,3 +493,28 @@ test('E2E-UX04-I4: 普通模式无内省/节点页签与原始参数，开发者
   // 收尾：关掉开发者模式，避免影响同服务上的其他用例
   await page.getByRole('button', { name: /开发者模式/ }).click();
 });
+
+test('E2E-UX06-I5: 捷径一次返回回原工作；设置首页进入分类一次返回回首页', async ({ page }) => {
+  const draft = '捷径返回草稿';
+  await page.goto('/');
+  await page.getByTestId('card-smt-03').click();
+  const input = page.getByRole('textbox', { name: '工作区输入' });
+  await input.fill(draft);
+
+  // 捷径：一次 Escape 即关闭设置、回到工作区
+  await page.getByTestId('workspace-open-settings').click();
+  await expect(page.getByTestId('settings-panel')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+  await expect(page.getByTestId('workspace-task-id')).toHaveText(SMT03_TASK_ID);
+  await expect(input).toHaveValue(draft);
+
+  // 设置首页进入分类：一次 Escape 回设置首页（分类列表仍在，可再进入）
+  await page.getByTestId('open-settings').click();
+  await expect(page.getByTestId('settings-panel')).toBeVisible();
+  await page.getByTestId('settings-cat-assistant').click();
+  await expect(page.getByTestId('settings-crumb')).toContainText('我的 AI 助理');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('settings-panel')).toBeVisible();
+  await expect(page.getByTestId('settings-cat-assistant')).toBeVisible();
+});

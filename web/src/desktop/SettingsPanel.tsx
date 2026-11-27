@@ -34,6 +34,8 @@ type Props = {
   }) => void;
   onClose: () => void;
   onProfileSaved: (profile: AssistantProfile) => void;
+  /** UXFIX-O（INTENT-024）：经场景捷径直达分类时，“返回 / Escape”直接关闭设置回到来源 */
+  closeToSource?: boolean;
   /** UXFIX-B（INTENT-003）：服务端告知的测试模式；仅在 true 时渲染“注入冲突（测试）” */
   testFixtures?: boolean;
 };
@@ -46,6 +48,7 @@ export function SettingsPanel({
   onNavigate,
   onClose,
   onProfileSaved,
+  closeToSource = false,
   testFixtures = false,
 }: Props) {
   const [profile, setProfile] = useState<AssistantProfile | null>(null);
@@ -146,7 +149,11 @@ export function SettingsPanel({
       if (layer === "memory") {
         if (memoryId) onNavigate({ layer: "memory", categoryId: "assistant", memoryId: null });
         else onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null });
-      } else if (layer === "assistant") onNavigate({ layer: "categories", categoryId: null, memoryId: null });
+      } else if (layer === "assistant") {
+        // UXFIX-O：捷径直达时一次返回即回到原工作；从设置首页进入的仍回分类列表
+        if (closeToSource) onClose();
+        else onNavigate({ layer: "categories", categoryId: null, memoryId: null });
+      }
       else onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -192,7 +199,10 @@ export function SettingsPanel({
             if (layer === "memory") {
               if (memoryId) onNavigate({ layer: "memory", categoryId: "assistant", memoryId: null });
               else onNavigate({ layer: "assistant", categoryId: "assistant", memoryId: null });
-            } else if (layer === "assistant") onNavigate({ layer: "categories", categoryId: null, memoryId: null });
+            } else if (layer === "assistant") {
+              if (closeToSource) onClose();
+              else onNavigate({ layer: "categories", categoryId: null, memoryId: null });
+            }
             else onClose();
           }}
         >

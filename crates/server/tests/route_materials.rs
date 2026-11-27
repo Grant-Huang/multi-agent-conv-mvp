@@ -332,3 +332,43 @@ async fn rt_rmat_05_digest_stripped_from_task_context() {
         );
     }
 }
+/// RT-RMAT-06（#362 / R-20261126-M1）：judge 关、route 开时路由段仍能拿到资料
+/// 线索（digest 按 judge || route 生成；judge 开关只控制是否进判断请求）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_rmat_06_route_digest_without_judge_switch() {
+    let llm = MockLlm::start().await;
+    let rt = runtime(&llm.base, "session_materials_judge = false");
+    let conv = rt.store.create_conversation("t").unwrap();
+    seed_linked_task(
+        &rt,
+        &conv.id,
+        "task-rmat-06",
+        "报废工单集中在 3 号产线，CPK 低于阈值后方案仍被重复采纳。",
+    );
+    for i in 0..12 {
+        rt.store
+            .add_message(&conv.id, "user", &format!("历史填充{i}"), None)
+            .unwrap();
+    }
+    rt.conversation
+        .handle_message(&conv.id, "你好，整理 3 号产线那个任务的结论成报告")
+        .await
+        .unwrap();
+    let req = llm.route_calls().last().unwrap().clone();
+    let user = req["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "user")
+        .and_then(|m| m["content"].as_str())
+        .expect("路由请求应有 user 消息")
+        .to_string();
+    assert!(
+        user.contains("会话资料线索"),
+        "judge 关、route 开时路由仍应有线索段：{user}"
+    );
+    assert!(
+        user.contains("task-rmat-06"),
+        "路由上下文应含任务 id：{user}"
+    );
+}

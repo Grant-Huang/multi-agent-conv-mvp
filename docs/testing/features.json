@@ -896,6 +896,7 @@
       "E2E-UX03-I7",
       "E2E-UX04-I4",
       "E2E-UX01-I6",
+      "E2E-UX06-I5",
       "E2E-UX08-I6"
     ],
     "runtime_cases": [
@@ -1161,6 +1162,7 @@
       "RT-USTY-03",
       "RT-USTY-04",
       "RT-USTY-05",
+      "RT-USTY-07",
       "RT-UFND-01",
       "RT-UFND-02",
       "RT-UFND-03",
@@ -1188,7 +1190,11 @@
       "RT-L2H-02",
       "RT-L2H-03",
       "RT-L2H-04",
-      "RT-ASEL-02"
+      "RT-ASEL-02",
+      "RT-RMAT-06",
+      "RT-JMAT-06",
+      "RT-EXEC-07",
+      "RT-EXEC-08"
     ],
     "requirements": [
       {
@@ -1220,6 +1226,7 @@
           "RT-USTY-03",
           "RT-USTY-04",
           "RT-USTY-05",
+          "RT-USTY-07",
           "RT-EXEC-06"
         ],
         "since": null
@@ -1253,7 +1260,11 @@
           "RT-EXEC-01",
           "RT-EXEC-02",
           "RT-EXEC-03",
-          "RT-EXEC-04"
+          "RT-EXEC-04",
+          "RT-RMAT-06",
+          "RT-JMAT-06",
+          "RT-EXEC-07",
+          "RT-EXEC-08"
         ],
         "since": null
       },

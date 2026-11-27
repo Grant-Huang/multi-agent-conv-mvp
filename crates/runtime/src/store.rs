@@ -187,6 +187,11 @@ pub struct DesktopPreferences {
     pub updated_at: String,
 }
 
+/// #403（INTENT-034，方案 a）：沟通原则 / 质量偏好的种子默认值。默认值视作
+/// 「未设置」——不进风格卡；用户显式修改（或清空）后才按设置生效 / 停用。
+pub const DEFAULT_SOUL: &str = "简洁、可核对、不替你做未授权决定";
+pub const DEFAULT_TASTE: &str = "优先事实与可执行下一步";
+
 /// AI Desktop T-78：个人记忆条目（SQLite 权威）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DesktopMemory {
@@ -1499,8 +1504,8 @@ impl Store {
             name: "我的助理".into(),
             avatar: "◇".into(),
             role: "日常工作伙伴".into(),
-            soul: "简洁、可核对、不替你做未授权决定".into(),
-            taste: "优先事实与可执行下一步".into(),
+            soul: DEFAULT_SOUL.into(),
+            taste: DEFAULT_TASTE.into(),
             memory_principle: "仅保留你确认过的长期偏好".into(),
             proactivity: "克制：重要事项可提醒，不抢焦点".into(),
             updated_at: now(),

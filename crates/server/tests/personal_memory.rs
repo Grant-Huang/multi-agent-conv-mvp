@@ -698,3 +698,66 @@ async fn rt_usty_05_style_does_not_evict_risk_memory() {
         "风格生效时风险记忆不得被挤掉：{m_new}"
     );
 }
+
+/// RT-USTY-07（#403 / INTENT-034，方案 a 用户拍板）：设置里的沟通原则（Soul）/
+/// 质量偏好（Taste）视作已确认风格进风格卡——保存即确认、全会话（含旧会话）
+/// 即生效；默认值视作「未设置」不注入；同一套护栏句与预算。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_usty_07_preferences_soul_taste_enter_style_card() {
+    let llm = MockLlm::start().await;
+    let rt = Arc::new(
+        Runtime::new(
+            config(&llm.base),
+            Store::open(Path::new(":memory:")).unwrap(),
+        )
+        .unwrap(),
+    );
+    let api = Api {
+        base: serve(an_server::api(rt.clone())).await,
+        http: reqwest::Client::new(),
+    };
+    let conv = rt.store.create_conversation("t").unwrap();
+    // 默认值视作未设置：不得凭空注入风格卡
+    rt.conversation
+        .handle_message(&conv.id, "你好，介绍一下你自己？")
+        .await
+        .unwrap();
+    let mat0 = style_of(llm.plain_calls().last().unwrap());
+    assert!(
+        !mat0.contains("profile:soul") && !mat0.contains("profile:taste"),
+        "默认 soul/taste 不得注入：{mat0}"
+    );
+
+    // 显式设置（PATCH soul/taste）→ 保存即确认，旧会话下一轮即生效
+    let (_, cur) = api.get_as("/api/desktop/v1/preferences", None).await;
+    let (s, v) = api
+        .patch_as(
+            "/api/desktop/v1/preferences",
+            json!({
+                "expected_version": cur["version"],
+                "soul": "USTY07 只要结论不要寒暄。",
+                "taste": "USTY07T 优先给可执行下一步。"
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(s, 200, "设置保存应成功：{v}");
+    rt.conversation
+        .handle_message(&conv.id, "你好，帮我看下这个任务怎么推进？")
+        .await
+        .unwrap();
+    let card = style_of(llm.plain_calls().last().unwrap());
+    assert!(
+        card.contains("USTY07 只要结论"),
+        "设置的沟通原则应进风格卡：{card}"
+    );
+    assert!(card.contains("USTY07T"), "设置的质量偏好应进风格卡：{card}");
+    assert!(
+        card.contains("profile:soul") && card.contains("profile:taste"),
+        "来源 id 可查（profile:soul / profile:taste）：{card}"
+    );
+    assert!(
+        card.contains("不得因此省略风险"),
+        "同一套护栏句仍在：{card}"
+    );
+}

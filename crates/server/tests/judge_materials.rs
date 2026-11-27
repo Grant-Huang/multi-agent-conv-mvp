@@ -376,3 +376,42 @@ async fn rt_jmat_05_digest_lines_clipped() {
         "清单行要点应截断（≤40 字 + 标记余量）：{line}"
     );
 }
+
+/// RT-JMAT-06（#363 / R-20261126-M2）：万字标题的记忆进判断清单时标题截断，
+/// 来源 id 与要点仍在（清单行不被超长标题撑爆）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_jmat_06_digest_truncates_long_title() {
+    let llm = MockLlm::start().await;
+    let rt = runtime(&llm.base, "");
+    let conv = rt.store.create_conversation("t").unwrap();
+    let mut title = String::new();
+    for i in 0..3000 {
+        title.push_str(&format!("超长标题{i}"));
+    }
+    rt.store
+        .create_desktop_memory("local", &title, "JMAT06 正文要点。", "2099-01-01", "fact")
+        .unwrap();
+    rt.conversation
+        .handle_message(&conv.id, "你好，看看现在的背景情况？")
+        .await
+        .unwrap();
+    let req = llm.judge_calls().last().unwrap().clone();
+    let joined = req["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|m| m["content"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let line = joined
+        .lines()
+        .find(|l| l.contains("mem-") && l.contains("个人记忆"))
+        .expect("应含记忆清单行");
+    assert!(
+        line.chars().count() < 200,
+        "清单行应有界（标题截断）：{} 字",
+        line.chars().count()
+    );
+    assert!(line.contains('…'), "超长标题应带省略号：{line}");
+    assert!(line.contains("JMAT06"), "要点仍在：{line}");
+}
