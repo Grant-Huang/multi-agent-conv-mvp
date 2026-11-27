@@ -1183,6 +1183,7 @@
       "RT-EXEC-03",
       "RT-EXEC-04",
       "RT-EXEC-05",
+      "RT-EXEC-06",
       "RT-L2H-01",
       "RT-L2H-02",
       "RT-L2H-03",
@@ -1218,7 +1219,8 @@
           "RT-USTY-02",
           "RT-USTY-03",
           "RT-USTY-04",
-          "RT-USTY-05"
+          "RT-USTY-05",
+          "RT-EXEC-06"
         ],
         "since": null
       },
