@@ -295,7 +295,7 @@ fn seed_task_fanout(
         created_at: an_core::now(),
         updated_at: an_core::now(),
     };
-    rt.store.insert_task(&t, "").unwrap();
+    rt.store.insert_task(&t, "", None).unwrap();
 }
 
 impl Env {

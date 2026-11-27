@@ -148,7 +148,7 @@ fn seed_linked_task(rt: &Runtime, conv_id: &str, task_id: &str, summary: &str) {
         created_at: an_core::now(),
         updated_at: an_core::now(),
     };
-    rt.store.insert_task(&t, "").unwrap();
+    rt.store.insert_task(&t, "", None).unwrap();
     match rt
         .store
         .create_desktop_task_link(task_id, conv_id, &format!("op-{task_id}"), &[], "tester")

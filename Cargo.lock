@@ -196,6 +196,7 @@ dependencies = [
  "an-observe",
  "anyhow",
  "async-trait",
+ "axum",
  "chrono",
  "mdns-sd",
  "rusqlite",

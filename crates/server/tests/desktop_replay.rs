@@ -212,7 +212,7 @@ async fn rt_adreplay_02_duplicate_event_ids_deduped_snapshot_stable() {
         created_at: an_core::now(),
         updated_at: an_core::now(),
     };
-    env.rt.store.insert_task(&task, "").unwrap();
+    env.rt.store.insert_task(&task, "", None).unwrap();
     env.rt
         .bus
         .publish(status_ev(cid, "t-snap", "evt-run", TaskStatus::Running));

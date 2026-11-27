@@ -306,7 +306,7 @@ async fn rt_adm_10_revoke_aborts_running_and_backup_takes_over() {
     let conv = e.store.create_conversation("t").unwrap().id;
     let a = e
         .orch
-        .submit(&conv, "长任务", "", route(Risk::Low), auto())
+        .submit(&conv, "长任务", "", route(Risk::Low), auto(), None)
         .unwrap();
     wait_for(&e.store, &a.id, &[TaskStatus::Running], 5).await;
     let started = std::time::Instant::now();
@@ -322,7 +322,7 @@ async fn rt_adm_10_revoke_aborts_running_and_backup_takes_over() {
     // 后续任务由备份完成
     let b = e
         .orch
-        .submit(&conv, "下一个", "", route(Risk::Low), auto())
+        .submit(&conv, "下一个", "", route(Risk::Low), auto(), None)
         .unwrap();
     wait_for(&e.store, &b.id, &[TaskStatus::Completed], 5).await;
     assert!(result_text(&e.store, &b.id).contains("ext2"));
@@ -340,13 +340,13 @@ async fn rt_adm_11_stale_credential_result_is_discarded() {
     // 凭证有效：照常接受
     let ok = e
         .orch
-        .submit(&conv, "正常", "", route(Risk::Low), auto())
+        .submit(&conv, "正常", "", route(Risk::Low), auto(), None)
         .unwrap();
     wait_for(&e.store, &ok.id, &[TaskStatus::Completed], 5).await;
     // 执行期间被降级（6 次连续不合格 = 3 次警告）
     let t = e
         .orch
-        .submit(&conv, "执行中被降级", "", route(Risk::Low), auto())
+        .submit(&conv, "执行中被降级", "", route(Risk::Low), auto(), None)
         .unwrap();
     wait_for(&e.store, &t.id, &[TaskStatus::Running], 5).await;
     for _ in 0..6 {
@@ -386,7 +386,7 @@ async fn rt_adm_12_revoke_and_completion_never_overwrite() {
         let id = format!("ext{i:02}");
         let task = e
             .orch
-            .submit(&conv, "竞争", "", route(Risk::Low), auto())
+            .submit(&conv, "竞争", "", route(Risk::Low), auto(), None)
             .unwrap();
         if i % 2 == 0 {
             wait_for(&e.store, &task.id, &[TaskStatus::Running], 5).await;
@@ -436,7 +436,14 @@ async fn rt_adm_13_probation_tracks_completed_tasks() {
     for i in 0..3 {
         let t = e
             .orch
-            .submit(&conv, &format!("任务{i}"), "", route(Risk::Low), auto())
+            .submit(
+                &conv,
+                &format!("任务{i}"),
+                "",
+                route(Risk::Low),
+                auto(),
+                None,
+            )
             .unwrap();
         wait_for(&e.store, &t.id, &[TaskStatus::Completed], 5).await;
         ids.push(t.id);
@@ -467,7 +474,7 @@ async fn rt_adm_13_probation_tracks_completed_tasks() {
     let conv = e2.store.create_conversation("t").unwrap().id;
     let t = e2
         .orch
-        .submit(&conv, "x", "", route(Risk::High), auto())
+        .submit(&conv, "x", "", route(Risk::High), auto(), None)
         .unwrap();
     wait_for(&e2.store, &t.id, &[TaskStatus::Completed], 5).await;
     assert!(e2.ledger.get("local").is_none());

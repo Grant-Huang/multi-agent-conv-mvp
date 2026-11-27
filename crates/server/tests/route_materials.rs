@@ -144,7 +144,7 @@ fn seed_linked_task(rt: &Runtime, conv_id: &str, task_id: &str, summary: &str) {
         created_at: an_core::now(),
         updated_at: an_core::now(),
     };
-    rt.store.insert_task(&t, "").unwrap();
+    rt.store.insert_task(&t, "", None).unwrap();
     match rt
         .store
         .create_desktop_task_link(task_id, conv_id, &format!("op-{task_id}"), &[], "tester")
@@ -273,4 +273,62 @@ async fn rt_rmat_03_unrelated_finding_not_in_route_context() {
         !user.contains("intf-rmat-03"),
         "无关发现不得进路由上下文：{user}"
     );
+}
+
+/// RT-RMAT-05（#360）：判断线索段只服务路由模型——路由请求含线索段的同时，
+/// 下发的任务上下文（tasks.context，会随外部 A2A 请求出站）不含线索段与资料块。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_rmat_05_digest_stripped_from_task_context() {
+    let llm = MockLlm::start().await;
+    let rt = runtime(&llm.base, "");
+    let conv = rt.store.create_conversation("t").unwrap();
+    seed_linked_task(
+        &rt,
+        &conv.id,
+        "task-rmat-05",
+        "报废工单集中在 3 号产线，CPK 低于阈值后方案仍被重复采纳。",
+    );
+    for i in 0..12 {
+        rt.store
+            .add_message(&conv.id, "user", &format!("历史填充{i}"), None)
+            .unwrap();
+    }
+    rt.conversation
+        .handle_message(&conv.id, "你好，整理 3 号产线那个任务的结论成报告")
+        .await
+        .unwrap();
+    // 路由请求仍含线索段（S5-route 行为不变）
+    let req = llm.route_calls().last().unwrap().clone();
+    let user = req["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "user")
+        .and_then(|m| m["content"].as_str())
+        .expect("路由请求应有 user 消息")
+        .to_string();
+    assert!(
+        user.contains("会话资料线索"),
+        "路由上下文应含线索段：{user}"
+    );
+    // 任务上下文不含线索段（#360：不随任务/外部请求出站）
+    let tasks = rt.store.list_tasks(Some(&conv.id)).unwrap();
+    assert!(!tasks.is_empty(), "委派应产生任务");
+    for t in tasks {
+        let ctx = rt
+            .store
+            .get_task_context(&t.id)
+            .unwrap()
+            .unwrap_or_default();
+        assert!(
+            !ctx.contains("会话资料线索"),
+            "任务上下文不得携带判断线索段（task {}）：{ctx}",
+            t.id
+        );
+        assert!(
+            !ctx.contains(an_runtime::session_materials::MATERIALS_MARKER),
+            "任务上下文不得携带回答资料块（task {}）：{ctx}",
+            t.id
+        );
+    }
 }

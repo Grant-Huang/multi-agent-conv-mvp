@@ -198,6 +198,12 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|---|
 | RT-ADM-14 | admission | 开启准入的服务与一个桩外部 agent | 通过 `/api/admission/*` 走完 S1→S7（含审批）、派发任务、撤权、重启 | 每步返回正确结果；顺序错误返回 409、输入非法返回 400、未知 agent 返回 404；激活后外部 agent 出现在 /api/agents（kind=a2a）并完成任务；撤权返回新 epoch；重启后已激活的外部 agent 自动重新注册；未开启准入时这些接口返回 404 |
 | RT-ADM-15 | admission | 外部 agent 的 HTTP 服务 | 适配器执行任务 | 请求带 task_id、goal、context 与风险；成功结果映射为 Succeeded 并附"外部 agent 输出未经核实"的证据；HTTP 错误、无效 JSON、超时都返回带错误码的失败；非 http(s) 地址被拒 |
+| RT-A2AEGR-01 | admission | 外部 agent + `[egress]` enforce、内容含 SECRET-（#360 防线二） | 适配器执行任务 | 任务失败带 E_EGRESS_BLOCKED；外部服务**收不到请求** |
+| RT-A2AEGR-02 | admission | enforce + 内容含 ACME | 同上 | 评估通过只发脱敏文本（goal/context 均替换） |
+| RT-A2AEGR-03 | admission | `[egress]` audit + SECRET- | 同上 | 原文照发（audit 只记录不阻断） |
+| RT-A2AEGR-04 | admission | 无守卫（off，默认） | 同上 | 行为与从前完全一致（原文照发） |
+| RT-EXECMAT-01 | conversation-memory | 仅外部 A2A general agent、库里有个人记忆 fact（#360） | orchestrator.submit(带资料块) → 委派 | 外部请求体 goal/context **不含资料块**；资料块仍持久化（tasks.exec_material） |
+| RT-EXECMAT-02 | conversation-memory | 仅本机内置 general | 同上 | spec.context = 上下文 + 资料块（与 #360 之前拼接格式一致） |
 
 
 ## R-FIRST-05 补充要求路由（实现前定义）
@@ -1128,6 +1134,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-RMAT-01 | conversation-memory | 回执出窗 + 相关委派续问 | handle_message | route_decision 请求的 user 内容含「会话资料线索」段与任务 id |
 | RT-RMAT-02 | conversation-memory | `session_materials_route = false` | 同上续问 | route_decision 请求不含该段（独立开关） |
 | RT-RMAT-03 | conversation-memory | 仅无关发现 | 无关委派续问 | 发现行不进路由上下文（相关性门） |
+| RT-RMAT-05 | conversation-memory | 回执出窗 + 相关委派续问（#360） | handle_message 后查 tasks.context | 路由请求仍含线索段；**任务上下文不含线索段与资料块**（判断线索/个人记忆不随任务出站） |
 | RT-G2C-01 | conversation-memory | 风格"只要结论"生效 + 回执含"不可逆"（CH-G2c，#402） | handle_message（respond 轮） | 模型回答不含风险词时，最终回答仍含程序补齐的风险提示句（原回答不改）；conversation.risk_restored 事件 |
 | RT-G2C-02 | conversation-memory | 同上但模型回答已自带风险标记 | 同上 | 不重复补齐 |
 
