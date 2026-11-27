@@ -489,7 +489,9 @@ test('E2E-ADASK: S1 问答与委派不强制导航', async ({ page }) => {
 
   await page.getByTestId('s1-ask-input').fill('你好，后台跑着时继续问');
   await page.getByTestId('s1-ask-send').click();
-  await expect(page.getByTestId('s1-reply')).toBeVisible();
+  // L9（#521）：等回答变化（不区分不出新旧回答）
+  const replyBefore = await page.getByTestId('s1-reply').innerText();
+  await expect(page.getByTestId('s1-reply')).not.toHaveText(replyBefore, { timeout: 30_000 });
   await expect(page.getByTestId('s1-reply')).not.toContainText('问答（模拟');
   await expect(page.getByTestId('s1-bg-chip')).toBeVisible();
 

@@ -63,7 +63,8 @@ def ensure_base(base: str) -> bool:
 
 
 def reset_user_memories(base: str, principal: str) -> None:
-    http("POST", f"{base}/api/desktop/v1/memories/fixture/reset", {}, hdr(principal))
+    st, _ = http("POST", f"{base}/api/desktop/v1/memories/fixture/reset", {}, hdr(principal))
+    assert st == 200, f"memories/fixture/reset: HTTP {st}"
 
 
 def seed_memories(base: str, principal: str, templates: list, injections: list) -> dict:
@@ -160,7 +161,7 @@ def seed_live_turns(
 def seed_tasks(base: str) -> int:
     """桌面快照夹具：多种状态任务。"""
     st, body = http("POST", f"{base}/api/desktop/v1/snapshot/fixture/reset", {})
-    print(f"  snapshot/fixture/reset: HTTP {st}")
+    assert st == 200, f"snapshot/fixture/reset: HTTP {st}"
     st2, tasks = http("GET", f"{base}/api/tasks")
     items = tasks if isinstance(tasks, list) else (tasks or {}).get("items") or []
     print(f"  tasks_visible={len(items)} (HTTP {st2})")
