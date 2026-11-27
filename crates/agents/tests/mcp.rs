@@ -8,7 +8,10 @@ fn config(names: &[&str]) -> McpServerConfig {
     serde_json::from_value(json!({
         "id":"fixture", "transport":"stdio", "command":"python3",
         "args":[format!("{}/tests/fixtures/mcp_server.py", env!("CARGO_MANIFEST_DIR"))],
-        "timeout_ms":1000,
+        // 发现预算放宽到 10s（#463）：它只是 I/O 预算、与任何断言无关——CI 全量并行时
+        // python3 冷启动 + 请求排队偶发超过 1s，造成 E_MCP_TIMEOUT 抖动。
+        // 超时语义用例（timeout_discards_session_without_retry）自行覆盖为 150ms，不受影响。
+        "timeout_ms":10000,
         "tools":names.iter().map(|name| json!({"name":name,"capability_id":format!("test.{name}"),
             "description":format!("Test {name}"),"effect":"read_only"})).collect::<Vec<_>>()
     }))
