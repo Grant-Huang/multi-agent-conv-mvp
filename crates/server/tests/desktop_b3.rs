@@ -114,7 +114,7 @@ async fn boot() -> (Api, Arc<Runtime>, String, String) {
     let rt = Arc::new(Runtime::new(config(), Store::open(&db).unwrap()).unwrap());
     let conv = rt.store.create_conversation("B3 关联测").unwrap();
     let task = sample_task("TASK-2026-018", &conv.id);
-    rt.store.insert_task(&task, "").unwrap();
+    rt.store.insert_task(&task, "", None).unwrap();
     let api = Api {
         base: serve(an_server::api(rt.clone())).await,
         http: reqwest::Client::builder()
@@ -227,7 +227,7 @@ async fn rt_adlink_04_legacy_owner_projected_survives_restart() {
     let rt = Arc::new(Runtime::new(config(), Store::open(&db).unwrap()).unwrap());
     let conv = rt.store.create_conversation("归属会话").unwrap();
     let task = sample_task("t-legacy", &conv.id);
-    rt.store.insert_task(&task, "").unwrap();
+    rt.store.insert_task(&task, "", None).unwrap();
     let base = serve(an_server::api(rt.clone())).await;
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))

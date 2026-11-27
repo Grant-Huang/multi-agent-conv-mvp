@@ -198,6 +198,12 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 |---|---|---|---|---|
 | RT-ADM-14 | admission | 开启准入的服务与一个桩外部 agent | 通过 `/api/admission/*` 走完 S1→S7（含审批）、派发任务、撤权、重启 | 每步返回正确结果；顺序错误返回 409、输入非法返回 400、未知 agent 返回 404；激活后外部 agent 出现在 /api/agents（kind=a2a）并完成任务；撤权返回新 epoch；重启后已激活的外部 agent 自动重新注册；未开启准入时这些接口返回 404 |
 | RT-ADM-15 | admission | 外部 agent 的 HTTP 服务 | 适配器执行任务 | 请求带 task_id、goal、context 与风险；成功结果映射为 Succeeded 并附"外部 agent 输出未经核实"的证据；HTTP 错误、无效 JSON、超时都返回带错误码的失败；非 http(s) 地址被拒 |
+| RT-A2AEGR-01 | admission | 外部 agent + `[egress]` enforce、内容含 SECRET-（#360 防线二） | 适配器执行任务 | 任务失败带 E_EGRESS_BLOCKED；外部服务**收不到请求** |
+| RT-A2AEGR-02 | admission | enforce + 内容含 ACME | 同上 | 评估通过只发脱敏文本（goal/context 均替换） |
+| RT-A2AEGR-03 | admission | `[egress]` audit + SECRET- | 同上 | 原文照发（audit 只记录不阻断） |
+| RT-A2AEGR-04 | admission | 无守卫（off，默认） | 同上 | 行为与从前完全一致（原文照发） |
+| RT-EXECMAT-01 | conversation-memory | 仅外部 A2A general agent、库里有个人记忆 fact（#360） | orchestrator.submit(带资料块) → 委派 | 外部请求体 goal/context **不含资料块**；资料块仍持久化（tasks.exec_material） |
+| RT-EXECMAT-02 | conversation-memory | 仅本机内置 general | 同上 | spec.context = 上下文 + 资料块（与 #360 之前拼接格式一致） |
 
 
 ## R-FIRST-05 补充要求路由（实现前定义）
@@ -652,7 +658,9 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-UX03-I5 | ai-desktop | 首页快照夹具；本地模拟模型 | UXFIX-H（INTENT-2026-015）：首页委派 → 受理提示“后台处理中” → 打开其他任务再返回 → 等任务终结 | 受理提示不再显示“后台处理中”（同步为完成状态）；助理消息区出现该任务的完成通知（普通优先级、按任务去重）含“查看结果”；点“查看结果”直达该任务工作区 |
 | E2E-ADSETGROUPS | ai-desktop | 首页快照夹具 | UXFIX-F（INTENT-2026-010）：打开「设置与管理」→ 检查分组列表 | 不出现「（占位）」字样；未实现分组（工作与桌面/通知与主动性/设备与语音/隐私与权限）显示「即将提供」且按钮禁用；「我的 AI 助理」「连接与能力」可用 |
 | E2E-UX03-I7 | ai-desktop | 首页快照夹具 | UXFIX-I（INTENT-2026-016）：S1 输入为空 → 「委派任务」状态与点击结果 → 填写目标后恢复 | 输入为空时按钮禁用并提示「先说说要做什么」；点击不产生受理提示/任务 chip；填写后按钮恢复可用 |
+| E2E-UX01-I6 | ai-desktop | 首页快照夹具；视口 390×844 | UXFIX-C（INTENT-2026-005）：窄屏打开 SMT-03 工作区，测量对话输入框几何 | 窄屏单栏：输入框完整在首屏内（含高度）、可用宽度 ≥200px、任务信息栏在输入框上方（折叠到顶部） |
 | E2E-UX04 | ai-desktop | 本地模拟模型 | 体验地图 UX-04：“＋ 新会话”发任务 → 等完成 → 在对话输入写追问草稿 → 点右侧任务条目展开详情 | 任务详情展开；对话输入仍可编辑、草稿不变；无整页跳转（基线补录，见 docs/experience-map/journeys/UX-04.md） |
+| E2E-UX04-I4 | ai-desktop | 本地模拟模型 | UXFIX-L（INTENT-2026-018）：普通模式对话发任务 → 完成后展开进度历史 → 切开发者模式再展开 | 普通模式无「内省」「节点」页签；进度历史不含「参数 {」与「调用工具 …」原文（工具映射为用户语言，如「写入文件 路径」）；开发者模式页签恢复、原文可见 |
 | E2E-UX08-I6 | ai-desktop | 记忆夹具 | UXFIX-T（INTENT-2026-031 客户端部分）：详情显示类型与确认状态（中文）→ 编辑有效期并保存 → 列表与详情显示新值 → 点撤回 → 确认撤回 → 列表条目消失、工作区草稿不变 | 详情显示「事实/偏好/风格」与「已确认/待确认」；有效期详情与列表一致；撤回需确认（说明不再参与下一次回答）；撤销恢复与已撤回记录待服务端方案（UX-08-I6 保持欠账） |
 | E2E-UX05 | ai-desktop | 首页快照夹具含 SMT-03；提醒经测试 API 注入（`desktop.test_fixtures`） | 体验地图 UX-05：S1 输入框写字并聚焦 → 注入关联 SMT-03 的普通提醒 → 重新打开桌面 → 点“为你关注”中的提醒 → 返回桌面 | 提醒浮层出现且不抢焦点、不清空输入；“为你关注”中的提醒直达 SMT-03 工作区；返回后提醒仍在；处理过程无整页跳转（基线补录，见 docs/experience-map/journeys/UX-05.md） |
 | E2E-UX05-I3I4 | ai-desktop | 首页快照夹具；提醒经测试 API 注入（不刷新页面） | UXFIX-N（INTENT-2026-021/023）：桌面打开时注入提醒 → 浮层与“为你关注”出现 → 点浮层“稍后” → 再注入第二条 → 点浮层“打开” → 返回桌面 → 点“忽略” | 不刷新时“为你关注”实时出现提醒；浮层展示原因与来源（普通建议 · 关联任务 TASK-2026-018）；稍后浮层收起且“为你关注”仍在；打开直达关联任务；忽略时明示会移除，浮层与“为你关注”一致移除 |
@@ -801,6 +809,7 @@ an-mom 以 `--relos-url` 启用时，服务层在创建 S1 前异步调用 RelOS
 | E2E-OPSEXPIRE | ops-desk | 开启桥的实例，待批准案例，已注入 `resources_available=false`（INTENT-027） | 卡上点「批准」；用 `advance` 推进引擎时间越过批准有效期；恢复资源并 `refresh_plan` 后在卡上再点「批准」 | 受阻时卡显示「已批准」「执行受阻」且引擎无 actions、批准保留；过期后卡显示「批准已过期」「需重新批准」并有重新批准按钮；刷新方案重评后重新批准即执行成功（VERIFYING），新批准有效期刷新（expires_at 变大） |
 
 | E2E-OPSRECEIPT | ops-desk | 开启桥的实例；两个 s1 场景案例 | UXFIX-P（INTENT-2026-026，UX-07-I5）：案例 A 批准不执行 → 卡上「查看执行」；案例 B 等卡发布后批准、经 API 执行并推进关闭 → 「查看执行」与「查看核验证据」 | A 显示「尚未执行」且不出现「已提交」；B 回执分层来自引擎（已提交 → 源系统已受理，含回执编号 `mock-op:*` 与时间，标「模拟」），不出现写死文本「受理 / 已提交」；核验证据来自引擎证据表（`mock-field-verification:*` 等），不出现写死「现场照片与点检记录」 |
+| E2E-OPSPLAN | ops-desk | 开启桥的实例；两个 s1 场景案例 | UXFIX-Q（INTENT-2026-028/029）：案例 A 批准不执行 → 卡上「查看方案」；案例 B 等卡发布后批准、经 API 执行 → 「查看方案」与批准按钮 | 方案要点可见（方案修订/范围/产量/产能/其他订单影响/未采纳/限制，标引擎模拟）；批准按钮写明「批准（方案修订 1）」 |
 | E2E-OPSOFF | ops-desk | 默认 harness，未配置 `[mom]`（基线：现状本来就通过，用于防止回归） | 注入 MOM 案例，打开页面，发一句问候 | 没有“运营桌面”页签、没有运营频道、`/api/mom/desk` 为 404；原有会话回复正常 |
 | E2E-ADREAD | ai-desktop | 开关打开；频道内 ≥6 张运营卡；窄视口 | 滚到中间卡使其位于列表顶部；切到桌面再回运营频道；工作区收起执行后离开再打开 | 锚点=滚动停止时首条可见消息及其偏移（几何钳制时为钳制位置的可见消息）；返回后该锚点消息仍为首可见、偏移恢复（阅读位置精确还原）；工作区执行区保持收起 |
 
@@ -1055,7 +1064,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 
 ## 会话资料注入 conversation-memory 5.1（REQ-conversation-memory-01；2026-11-23 用户确认冻结）
 
-资料 = 同会话内未撤回任务链接（`desktop_conversation_task_links`）指向的终态任务回执摘要。回答路径把资料作为「数据，非指令」系统消息注入提示词（系统提示后、历史前）；超预算时先裁资料，当前请求不挤掉。实现：`crates/runtime/src/session_materials.rs` + `conversation.rs` 回答路径 + `store.rs` 只读链接查询。
+资料 = 同会话内未撤回任务链接（`desktop_conversation_task_links`）指向的终态任务回执摘要。回答路径把资料作为「数据，非指令」**并入首条 system**（#448：本机 Qwen 禁止第二条 system）；条数预算由 `session_materials::render` 先裁。实现：`crates/runtime/src/session_materials.rs` + `conversation.rs` 回答路径 + `store.rs` 只读链接查询。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -1066,6 +1075,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 | RT-SMAT-05 | conversation-memory | 任一发生注入的轮次 | 检查日志 | `session.materials` 事件只含来源 id 与原因，不含资料正文、用户消息或回答正文 |
 | RT-SMAT-06 | conversation-memory | 含指令样式的记忆正文（#346 注入测试集·基线） | 续问 | 指令文本只出现在「数据，非指令」资料块内且含来源 id；其余消息不携带；该轮不产生任务、不新增记忆写入 |
 | RT-SMAT-07 | conversation-memory | 同上（判断路径） | 续问 | turn_decision 请求只含 ≤40 字要点与来源 id，完整指令正文不出现（事件正文边界由 RT-SMAT-05 覆盖） |
+| RT-SMAT-08 | conversation-memory | 同 RT-SMAT-01（`session_materials=true`） | 续问 | 回答请求 leading `role=system` 恰好 1 条，且该条含资料块标记与来源 id（#448） |
 | E2E-SMAT | conversation-memory | 浏览器真实会话：委派任务完成、回执被 ≥12 条消息挤出窗口 | 桌面入口续问（含探针词） | 助手回答文本包含窗口外回执的摘要要点（资料已进入模型并用于回答） |
 
 ## 个人记忆生命周期与隔离 conversation-memory 5.2a（REQ-conversation-memory-02；2026-11-23 用户确认：POST 端点 + kind 补列 + 夹具头隔离口径）
@@ -1082,7 +1092,7 @@ M0-5/M0-6 集成套件：`./scripts/wa-m0-suite.sh`（RT-WA-01～09 + `des-exper
 
 ## 风格/画像预览与下一会话生效 conversation-memory 5.2b（REQ-conversation-memory-02 生效闸门；2026-11-23 用户确认：推导式判定 / 独立风格卡 / fact 不走闸门 / ≤200 token + 护栏）
 
-preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进任何注入）；`POST /memories/{id}/confirm` 记 `confirmed_at`；注入侧推导式判定 `confirmed_at ≤ 当前会话 created_at` 才计入（旧会话不回填，无需状态机字段）；生效前可随时撤回。生效条目进**独立风格卡**系统消息（≤ `[conversation] session_materials_style_max_tokens` 默认 200），块首固定护栏句（风格不得裁剪风险信息，落地决定 48 红线）。fact 不走闸门（保存即可注入，5.2a 语义不变）。E2E 待第 1 线入口后补录。
+preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进任何注入）；`POST /memories/{id}/confirm` 记 `confirmed_at`；注入侧推导式判定 `confirmed_at ≤ 当前会话 created_at` 才计入（旧会话不回填，无需状态机字段）；生效前可随时撤回。生效条目进**风格卡**并入首条 system（≤ `[conversation] session_materials_style_max_tokens` 默认 200；#448 与资料同条），块首固定护栏句（风格不得裁剪风险信息，落地决定 48 红线）。fact 不走闸门（保存即可注入，5.2a 语义不变）。E2E 待第 1 线入口后补录。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -1107,7 +1117,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 
 ## 判断路径会话资料清单 conversation-memory 5.4a（S4；2026-11-24 用户确认：极简清单 / 默认开 / 仅判断路径 / 先合入后跑 E0 对比）
 
-判断模型（turn_decision）此前只见近 12 条消息与活动任务；回执出窗后续问时判断方向可能误判。本卡把会话资料以**极简清单**注入判断提示词（每条一行 `id · 类型 · 要点≤40字`，最多 3 行，独立系统消息紧随判断系统提示）；收集复用 5.1 Collector（相关性门/作用域/降级/过期语义不变），**每轮收集一次、判断与回答两路共享**；schema 不变。`[conversation] session_materials_judge` 默认开。判断提示词变化对 FT 路由基线的影响：先合入后跑 E0 同口径对比，结果回填 FT 记录，掉点则关默认。
+判断模型（turn_decision）此前只见近 12 条消息与活动任务；回执出窗后续问时判断方向可能误判。本卡把会话资料以**极简清单**注入判断提示词（每条一行 `id · 类型 · 要点≤40字`，最多 3 行，并入判断首条 system；#448）；收集复用 5.1 Collector（相关性门/作用域/降级/过期语义不变），**每轮收集一次、判断与回答两路共享**；schema 不变。`[conversation] session_materials_judge` 默认开。判断提示词变化对 FT 路由基线的影响：先合入后跑 E0 同口径对比，结果回填 FT 记录，掉点则关默认。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
@@ -1126,6 +1136,7 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-RMAT-01 | conversation-memory | 回执出窗 + 相关委派续问 | handle_message | route_decision 请求的 user 内容含「会话资料线索」段与任务 id |
 | RT-RMAT-02 | conversation-memory | `session_materials_route = false` | 同上续问 | route_decision 请求不含该段（独立开关） |
 | RT-RMAT-03 | conversation-memory | 仅无关发现 | 无关委派续问 | 发现行不进路由上下文（相关性门） |
+| RT-RMAT-05 | conversation-memory | 回执出窗 + 相关委派续问（#360） | handle_message 后查 tasks.context | 路由请求仍含线索段；**任务上下文不含线索段与资料块**（判断线索/个人记忆不随任务出站） |
 | RT-G2C-01 | conversation-memory | 风格"只要结论"生效 + 回执含"不可逆"（CH-G2c，#402） | handle_message（respond 轮） | 模型回答不含风险词时，最终回答仍含程序补齐的风险提示句（原回答不改）；conversation.risk_restored 事件 |
 | RT-G2C-02 | conversation-memory | 同上但模型回答已自带风险标记 | 同上 | 不重复补齐 |
 
@@ -1141,15 +1152,15 @@ preference/style 条目保存后为**草稿态**（`confirmed_at` 空，不进�
 | RT-EXEC-04 | conversation-memory | 注入发生后的任务 | 查 `tasks.context` | context 列含资料段（随任务持久） |
 | RT-EXEC-05 | conversation-memory | 过闸门发现 + 委派（general 角色；#346 场合表落地） | handle_message | 执行背景与 `tasks.context` 不含发现 id；同发现回答路径仍按相关性门注入（守卫） |
 
-## 分层记忆细化（#346；RT-L2H-01～03 已随片 3 实现（2026-11-26），RT-L2H-04 与 RT-ASEL-01～02 为实现前定义随片 4/5 补可执行测试）
+## 分层记忆细化（#346；RT-L2H-01～04、RT-ASEL-02 已实现（片 3 / 片 4a / 片 4b，2026-11-26），RT-ASEL-01 为实现前定义随各入口线场合落地补可执行测试）
 
-需求与验收标准见特性档案 REQ-conversation-memory-05/06（2026-11-26 用户确认冻结；[设计规则](../decisions/2026-11-26-memory-layers-and-history.md) §5/§3）。内省克制族的「超日上限不发」由 RT-INT-20、「输入中不弹」由 RT-INT-24 + RT-UFND-01 + RT-JMAT-03 既有用例覆盖，不另设。**片 3 边界**：被纠正/撤回的带标记与「优先给纠正后版本」拆入 RT-L2H-04（纠正注记能力，尚未实现）；本片的「撤回」语义由删除即不在检索面覆盖。
+需求与验收标准见特性档案 REQ-conversation-memory-05/06（2026-11-26 用户确认冻结；[设计规则](../decisions/2026-11-26-memory-layers-and-history.md) §5/§3）。内省克制族的「超日上限不发」由 RT-INT-20、「输入中不弹」由 RT-INT-24 + RT-UFND-01 + RT-JMAT-03 既有用例覆盖，不另设。
 
 | Case | Feature | Given | When | Then |
 |---|---|---|---|---|
 | RT-L2H-01 | conversation-memory | 本人参与会话中的历史消息、AI 历史回答（`GET /api/desktop/v1/history/search`，片 3） | 检索关键词 | AI 历史回答标「当时的回答」；用户消息/系统事件/任务回执分级；每条命中带 `msg_id`/`conv_id`/`at` 出处 |
 | RT-L2H-02 | conversation-memory | 本人删除一条个人会话消息（`DELETE /api/desktop/v1/messages/{id}`，片 3） | 删除后再检索 | 删除即真删除，检索与消息列表均不再出现；AI 回答不可经此删除（403）；重复删除 404 |
 | RT-L2H-03 | conversation-memory | 180 天窗口内外的同类记录（片 3） | 默认检索 / `days` 显式指定 | 默认只返回最近 180 天；`days` 显式加大才返回更早记录，引用带原始时间；空关键词 400 |
-| RT-L2H-04 | conversation-memory | 被纠正的历史消息与更正注记（实现前定义，片 4/5） | 检索被纠正话题 | 被纠正/撤回的带标记，优先给纠正后版本；更正注记单独记录、原文不改写 |
-| RT-ASEL-01 | conversation-memory | 六场合各自入口与状态（片 4 实现） | 各场合触发选材 | 按「必带 / 可带 / 不带」表选材：随口问答不带他任务现场与 L5；执行委派不带风格偏好与 L5；审批写入的画像与风格不影响内容（CH-G2b）；场合由程序按入口与状态判断 |
-| RT-ASEL-02 | conversation-memory | 任一发生注入的轮次（片 4 实现） | 查 `session.materials` 事件 | 事件可还原「带了哪些记忆、为什么」（来源 id、取舍原因；展示入口归第 1 线 #347） |
+| RT-L2H-04 | conversation-memory | 被纠正的历史消息（`POST /api/desktop/v1/messages/{id}/correction`，片 4a） | 加更正注记后检索 | 更正单独记录、原文不改写；命中附 `correction` 并优先排序（优先给纠正后版本）；AI 回答 403、空注记 400、重复更正为替换；更正随消息删除 |
+| RT-ASEL-01 | conversation-memory | 六场合各自入口与状态（实现前定义：回到老任务/审批/值班/跨设备随对应入口线落地） | 各场合触发选材 | 按「必带 / 可带 / 不带」表选材：随口问答不带他任务现场与 L5；执行委派不带风格偏好与 L5（已由 RT-EXEC-05 落地）；审批写入的画像与风格不影响内容（CH-G2b）；场合由程序按入口与状态判断 |
+| RT-ASEL-02 | conversation-memory | 任一发生注入的轮次（片 4b：`session.materials` 事件补 `occasion`/`why`） | 查事件 | `occasion` 按状态确定性记录（新会话 / 会话续问）；`why` 逐段原因码（`receipts:in_window`、`memories:effective_fact`、`style:effective_style`、`findings:related_gate`）可还原「带了哪些记忆、为什么」；不含资料正文；来源 id 可追溯。展示入口归第 1 线 #347 |

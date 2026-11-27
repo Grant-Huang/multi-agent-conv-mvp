@@ -145,7 +145,9 @@ fn materials_of(req: &Value) -> String {
         .iter()
         .find_map(|m| {
             let c = m["content"].as_str()?;
-            c.contains(MATERIALS_MARKER).then(|| c.to_string())
+            // 资料可并入首条 system：只量标记起的资料段
+            let i = c.find(MATERIALS_MARKER)?;
+            Some(c[i..].to_string())
         })
         .unwrap_or_default()
 }
@@ -157,7 +159,9 @@ fn style_of(req: &Value) -> String {
         .iter()
         .find_map(|m| {
             let c = m["content"].as_str()?;
-            c.contains(STYLE_MARKER).then(|| c.to_string())
+            // 风格卡可并入首条 system：只量标记起的风格段
+            let i = c.find(STYLE_MARKER)?;
+            Some(c[i..].to_string())
         })
         .unwrap_or_default()
 }

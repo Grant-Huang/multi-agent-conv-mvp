@@ -145,3 +145,105 @@ async fn rt_adm_15_a2a_http_adapter() {
     // 非 http(s) 地址被拒
     assert!(A2aHttpAgent::new(spec("ftp://x", 1_000)).is_err());
 }
+
+// ─────────── #360 防线二：出站外发检查（goal/context 分字段评估） ───────────
+//
+// 夹具语义（tests/fixtures/dlp_server.py）："SECRET-" → BLOCK、"CONFIDENTIAL" → REVIEW、
+// "ACME" → ANONYMIZE（替换为 [CUSTOMER_001]）、其他 → ALLOW。
+
+fn dlp_fixture() -> String {
+    format!(
+        "{}/tests/fixtures/dlp_server.py",
+        env!("CARGO_MANIFEST_DIR")
+    )
+}
+
+async fn guard(mode: &str, tag: &str) -> Arc<an_agents::egress::EgressGuard> {
+    let log = std::env::temp_dir().join(format!("{}-{tag}.jsonl", an_core::new_id("dlp-log")));
+    let cfg: an_agents::egress::EgressConfig = serde_json::from_value(json!({
+        "mode": mode,
+        "timeout_ms": 2000,
+        "dlp_command": "python3",
+        "dlp_args": [dlp_fixture(), log.to_string_lossy(), "normal"],
+        "tools": [],
+        "llm": []
+    }))
+    .unwrap();
+    an_agents::egress::EgressGuard::start(&cfg)
+        .await
+        .unwrap()
+        .expect("非 off 模式应启动守卫")
+}
+
+async fn captured() -> (String, Arc<Mutex<Option<Value>>>) {
+    let seen: Arc<Mutex<Option<Value>>> = Arc::default();
+    let s = seen.clone();
+    let base = serve(Router::new().route(
+        "/run",
+        post(move |Json(req): Json<Value>| {
+            *s.lock().unwrap() = Some(req);
+            async { Json(json!({"status": "succeeded", "summary": "ok"})) }
+        }),
+    ))
+    .await;
+    (base, seen)
+}
+
+/// enforce 下 BLOCK 拒发：任务失败带 E_EGRESS_BLOCKED，外部 agent 收不到请求
+#[tokio::test]
+async fn rt_a2aegr_01_enforce_block_stops_dispatch() {
+    let (ok, seen) = captured().await;
+    let mut agent = A2aHttpAgent::new(spec(&ok, 2_000)).unwrap();
+    agent.set_egress_guard(guard("enforce", "egr01").await);
+    let mut t = task();
+    t.context = "门禁码 SECRET-360，请处理".into();
+    let e = agent.run(t, sink()).await.unwrap_err();
+    assert!(
+        format!("{e:#}").contains(an_core::codes::EGRESS_BLOCKED),
+        "{e:#}"
+    );
+    assert!(seen.lock().unwrap().is_none(), "外部 agent 不应收到请求");
+}
+
+/// enforce 下评估通过只发脱敏文本：ACME → [CUSTOMER_001]，goal 字段同样脱敏
+#[tokio::test]
+async fn rt_a2aegr_02_enforce_pass_sends_sanitized() {
+    let (ok, seen) = captured().await;
+    let mut agent = A2aHttpAgent::new(spec(&ok, 2_000)).unwrap();
+    agent.set_egress_guard(guard("enforce", "egr02").await);
+    let mut t = task();
+    t.goal = "汇总 ACME 的季度数据".into();
+    t.context = "ACME 上季度出货 380 件".into();
+    let r = agent.run(t, sink()).await.unwrap();
+    assert_eq!(r.status, WorkerStatus::Succeeded);
+    let req = seen.lock().unwrap().clone().unwrap();
+    assert_eq!(req["goal"], "汇总 [CUSTOMER_001] 的季度数据");
+    assert_eq!(req["context"], "[CUSTOMER_001] 上季度出货 380 件");
+}
+
+/// audit 下 BLOCK 只记录不阻断：原文照发（audit 契约与 tools/LLM 一致）
+#[tokio::test]
+async fn rt_a2aegr_03_audit_allows_original() {
+    let (ok, seen) = captured().await;
+    let mut agent = A2aHttpAgent::new(spec(&ok, 2_000)).unwrap();
+    agent.set_egress_guard(guard("audit", "egr03").await);
+    let mut t = task();
+    t.context = "门禁码 SECRET-360".into();
+    let r = agent.run(t, sink()).await.unwrap();
+    assert_eq!(r.status, WorkerStatus::Succeeded);
+    let req = seen.lock().unwrap().clone().unwrap();
+    assert_eq!(req["context"], "门禁码 SECRET-360");
+}
+
+/// 无守卫（[egress] off，默认配置）行为与以前完全相同：原文照发
+#[tokio::test]
+async fn rt_a2aegr_04_no_guard_keeps_original_behavior() {
+    let (ok, seen) = captured().await;
+    let agent = A2aHttpAgent::new(spec(&ok, 2_000)).unwrap();
+    let mut t = task();
+    t.context = "门禁码 SECRET-360".into();
+    let r = agent.run(t, sink()).await.unwrap();
+    assert_eq!(r.status, WorkerStatus::Succeeded);
+    let req = seen.lock().unwrap().clone().unwrap();
+    assert_eq!(req["context"], "门禁码 SECRET-360");
+}

@@ -431,6 +431,12 @@
       "RT-ADM-16",
       "RT-ADM-14",
       "RT-ADM-15",
+      "RT-A2AEGR-01",
+      "RT-A2AEGR-02",
+      "RT-A2AEGR-03",
+      "RT-A2AEGR-04",
+      "RT-EXECMAT-01",
+      "RT-EXECMAT-02",
       "RT-ADM-17",
       "RT-ADM-18"
     ]
@@ -731,6 +737,7 @@
       "E2E-OPSNOISE",
       "E2E-OPSAPPROVE",
       "E2E-OPSRECEIPT",
+      "E2E-OPSPLAN",
       "E2E-OPSOFF",
       "E2E-OPSAUTOEXEC",
       "E2E-OPSEXPIRE"
@@ -884,15 +891,12 @@
       "E2E-UX06",
       "E2E-UX02-I4",
       "E2E-ADTESTCTRL",
-<<<<<<< HEAD
       "E2E-UX03-I5",
       "E2E-ADSETGROUPS",
+      "E2E-UX03-I7",
+      "E2E-UX04-I4",
+      "E2E-UX01-I6",
       "E2E-UX08-I6"
-=======
-"E2E-UX03-I5",
-"E2E-ADSETGROUPS",
-"E2E-UX03-I7"
->>>>>>> origin/master
     ],
     "runtime_cases": [
       "RT-ADACCEPT-01",
@@ -1146,6 +1150,7 @@
       "RT-SMAT-05",
       "RT-SMAT-06",
       "RT-SMAT-07",
+      "RT-SMAT-08",
       "RT-UMEM-01",
       "RT-UMEM-02",
       "RT-UMEM-03",
@@ -1170,6 +1175,7 @@
       "RT-RMAT-01",
       "RT-RMAT-02",
       "RT-RMAT-03",
+      "RT-RMAT-05",
       "RT-G2C-01",
       "RT-G2C-02",
       "RT-EXEC-01",
@@ -1179,7 +1185,9 @@
       "RT-EXEC-05",
       "RT-L2H-01",
       "RT-L2H-02",
-      "RT-L2H-03"
+      "RT-L2H-03",
+      "RT-L2H-04",
+      "RT-ASEL-02"
     ],
     "requirements": [
       {
@@ -1276,7 +1284,8 @@
         "status": "已确认",
         "cases": [
           "RT-SMAT-06",
-          "RT-SMAT-07"
+          "RT-SMAT-07",
+          "RT-SMAT-08"
         ],
         "since": null
       }

@@ -172,7 +172,7 @@ async fn main() -> Result<()> {
             notes: vec![],
             candidates: vec![],
         };
-        let a = orch.submit(&conv, "长任务", "", route(), policy.clone())?;
+        let a = orch.submit(&conv, "长任务", "", route(), policy.clone(), None)?;
         let running = wait_running(&store, &a.id).await;
         let t0 = Instant::now();
         let report = orch.revoke_agent("ext1", "实测")?;
@@ -186,7 +186,7 @@ async fn main() -> Result<()> {
             .iter()
             .filter(|m| m.role == "assistant" && m.task_id.as_deref() == Some(&a.id))
             .count();
-        let b = orch.submit(&conv, "下一个", "", route(), policy)?;
+        let b = orch.submit(&conv, "下一个", "", route(), policy, None)?;
         let st_b = wait_terminal(&store, &b.id, Duration::from_secs(5)).await;
         let by_backup = store
             .get_task(&b.id)?

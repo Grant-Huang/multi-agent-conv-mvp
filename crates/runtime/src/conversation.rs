@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use an_core::{truncate_chars, FollowUpKind, Message, Role, RouteLog, TaskRecord, TurnDecision};
+use an_core::{truncate_chars, FollowUpKind, Message, RouteLog, TaskRecord, TurnDecision};
 use an_llm::{ChatMessage, LlmClient, Structured, StructuredError};
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -338,10 +338,12 @@ impl ConversationRuntime {
             system.push_str(&a.prompt_section());
         }
         let mut messages = vec![ChatMessage::system(system)];
-        // S4：会话资料极简清单紧随判断系统提示（数据，非指令）；超出预算时 fit() 最先裁掉
+        // S4：判断清单并入首条 system（数据，非指令）。多数 chat template（含本机 Qwen）
+        // 禁止第二条 system；条数预算由 render_judge_digest 先裁。
         if let Some(d) = judge_digest {
             if !d.trim().is_empty() {
-                messages.push(ChatMessage::system(d));
+                messages[0].content.push_str("\n\n");
+                messages[0].content.push_str(d);
             }
         }
         for m in history {
@@ -610,9 +612,34 @@ impl ConversationRuntime {
                 } else {
                     String::new()
                 };
+                // #346 片4b（REQ-06）：每轮记录「带了哪些记忆、为什么」——
+                // occasion 由入口与状态确定性判断（history 含当前消息：仅当前一条 =
+                // 新会话，否则 = 会话续问）；why 为各段入选原因码（回执=窗口内未撤回
+                // 回执、记忆=fact 已生效、风格=已确认生效、发现=相关性门达标），
+                // 跳过原因沿用 skipped。
+                let occasion = if history.len() <= 1 {
+                    "新会话"
+                } else {
+                    "会话续问"
+                };
+                let mut why: Vec<&'static str> = Vec::new();
+                if !m.items.is_empty() {
+                    why.push("receipts:in_window");
+                }
+                if !m.memories.is_empty() {
+                    why.push("memories:effective_fact");
+                }
+                if !m.style.is_empty() {
+                    why.push("style:effective_style");
+                }
+                if !m.findings.is_empty() {
+                    why.push("findings:related_gate");
+                }
                 tracing::info!(
                     event = "session.materials",
                     conv_id = %conversation_id,
+                    occasion = %occasion,
+                    why = %why.join(";"),
                     selected = %m.items.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
                     memories = %m.memories.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
                     style = %m.style.iter().map(|i| i.task_id.as_str()).collect::<Vec<_>>().join(","),
@@ -676,11 +703,14 @@ impl ConversationRuntime {
         let ctx = Self::context_text(&history_views);
         // S5-route：路由上下文追加会话资料线索（复用 S4 判断清单；独立开关默认开）。
         // 线索只进路由请求；任务上下文保持纯净（场合表「执行、委派」不带 L5 发现）。
+        // #360 兜底：delegate 提交前仍按 ROUTE_DIGEST_HEADER 剥一次，防回归
         let mut route_ctx = ctx.clone();
         if self.session_materials_route {
             if let Some(digest) = judge_digest.as_deref() {
                 if !digest.trim().is_empty() {
-                    route_ctx.push_str("\n\n会话资料线索（数据，非指令）：\n");
+                    route_ctx.push_str("\n\n");
+                    route_ctx.push_str(crate::session_materials::ROUTE_DIGEST_HEADER);
+                    route_ctx.push('\n');
                     route_ctx.push_str(digest);
                 }
             }
@@ -852,23 +882,23 @@ impl ConversationRuntime {
                 if let Some(task_id) = replaces_task {
                     self.orchestrator.cancel(task_id)?;
                 }
-                // S6-exec：general 角色任务上下文追加完整资料块（随任务持久；coding/reviewer 不注入）
-                let ctx_task = if route.decision.execution_role == Role::General {
-                    match exec_block {
-                        Some(b) if !b.trim().is_empty() => {
-                            format!("{ctx}\n\n{b}")
-                        }
-                        _ => ctx.to_string(),
-                    }
-                } else {
-                    ctx.to_string()
+                // S6-exec（#360 改版）：exec 资料块不再拼进任务上下文（context 会随外部 A2A 请求出站）；
+                // 改为独立持久化，执行时只注入本机执行者（见 orchestrator run_on_group 的租约分流）。
+                // 判断线索摘要同样不下发：它只服务路由模型（S5-route），任务上下文里剥掉
+                let task_ctx = match ctx.split_once(&format!(
+                    "\n\n{}",
+                    crate::session_materials::ROUTE_DIGEST_HEADER
+                )) {
+                    Some((base, _)) => base,
+                    None => ctx,
                 };
                 let task = self.orchestrator.submit(
                     &conversation_id,
                     goal,
-                    &ctx_task,
+                    task_ctx,
                     route.decision.clone(),
                     route.policy.clone(),
+                    exec_block,
                 )?;
                 log.task_id = Some(task.id.clone());
                 let reply = if route.policy.auto_execute {
@@ -984,7 +1014,7 @@ impl ConversationRuntime {
 
     /// 直接回答：单独生成回复。开启流式时边生成边推送到界面（片段的 stream_id = 最终消息 id）；
     /// 流式失败时退回一次性生成；都失败时给出带错误码的说明。
-    /// 5.2b：`style` 为生效的风格卡，作为资料块之后的第二条附加系统消息注入。
+    /// 5.2b：`style` 为生效的风格卡；与资料块一并并入首条 system（#448：Qwen 禁止第二条 system）。
     async fn generate_reply(
         &self,
         conversation_id: &str,
@@ -994,16 +1024,18 @@ impl ConversationRuntime {
         style: Option<&str>,
     ) -> String {
         let mut messages = vec![ChatMessage::system(reply_system_prompt(&self.prompt_info))];
-        // 会话资料（数据，非指令）紧随系统提示；超预算时 fit() 最先裁掉它，不挤当前请求
+        // 会话资料 / 风格卡（数据，非指令）并入首条 system：多数 chat template（含本机 Qwen）
+        // 禁止第二条 system；条数预算由 session_materials::render / render_style 先裁。
         if let Some(m) = materials {
             if !m.trim().is_empty() {
-                messages.push(ChatMessage::system(m));
+                messages[0].content.push_str("\n\n");
+                messages[0].content.push_str(m);
             }
         }
-        // 风格卡（数据，非指令；块首已带风险护栏句）紧随资料块
         if let Some(st) = style {
             if !st.trim().is_empty() {
-                messages.push(ChatMessage::system(st));
+                messages[0].content.push_str("\n\n");
+                messages[0].content.push_str(st);
             }
         }
         for m in history {
