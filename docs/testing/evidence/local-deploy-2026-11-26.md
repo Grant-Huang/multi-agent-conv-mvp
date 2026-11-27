@@ -90,3 +90,29 @@ W2 数据集未就绪，本轮用接口手工造数（符合 #424 正文）。
 | D7 | 通过（手工种子；W2 verify 脚本未就绪） |
 
 **不关闭 #424**：D1 干净机与 D3 云端成功回答仍欠；D6 产品提示在 #431。
+
+## D1 干净树复验（2026-11-27，America/Vancouver）
+
+- **基线**：`origin/master` @ `b113aeb`
+- **实验室**：`/tmp/line6-d1-clean`（detached worktree + 独立 `config.toml` / `data/d1-clean.db` / 端口 `18787`）
+- **总耗时**：约 4.5 min（含 cargo offline 热缓存 ~1m13s；web npm install+build ~2s；首轮问答 ~16s）
+
+| 步骤 | 结果 |
+|---|---|
+| 按 README：`cp config.example.toml` → 改 bind/db/LLM | 可行 |
+| `cd web && npm install && npm run build` | 通过 |
+| `cargo build --release -p an-server --bin agentnexus` | 需 `--offline` 或可用 crates 缓存；死代理会失败 |
+| 打开根路径 + `/api/health` | 200；`llm.ok=true` |
+| 桌面快照 `GET /api/desktop/v1/snapshot` | 200 |
+| 会话问答「只回答一个词：就绪」 | 200，回复「就绪」（~16s） |
+
+### 卡点（记入文档债务）
+
+1. **死 HTTP 代理**：环境 `HTTP(S)_PROXY=127.0.0.1:7897` 时，`git clone` / `cargo` 拉 crates.io 直接失败；须 unset 或修好代理。README 未提示。  
+2. **样例 LLM 端口 8098**：本机常见 8200，不改则问答不可用。  
+3. **发消息字段名 `text`**：误用 `content` → 422（与前次记录一致）。  
+4. **非全新 OS 账号**：本机已有 Rust/Node/模型；本次是「干净工作树 + 只按文档配置启动」，不是新装系统用户。
+
+**结论**：D1 在「干净树 / 文档路径」下 **通过**；严格「全新机器账号」仍可选。D2–D7 此前已有证据。建议评审是否可关 #424。
+
+原始：`line6-424-d1-log.txt`、`line6-424-d1-qa.json`。

@@ -1,0 +1,28 @@
+{
+  "base": "http://127.0.0.1:18787",
+  "steps": [
+    {
+      "root": 200
+    },
+    {
+      "snapshot": 200,
+      "keys": [
+        "cards",
+        "counts",
+        "cursor",
+        "generated_at",
+        "test_fixtures"
+      ]
+    }
+  ],
+  "qa": {
+    "http": 200,
+    "seconds": 16.1,
+    "reply": "就绪",
+    "decision": {
+      "action": "respond",
+      "reply": "就绪"
+    }
+  },
+  "wrong_field_http": 422
+}

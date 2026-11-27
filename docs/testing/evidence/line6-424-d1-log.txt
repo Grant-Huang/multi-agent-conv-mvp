@@ -1,0 +1,13 @@
+Preparing worktree (detached HEAD b113aeb)
+HEAD is now at b113aeb Merge pull request #510 from Grant-Huang/fix/run-2026-11-27
+commit=b113aeb
+start 2026-11-27 10:01:58 MST
+FRICTION: git clone via https failed — HTTP_PROXY/HTTPS_PROXY points to 127.0.0.1:7897 dead; cold start on this host needs unset proxy or local mirror
+WORKAROUND: used local git worktree from existing clone of origin/master
+FRICTION: config.example default LLM port 8098; running model is 8200 — must edit
+FRICTION: used bind 18787 to avoid existing 8787 instance
+config_secs=0
+web_secs=2
+cargo_secs=49
+FRICTION: cargo/npm registry also hit dead HTTP_PROXY 127.0.0.1:7897 — cold start must unset HTTP(S)_PROXY
+end 2026-11-27 10:06:17 MST
