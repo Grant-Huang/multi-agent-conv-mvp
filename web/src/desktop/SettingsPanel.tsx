@@ -15,6 +15,7 @@ import {
   withdrawMemory,
   type AssistantProfile,
   type MemoryEntry,
+  memoryKindText,
   type SettingsCategoryId,
 } from "./profileStore";
 
@@ -428,6 +429,7 @@ function MemoryList({
                 onClick={() => onOpen(m.id)}
               >
                 {m.title}
+                <span className="muted">有效期 {m.expires}</span>
               </button>
             </li>
           ))}
@@ -455,11 +457,16 @@ function MemoryDetail({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // UXFIX-T（#353）：有效期编辑与撤回确认
+  const [draftExpires, setDraftExpires] = useState(entry.expires);
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
 
   useEffect(() => {
     setDraftBody(entry.body);
+    setDraftExpires(entry.expires);
+    setConfirmWithdraw(false);
     setErr(null);
-  }, [entry.id, entry.body]);
+  }, [entry.id, entry.body, entry.expires]);
 
   useEffect(() => {
     setMsg(null);
@@ -471,9 +478,41 @@ function MemoryDetail({
       <dl className="evidence-dl">
         <dt>来源</dt>
         <dd data-testid="memory-source">{entry.source}</dd>
+        <dt>类型</dt>
+        <dd data-testid="memory-kind">{memoryKindText(entry.kind)}</dd>
+        <dt>确认状态</dt>
+        <dd data-testid="memory-confirm">{entry.confirmed ? "已确认" : "待确认"}</dd>
         <dt>有效期</dt>
         <dd data-testid="memory-expires">{entry.expires}</dd>
       </dl>
+      {/* UXFIX-T：有效期可编辑（PATCH expires） */}
+      <div className="settings-actions">
+        <input
+          data-testid="memory-expires-input"
+          aria-label="有效期"
+          value={draftExpires}
+          onChange={(e) => setDraftExpires(e.target.value)}
+        />
+        <button
+          type="button"
+          className="btn small"
+          data-testid="memory-expires-save"
+          disabled={busy || !draftExpires.trim() || draftExpires === entry.expires}
+          onClick={() => {
+            setBusy(true);
+            setErr(null);
+            void correctMemory(entry.id, { expires: draftExpires })
+              .then((m) => {
+                onSaved(m);
+                setMsg("有效期已更新");
+              })
+              .catch((e: Error) => setErr(e.message))
+              .finally(() => setBusy(false));
+          }}
+        >
+          保存有效期
+        </button>
+      </div>
       <label className="settings-field">
         正文（可纠错）
         <textarea
@@ -513,12 +552,8 @@ function MemoryDetail({
           data-testid="memory-withdraw"
           disabled={busy}
           onClick={() => {
-            setBusy(true);
-            setErr(null);
-            void withdrawMemory(entry.id)
-              .then(() => onWithdrawn())
-              .catch((e: Error) => setErr(e.message))
-              .finally(() => setBusy(false));
+            // UXFIX-T：撤回需确认（撤回后下一次回答不再参考）
+            setConfirmWithdraw(true);
           }}
         >
           撤回此记忆
@@ -527,6 +562,39 @@ function MemoryDetail({
           返回记忆列表
         </button>
       </div>
+      {confirmWithdraw && (
+        <div data-testid="memory-withdraw-confirm" role="alert">
+          <p className="bad-text">
+            撤回后这条记忆将不再参与下一次回答（已撤回记录的保留规则见分层记忆规则）。
+          </p>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="btn small"
+              data-testid="memory-withdraw-confirm-yes"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setErr(null);
+                void withdrawMemory(entry.id)
+                  .then(() => onWithdrawn())
+                  .catch((e: Error) => setErr(e.message))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              确认撤回
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="memory-withdraw-cancel"
+              onClick={() => setConfirmWithdraw(false)}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
       {msg && (
         <p className="settings-saved" data-testid="memory-correct-saved" role="status">
           {msg}
